@@ -1,0 +1,11 @@
+.claude/
+.agents/
+.devin/
+.goose/
+.hermes/
+.junie/
+.minimax/
+.qwen/
+.tabnine/
+.vibe/
+skills-lock.json

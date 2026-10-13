@@ -94,3 +94,28 @@ export async function eventually(
     }
   }
 }
+
+/** Asks the language server where a symbol is defined, waiting for it to start. */
+export async function definitionOf(
+  file: string,
+  line: number,
+  character: number
+): Promise<string[]> {
+  const uri = vscode.Uri.file(file);
+  await vscode.workspace.openTextDocument(uri);
+  const deadline = Date.now() + 90_000;
+  while (Date.now() < deadline) {
+    const found = await vscode.commands.executeCommand<
+      (vscode.Location | vscode.LocationLink)[]
+    >(
+      "vscode.executeDefinitionProvider",
+      uri,
+      new vscode.Position(line, character)
+    );
+    if (found?.length) {
+      return found.map((d) => ("targetUri" in d ? d.targetUri : d.uri).fsPath);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  return [];
+}

@@ -32,8 +32,14 @@ describe("Open Change on a local Change", () => {
         `${name} head ${short(repo.commits.renamed)}`,
       ]
     );
-    assert.strictEqual(gitIn(base.path, "rev-parse", "HEAD"), repo.commits.initial);
-    assert.strictEqual(gitIn(head.path, "rev-parse", "HEAD"), repo.commits.renamed);
+    assert.strictEqual(
+      gitIn(base.path, "rev-parse", "HEAD"),
+      repo.commits.initial
+    );
+    assert.strictEqual(
+      gitIn(head.path, "rev-parse", "HEAD"),
+      repo.commits.renamed
+    );
     const worktrees = worktreesOf(repo.path);
     for (const folder of [base, head]) {
       assert.deepStrictEqual(
@@ -42,7 +48,9 @@ describe("Open Change on a local Change", () => {
         `${folder.path} is a detached worktree of the repository`
       );
       assert.ok(
-        folder.path.includes(path.join("globalStorage", "edziegle.dear-reviewer")),
+        folder.path.includes(
+          path.join("globalStorage", "edziegle.dear-reviewer")
+        ),
         `${folder.path} is in the extension's storage`
       );
     }

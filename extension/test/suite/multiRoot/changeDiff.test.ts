@@ -32,18 +32,20 @@ describe("The Change's multi-file diff", () => {
       ),
       `diff title "${label}" names the Change`
     );
-    await eventually(() => assert.deepStrictEqual(multiDiffFiles(), [
-      { original: undefined, modified: path.join(head.path, "added.py") },
-      {
-        original: path.join(base.path, "main.py"),
-        modified: path.join(head.path, "main.py"),
-      },
-      { original: path.join(base.path, "obsolete.py"), modified: undefined },
-      {
-        original: path.join(base.path, "util.py"),
-        modified: path.join(head.path, "util.py"),
-      },
-    ]));
+    await eventually(() =>
+      assert.deepStrictEqual(multiDiffFiles(), [
+        { original: undefined, modified: path.join(head.path, "added.py") },
+        {
+          original: path.join(base.path, "main.py"),
+          modified: path.join(head.path, "main.py"),
+        },
+        { original: path.join(base.path, "obsolete.py"), modified: undefined },
+        {
+          original: path.join(base.path, "util.py"),
+          modified: path.join(head.path, "util.py"),
+        },
+      ])
+    );
 
     await closeChange(request);
   });

@@ -4,8 +4,10 @@
 import * as fs from "fs";
 import * as path from "path";
 import Mocha from "mocha";
+import { isReviewWindow, observeReviewWindow } from "./reviewWindowProbe";
 
 export function run(): Promise<void> {
+  if (isReviewWindow()) return observeReviewWindow();
   const suite = process.env.DEAR_REVIEWER_SUITE ?? "multiRoot";
   const mocha = new Mocha({ ui: "bdd", timeout: 120_000, color: true });
   const folder = path.join(__dirname, suite);

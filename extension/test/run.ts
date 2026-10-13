@@ -42,11 +42,30 @@ function installLanguageServers() {
 
 function freshWorkFolder() {
   fs.rmSync(work, { recursive: true, force: true });
-  fs.rmSync(path.join(userDataDir, "User", "globalStorage", "edziegle.dear-reviewer"), {
-    recursive: true,
-    force: true,
-  });
+  fs.rmSync(
+    path.join(userDataDir, "User", "globalStorage", "edziegle.dear-reviewer"),
+    {
+      recursive: true,
+      force: true,
+    }
+  );
   fs.mkdirSync(work, { recursive: true });
+}
+
+function writeUserSettings() {
+  // The built-in git extension can't find git under the agent sandbox and
+  // floods the log; Dear Reviewer runs git itself.
+  const settings = path.join(userDataDir, "User", "settings.json");
+  fs.mkdirSync(path.dirname(settings), { recursive: true });
+  // Each suite starts in the window it asks for, not the last one restored.
+  fs.writeFileSync(
+    settings,
+    JSON.stringify(
+      { "git.enabled": false, "window.restoreWindows": "none" },
+      null,
+      2
+    )
+  );
 }
 
 function multiRootWorkspace(): string {
@@ -82,6 +101,8 @@ async function runSuite(suite: string, openPath: string) {
       "--user-data-dir",
       userDataDir,
       "--force-disable-user-env",
+      // Software rendering avoids GPU surface failures that crash the window.
+      "--disable-gpu",
     ],
   });
 }
@@ -89,8 +110,9 @@ async function runSuite(suite: string, openPath: string) {
 async function main() {
   installLanguageServers();
   freshWorkFolder();
+  writeUserSettings();
   await runSuite("multiRoot", multiRootWorkspace());
-  // await runSuite("singleFolder", singleFolder());
+  await runSuite("singleFolder", singleFolder());
 }
 
 main().catch((err) => {

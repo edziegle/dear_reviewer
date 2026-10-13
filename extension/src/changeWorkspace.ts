@@ -56,7 +56,7 @@ export class ChangeWorkspace {
     return change;
   }
 
-  async close(request: ChangeRequest): Promise<void> {
+  async close(request: ChangeRequest): Promise<Change> {
     const change = await this.resolve(request);
     const wasInReviewWindow = this.openChanges.get(change.id)?.inReviewWindow;
     await removeFolders([change.headDir, change.baseDir]);
@@ -68,6 +68,7 @@ export class ChangeWorkspace {
       fs.rmSync(dir, { recursive: true, force: true });
     }
     await git(change.repository, "worktree", "prune");
+    return change;
   }
 
   list(): Change[] {
@@ -160,7 +161,16 @@ export function changeTitle(change: Change): string {
   return `${repo} ${change.mergeBase.slice(0, 7)}..${change.headSha.slice(0, 7)}`;
 }
 
-async function showDiff(change: Change): Promise<void> {
+export type FileStatus = "added" | "modified" | "deleted";
+
+export interface ChangedFile {
+  /** Relative to the repository root, with forward slashes. */
+  path: string;
+  status: FileStatus;
+}
+
+/** The Change's files, sorted by path. */
+export async function changedFiles(change: Change): Promise<ChangedFile[]> {
   const nameStatus = await git(
     change.repository,
     "diff",
@@ -171,24 +181,41 @@ async function showDiff(change: Change): Promise<void> {
     change.headSha
   );
   const fields = nameStatus.split("\0").filter(Boolean);
-  // Each resource is [label, original (absent if added), modified (absent if deleted)].
-  const resources: [
-    vscode.Uri,
-    vscode.Uri | undefined,
-    vscode.Uri | undefined,
-  ][] = [];
+  const files: ChangedFile[] = [];
   for (let i = 0; i + 1 < fields.length; i += 2) {
     const [status, file] = [fields[i], fields[i + 1]];
-    const original =
-      status === "A"
-        ? undefined
-        : vscode.Uri.file(path.join(change.baseDir, file));
-    const modified =
-      status === "D"
-        ? undefined
-        : vscode.Uri.file(path.join(change.headDir, file));
-    resources.push([(modified ?? original)!, original, modified]);
+    files.push({
+      path: file,
+      status:
+        status === "A" ? "added" : status === "D" ? "deleted" : "modified",
+    });
   }
+  return files;
+}
+
+/** The file in the base and head worktrees; a side is absent if the file isn't there. */
+export function fileSides(
+  change: Change,
+  file: ChangedFile
+): { original?: vscode.Uri; modified?: vscode.Uri } {
+  return {
+    original:
+      file.status === "added"
+        ? undefined
+        : vscode.Uri.file(path.join(change.baseDir, file.path)),
+    modified:
+      file.status === "deleted"
+        ? undefined
+        : vscode.Uri.file(path.join(change.headDir, file.path)),
+  };
+}
+
+async function showDiff(change: Change): Promise<void> {
+  // Each resource is [label, original (absent if added), modified (absent if deleted)].
+  const resources = (await changedFiles(change)).map((file) => {
+    const { original, modified } = fileSides(change, file);
+    return [(modified ?? original)!, original, modified];
+  });
   await vscode.commands.executeCommand(
     "vscode.changes",
     changeTitle(change),

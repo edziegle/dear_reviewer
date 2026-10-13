@@ -6,12 +6,32 @@ import {
   ChangeWorkspace,
   changeTitle,
 } from "./changeWorkspace";
+import {
+  ChangeFilesNode,
+  ChangeFilesView,
+  emptyFileScheme,
+} from "./changeFiles";
 import { GitHubAuth } from "./github/auth";
 import { GitHubClient } from "./github/client";
 import { Avatars, InboxTree } from "./inbox";
+import { LocalViewedFiles } from "./viewedFiles";
 
 export function activate(context: vscode.ExtensionContext) {
   const changes = new ChangeWorkspace(context.globalStorageUri.fsPath);
+  const viewedFiles = new LocalViewedFiles(context.globalStorageUri.fsPath);
+  const changeFiles = new ChangeFilesView(
+    () => changes.list(),
+    viewedFiles,
+    path.join(context.globalStorageUri.fsPath, "change-files-view.json")
+  );
+  const changeFilesTree = vscode.window.createTreeView(
+    "dearReviewer.changeFiles",
+    {
+      treeDataProvider: changeFiles,
+      canSelectMany: true,
+      manageCheckboxStateManually: true,
+    }
+  );
   const settings = () => vscode.workspace.getConfiguration("dearReviewer");
   const auth = new GitHubAuth(context.secrets);
   // Only the user's own setting counts: a workspace must not be able to
@@ -32,17 +52,60 @@ export function activate(context: vscode.ExtensionContext) {
       async (request?: ChangeRequest) => {
         request ??= await askForChange(context.globalStorageUri.fsPath);
         if (request) await changes.open(request);
+        changeFiles.refresh();
       }
     ),
     vscode.commands.registerCommand(
       "dearReviewer.closeChange",
       async (request?: ChangeRequest) => {
         request ??= await pickOpenChange(changes.list());
-        if (request) await changes.close(request);
+        if (!request) return;
+        await viewedFiles.forget(await changes.close(request));
+        changeFiles.refresh();
       }
     ),
-    vscode.workspace.onDidChangeWorkspaceFolders(() =>
-      changes.showPendingDiffs()
+    vscode.workspace.onDidChangeWorkspaceFolders(() => {
+      changeFiles.refresh();
+      return changes.showPendingDiffs();
+    }),
+    changeFilesTree,
+    changeFilesTree.onDidChangeCheckboxState(async (e) => {
+      for (const [node, state] of e.items) {
+        await changeFiles.setViewed(
+          [node],
+          state === vscode.TreeItemCheckboxState.Checked
+        );
+      }
+    }),
+    vscode.window.registerFileDecorationProvider(changeFiles),
+    vscode.workspace.registerTextDocumentContentProvider(emptyFileScheme, {
+      provideTextDocumentContent: () => "",
+    }),
+    vscode.commands.registerCommand(
+      "dearReviewer.openChangeFile",
+      (node: ChangeFilesNode) => changeFiles.openDiff(node)
+    ),
+    vscode.commands.registerCommand(
+      "dearReviewer.markViewed",
+      (node?: ChangeFilesNode, selected?: ChangeFilesNode[]) =>
+        changeFiles.setViewed(
+          selected ?? (node ? [node] : [...changeFilesTree.selection]),
+          true
+        )
+    ),
+    vscode.commands.registerCommand(
+      "dearReviewer.unmarkViewed",
+      (node?: ChangeFilesNode, selected?: ChangeFilesNode[]) =>
+        changeFiles.setViewed(
+          selected ?? (node ? [node] : [...changeFilesTree.selection]),
+          false
+        )
+    ),
+    vscode.commands.registerCommand("dearReviewer.hideViewedFiles", () =>
+      changeFiles.setHideViewed(true)
+    ),
+    vscode.commands.registerCommand("dearReviewer.showViewedFiles", () =>
+      changeFiles.setHideViewed(false)
     ),
     vscode.window.registerTreeDataProvider("dearReviewer.inbox", inbox),
     vscode.commands.registerCommand("dearReviewer.refreshInbox", () =>
@@ -82,8 +145,9 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
   void changes.showPendingDiffs();
-  // The view is how the Reviewer sees the Inbox; tests read it the same way.
-  return { inbox };
+  // The views are how the Reviewer sees the Inbox and a Change's files;
+  // tests read them the same way.
+  return { inbox, changeFiles };
 }
 
 export function deactivate() {}

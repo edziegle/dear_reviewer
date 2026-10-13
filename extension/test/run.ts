@@ -69,10 +69,13 @@ function writeUserSettings() {
   );
 }
 
-function multiRootWorkspace(): string {
-  const folder = path.join(work, "multi-root");
+function multiRootWorkspace(
+  name = "reviewer",
+  firstFolder = "multi-root"
+): string {
+  const folder = path.join(work, firstFolder);
   fs.mkdirSync(folder, { recursive: true });
-  const file = path.join(work, "reviewer.code-workspace");
+  const file = path.join(work, `${name}.code-workspace`);
   fs.writeFileSync(file, JSON.stringify({ folders: [{ path: folder }] }));
   return file;
 }
@@ -85,10 +88,15 @@ function folder(name: string): string {
 
 let fakeGitHubUrl = "";
 
-/** Runs the suite unless DEAR_REVIEWER_SUITES names others (comma-separated). */
+/**
+ * Runs the suite unless DEAR_REVIEWER_SUITES names others (comma-separated).
+ * A suite like `name/phase` is a later launch of suite `name`, sharing its
+ * fixtures folder.
+ */
 async function runSuite(suite: string, openPath: string) {
+  const name = suite.split("/")[0];
   const only = process.env.DEAR_REVIEWER_SUITES?.split(",");
-  if (only && !only.includes(suite)) return;
+  if (only && !only.includes(name)) return;
   console.log(`\n=== ${suite} suite, opening ${path.basename(openPath)} ===`);
   await runTests({
     vscodeExecutablePath: codiumExecutable,
@@ -96,7 +104,7 @@ async function runSuite(suite: string, openPath: string) {
     extensionTestsPath: path.join(__dirname, "suite", "index.js"),
     extensionTestsEnv: {
       DEAR_REVIEWER_SUITE: suite,
-      DEAR_REVIEWER_FIXTURES: path.join(work, "fixtures", suite),
+      DEAR_REVIEWER_FIXTURES: path.join(work, "fixtures", name),
       DEAR_REVIEWER_FAKE_GITHUB: fakeGitHubUrl,
     },
     // --force-disable-user-env keeps the launching PATH instead of
@@ -126,6 +134,10 @@ async function main() {
     await runSuite("multiRoot", multiRootWorkspace());
     await runSuite("singleFolder", folder("single-folder"));
     await runSuite("inbox", folder("inbox"));
+    // The second launch reopens the same workspace, like a window reload.
+    const changeFiles = multiRootWorkspace("change-files", "change-files");
+    await runSuite("changeFiles", changeFiles);
+    await runSuite("changeFiles/afterReload", changeFiles);
   } finally {
     await fakeGitHub.close();
   }

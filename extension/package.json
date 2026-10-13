@@ -54,6 +54,33 @@
         "command": "dearReviewer.forgetToken",
         "title": "Forget GitHub Personal Access Token",
         "category": "Dear Reviewer"
+      },
+      {
+        "command": "dearReviewer.openChangeFile",
+        "title": "Open Diff",
+        "category": "Dear Reviewer"
+      },
+      {
+        "command": "dearReviewer.markViewed",
+        "title": "Mark Viewed",
+        "category": "Dear Reviewer"
+      },
+      {
+        "command": "dearReviewer.unmarkViewed",
+        "title": "Unmark Viewed",
+        "category": "Dear Reviewer"
+      },
+      {
+        "command": "dearReviewer.hideViewedFiles",
+        "title": "Hide Viewed Files",
+        "category": "Dear Reviewer",
+        "icon": "$(eye-closed)"
+      },
+      {
+        "command": "dearReviewer.showViewedFiles",
+        "title": "Show Viewed Files",
+        "category": "Dear Reviewer",
+        "icon": "$(eye)"
       }
     ],
     "configuration": {
@@ -90,6 +117,10 @@
         {
           "id": "dearReviewer.inbox",
           "name": "Inbox"
+        },
+        {
+          "id": "dearReviewer.changeFiles",
+          "name": "Change Files"
         }
       ]
     },
@@ -99,6 +130,50 @@
           "command": "dearReviewer.refreshInbox",
           "when": "view == dearReviewer.inbox",
           "group": "navigation"
+        },
+        {
+          "command": "dearReviewer.hideViewedFiles",
+          "when": "view == dearReviewer.changeFiles && !dearReviewer.hideViewedFiles",
+          "group": "navigation"
+        },
+        {
+          "command": "dearReviewer.showViewedFiles",
+          "when": "view == dearReviewer.changeFiles && dearReviewer.hideViewedFiles",
+          "group": "navigation"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "dearReviewer.openChangeFile",
+          "when": "false"
+        },
+        {
+          "command": "dearReviewer.markViewed",
+          "when": "false"
+        },
+        {
+          "command": "dearReviewer.unmarkViewed",
+          "when": "false"
+        },
+        {
+          "command": "dearReviewer.hideViewedFiles",
+          "when": "!dearReviewer.hideViewedFiles"
+        },
+        {
+          "command": "dearReviewer.showViewedFiles",
+          "when": "dearReviewer.hideViewedFiles"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "dearReviewer.markViewed",
+          "when": "view == dearReviewer.changeFiles && viewItem =~ /^(file\\.unviewed|directory|change)$/",
+          "group": "viewed@1"
+        },
+        {
+          "command": "dearReviewer.unmarkViewed",
+          "when": "view == dearReviewer.changeFiles && viewItem =~ /^(file\\.viewed|directory|change)$/",
+          "group": "viewed@2"
         }
       ]
     },
@@ -112,6 +187,10 @@
         "view": "dearReviewer.inbox",
         "when": "dearReviewer.inboxWelcome == noRepositories",
         "contents": "List the repositories that feed the Inbox, as owner/name, in the Dear Reviewer: Repositories setting.\n[Open Settings](command:workbench.action.openSettings?%22dearReviewer.repositories%22)"
+      },
+      {
+        "view": "dearReviewer.changeFiles",
+        "contents": "No Change is open in this window.\n[Open Change](command:dearReviewer.openChange)"
       }
     ]
   },

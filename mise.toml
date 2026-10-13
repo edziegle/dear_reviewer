@@ -1,3 +1,30 @@
 [tools]
 node = "24"
 vale = "3.24.0"
+
+[tasks.setup]
+description = "Install dependencies and Vale styles"
+run = ["npm ci", "npm ci --prefix extension", "vale sync"]
+
+[tasks.typecheck]
+description = "Type-check the extension"
+dir = "extension"
+run = "npx tsc --noEmit"
+
+# Bundling stays an npm script so the vscode:prepublish script vsce needs for packaging can call it.
+[tasks.build]
+description = "Bundle the extension"
+dir = "extension"
+run = "npm run build"
+sources = ["src/**/*.ts", "esbuild.mjs", "package.json", "package-lock.json"]
+outputs = ["dist/extension.js"]
+
+[tasks.test]
+description = "Run the extension tests in VS Code"
+dir = "extension"
+depends = ["typecheck", "build"]
+run = ["npx tsc -p test", "node out/test/run.js"]
+
+[tasks.lint-docs]
+description = "Check prose with Vale"
+run = "vale docs GLOSSARY.md AGENTS.md"

@@ -195,10 +195,7 @@
     ]
   },
   "scripts": {
-    "build": "node esbuild.mjs",
-    "typecheck": "tsc --noEmit",
-    "pretest": "npm run typecheck && npm run build && tsc -p test",
-    "test": "node out/test/run.js"
+    "build": "node esbuild.mjs"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",

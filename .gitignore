@@ -10,3 +10,7 @@
 .vibe/
 skills-lock.json
 node_modules/
+
+# Vale packages, downloaded by `vale sync`
+.vale/styles/*
+!.vale/styles/config/

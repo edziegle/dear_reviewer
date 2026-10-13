@@ -4,6 +4,7 @@
 // language servers treat both sides as ordinary project files.
 
 const vscode = require('vscode');
+const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { execFile } = require('child_process');
@@ -28,8 +29,10 @@ async function openChange(context, { repo, base, head }) {
   const baseDir = path.join(dir, 'base');
   const headDir = path.join(dir, 'head');
 
+  // Prune instead of `worktree add --force`, so worktrees deleted outside git can be recreated.
+  await git(repo, 'worktree', 'prune');
   for (const [wt, rev] of [[baseDir, mergeBase], [headDir, headSha]]) {
-    await git(repo, 'worktree', 'add', '--force', '--detach', wt, rev).catch((err) => {
+    await git(repo, 'worktree', 'add', '--detach', wt, rev).catch((err) => {
       if (!/already exists/.test(String(err.stderr))) throw err;
     });
   }
@@ -61,8 +64,9 @@ async function closeChange(context, { repo, baseDir, headDir }) {
   for (const dir of [headDir, baseDir]) {
     const index = folders.findIndex((f) => f.uri.fsPath === dir);
     if (index >= 0) vscode.workspace.updateWorkspaceFolders(index, 1);
-    await git(repo, 'worktree', 'remove', '--force', dir).catch(() => {});
+    fs.rmSync(dir, { recursive: true, force: true });
   }
+  await git(repo, 'worktree', 'prune');
 }
 
 function activate(context) {

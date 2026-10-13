@@ -60,7 +60,8 @@ async function main() {
     extensionDevelopmentPath: root,
     extensionTestsPath: path.join(__dirname, 'suite.js'),
     extensionTestsEnv: { SPIKE_REPO: repo, SPIKE_RESULT: path.join(work, 'result.json') },
-    launchArgs: [workspaceFile, '--extensions-dir', extensionsDir, '--user-data-dir', userDataDir],
+    // Keep the launching PATH instead of re-resolving it from the login shell.
+    launchArgs: [workspaceFile, '--extensions-dir', extensionsDir, '--user-data-dir', userDataDir, '--force-disable-user-env'],
   });
 }
 

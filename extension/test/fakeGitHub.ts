@@ -34,10 +34,17 @@ export interface FakeGitHubState {
   /** The signed-in user, and the token that authenticates as them. */
   viewer: { login: string; token: string };
   pullRequests: FakePullRequest[];
+  /**
+   * Where avatar URLs point, such as `http://localhost:<port>` to put them on
+   * another origin than the API. Defaults to the server's own URL.
+   */
+  avatarOrigin?: string;
 }
 
 export interface RecordedRequest {
   method: string;
+  /** The Host header, which tells apart origins that reach this server. */
+  host?: string;
   path: string;
   authorization?: string;
   body?: unknown;
@@ -72,6 +79,7 @@ export async function startFakeGitHub(): Promise<{
 
     requests.push({
       method: req.method ?? "GET",
+      host: req.headers.host,
       path,
       authorization: req.headers.authorization,
       body: body ? JSON.parse(body) : undefined,
@@ -147,7 +155,7 @@ export async function startFakeGitHub(): Promise<{
       repository: { nameWithOwner: `${owner}/${name}` },
       author: {
         login: pr.author,
-        avatarUrl: `${url}/avatars/${encodeURIComponent(pr.author)}?v=4`,
+        avatarUrl: `${state.avatarOrigin ?? url}/avatars/${encodeURIComponent(pr.author)}?v=4`,
       },
       commits: {
         nodes: [

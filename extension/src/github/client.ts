@@ -1,7 +1,7 @@
 // Talks to GitHub: GraphQL where it covers the operation, REST elsewhere,
 // against a configurable API base URL.
 
-import { GitHubAuth } from "./auth";
+import { GitHubAuth, trustedOrigin } from "./auth";
 
 export type CheckStatus = "passed" | "failed" | "running";
 
@@ -84,8 +84,9 @@ ${INBOX_PULL_REQUEST}`;
    */
   async image(url: string): Promise<Uint8Array> {
     const headers: Record<string, string> = {};
-    if (new URL(url).origin === new URL(this.apiUrl()).origin) {
-      const token = await this.auth.token(this.apiUrl());
+    const apiUrl = this.apiUrl();
+    if (new URL(url).origin === new URL(apiUrl).origin) {
+      const token = await this.auth.token(apiUrl);
       if (token) headers.authorization = `Bearer ${token}`;
     }
     const res = await fetch(url, { headers });
@@ -98,6 +99,7 @@ ${INBOX_PULL_REQUEST}`;
     variables: Record<string, unknown>
   ): Promise<T> {
     const apiUrl = this.apiUrl();
+    trustedOrigin(apiUrl);
     const token = await this.auth.token(apiUrl);
     if (!token) throw new NotSignedInError();
     const res = await fetch(graphqlUrl(apiUrl), {

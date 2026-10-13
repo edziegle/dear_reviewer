@@ -14,10 +14,12 @@ export function activate(context: vscode.ExtensionContext) {
   const changes = new ChangeWorkspace(context.globalStorageUri.fsPath);
   const settings = () => vscode.workspace.getConfiguration("dearReviewer");
   const auth = new GitHubAuth(context.secrets);
-  const github = new GitHubClient(
-    auth,
-    () => settings().get<string>("githubApiUrl") || "https://api.github.com"
-  );
+  // Only the user's own setting counts: a workspace must not be able to
+  // send the Reviewer's token somewhere else.
+  const apiUrl = () =>
+    settings().inspect<string>("githubApiUrl")?.globalValue ||
+    "https://api.github.com";
+  const github = new GitHubClient(auth, apiUrl);
   const inbox = new InboxTree(
     github,
     () => settings().get<string[]>("repositories") ?? [],
@@ -56,12 +58,19 @@ export function activate(context: vscode.ExtensionContext) {
           password: true,
           ignoreFocusOut: true,
         });
-        if (token) await auth.setToken(token);
+        if (!token) return;
+        try {
+          await auth.setToken(apiUrl(), token);
+        } catch (err) {
+          void vscode.window.showErrorMessage(
+            err instanceof Error ? err.message : String(err)
+          );
+        }
       }
     ),
     vscode.commands.registerCommand("dearReviewer.signIn", () => auth.signIn()),
     vscode.commands.registerCommand("dearReviewer.forgetToken", () =>
-      auth.forgetToken()
+      auth.forgetToken(apiUrl())
     ),
     auth.onDidChange(() => inbox.refresh()),
     vscode.workspace.onDidChangeConfiguration((e) => {

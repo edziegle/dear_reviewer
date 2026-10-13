@@ -6,9 +6,23 @@ import {
   ChangeWorkspace,
   changeTitle,
 } from "./changeWorkspace";
+import { GitHubAuth } from "./github/auth";
+import { GitHubClient } from "./github/client";
+import { Avatars, InboxTree } from "./inbox";
 
 export function activate(context: vscode.ExtensionContext) {
   const changes = new ChangeWorkspace(context.globalStorageUri.fsPath);
+  const settings = () => vscode.workspace.getConfiguration("dearReviewer");
+  const auth = new GitHubAuth(context.secrets);
+  const github = new GitHubClient(
+    auth,
+    () => settings().get<string>("githubApiUrl") || "https://api.github.com"
+  );
+  const inbox = new InboxTree(
+    github,
+    () => settings().get<string[]>("repositories") ?? [],
+    new Avatars(github, path.join(context.globalStorageUri.fsPath, "avatars"))
+  );
 
   context.subscriptions.push(
     vscode.commands.registerCommand(
@@ -27,9 +41,40 @@ export function activate(context: vscode.ExtensionContext) {
     ),
     vscode.workspace.onDidChangeWorkspaceFolders(() =>
       changes.showPendingDiffs()
-    )
+    ),
+    vscode.window.registerTreeDataProvider("dearReviewer.inbox", inbox),
+    vscode.commands.registerCommand("dearReviewer.refreshInbox", () =>
+      inbox.refresh()
+    ),
+    vscode.commands.registerCommand(
+      "dearReviewer.setToken",
+      async (token?: string) => {
+        token ??= await vscode.window.showInputBox({
+          title: "GitHub personal access token",
+          prompt:
+            "Used when VS Code's GitHub sign-in isn't available. Stored in the OS keychain.",
+          password: true,
+          ignoreFocusOut: true,
+        });
+        if (token) await auth.setToken(token);
+      }
+    ),
+    vscode.commands.registerCommand("dearReviewer.signIn", () => auth.signIn()),
+    vscode.commands.registerCommand("dearReviewer.forgetToken", () =>
+      auth.forgetToken()
+    ),
+    auth.onDidChange(() => inbox.refresh()),
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (
+        e.affectsConfiguration("dearReviewer.repositories") ||
+        e.affectsConfiguration("dearReviewer.githubApiUrl")
+      )
+        void inbox.refresh();
+    })
   );
   void changes.showPendingDiffs();
+  // The view is how the Reviewer sees the Inbox; tests read it the same way.
+  return { inbox };
 }
 
 export function deactivate() {}

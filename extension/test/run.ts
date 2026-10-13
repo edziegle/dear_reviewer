@@ -5,6 +5,7 @@ import * as cp from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import { runTests } from "@vscode/test-electron";
+import { startFakeGitHub } from "./fakeGitHub";
 
 const root = path.resolve(__dirname, "..", "..");
 const codiumApp = process.env.CODIUM_APP ?? "/Applications/VSCodium.app";
@@ -76,13 +77,18 @@ function multiRootWorkspace(): string {
   return file;
 }
 
-function singleFolder(): string {
-  const folder = path.join(work, "single-folder");
+function folder(name: string): string {
+  const folder = path.join(work, name);
   fs.mkdirSync(folder, { recursive: true });
   return folder;
 }
 
+let fakeGitHubUrl = "";
+
+/** Runs the suite unless DEAR_REVIEWER_SUITES names others (comma-separated). */
 async function runSuite(suite: string, openPath: string) {
+  const only = process.env.DEAR_REVIEWER_SUITES?.split(",");
+  if (only && !only.includes(suite)) return;
   console.log(`\n=== ${suite} suite, opening ${path.basename(openPath)} ===`);
   await runTests({
     vscodeExecutablePath: codiumExecutable,
@@ -91,6 +97,7 @@ async function runSuite(suite: string, openPath: string) {
     extensionTestsEnv: {
       DEAR_REVIEWER_SUITE: suite,
       DEAR_REVIEWER_FIXTURES: path.join(work, "fixtures", suite),
+      DEAR_REVIEWER_FAKE_GITHUB: fakeGitHubUrl,
     },
     // --force-disable-user-env keeps the launching PATH instead of
     // re-resolving it from the login shell, which the sandbox blocks.
@@ -103,6 +110,8 @@ async function runSuite(suite: string, openPath: string) {
       "--force-disable-user-env",
       // Software rendering avoids GPU surface failures that crash the window.
       "--disable-gpu",
+      // Keeps test tokens out of the OS keychain.
+      "--use-inmemory-secretstorage",
     ],
   });
 }
@@ -111,8 +120,15 @@ async function main() {
   installLanguageServers();
   freshWorkFolder();
   writeUserSettings();
-  await runSuite("multiRoot", multiRootWorkspace());
-  await runSuite("singleFolder", singleFolder());
+  const fakeGitHub = await startFakeGitHub();
+  fakeGitHubUrl = fakeGitHub.url;
+  try {
+    await runSuite("multiRoot", multiRootWorkspace());
+    await runSuite("singleFolder", folder("single-folder"));
+    await runSuite("inbox", folder("inbox"));
+  } finally {
+    await fakeGitHub.close();
+  }
 }
 
 main().catch((err) => {

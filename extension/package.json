@@ -24,6 +24,84 @@
         "command": "dearReviewer.closeChange",
         "title": "Close Change",
         "category": "Dear Reviewer"
+      },
+      {
+        "command": "dearReviewer.signIn",
+        "title": "Sign In to GitHub",
+        "category": "Dear Reviewer"
+      },
+      {
+        "command": "dearReviewer.refreshInbox",
+        "title": "Refresh Inbox",
+        "category": "Dear Reviewer",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "dearReviewer.setToken",
+        "title": "Use a GitHub Personal Access Token\u2026",
+        "category": "Dear Reviewer"
+      },
+      {
+        "command": "dearReviewer.forgetToken",
+        "title": "Forget GitHub Personal Access Token",
+        "category": "Dear Reviewer"
+      }
+    ],
+    "configuration": {
+      "title": "Dear Reviewer",
+      "properties": {
+        "dearReviewer.repositories": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[^/\\s]+/[^/\\s]+$"
+          },
+          "default": [],
+          "markdownDescription": "The GitHub repositories, as `owner/name`, whose pull requests feed the Inbox."
+        },
+        "dearReviewer.githubApiUrl": {
+          "type": "string",
+          "default": "https://api.github.com",
+          "markdownDescription": "The GitHub API base URL. For GitHub Enterprise Server, use `https://<host>/api/v3`."
+        }
+      }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "dearReviewer",
+          "title": "Dear Reviewer",
+          "icon": "media/dear-reviewer.svg"
+        }
+      ]
+    },
+    "views": {
+      "dearReviewer": [
+        {
+          "id": "dearReviewer.inbox",
+          "name": "Inbox"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "dearReviewer.refreshInbox",
+          "when": "view == dearReviewer.inbox",
+          "group": "navigation"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "dearReviewer.inbox",
+        "when": "dearReviewer.inboxWelcome == signedOut",
+        "contents": "Sign in to GitHub to see the pull requests awaiting your review and the ones you authored.\n[Sign In to GitHub](command:dearReviewer.signIn)\nIf VS Code's GitHub sign-in isn't available, use a personal access token instead.\n[Use a Personal Access Token](command:dearReviewer.setToken)"
+      },
+      {
+        "view": "dearReviewer.inbox",
+        "when": "dearReviewer.inboxWelcome == noRepositories",
+        "contents": "List the repositories that feed the Inbox, as owner/name, in the Dear Reviewer: Repositories setting.\n[Open Settings](command:workbench.action.openSettings?%22dearReviewer.repositories%22)"
       }
     ]
   },

@@ -9,3 +9,4 @@
 .tabnine/
 .vibe/
 skills-lock.json
+node_modules/

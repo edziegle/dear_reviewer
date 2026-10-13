@@ -16,9 +16,10 @@
   "capabilities": {
     "untrustedWorkspaces": {
       "supported": "limited",
-      "description": "The GitHub API base URL is only read from user settings.",
+      "description": "The GitHub API base URL and the path to claude are only read from user settings.",
       "restrictedConfigurations": [
-        "dearReviewer.githubApiUrl"
+        "dearReviewer.githubApiUrl",
+        "dearReviewer.claudePath"
       ]
     }
   },
@@ -81,6 +82,16 @@
         "title": "Show Viewed Files",
         "category": "Dear Reviewer",
         "icon": "$(eye)"
+      },
+      {
+        "command": "dearReviewer.showAssistant",
+        "title": "Show Assistant",
+        "category": "Dear Reviewer"
+      },
+      {
+        "command": "dearReviewer.checkClaudeLogin",
+        "title": "Check Claude Login",
+        "category": "Dear Reviewer"
       }
     ],
     "configuration": {
@@ -100,6 +111,12 @@
           "default": "https://api.github.com",
           "markdownDescription": "The GitHub API base URL. For GitHub Enterprise Server, use `https://<host>/api/v3`.",
           "scope": "application"
+        },
+        "dearReviewer.claudePath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "The `claude` executable the Assistant runs, such as `/opt/homebrew/bin/claude`. Leave empty to use the `claude` on the PATH or in a usual install location. The Assistant uses whichever Claude login this `claude` has; sign in by running `claude` in a terminal.",
+          "scope": "machine"
         }
       }
     },

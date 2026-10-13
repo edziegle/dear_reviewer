@@ -22,6 +22,8 @@ const testRoot = path.join(root, ".vscode-test");
 const extensionsDir = path.join(testRoot, "extensions");
 const userDataDir = path.join(testRoot, "user-data");
 const work = path.join(testRoot, "work");
+const fakeClaudeDir = path.join(work, "fake-claude");
+const fakeClaude = path.join(fakeClaudeDir, "bin", "claude");
 
 function installLanguageServers() {
   // basedpyright refuses to activate without the Python extension.
@@ -53,6 +55,20 @@ function freshWorkFolder() {
   fs.mkdirSync(work, { recursive: true });
 }
 
+/**
+ * Puts the fake `claude` on disk: a wrapper that runs test/fakeClaude.ts with
+ * this node, so the tests never reach a real Claude Code.
+ */
+function installFakeClaude() {
+  fs.mkdirSync(path.dirname(fakeClaude), { recursive: true });
+  const quote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
+  fs.writeFileSync(
+    fakeClaude,
+    `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(path.join(__dirname, "fakeClaude.js"))} ${quote(fakeClaudeDir)} "$@"\n`,
+    { mode: 0o755 }
+  );
+}
+
 function writeUserSettings() {
   // The built-in git extension can't find git under the agent sandbox and
   // floods the log; Dear Reviewer runs git itself.
@@ -62,7 +78,12 @@ function writeUserSettings() {
   fs.writeFileSync(
     settings,
     JSON.stringify(
-      { "git.enabled": false, "window.restoreWindows": "none" },
+      {
+        "git.enabled": false,
+        "window.restoreWindows": "none",
+        // Every suite opens Changes, and each one starts the Assistant.
+        "dearReviewer.claudePath": fakeClaude,
+      },
       null,
       2
     )
@@ -106,6 +127,8 @@ async function runSuite(suite: string, openPath: string) {
       DEAR_REVIEWER_SUITE: suite,
       DEAR_REVIEWER_FIXTURES: path.join(work, "fixtures", name),
       DEAR_REVIEWER_FAKE_GITHUB: fakeGitHubUrl,
+      DEAR_REVIEWER_FAKE_CLAUDE: fakeClaude,
+      DEAR_REVIEWER_FAKE_CLAUDE_DIR: fakeClaudeDir,
     },
     // --force-disable-user-env keeps the launching PATH instead of
     // re-resolving it from the login shell, which the sandbox blocks.
@@ -127,6 +150,7 @@ async function runSuite(suite: string, openPath: string) {
 async function main() {
   installLanguageServers();
   freshWorkFolder();
+  installFakeClaude();
   writeUserSettings();
   const fakeGitHub = await startFakeGitHub();
   fakeGitHubUrl = fakeGitHub.url;
@@ -138,6 +162,7 @@ async function main() {
     const changeFiles = multiRootWorkspace("change-files", "change-files");
     await runSuite("changeFiles", changeFiles);
     await runSuite("changeFiles/afterReload", changeFiles);
+    await runSuite("assistant", multiRootWorkspace("assistant", "assistant"));
   } finally {
     await fakeGitHub.close();
   }

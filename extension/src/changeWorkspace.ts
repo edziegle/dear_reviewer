@@ -28,6 +28,9 @@ export interface ChangeRequest {
 export class ChangeWorkspace {
   private readonly openChanges: OpenChanges;
   private readonly reviewWindow: ReviewWindow;
+  private readonly shown = new vscode.EventEmitter<Change>();
+  /** Fires when this window shows a Change's diff. */
+  readonly onDidShowChange = this.shown.event;
 
   constructor(private readonly storageDir: string) {
     this.openChanges = new OpenChanges(storageDir);
@@ -44,6 +47,7 @@ export class ChangeWorkspace {
       });
       await appendFolders(changeFolders(change));
       await showDiff(change);
+      this.shown.fire(change);
     } else {
       this.openChanges.put({
         ...change,
@@ -71,6 +75,12 @@ export class ChangeWorkspace {
     return change;
   }
 
+  /** The Change the request names, if it is open in this window. */
+  async find(request: ChangeRequest): Promise<Change | undefined> {
+    const change = await this.resolve(request);
+    if (hasFolder(change.baseDir) && hasFolder(change.headDir)) return change;
+  }
+
   list(): Change[] {
     return this.openChanges.all();
   }
@@ -86,6 +96,7 @@ export class ChangeWorkspace {
       if (!hasFolder(change.baseDir) || !hasFolder(change.headDir)) continue;
       this.openChanges.put({ ...change, diffPending: false });
       await showDiff(change);
+      this.shown.fire(change);
     }
   }
 

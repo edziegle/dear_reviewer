@@ -11,6 +11,7 @@ import {
   ChangeFilesView,
   emptyFileScheme,
 } from "./changeFiles";
+import { Assistants } from "./assistant/assistant";
 import { GitHubAuth } from "./github/auth";
 import { GitHubClient } from "./github/client";
 import { Avatars, InboxTree } from "./inbox";
@@ -40,6 +41,11 @@ export function activate(context: vscode.ExtensionContext) {
     settings().inspect<string>("githubApiUrl")?.globalValue ||
     "https://api.github.com";
   const github = new GitHubClient(auth, apiUrl);
+  // Only the user's own setting counts: a Change's worktrees, or any other
+  // workspace, must not be able to choose the program Dear Reviewer runs.
+  const assistants = new Assistants(
+    () => settings().inspect<string>("claudePath")?.globalValue ?? ""
+  );
   const inbox = new InboxTree(
     github,
     () => settings().get<string[]>("repositories") ?? [],
@@ -58,11 +64,26 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand(
       "dearReviewer.closeChange",
       async (request?: ChangeRequest) => {
-        request ??= await pickOpenChange(changes.list());
+        request ??= await pickOpenChange(changes.list(), "Close Change");
         if (!request) return;
-        await viewedFiles.forget(await changes.close(request));
+        const closed = await changes.close(request);
+        assistants.close(closed);
+        await viewedFiles.forget(closed);
         changeFiles.refresh();
       }
+    ),
+    assistants,
+    changes.onDidShowChange((change) => void assistants.open(change)),
+    vscode.commands.registerCommand(
+      "dearReviewer.showAssistant",
+      async (request?: ChangeRequest) => {
+        request ??= await pickOpenChange(changes.list(), "Show Assistant");
+        const change = request && (await changes.find(request));
+        if (change) await assistants.open(change);
+      }
+    ),
+    vscode.commands.registerCommand("dearReviewer.checkClaudeLogin", () =>
+      assistants.checkLogin()
     ),
     vscode.workspace.onDidChangeWorkspaceFolders(() => {
       changeFiles.refresh();
@@ -145,9 +166,16 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
   void changes.showPendingDiffs();
-  // The views are how the Reviewer sees the Inbox and a Change's files;
-  // tests read them the same way.
-  return { inbox, changeFiles };
+  // The views are how the Reviewer sees the Inbox, a Change's files and the
+  // Assistant; tests read them the same way.
+  return {
+    inbox,
+    changeFiles,
+    assistant: {
+      panels: () => assistants.panels(),
+      loginStatus: () => assistants.loginStatus(),
+    },
+  };
 }
 
 export function deactivate() {}
@@ -199,7 +227,8 @@ async function pickRepository(storageDir: string): Promise<string | undefined> {
 }
 
 async function pickOpenChange(
-  open: Change[]
+  open: Change[],
+  title: string
 ): Promise<ChangeRequest | undefined> {
   if (open.length === 0) {
     void vscode.window.showInformationMessage("No Change is open.");
@@ -211,7 +240,7 @@ async function pickOpenChange(
       description: change.repository,
       change,
     })),
-    { title: "Close Change" }
+    { title }
   );
   if (!picked) return;
   return {

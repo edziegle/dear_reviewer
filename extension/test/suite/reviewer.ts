@@ -80,13 +80,13 @@ export function multiDiffFiles(): DiffEntry[] {
 }
 
 export async function eventually(
-  check: () => void,
+  check: () => void | Promise<void>,
   timeoutMs = 10_000
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     try {
-      check();
+      await check();
       return;
     } catch (err) {
       if (Date.now() > deadline) throw err;

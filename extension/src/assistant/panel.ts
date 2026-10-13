@@ -110,7 +110,7 @@ function html(): string {
   h1 { font-size: 1.1em; margin: 0 0 4px; }
   .login { color: var(--vscode-descriptionForeground); font-size: 0.9em; }
   .message { white-space: pre-wrap; line-height: 1.5; margin: 12px 0; }
-  .message.reviewer { padding: 8px; border-left: 3px solid var(--vscode-textLink-foreground); }
+  .message.reviewer { padding: 8px; border-radius: 4px; background: var(--vscode-editor-inactiveSelectionBackground); }
   .problem { margin: 12px 0; padding: 8px; border: 1px solid var(--vscode-inputValidation-errorBorder); background: var(--vscode-inputValidation-errorBackground); white-space: pre-wrap; }
   .busy { color: var(--vscode-descriptionForeground); font-style: italic; }
 </style>

@@ -28,3 +28,10 @@ run = ["npx tsc -p test", "node out/test/run.js"]
 [tasks.lint-docs]
 description = "Check prose with Vale"
 run = "vale docs GLOSSARY.md AGENTS.md"
+
+# Extra arguments go to codium: a folder or workspace to open, or e.g. --profile "Dear Reviewer".
+[tasks.preview]
+description = "Open VSCodium with the extension loaded from source"
+depends = ["build"]
+dir = "{{cwd}}"
+run = 'codium --extensionDevelopmentPath="{{config_root}}/extension"'

@@ -1,5 +1,4 @@
 import * as assert from "assert";
-import * as cp from "child_process";
 import * as fs from "fs";
 import * as vscode from "vscode";
 import { buildPullRequestFixture, remotesOnHost } from "../fixtures";
@@ -19,6 +18,7 @@ import {
   closeChange,
   eventually,
   foldersAddedSince,
+  gitIn,
   workspaceFolders,
   worktreesOf,
 } from "../reviewer";
@@ -32,12 +32,10 @@ describe("Repositories of the folders open in VSCodium", () => {
   const host = new URL(fakeGitHubUrl()).hostname;
   const pr = buildPullRequestFixture("open", "acme/api", 7);
   remotesOnHost(pr, host);
-  const run = (cwd: string, ...args: string[]) =>
-    cp.execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
   // An agent's branch in the clone, one commit ahead of main.
-  run(pr.clone, "config", "user.email", "reviewer@example.com");
-  run(pr.clone, "config", "user.name", "Reviewer");
-  const agentWork = run(
+  gitIn(pr.clone, "config", "user.email", "reviewer@example.com");
+  gitIn(pr.clone, "config", "user.name", "Reviewer");
+  const agentWork = gitIn(
     pr.clone,
     "commit-tree",
     "upstream/main^{tree}",
@@ -46,21 +44,21 @@ describe("Repositories of the folders open in VSCodium", () => {
     "-m",
     "agent work"
   );
-  run(pr.clone, "update-ref", "refs/heads/agent/fix", agentWork);
+  gitIn(pr.clone, "update-ref", "refs/heads/agent/fix", agentWork);
 
   /** A git repository whose remotes are on another host, or don't name a repository GitHub could have. */
   const other = `${pr.clone}-other`;
   fs.rmSync(other, { recursive: true, force: true });
   fs.mkdirSync(other);
-  run(other, "init", "-q", "-b", "main");
-  run(
+  gitIn(other, "init", "-q", "-b", "main");
+  gitIn(
     other,
     "remote",
     "add",
     "origin",
     "https://elsewhere.example/acme/web.git"
   );
-  run(
+  gitIn(
     other,
     "remote",
     "add",

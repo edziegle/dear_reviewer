@@ -1,5 +1,4 @@
 import * as assert from "assert";
-import * as cp from "child_process";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
@@ -44,20 +43,18 @@ function buildBranchesFixture(): BranchesFixture {
   const repo = buildFixtureRepo("branches");
   const bare = `${repo.path}-tools.git`;
   const clone = `${repo.path}-clone`;
-  const run = (cwd: string, ...args: string[]) =>
-    cp.execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
   fs.rmSync(bare, { recursive: true, force: true });
   fs.rmSync(clone, { recursive: true, force: true });
   fs.mkdirSync(bare);
-  run(bare, "init", "-q", "--bare", "-b", "main");
-  run(
+  gitIn(bare, "init", "-q", "--bare", "-b", "main");
+  gitIn(
     bare,
     "fetch",
     "-q",
     repo.path,
     `+${repo.commits.renamed}:refs/heads/main`
   );
-  run(path.dirname(clone), "clone", "-q", bare, clone);
+  gitIn(path.dirname(clone), "clone", "-q", bare, clone);
 
   const tree = repo.git("rev-parse", `${repo.commits.restructured}^{tree}`);
   const diverged = repo.git(
@@ -68,7 +65,7 @@ function buildBranchesFixture(): BranchesFixture {
     "-m",
     "restructure from the start"
   );
-  run(
+  gitIn(
     clone,
     "fetch",
     "-q",

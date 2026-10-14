@@ -1,8 +1,10 @@
 // Drives Dear Reviewer the way the Reviewer does, and reads back what the
 // Reviewer would see.
 
-import * as cp from "child_process";
 import * as vscode from "vscode";
+import { gitIn } from "./git";
+
+export { gitIn } from "./git";
 
 export interface ChangeRequest {
   repository: string;
@@ -57,10 +59,6 @@ export function foldersAddedSince(before: { path: string }[]) {
   return workspaceFolders().filter(
     (folder) => !before.some((old) => old.path === folder.path)
   );
-}
-
-export function gitIn(cwd: string, ...args: string[]): string {
-  return cp.execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
 }
 
 /** The repository's worktrees, as git reports them. */

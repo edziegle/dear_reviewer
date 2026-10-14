@@ -3,6 +3,7 @@
 import * as cp from "child_process";
 import * as fs from "fs";
 import * as path from "path";
+import { gitIn } from "./git";
 
 export interface FixtureRepo {
   path: string;
@@ -30,8 +31,7 @@ export function buildFixtureRepo(name: string): FixtureRepo {
   fs.rmSync(repo, { recursive: true, force: true });
   fs.mkdirSync(repo, { recursive: true });
 
-  const git = (...args: string[]) =>
-    cp.execFileSync("git", args, { cwd: repo, encoding: "utf8" }).trim();
+  const git = (...args: string[]) => gitIn(repo, ...args);
   const write = (file: string, text: string) =>
     fs.writeFileSync(path.join(repo, file), text);
   const commit = (message: string) => {
@@ -118,24 +118,22 @@ export function buildPullRequestFixture(
     `${repository.split("/")[1]}.git`
   );
   const clone = `${repo.path}-clone`;
-  const run = (cwd: string, ...args: string[]) =>
-    cp.execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
   fs.rmSync(remotes, { recursive: true, force: true });
   fs.rmSync(clone, { recursive: true, force: true });
   // The bare repositories fetch commits from the fixture repo, which leaves
   // them as a push would.
   const publish = (bare: string, commit: string, ref: string) =>
-    run(bare, "fetch", "-q", repo.path, `+${commit}:${ref}`);
+    gitIn(bare, "fetch", "-q", repo.path, `+${commit}:${ref}`);
   for (const bare of [upstream, fork]) {
     fs.mkdirSync(bare, { recursive: true });
-    run(bare, "init", "-q", "--bare", "-b", "main");
+    gitIn(bare, "init", "-q", "--bare", "-b", "main");
     publish(bare, repo.commits.initial, "refs/heads/main");
   }
   fs.mkdirSync(clone);
-  run(clone, "init", "-q", "-b", "main");
-  run(clone, "remote", "add", "origin", fork);
-  run(clone, "remote", "add", "upstream", upstream);
-  run(clone, "fetch", "-q", "--all");
+  gitIn(clone, "init", "-q", "-b", "main");
+  gitIn(clone, "remote", "add", "origin", fork);
+  gitIn(clone, "remote", "add", "upstream", upstream);
+  gitIn(clone, "fetch", "-q", "--all");
 
   // On GitHub, main moves on and the pull request is opened on top of it.
   const tree = repo.git("rev-parse", `${repo.commits.restructured}^{tree}`);
@@ -198,15 +196,12 @@ export function pushToPullRequest(
     fixture.remotes,
     ...`${fixture.repository}.git`.split("/")
   );
-  cp.execFileSync(
-    "git",
-    [
-      "fetch",
-      "-q",
-      fixture.work,
-      `+${commit}:refs/pull/${fixture.number}/head`,
-    ],
-    { cwd: upstream }
+  gitIn(
+    upstream,
+    "fetch",
+    "-q",
+    fixture.work,
+    `+${commit}:refs/pull/${fixture.number}/head`
   );
   return commit;
 }
@@ -217,8 +212,7 @@ export function pushToPullRequest(
  * bare repositories on disk through `url.<base>.insteadOf`.
  */
 export function remotesOnHost(fixture: PullRequestFixture, host: string): void {
-  const run = (...args: string[]) =>
-    cp.execFileSync("git", args, { cwd: fixture.clone, encoding: "utf8" });
+  const run = (...args: string[]) => gitIn(fixture.clone, ...args);
   const name = fixture.repository.split("/")[1];
   run(
     "remote",

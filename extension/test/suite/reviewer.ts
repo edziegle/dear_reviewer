@@ -174,3 +174,22 @@ export async function definitionOf(
   }
   return [];
 }
+
+/**
+ * Asks the language server for the usages of a symbol, declaration included,
+ * and gives the files they are in, each once and sorted.
+ */
+export async function usagesOf(
+  file: string,
+  line: number,
+  character: number
+): Promise<string[]> {
+  const uri = vscode.Uri.file(file);
+  await vscode.workspace.openTextDocument(uri);
+  const found = await vscode.commands.executeCommand<vscode.Location[]>(
+    "vscode.executeReferenceProvider",
+    uri,
+    new vscode.Position(line, character)
+  );
+  return [...new Set((found ?? []).map((usage) => usage.uri.fsPath))].sort();
+}

@@ -22,16 +22,30 @@ export function reviewWindowReportFile(): string {
   return path.join(process.env.DEAR_REVIEWER_FIXTURES!, "review-window.json");
 }
 
+/**
+ * Writes what the review window shows now, and again whenever its editors,
+ * tabs or folders change: the multi-file diff opens its editors one at a
+ * time, so an early report can hold only some of its files.
+ */
 export async function observeReviewWindow(): Promise<never> {
+  const file = reviewWindowReportFile();
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const write = () => {
+    const report = {
+      folders: workspaceFolders(),
+      tab: activeTabLabel(),
+      files: multiDiffFiles(),
+    };
+    // Renamed into place, so the test never reads a half-written report.
+    fs.writeFileSync(`${file}.tmp`, JSON.stringify(report, null, 2));
+    fs.renameSync(`${file}.tmp`, file);
+  };
+  vscode.window.onDidChangeVisibleTextEditors(write);
+  vscode.window.tabGroups.onDidChangeTabs(write);
+  vscode.workspace.onDidChangeWorkspaceFolders(write);
   await eventually(() => {
     if (multiDiffFiles().length === 0) throw new Error("no diff yet");
   }, 60_000).catch(() => undefined);
-  const report = {
-    folders: workspaceFolders(),
-    tab: activeTabLabel(),
-    files: multiDiffFiles(),
-  };
-  fs.mkdirSync(path.dirname(reviewWindowReportFile()), { recursive: true });
-  fs.writeFileSync(reviewWindowReportFile(), JSON.stringify(report, null, 2));
+  write();
   return new Promise<never>(() => {});
 }

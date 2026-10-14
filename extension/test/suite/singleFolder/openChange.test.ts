@@ -41,8 +41,10 @@ describe("Open Change from a single-folder window", () => {
       tab?: string;
       files: { original?: string; modified?: string }[];
     } = { folders: [], files: [] };
+    // The probe rewrites its report as the diff's editors open one by one.
     await eventually(() => {
       report = JSON.parse(fs.readFileSync(reviewWindowReportFile(), "utf8"));
+      assert.strictEqual(report.files.length, 4);
     }, 90_000);
 
     assert.strictEqual(global.dearReviewerHostState, hostState);
@@ -63,7 +65,6 @@ describe("Open Change from a single-folder window", () => {
       ),
       `review window shows the Change's diff, not "${report.tab}"`
     );
-    assert.strictEqual(report.files.length, 4);
 
     await closeChange(request);
 

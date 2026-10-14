@@ -1,3 +1,4 @@
+import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
 import {
@@ -62,14 +63,23 @@ export function activate(context: vscode.ExtensionContext) {
   // Only the user's own setting counts: a Change's worktrees, or any other
   // workspace, must not be able to choose the program Dear Reviewer runs.
   const assistants = new Assistants(
-    () => settings().inspect<string>("claudePath")?.globalValue ?? "",
+    () =>
+      expandHome(settings().inspect<string>("claudePath")?.globalValue ?? ""),
     new Conversations(context.globalStorageUri.fsPath)
   );
   const repositories = () => settings().get<string[]>("repositories") ?? [];
   // Only the user's own setting counts: a workspace must not be able to
   // choose the repository Dear Reviewer runs git in.
-  const localClones = () =>
-    settings().inspect<Record<string, string>>("localClones")?.globalValue;
+  const localClones = () => {
+    const clones =
+      settings().inspect<Record<string, string>>("localClones")?.globalValue;
+    return (
+      clones &&
+      Object.fromEntries(
+        Object.entries(clones).map(([repo, clone]) => [repo, expandHome(clone)])
+      )
+    );
+  };
   const avatars = new Avatars(
     github,
     path.join(context.globalStorageUri.fsPath, "avatars")
@@ -512,4 +522,11 @@ async function pickOpenChange(
     head: picked.change.headSha,
     pullRequest: picked.change.pullRequest,
   };
+}
+
+/** Settings are typed by hand, so accept `~/dev/repo` as well as absolute paths. */
+function expandHome(p: string): string {
+  return p === "~" || p.startsWith("~/")
+    ? path.join(os.homedir(), p.slice(1))
+    : p;
 }

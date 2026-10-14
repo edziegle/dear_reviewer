@@ -1,6 +1,7 @@
 import * as assert from "assert";
 import * as cp from "child_process";
 import * as fs from "fs";
+import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
 import { buildFixtureRepo, type FixtureRepo } from "../fixtures";
@@ -205,6 +206,17 @@ describe("Local branches in the Inbox", () => {
     const problems = entries.filter((e) => e.icon === "$(error)");
     assert.strictEqual(problems.length, 1, JSON.stringify(entries));
     assert.match(problems[0].label, /acme\/gone/);
+  });
+
+  it("accepts a clone path that starts with ~", async () => {
+    const clone = "~/" + path.relative(os.homedir(), fixture.clone);
+    const groups = await showInbox({ "acme/tools": clone });
+
+    assert.strictEqual(
+      localBranches(groups).entries.length,
+      2,
+      JSON.stringify(groups)
+    );
   });
 
   it("leaves the group out when no Inbox repository has a local clone", async () => {

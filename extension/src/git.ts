@@ -20,7 +20,10 @@ export async function git(cwd: string, ...args: string[]): Promise<string> {
     });
     return stdout.trim();
   } catch (err) {
-    const stderr = (err as { stderr?: string }).stderr ?? String(err);
+    // A missing cwd fails the spawn itself, with no stderr.
+    const stderr =
+      (err as { stderr?: string }).stderr ||
+      (err instanceof Error ? err.message : String(err));
     throw new GitError(args, stderr);
   }
 }

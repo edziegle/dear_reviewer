@@ -5,8 +5,10 @@ import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 import type { FakeClaudeScript, RecordedClaudeCall } from "../fakeClaude";
+import { waitFor } from "../fakeClaude";
 
 export type { FakeClaudeScript, RecordedClaudeCall };
+export { waitFor };
 
 export function fakeClaudePath(): string {
   const file = process.env.DEAR_REVIEWER_FAKE_CLAUDE;
@@ -20,11 +22,28 @@ function fakeClaudeDir(): string {
   return dir;
 }
 
-/** Replaces what the fake `claude` answers, and forgets the runs it saw. */
+/**
+ * Replaces what the fake `claude` answers, and forgets the runs it saw. The
+ * sessions it keeps, which `--resume` brings back, stay.
+ */
 export function scriptClaude(script: FakeClaudeScript): void {
   const dir = fakeClaudeDir();
   fs.rmSync(path.join(dir, "calls"), { recursive: true, force: true });
+  fs.rmSync(path.join(dir, "turns-taken"), { force: true });
   fs.writeFileSync(path.join(dir, "script.json"), JSON.stringify(script));
+}
+
+/** Lets a turn held back by `waitFor(name)` go on. */
+export function releaseClaude(name: string): void {
+  fs.writeFileSync(path.join(fakeClaudeDir(), name), "");
+}
+
+/** Makes the fake `claude` forget every session, as if Claude Code had lost them. */
+export function forgetClaudeSessions(): void {
+  fs.rmSync(path.join(fakeClaudeDir(), "sessions"), {
+    recursive: true,
+    force: true,
+  });
 }
 
 /** Every run of the fake `claude` since it was last scripted, oldest first. */
@@ -73,6 +92,15 @@ export function setClaudePath(file: string): Thenable<void> {
     .update("claudePath", file, vscode.ConfigurationTarget.Global);
 }
 
+/** Lines of a file on one side of a Change, counted from 1. */
+export interface Selection {
+  /** Relative to the repository root, with forward slashes. */
+  path: string;
+  side: "base" | "head";
+  startLine: number;
+  endLine: number;
+}
+
 export interface Conversation {
   /** The Change's title, as the panel names it. */
   title: string;
@@ -80,14 +108,29 @@ export interface Conversation {
   login?: string;
   /** Whether the Assistant is still working. */
   busy: boolean;
-  messages: { from: "assistant" | "reviewer"; text: string }[];
+  messages: {
+    from: "assistant" | "reviewer" | "note";
+    text: string;
+    /** The selections the Reviewer sent with the message. */
+    context?: Selection[];
+  }[];
+  /** Selections waiting to go with the Reviewer's next message. */
+  context?: (Selection & { text: string })[];
   /** What went wrong, in words for the Reviewer. */
   problem?: string;
 }
 
 interface AssistantApi {
-  /** Each Assistant panel: the state last sent to it, and the state it last rendered. */
-  panels(): { title: string; sent: Conversation; rendered?: Conversation }[];
+  /**
+   * Each Assistant panel: the state last sent to it, the state it last
+   * rendered, and a way to send it what the webview would.
+   */
+  panels(): {
+    title: string;
+    sent: Conversation;
+    rendered?: Conversation;
+    receive(message: unknown): void;
+  }[];
   /** The Claude login status bar item, once a login has been checked. */
   loginStatus(): { text: string; tooltip?: string } | undefined;
 }
@@ -106,6 +149,40 @@ export async function renderedPanel(
 ): Promise<Conversation | undefined> {
   return (await assistantApi()).panels().find((p) => p.title === title)
     ?.rendered;
+}
+
+async function sendToPanel(title: string, message: unknown): Promise<void> {
+  const panel = (await assistantApi()).panels().find((p) => p.title === title);
+  if (!panel) throw new Error(`No Assistant panel for ${title}`);
+  panel.receive(message);
+}
+
+/** Types the message into the Change's Assistant panel and sends it. */
+export function askAssistant(title: string, text: string): Promise<void> {
+  return sendToPanel(title, { type: "ask", text });
+}
+
+/** Clicks the remove button of a selection waiting in the panel, counted from 0. */
+export function removeSelection(title: string, index: number): Promise<void> {
+  return sendToPanel(title, { type: "removeContext", index });
+}
+
+/**
+ * Selects lines of the file, counted from 0, in an editor, and runs Send
+ * Selection to Assistant on them.
+ */
+export async function sendSelection(
+  file: string,
+  startLine: number,
+  endLine: number
+): Promise<void> {
+  const document = await vscode.workspace.openTextDocument(file);
+  const end = document.lineAt(endLine).range.end;
+  await vscode.window.showTextDocument(document, {
+    selection: new vscode.Range(startLine, 0, end.line, end.character),
+    preview: false,
+  });
+  await vscode.commands.executeCommand("dearReviewer.sendSelectionToAssistant");
 }
 
 export async function loginStatus(): Promise<

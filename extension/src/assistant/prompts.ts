@@ -1,5 +1,6 @@
 // What Dear Reviewer tells the Assistant.
 
+import * as path from "path";
 import { Change, changedFiles, changeTitle } from "../changeWorkspace";
 import { git } from "../git";
 
@@ -11,8 +12,78 @@ export function assistantRole(change: Change): string {
     "You are the Assistant in Dear Reviewer, a workbench for a human Reviewer reviewing a Change.",
     "You help the Reviewer understand the Change: you summarise, answer questions and point at spots that deserve attention.",
     "You never review, approve or decide anything, and you never publish anything. You can only read files.",
-    `Your working directory is the Change's head worktree, at commit ${change.headSha}.`,
+    ...worktrees(change),
+    "Give these absolute paths to your tools: your working directory holds no code.",
+  ].join("\n");
+}
+
+function worktrees(change: Change): string[] {
+  return [
+    `The Change's head worktree, at commit ${change.headSha}, is ${change.headDir}.`,
     `The base worktree, at the merge base ${change.mergeBase}, is ${change.baseDir}. Compare the two to see what changed.`,
+  ];
+}
+
+/** Lines of a file on one side of a Change, counted from 1. */
+export interface Selection {
+  /** Relative to the repository root, with forward slashes. */
+  path: string;
+  side: "base" | "head";
+  startLine: number;
+  endLine: number;
+}
+
+/** The most selected text put in a prompt for one selection. */
+const maxSelectionChars = 20_000;
+
+/**
+ * The Reviewer's chat message, after the selections they sent with it, and
+ * after `note` if the conversation has news for the Assistant.
+ */
+export function chatPrompt(
+  change: Change,
+  question: string,
+  context: (Selection & { text: string })[],
+  note?: string
+): string {
+  const parts: string[] = [];
+  if (note) parts.push(note, "");
+  if (context.length > 0) {
+    parts.push("The Reviewer selected this code to ask about:", "");
+    for (const selection of context) {
+      const file = path.join(
+        selection.side === "base" ? change.baseDir : change.headDir,
+        ...selection.path.split("/")
+      );
+      const text =
+        selection.text.length > maxSelectionChars
+          ? `${selection.text.slice(0, maxSelectionChars)}\n[cut off; read the file for the rest]`
+          : selection.text;
+      parts.push(
+        `${describeLines(selection)} of ${selection.path} on the ${selection.side} side (${file}):`,
+        "```",
+        text,
+        "```",
+        ""
+      );
+    }
+  }
+  parts.push(question);
+  return parts.join("\n");
+}
+
+export function describeLines(selection: Selection): string {
+  return selection.startLine === selection.endLine
+    ? `line ${selection.startLine}`
+    : `lines ${selection.startLine}–${selection.endLine}`;
+}
+
+/** Tells the Assistant that the Change it talked about has new commits. */
+export function newHeadNote(change: Change, previousHead: string): string {
+  return [
+    `Since your earlier turns, the Change has new commits: its head moved from ${previousHead} to ${change.headSha}. The worktrees moved too:`,
+    ...worktrees(change),
+    "Files you read before may have changed, and the old worktree paths are gone.",
   ].join("\n");
 }
 

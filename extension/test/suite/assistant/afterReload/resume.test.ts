@@ -1,0 +1,56 @@
+import * as assert from "assert";
+import {
+  askAssistant,
+  assistantRuns,
+  flag,
+  renderedPanel,
+  replyTurn,
+  scriptClaude,
+  userMessages,
+} from "../../assistant";
+import { closeChange, eventually } from "../../reviewer";
+import { pickUpAfterReload } from "../handoff";
+
+// A second launch of the workspace the first assistant launch left with a
+// Change open and a conversation in its Assistant panel.
+describe("The Assistant after a window reload", () => {
+  const { change, title, sessionId } = pickUpAfterReload();
+  scriptClaude({ turns: [replyTurn("You asked what new_helper returns.")] });
+
+  after(() => closeChange(change));
+
+  it("shows the earlier conversation again, without being asked", async () => {
+    await eventually(async () =>
+      assert.deepStrictEqual(await renderedPanel(title), {
+        title,
+        login: "Claude subscription (Max)",
+        busy: false,
+        messages: [
+          { from: "assistant", text: "A summary." },
+          { from: "reviewer", text: "What does new_helper return?" },
+          { from: "assistant", text: "It returns 2." },
+        ],
+      })
+    );
+    assert.deepStrictEqual(assistantRuns(), [], "no new summary");
+  });
+
+  it("resumes the Claude session, so the Assistant remembers the earlier turns", async () => {
+    await askAssistant(title, "What did I ask you before?");
+
+    await eventually(async () =>
+      assert.strictEqual(
+        (await renderedPanel(title))?.messages.at(-1)?.text,
+        "You asked what new_helper returns."
+      )
+    );
+    const [run] = assistantRuns();
+    assert.strictEqual(flag(run, "--resume"), sessionId);
+    assert.strictEqual(run.sessionId, sessionId);
+    assert.ok(
+      run.resumed?.includes("What does new_helper return?"),
+      `the resumed session has the earlier turns: ${run.resumed}`
+    );
+    assert.deepStrictEqual(userMessages(run), ["What did I ask you before?"]);
+  });
+});

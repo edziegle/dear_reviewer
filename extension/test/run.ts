@@ -162,7 +162,9 @@ async function main() {
     const changeFiles = multiRootWorkspace("change-files", "change-files");
     await runSuite("changeFiles", changeFiles);
     await runSuite("changeFiles/afterReload", changeFiles);
-    await runSuite("assistant", multiRootWorkspace("assistant", "assistant"));
+    const assistant = multiRootWorkspace("assistant", "assistant");
+    await runSuite("assistant", assistant);
+    await runSuite("assistant/afterReload", assistant);
     await runSuite(
       "pullRequest",
       multiRootWorkspace("pull-request", "pull-request")

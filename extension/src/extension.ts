@@ -13,6 +13,8 @@ import {
   emptyFileScheme,
 } from "./changeFiles";
 import { Assistants } from "./assistant/assistant";
+import { Conversations } from "./assistant/conversations";
+import { selectionInChange } from "./assistant/selection";
 import { GitHubAuth } from "./github/auth";
 import { GitHubClient, PullRequestSummary } from "./github/client";
 import { Avatars, InboxNode, InboxTree, LocalClone } from "./inbox";
@@ -60,7 +62,8 @@ export function activate(context: vscode.ExtensionContext) {
   // Only the user's own setting counts: a Change's worktrees, or any other
   // workspace, must not be able to choose the program Dear Reviewer runs.
   const assistants = new Assistants(
-    () => settings().inspect<string>("claudePath")?.globalValue ?? ""
+    () => settings().inspect<string>("claudePath")?.globalValue ?? "",
+    new Conversations(context.globalStorageUri.fsPath)
   );
   const repositories = () => settings().get<string[]>("repositories") ?? [];
   // Only the user's own setting counts: a workspace must not be able to
@@ -231,6 +234,20 @@ export function activate(context: vscode.ExtensionContext) {
         if (change) await timelines.open(change);
       }
     ),
+    vscode.commands.registerCommand(
+      "dearReviewer.sendSelectionToAssistant",
+      async () => {
+        const editor = vscode.window.activeTextEditor;
+        const found = editor && selectionInChange(editor, changes.shownHere());
+        if (!found) {
+          void vscode.window.showInformationMessage(
+            "Select code in the base or head of a Change open in this window to send it to the Assistant."
+          );
+          return;
+        }
+        await assistants.addSelection(found.change, found.selection);
+      }
+    ),
     vscode.commands.registerCommand("dearReviewer.checkClaudeLogin", () =>
       assistants.checkLogin()
     ),
@@ -326,6 +343,8 @@ export function activate(context: vscode.ExtensionContext) {
   );
   void changes.showPendingDiffs();
   void review.sync();
+  // After a reload, the Changes still in this window get their Assistant back.
+  for (const change of changes.shownHere()) void assistants.open(change);
   // The views are how the Reviewer sees the Inbox, a Change's files, the
   // Assistant and their Comments; tests read them the same way.
   return {

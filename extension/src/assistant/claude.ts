@@ -126,7 +126,7 @@ export class ClaudeCli {
     });
   }
 
-  /** Starts a conversation in the Change's head worktree, with the base worktree beside it. */
+  /** Starts a conversation that can read the Change's worktrees. */
   converse(options: ConversationOptions): ClaudeConversation {
     return new ClaudeConversation(this.executable, options);
   }
@@ -174,12 +174,14 @@ export function describeLogin(status: Record<string, unknown>): ClaudeLogin {
 }
 
 export interface ConversationOptions {
-  /** The head worktree. */
+  /** The conversation's own folder, where Claude Code keeps its session. */
   cwd: string;
-  /** More folders the Assistant may read, such as the base worktree. */
+  /** The folders the Assistant may read: the head and base worktrees. */
   addDirs: string[];
   /** Added to Claude Code's own system prompt. */
   systemPrompt: string;
+  /** An earlier session to carry on, which Claude Code keeps under `cwd`. */
+  resume?: string;
 }
 
 /**
@@ -200,6 +202,10 @@ export class ClaudeConversation {
   private ended?: Error;
   /** Claude Code's session id, once it has said it. */
   sessionId?: string;
+  /** Whether the conversation carries on an earlier session. */
+  readonly resumed: boolean;
+  /** Whether Claude Code has finished a turn, so it took up the session. */
+  answered = false;
 
   constructor(executable: string, options: ConversationOptions) {
     const args = [
@@ -224,7 +230,10 @@ export class ClaudeConversation {
       "--append-system-prompt",
       options.systemPrompt,
       ...options.addDirs.flatMap((dir) => ["--add-dir", dir]),
+      ...(options.resume ? ["--resume", options.resume] : []),
     ];
+    this.resumed = options.resume !== undefined;
+    this.sessionId = options.resume;
     this.child = spawn(executable, args, {
       cwd: options.cwd,
       env: claudeEnvironment(),
@@ -312,6 +321,7 @@ export class ClaudeConversation {
       turn.onText(turn.done);
     } else if (event.type === "result") {
       this.turn = undefined;
+      this.answered = true;
       if (event.is_error || event.subtype !== "success") {
         const detail =
           event.result ||

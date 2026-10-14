@@ -20,6 +20,12 @@ export interface Change {
   headDir: string;
   /** The pull request the Change comes from; absent for a local Change. */
   pullRequest?: PullRequestRef;
+  /**
+   * Names the Change across new commits, which give it a new id: the pull
+   * request, or else the branch or the commit range opened. Its Assistant
+   * conversation is kept under this name (see ADR 0009).
+   */
+  conversation: string;
 }
 
 export interface OpenChange extends Change {

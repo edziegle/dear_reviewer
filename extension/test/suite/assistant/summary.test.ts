@@ -10,6 +10,7 @@ import {
   replyTurn,
   scriptClaude,
   userMessages,
+  type RecordedClaudeCall,
   webviewTabs,
 } from "../assistant";
 import { buildFixtureRepo } from "../fixtures";
@@ -22,6 +23,12 @@ import {
   short,
   workspaceFolders,
 } from "../reviewer";
+
+function addedDirs(run: RecordedClaudeCall): string[] {
+  return run.args.flatMap((arg, i) =>
+    run.args[i - 1] === "--add-dir" ? [arg] : []
+  );
+}
 
 describe("The Assistant's summary when a Change opens", () => {
   const repo = buildFixtureRepo("summary");
@@ -58,8 +65,13 @@ describe("The Assistant's summary when a Change opens", () => {
     assert.deepStrictEqual(webviewTabs(), [`Assistant: ${title}`]);
 
     const [run] = assistantRuns();
-    assert.strictEqual(fs.realpathSync(run.cwd), fs.realpathSync(head.path));
-    assert.strictEqual(flag(run, "--add-dir"), base.path);
+    // The session lives in a folder of its own, which outlasts the worktrees.
+    for (const worktree of [head.path, base.path])
+      assert.ok(
+        !fs.realpathSync(run.cwd).startsWith(fs.realpathSync(worktree)),
+        `claude runs outside the worktree ${worktree}`
+      );
+    assert.deepStrictEqual(addedDirs(run), [head.path, base.path]);
     assert.ok(run.args.includes("-p"), run.args.join(" "));
     assert.strictEqual(flag(run, "--input-format"), "stream-json");
     assert.strictEqual(flag(run, "--output-format"), "stream-json");

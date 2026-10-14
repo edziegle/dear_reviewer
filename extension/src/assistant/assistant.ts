@@ -1,6 +1,8 @@
-// The Assistant for each Change shown in this window: one `claude`
-// conversation and one panel per Change. Opening a Change starts with a
-// summary of what it does and where the risk is.
+// The Assistant for each Change shown in this window: one conversation and
+// one panel per Change, where the Reviewer chats with the Assistant. A
+// Change keeps its conversation across new commits and window reloads (ADR
+// 0009): a new conversation starts with a summary of what the Change does
+// and where the risk is, and a saved one carries on with `claude --resume`.
 
 import * as vscode from "vscode";
 import { Change, changeTitle } from "../changeWorkspace";
@@ -11,15 +13,38 @@ import {
   ClaudeProblem,
   findClaude,
 } from "./claude";
-import { AssistantPanel, ConversationState } from "./panel";
-import { assistantRole, summaryPrompt } from "./prompts";
+import { Conversations, SavedConversation } from "./conversations";
+import {
+  AssistantPanel,
+  ConversationState,
+  FromWebview,
+  ReviewerAction,
+} from "./panel";
+import {
+  assistantRole,
+  chatPrompt,
+  newHeadNote,
+  Selection,
+  summaryPrompt,
+} from "./prompts";
+
+interface PanelState {
+  title: string;
+  sent: ConversationState;
+  rendered?: ConversationState;
+  receive(message: FromWebview): void;
+}
 
 export class Assistants implements vscode.Disposable {
-  private readonly byChange = new Map<string, ChangeAssistant>();
+  /** By the Change's conversation name, which outlasts new commits. */
+  private readonly byConversation = new Map<string, ChangeAssistant>();
   private readonly status: vscode.StatusBarItem;
 
   /** `claudePath` gives the Reviewer's Claude Path setting; empty means find it. */
-  constructor(private readonly claudePath: () => string) {
+  constructor(
+    private readonly claudePath: () => string,
+    private readonly conversations: Conversations
+  ) {
     this.status = vscode.window.createStatusBarItem(
       "dearReviewer.claudeLogin",
       vscode.StatusBarAlignment.Right
@@ -28,12 +53,23 @@ export class Assistants implements vscode.Disposable {
     this.status.command = "dearReviewer.checkClaudeLogin";
   }
 
-  /** Shows the Change's Assistant, starting it with a summary if it hasn't started. */
+  /**
+   * Shows the Change's Assistant, starting it if it hasn't started. If the
+   * Assistant is open for an older head of the same Change, it moves to this
+   * one.
+   */
   async open(change: Change): Promise<void> {
-    const existing = this.byChange.get(change.id);
-    if (existing) return existing.show();
-    const assistant = new ChangeAssistant(change);
-    this.byChange.set(change.id, assistant);
+    const existing = this.byConversation.get(change.conversation);
+    if (existing) {
+      existing.moveTo(change);
+      return existing.show();
+    }
+    const assistant = new ChangeAssistant(
+      change,
+      this.conversations,
+      this.conversations.get(change.conversation)
+    );
+    this.byConversation.set(change.conversation, assistant);
     assistant.show();
     try {
       const cli = new ClaudeCli(findClaude(this.claudePath()));
@@ -45,7 +81,7 @@ export class Assistants implements vscode.Disposable {
           "Claude Code isn't signed in on this machine. To use the Assistant, run `claude` in a terminal and sign in there, then reopen the Change."
         );
       }
-      await assistant.summarise(cli);
+      await assistant.start(cli);
     } catch (err) {
       if (err instanceof ClaudeProblem && err.kind === "notFound")
         this.showStatus("$(error) Claude: not found", err.message, true);
@@ -53,9 +89,23 @@ export class Assistants implements vscode.Disposable {
     }
   }
 
+  /** Puts the selection into the chat of its Change's Assistant, to go with the next message. */
+  async addSelection(
+    change: Change,
+    selection: Selection & { text: string }
+  ): Promise<void> {
+    // Opening starts the Assistant, or moves it to this head, before it awaits anything.
+    if (this.byConversation.get(change.conversation)?.changeId !== change.id)
+      void this.open(change);
+    this.byConversation.get(change.conversation)?.addSelection(selection);
+  }
+
+  /** Stops the Change's Assistant, unless it has moved to a newer head. The conversation stays saved. */
   close(change: Change): void {
-    this.byChange.get(change.id)?.dispose();
-    this.byChange.delete(change.id);
+    const assistant = this.byConversation.get(change.conversation);
+    if (assistant?.changeId !== change.id) return;
+    assistant.dispose();
+    this.byConversation.delete(change.conversation);
   }
 
   /** Runs `claude auth status` and shows the login in the status bar. */
@@ -70,12 +120,8 @@ export class Assistants implements vscode.Disposable {
   }
 
   /** Each panel's conversation, for the tests. */
-  panels(): {
-    title: string;
-    sent: ConversationState;
-    rendered?: ConversationState;
-  }[] {
-    return [...this.byChange.values()].flatMap((a) => a.panelStates());
+  panels(): PanelState[] {
+    return [...this.byConversation.values()].flatMap((a) => a.panelStates());
   }
 
   loginStatus(): { text: string; tooltip?: string } | undefined {
@@ -88,8 +134,8 @@ export class Assistants implements vscode.Disposable {
   }
 
   dispose(): void {
-    for (const assistant of this.byChange.values()) assistant.dispose();
-    this.byChange.clear();
+    for (const assistant of this.byConversation.values()) assistant.dispose();
+    this.byConversation.clear();
     this.status.dispose();
   }
 
@@ -118,16 +164,39 @@ export class Assistants implements vscode.Disposable {
 class ChangeAssistant {
   private state: ConversationState;
   private panel?: AssistantPanel;
+  private cli?: ClaudeCli;
   private conversation?: ClaudeConversation;
+  /** The Claude session and head the saved conversation has. */
+  private session?: { id: string; headSha: string };
+  /** News for the Assistant, sent with the Reviewer's next message. */
+  private note?: string;
+  /** Turns and moves run one after another. */
+  private queue: Promise<unknown> = Promise.resolve();
   private disposed = false;
 
-  constructor(private readonly change: Change) {
-    this.state = { title: changeTitle(change), busy: true, messages: [] };
+  constructor(
+    private change: Change,
+    private readonly conversations: Conversations,
+    saved: SavedConversation | undefined
+  ) {
+    this.state = {
+      title: changeTitle(change),
+      busy: true,
+      messages: saved?.messages ?? [],
+    };
+    if (saved) {
+      this.session = { id: saved.sessionId, headSha: saved.headSha };
+      this.noteNewHead(saved.headSha);
+    }
+  }
+
+  get changeId(): string {
+    return this.change.id;
   }
 
   show(): void {
     if (this.panel) return this.panel.reveal();
-    const panel = new AssistantPanel(this.state);
+    const panel = new AssistantPanel(this.state, (action) => this.act(action));
     panel.onDidDispose(() => {
       if (this.panel === panel) this.panel = undefined;
     });
@@ -139,26 +208,34 @@ class ChangeAssistant {
     this.panel?.update(this.state);
   }
 
-  async summarise(cli: ClaudeCli): Promise<void> {
+  /**
+   * Starts with a summary if the conversation is new; a saved conversation
+   * waits for the Reviewer's next message, which resumes its session.
+   */
+  async start(cli: ClaudeCli): Promise<void> {
     if (this.disposed) return;
-    const conversation = cli.converse({
-      cwd: this.change.headDir,
-      addDirs: [this.change.baseDir],
-      systemPrompt: assistantRole(this.change),
+    this.cli = cli;
+    if (this.session) return this.update({ busy: false });
+    await this.enqueue(async () => this.turn(await summaryPrompt(this.change)));
+  }
+
+  /** Carries the conversation on at the Change's new head. */
+  moveTo(change: Change): void {
+    if (change.id === this.change.id) return;
+    void this.enqueue(async () => {
+      const previousHead = this.change.headSha;
+      this.change = change;
+      // The next turn restarts `claude` with the new worktrees.
+      this.conversation?.dispose();
+      this.conversation = undefined;
+      this.update({ title: changeTitle(change) });
+      this.noteNewHead(previousHead);
     });
-    this.conversation = conversation;
-    const index = this.state.messages.length;
-    const reply = (text: string) => {
-      const messages = [...this.state.messages];
-      messages[index] = { from: "assistant", text };
-      this.update({ messages });
-    };
-    const summary = await conversation.ask(
-      await summaryPrompt(this.change),
-      reply
-    );
-    reply(summary);
-    this.update({ busy: false });
+  }
+
+  addSelection(selection: Selection & { text: string }): void {
+    this.update({ context: [...(this.state.context ?? []), selection] });
+    this.panel?.reveal(true);
   }
 
   fail(err: unknown): void {
@@ -169,17 +246,15 @@ class ChangeAssistant {
     });
   }
 
-  panelStates(): {
-    title: string;
-    sent: ConversationState;
-    rendered?: ConversationState;
-  }[] {
-    if (!this.panel) return [];
+  panelStates(): PanelState[] {
+    const panel = this.panel;
+    if (!panel) return [];
     return [
       {
         title: this.state.title,
-        sent: this.panel.sent,
-        rendered: this.panel.rendered,
+        sent: panel.sent,
+        rendered: panel.rendered,
+        receive: (message) => panel.receive(message),
       },
     ];
   }
@@ -188,5 +263,133 @@ class ChangeAssistant {
     this.disposed = true;
     this.conversation?.dispose();
     this.panel?.dispose();
+  }
+
+  private act(action: ReviewerAction): void {
+    if (action.type === "removeContext") {
+      const context = [...(this.state.context ?? [])];
+      context.splice(action.index, 1);
+      this.update({ context: context.length ? context : undefined });
+    } else void this.ask(action.text);
+  }
+
+  private async ask(question: string): Promise<void> {
+    const context = this.state.context ?? [];
+    this.update({
+      busy: true,
+      context: undefined,
+      messages: [
+        ...this.state.messages,
+        {
+          from: "reviewer",
+          text: question,
+          ...(context.length && {
+            context: context.map(({ text: _, ...selection }) => selection),
+          }),
+        },
+      ],
+    });
+    await this.enqueue(() => {
+      const prompt = chatPrompt(this.change, question, context, this.note);
+      this.note = undefined;
+      return this.turn(prompt);
+    });
+  }
+
+  private enqueue(task: () => Promise<void>): Promise<void> {
+    const run = this.queue.then(async () => {
+      if (this.disposed) return;
+      try {
+        await task();
+      } catch (err) {
+        this.fail(err);
+      }
+    });
+    this.queue = run;
+    return run;
+  }
+
+  /** Sends the prompt and streams the reply into the panel. */
+  private async turn(prompt: string): Promise<void> {
+    if (!this.cli)
+      throw new ClaudeProblem(
+        "failed",
+        this.state.problem ?? "The Assistant hasn't started yet."
+      );
+    this.update({ busy: true, problem: undefined });
+    const conversation = this.conversationNow(this.cli);
+    const index = this.state.messages.length;
+    const reply = (text: string) => {
+      const messages = [...this.state.messages];
+      messages[index] = { from: "assistant", text };
+      this.update({ messages });
+    };
+    try {
+      reply(await conversation.ask(prompt, reply));
+    } catch (err) {
+      if (this.disposed) return;
+      // The next turn starts `claude` again, resuming the session if it has one.
+      conversation.dispose();
+      if (this.conversation === conversation) this.conversation = undefined;
+      if (!conversation.resumed || conversation.answered) {
+        this.save(conversation);
+        throw err;
+      }
+      // Claude Code no longer has the session: start again without it.
+      this.session = undefined;
+      this.conversations.forget(this.change.conversation);
+      this.update({
+        messages: [
+          ...this.state.messages.slice(0, index),
+          {
+            from: "note",
+            text: "Claude Code couldn't resume the earlier conversation, so the Assistant starts again without it.",
+          },
+        ],
+      });
+      return this.turn(prompt);
+    }
+    if (this.disposed) return;
+    this.update({ busy: false });
+    this.save(conversation);
+  }
+
+  /** The running conversation, or a new `claude` that resumes the saved session. */
+  private conversationNow(cli: ClaudeCli): ClaudeConversation {
+    if (!this.conversation) {
+      this.conversation = cli.converse({
+        cwd: this.conversations.workingDirectory(this.change.conversation),
+        addDirs: [this.change.headDir, this.change.baseDir],
+        systemPrompt: assistantRole(this.change),
+        resume: this.session?.id,
+      });
+    }
+    return this.conversation;
+  }
+
+  private noteNewHead(previousHead: string): void {
+    if (previousHead === this.change.headSha) return;
+    this.note = newHeadNote(this.change, previousHead);
+    this.update({
+      messages: [
+        ...this.state.messages,
+        {
+          from: "note",
+          text: `New commits: the Change is now at ${this.change.headSha.slice(0, 7)}, after ${previousHead.slice(0, 7)}.`,
+        },
+      ],
+    });
+  }
+
+  /** Keeps the conversation for later, once Claude Code has a session for it. */
+  private save(conversation: ClaudeConversation): void {
+    const id = conversation.sessionId ?? this.session?.id;
+    if (!id) return;
+    this.session = { id, headSha: this.change.headSha };
+    this.conversations.put(this.change.conversation, {
+      sessionId: id,
+      headSha: this.change.headSha,
+      messages: this.state.messages,
+    });
   }
 }

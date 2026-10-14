@@ -87,6 +87,15 @@ export class ChangeWorkspace {
     return this.openChanges.all();
   }
 
+  /** The Changes whose diff this window has shown, such as before a reload. */
+  shownHere(): Change[] {
+    return this.openChanges
+      .all()
+      .filter(
+        (c) => !c.diffPending && hasFolder(c.baseDir) && hasFolder(c.headDir)
+      );
+  }
+
   /**
    * In the review window, shows the diff of each Change sent here from
    * another window, once its folders have arrived.
@@ -138,6 +147,9 @@ export class ChangeWorkspace {
       .digest("hex")
       .slice(0, 12);
     const dir = path.join(this.storageDir, "changes", id);
+    const conversation =
+      this.openChanges.get(id)?.conversation ??
+      (await conversationName(repository, request, mergeBase, headSha));
     return {
       id,
       repository,
@@ -146,8 +158,35 @@ export class ChangeWorkspace {
       baseDir: path.join(dir, "base"),
       headDir: path.join(dir, "head"),
       ...(pullRequest && { pullRequest }),
+      conversation,
     };
   }
+}
+
+/**
+ * What the Change is across new commits: its pull request, or else the local
+ * branch the request named (`HEAD` names the checked-out branch), or else
+ * the commit range itself.
+ */
+async function conversationName(
+  repository: string,
+  request: ChangeRequest,
+  mergeBase: string,
+  headSha: string
+): Promise<string> {
+  if (request.pullRequest) {
+    const { repository: name, number } = request.pullRequest;
+    return `pull request ${name.toLowerCase()}#${number}`;
+  }
+  const ref = await git(
+    repository,
+    "rev-parse",
+    "--symbolic-full-name",
+    request.head
+  ).catch(() => "");
+  if (ref.startsWith("refs/heads/"))
+    return `branch ${ref.slice("refs/heads/".length)} in ${repository}`;
+  return `range ${mergeBase}..${headSha} in ${repository}`;
 }
 
 /**

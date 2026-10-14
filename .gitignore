@@ -23,3 +23,5 @@ node_modules/
 **/.impeccable/config.local.json
 # The hook's state when it runs from extension/; the project's is at the root
 extension/.impeccable/
+# Impeccable critique snapshots, kept for later runs on this machine
+**/.impeccable/critique/

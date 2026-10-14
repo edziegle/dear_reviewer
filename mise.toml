@@ -29,9 +29,20 @@ run = ["npx tsc -p test", "node out/test/run.js"]
 description = "Check prose with Vale"
 run = "vale docs GLOSSARY.md AGENTS.md"
 
-# Extra arguments go to codium: a folder or workspace to open, or e.g. --profile "Dear Reviewer".
-[tasks.preview]
-description = "Open VSCodium with the extension loaded from source"
+[tasks.package]
+description = "Package the extension as a .vsix"
+dir = "extension"
 depends = ["build"]
+run = "npx vsce package --allow-missing-repository --skip-license -o dist/dear-reviewer.vsix"
+
+# Installs the build into VSCodium rather than launching an Extension Development
+# Host: Dear Reviewer opens Changes in a separate review window, and only an
+# installed extension runs there. Extra arguments go to codium: a folder to open.
+[tasks.preview]
+description = "Install the extension into VSCodium and open it"
+depends = ["package"]
 dir = "{{cwd}}"
-run = 'codium --extensionDevelopmentPath="{{config_root}}/extension"'
+run = [
+  'codium --install-extension "{{config_root}}/extension/dist/dear-reviewer.vsix" --force',
+  "codium",
+]

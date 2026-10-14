@@ -1,6 +1,7 @@
 // Each Change's Assistant conversation, kept in the extension's storage so it
 // outlasts the window and the Change's worktrees: the Claude session to
-// resume, the messages the panel shows, and the head they were about. Kept
+// resume, the messages the panel shows, the head they were about, and what
+// the Change's overview shows from the Assistant. Kept
 // by the Change's conversation name, which new commits don't change (ADR 0009).
 
 import * as crypto from "crypto";
@@ -14,8 +15,13 @@ export interface SavedConversation {
   /** The head commit the conversation last talked about. */
   headSha: string;
   messages: Message[];
-  /** The commits whose changes since the last Review the Assistant last explained. */
-  sinceLastReview?: { from: string; to: string };
+  /** The Assistant's summary of the Change, which its overview shows. */
+  summary?: string;
+  /**
+   * The commits whose changes since the last Review the Assistant last
+   * explained, and what it said, which the overview shows.
+   */
+  sinceLastReview?: { from: string; to: string; text?: string };
 }
 
 export class Conversations {

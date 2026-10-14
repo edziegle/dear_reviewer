@@ -7,7 +7,10 @@ import {
   replyTurn,
   scriptClaude,
   userMessages,
+  showAssistant,
+  summaryNote,
 } from "../../assistant";
+import { overviewTake } from "../../timeline";
 import { closeChange, eventually } from "../../reviewer";
 import { pickUpAfterReload } from "../handoff";
 
@@ -19,14 +22,25 @@ describe("The Assistant after a window reload", () => {
 
   after(() => closeChange(change));
 
-  it("shows the earlier conversation again, without being asked", async () => {
+  it("shows the summary in the overview again, without asking for a new one", async () => {
+    await eventually(async () =>
+      assert.deepStrictEqual(await overviewTake(title), {
+        label: "Assistant",
+        reading: false,
+        text: "A summary.",
+      })
+    );
+  });
+
+  it("shows the earlier conversation again in its panel once asked", async () => {
+    await showAssistant(change);
     await eventually(async () =>
       assert.deepStrictEqual(await renderedPanel(title), {
         title,
         login: "Claude subscription (Max)",
         busy: false,
         messages: [
-          { from: "assistant", text: "A summary." },
+          summaryNote,
           { from: "reviewer", text: "What does new_helper return?" },
           { from: "assistant", text: "It returns 2." },
         ],

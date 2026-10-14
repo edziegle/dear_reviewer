@@ -5,7 +5,8 @@ import * as vscode from "vscode";
 import {
   assistantRuns,
   flag,
-  renderedPanel,
+  assistantTake,
+  summaryWritten,
   replyTurn,
   scriptClaude,
 } from "../assistant";
@@ -58,9 +59,7 @@ describe("Local branches that are merged or deleted", () => {
   async function open(request: ChangeRequest, title: string) {
     const before = workspaceFolders();
     await openChange(request);
-    await eventually(async () =>
-      assert.strictEqual((await renderedPanel(title))?.busy, false)
-    );
+    await summaryWritten(title);
     return foldersAddedSince(before);
   }
 
@@ -118,7 +117,7 @@ describe("Local branches that are merged or deleted", () => {
       worktreesOf(repo.path).map((w) => w.path),
       [repo.path]
     );
-    assert.strictEqual(await renderedPanel(title), undefined);
+    assert.strictEqual(await assistantTake(title), undefined);
 
     // Main goes back, so the branch has something to review again.
     repo.git("update-ref", "refs/heads/main", repo.commits.restructured);
@@ -128,9 +127,7 @@ describe("Local branches that are merged or deleted", () => {
     const [run] = assistantRuns();
     assert.ok(run, "the Assistant ran");
     assert.strictEqual(flag(run, "--resume"), undefined);
-    assert.deepStrictEqual((await renderedPanel(title))?.messages, [
-      { from: "assistant", text: "A new summary." },
-    ]);
+    assert.strictEqual((await assistantTake(title))?.text, "A new summary.");
     // Long enough for kept Comments to have come back.
     await new Promise((resolve) => setTimeout(resolve, 1000));
     assert.deepStrictEqual(
@@ -161,9 +158,7 @@ describe("Local branches that are merged or deleted", () => {
     const [run] = assistantRuns();
     assert.ok(run, "the Assistant ran");
     assert.strictEqual(flag(run, "--resume"), undefined);
-    assert.deepStrictEqual((await renderedPanel(title))?.messages, [
-      { from: "assistant", text: "A new summary." },
-    ]);
+    assert.strictEqual((await assistantTake(title))?.text, "A new summary.");
     await closeChange(request);
   });
 

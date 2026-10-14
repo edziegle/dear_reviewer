@@ -6,6 +6,8 @@ import {
   renderedPanel,
   replyTurn,
   scriptClaude,
+  showAssistant,
+  summaryNote,
 } from "../assistant";
 import { buildFixtureRepo } from "../fixtures";
 import { eventually, openChange, short } from "../reviewer";
@@ -26,6 +28,7 @@ describe("A conversation before a window reload", () => {
     };
     const title = `${path.basename(repo.path)} ${short(change.base)}..${short(change.head)}`;
     await openChange(change);
+    await showAssistant(change);
     await eventually(async () =>
       assert.strictEqual((await renderedPanel(title))?.busy, false)
     );

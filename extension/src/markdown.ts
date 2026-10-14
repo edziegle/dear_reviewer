@@ -14,15 +14,19 @@ export interface RenderedMarkdown {
 }
 
 export interface RenderOptions {
-  /** Turn `path:line` and `path:start-end` into references to open. */
-  references?: boolean;
+  /**
+   * Turn `path:line` and `path:start-end` into references to open: all of
+   * them, or those whose path this accepts, such as the Change's files.
+   */
+  references?: boolean | ((path: string) => boolean);
 }
 
 type Token = MarkdownIt.Token;
 
 interface RenderEnv {
   links: string[];
-  references: boolean;
+  /** Which paths become references; none without it. */
+  references?: (path: string) => boolean;
 }
 
 // Raw HTML is parsed only so that it can be dropped: its tags never reach the
@@ -83,7 +87,10 @@ function referenceOpen(state: MarkdownIt.StateCore, ref: FileReference) {
 }
 
 md.core.ruler.push("file_references", (state) => {
-  if (!(state.env as unknown as RenderEnv).references) return;
+  const accepts = (state.env as unknown as RenderEnv).references;
+  if (!accepts) return;
+  const referencesIn = (text: string) =>
+    findReferences(text).filter((ref) => accepts(ref.path));
   for (const block of state.tokens) {
     if (block.type !== "inline" || !block.children) continue;
     const children: Token[] = [];
@@ -94,7 +101,7 @@ md.core.ruler.push("file_references", (state) => {
       if (inLink > 0) {
         children.push(token);
       } else if (token.type === "code_inline") {
-        const [ref] = findReferences(token.content);
+        const [ref] = referencesIn(token.content);
         if (ref && ref.index === 0 && ref.length === token.content.length) {
           children.push(
             referenceOpen(state, ref),
@@ -104,7 +111,7 @@ md.core.ruler.push("file_references", (state) => {
         } else children.push(token);
       } else if (token.type === "text") {
         let at = 0;
-        for (const ref of findReferences(token.content)) {
+        for (const ref of referencesIn(token.content)) {
           if (ref.index > at) {
             const before = new state.Token("text", "", 0);
             before.content = token.content.slice(at, ref.index);
@@ -132,7 +139,8 @@ md.core.ruler.push("file_references", (state) => {
 });
 
 const renderToken = md.renderer.renderToken.bind(md.renderer);
-md.renderer.rules.file_reference_open = (tokens, i) => renderToken(tokens, i, md.options);
+md.renderer.rules.file_reference_open = (tokens, i) =>
+  renderToken(tokens, i, md.options);
 md.renderer.rules.file_reference_close = () => "</a>";
 
 /** Only web links can be opened; any other link shows as its text. */
@@ -163,9 +171,32 @@ md.renderer.rules.image = (tokens, i, _options, env) => {
 
 const allowed: sanitizeHtml.IOptions = {
   allowedTags: [
-    "p", "br", "hr", "h1", "h2", "h3", "h4", "h5", "h6",
-    "strong", "em", "s", "del", "code", "pre", "blockquote",
-    "ul", "ol", "li", "a", "table", "thead", "tbody", "tr", "th", "td",
+    "p",
+    "br",
+    "hr",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "strong",
+    "em",
+    "s",
+    "del",
+    "code",
+    "pre",
+    "blockquote",
+    "ul",
+    "ol",
+    "li",
+    "a",
+    "table",
+    "thead",
+    "tbody",
+    "tr",
+    "th",
+    "td",
   ],
   allowedAttributes: {
     a: ["data-href", "data-path", "data-start", "data-end"],
@@ -179,7 +210,19 @@ export function renderMarkdown(
   text: string,
   options: RenderOptions = {}
 ): RenderedMarkdown {
-  const env: RenderEnv = { links: [], references: options.references ?? false };
-  const html = sanitizeHtml(md.render(text, env as unknown as MarkdownIt.Env), allowed);
+  const { references } = options;
+  const env: RenderEnv = {
+    links: [],
+    references:
+      typeof references === "function"
+        ? references
+        : references
+          ? () => true
+          : undefined,
+  };
+  const html = sanitizeHtml(
+    md.render(text, env as unknown as MarkdownIt.Env),
+    allowed
+  );
   return { html, links: [...new Set(env.links)] };
 }

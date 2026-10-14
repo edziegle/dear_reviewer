@@ -1,16 +1,15 @@
-// The Assistant for each Change shown in this window: one conversation and
-// one panel per Change, where the Reviewer chats with the Assistant. A
+// The Assistant for each Change shown in this window: one conversation per
+// Change, and a panel where the Reviewer chats with it once they ask. A
 // Change keeps its conversation across new commits and window reloads (ADR
-// 0009): a new conversation starts with a summary of what the Change does
-// and where the risk is, and a saved one carries on with `claude --resume`.
-// When the Change has new commits since the Reviewer's last Review, the
-// Assistant explains what changed, once for each such pair of commits (ADR
+// 0009): a new conversation starts with a short summary of what the Change
+// does and where to start reading, which the Change's overview shows (ADR
+// 0019), and a saved one carries on with `claude --resume`. When the Change
+// has new commits since the Reviewer's last Review, the Assistant explains
+// what changed, once for each such pair of commits, in the overview too (ADR
 // 0015). At the end of a local Change's Review, it turns the Reviewer's
 // Comments into a Brief in the same conversation (ADR 0016), and when the
 // Reviewer asks, it raises Findings there too (ADR 0017).
 
-import * as fs from "fs";
-import * as path from "path";
 import * as vscode from "vscode";
 import { Change, changeTitle } from "../changeWorkspace";
 import type { LocalThread } from "../localReviews";
@@ -41,9 +40,24 @@ import {
   summaryPrompt,
 } from "./prompts";
 import { messageOf } from "../errors";
+import { openReference } from "../references";
 
 /** Gives the head commit the Reviewer's last Review of the Change covered, if any. */
 export type LastReview = (change: Change) => Promise<string | undefined>;
+
+/** What the Change's overview shows from the Assistant. */
+export interface AssistantOverview {
+  /** "Assistant" for the summary, or which Review an explanation is since. */
+  label: string;
+  /** Whether the Assistant is writing it. */
+  reading: boolean;
+  /** Markdown, as the Assistant wrote it so far. */
+  text?: string;
+  /** Why the Assistant can't write it, in words for the Reviewer. */
+  problem?: string;
+  /** The label of the button that helps with the problem, if one does. */
+  problemAction?: string;
+}
 
 interface PanelState {
   title: string;
@@ -56,6 +70,9 @@ export class Assistants implements vscode.Disposable {
   /** By the Change's conversation name, which outlasts new commits. */
   private readonly byConversation = new Map<string, ChangeAssistant>();
   private readonly status: vscode.StatusBarItem;
+  private readonly overviewChanged = new vscode.EventEmitter<string>();
+  /** Fires with a Change's conversation name when its overview's Assistant part changes. */
+  readonly onDidChangeOverview = this.overviewChanged.event;
 
   /**
    * `claudePath` gives the Reviewer's Claude Path setting; empty means find
@@ -76,25 +93,52 @@ export class Assistants implements vscode.Disposable {
   }
 
   /**
-   * Shows the Change's Assistant, starting it if it hasn't started. If the
-   * Assistant is open for an older head of the same Change, it moves to this
-   * one.
+   * Starts the Change's Assistant if it hasn't started, which writes the
+   * summary the Change's overview shows; its panel stays closed until the
+   * Reviewer asks. If the Assistant is running for an older head of the same
+   * Change, it moves to this one.
    */
-  async open(change: Change): Promise<void> {
+  start(change: Change): Promise<void> {
     const existing = this.byConversation.get(change.conversation);
     if (existing) {
       existing.moveTo(change);
-      return existing.show();
+      return existing.started;
     }
     const assistant = new ChangeAssistant(
       change,
       this.conversations,
       this.conversations.get(change.conversation),
       this.openLink,
-      this.lastReview
+      this.lastReview,
+      () => this.overviewChanged.fire(change.conversation)
     );
     this.byConversation.set(change.conversation, assistant);
-    assistant.show();
+    // Its overview may already be open, showing nothing from it yet.
+    this.overviewChanged.fire(change.conversation);
+    return this.boot(assistant);
+  }
+
+  /**
+   * Shows the Change's Assistant panel, starting the Assistant if it hasn't
+   * started; with `focus`, puts the cursor in its message box.
+   */
+  async open(change: Change, focus = false): Promise<void> {
+    const started = this.start(change);
+    this.byConversation.get(change.conversation)?.show(focus);
+    await started;
+  }
+
+  /** What the Change's overview shows from its Assistant, once it has started. */
+  overviewOf(change: Change): AssistantOverview | undefined {
+    return this.byConversation.get(change.conversation)?.overview;
+  }
+
+  /** Runs the problem's button of the Change's Assistant, such as to set the Claude path. */
+  helpWithProblem(change: Change): void {
+    this.byConversation.get(change.conversation)?.helpWithProblem();
+  }
+
+  private async boot(assistant: ChangeAssistant): Promise<void> {
     try {
       const cli = new ClaudeCli(findClaude(this.claudePath()));
       const login = await this.showLogin(cli);
@@ -118,7 +162,9 @@ export class Assistants implements vscode.Disposable {
     change: Change,
     selection: Selection & { text: string }
   ): Promise<void> {
-    this.started(change).addSelection(selection);
+    const assistant = this.started(change);
+    assistant.show(true);
+    assistant.addSelection(selection);
   }
 
   /**
@@ -161,9 +207,9 @@ export class Assistants implements vscode.Disposable {
 
   /** The Change's Assistant, started or moved to this head if it wasn't. */
   private started(change: Change): ChangeAssistant {
-    // Opening starts the Assistant, or moves it to this head, before it awaits anything.
+    // Starting it, or moving it to this head, happens before it awaits anything.
     if (this.byConversation.get(change.conversation)?.changeId !== change.id)
-      void this.open(change);
+      void this.start(change);
     const assistant = this.byConversation.get(change.conversation);
     if (!assistant) throw new Error("The Assistant didn't start.");
     return assistant;
@@ -186,6 +232,14 @@ export class Assistants implements vscode.Disposable {
       if (assistant.active) return assistant.changeId;
   }
 
+  /** What each Assistant has for its overview, by its Change's title, for the tests. */
+  overviews(): { title: string; take: AssistantOverview }[] {
+    return [...this.byConversation.values()].map((a) => ({
+      title: a.title,
+      take: a.overview,
+    }));
+  }
+
   /** Each panel's conversation, for the tests. */
   panels(): PanelState[] {
     return [...this.byConversation.values()].flatMap((a) => a.panelStates());
@@ -204,6 +258,7 @@ export class Assistants implements vscode.Disposable {
     for (const assistant of this.byConversation.values()) assistant.dispose();
     this.byConversation.clear();
     this.status.dispose();
+    this.overviewChanged.dispose();
   }
 
   private async showLogin(cli: ClaudeCli): Promise<ClaudeLogin> {
@@ -236,7 +291,7 @@ class ChangeAssistant {
   /** The Claude session and head the saved conversation has. */
   private session?: { id: string; headSha: string };
   /** The commits whose changes since the last Review were explained. */
-  private explained?: { from: string; to: string };
+  private explained?: { from: string; to: string; text?: string };
   /** News for the Assistant, sent with the Reviewer's next message. */
   private note?: string;
   /** Turns and moves run one after another. */
@@ -247,13 +302,18 @@ class ChangeAssistant {
   /** Settles once the Assistant has started, or failed to. */
   private readonly ready: Promise<void>;
   private settle!: () => void;
+  /** The summary the conversation started with. */
+  private summary?: string;
+  private overviewState: AssistantOverview;
 
   constructor(
     private change: Change,
     private readonly conversations: Conversations,
     saved: SavedConversation | undefined,
     private readonly openLink: (uri: vscode.Uri) => Thenable<unknown>,
-    private readonly lastReview: LastReview
+    private readonly lastReview: LastReview,
+    /** Tells the Change's overview that what it shows from the Assistant changed. */
+    private readonly overviewChanged: () => void
   ) {
     this.state = {
       title: changeTitle(change),
@@ -261,6 +321,19 @@ class ChangeAssistant {
       messages: saved?.messages ?? [],
     };
     this.ready = new Promise((resolve) => (this.settle = resolve));
+    // Conversations saved before the overview kept the summary as their first reply.
+    this.summary =
+      saved?.summary ??
+      saved?.messages.find((m) => m.from === "assistant")?.text;
+    const explained = saved?.sinceLastReview;
+    this.overviewState =
+      explained?.text && explained.to === change.headSha
+        ? {
+            label: sinceLabel(explained.from),
+            reading: false,
+            text: explained.text,
+          }
+        : { label: "Assistant", reading: !saved, text: this.summary };
     if (saved) {
       this.session = { id: saved.sessionId, headSha: saved.headSha };
       this.explained = saved.sinceLastReview;
@@ -268,8 +341,33 @@ class ChangeAssistant {
     }
   }
 
+  /** Settles once the Assistant has started, or failed to. */
+  get started(): Promise<void> {
+    return this.ready;
+  }
+
+  /** What the Change's overview shows from the Assistant. */
+  get overview(): AssistantOverview {
+    return this.overviewState;
+  }
+
+  /** Runs the button that helps with the Assistant's problem, if it has one. */
+  helpWithProblem(): void {
+    const help = this.problemAction;
+    if (help)
+      void vscode.commands.executeCommand(
+        help.command,
+        ...(help.arguments ?? [])
+      );
+  }
+
   get changeId(): string {
     return this.change.id;
+  }
+
+  /** The Change's title, as its panel names it. */
+  get title(): string {
+    return this.state.title;
   }
 
   /** Whether its panel is the one the Reviewer is looking at. */
@@ -277,13 +375,19 @@ class ChangeAssistant {
     return this.panel?.active ?? false;
   }
 
-  show(): void {
-    if (this.panel) return this.panel.reveal();
-    const panel = new AssistantPanel(this.state, (action) => this.act(action));
-    panel.onDidDispose(() => {
-      if (this.panel === panel) this.panel = undefined;
-    });
-    this.panel = panel;
+  /** Shows the panel; with `focus`, puts the cursor in its message box. */
+  show(focus = false): void {
+    if (!this.panel) {
+      const panel = new AssistantPanel(this.state, (action) =>
+        this.act(action)
+      );
+      panel.onDidDispose(() => {
+        if (this.panel === panel) this.panel = undefined;
+      });
+      this.panel = panel;
+      if (!focus) return;
+    }
+    this.panel.reveal(focus);
   }
 
   update(changes: Partial<ConversationState>): void {
@@ -303,7 +407,27 @@ class ChangeAssistant {
     if (this.session) this.update({ busy: false });
     else
       summary = this.enqueue(async () => {
-        await this.turn(await summaryPrompt(this.change));
+        this.setOverview({
+          label: "Assistant",
+          reading: true,
+          text: undefined,
+        });
+        this.update({
+          messages: [
+            ...this.state.messages,
+            {
+              from: "note",
+              text: "Summarised the Change in its overview, beside the diff.",
+            },
+          ],
+        });
+        const text = await this.turn(
+          await summaryPrompt(this.change),
+          "overview"
+        );
+        if (text === undefined) return;
+        this.summary = text;
+        this.save();
       });
     this.settle();
     await summary;
@@ -327,7 +451,6 @@ class ChangeAssistant {
 
   addSelection(selection: Selection & { text: string }): void {
     this.update({ context: [...(this.state.context ?? []), selection] });
-    this.panel?.reveal(true);
   }
 
   /**
@@ -346,7 +469,7 @@ class ChangeAssistant {
       this.note = undefined;
       let text: string | undefined;
       try {
-        text = await this.turn(prompt, false);
+        text = await this.turn(prompt, "hidden");
       } catch (err) {
         this.fail(err);
         throw err;
@@ -379,6 +502,13 @@ class ChangeAssistant {
       problem: messageOf(err),
       problemAction: this.problemAction?.title,
     });
+    // A later failure, such as of a chat turn, leaves a written summary be.
+    if (this.overviewState.reading || !this.overviewState.text)
+      this.setOverview({
+        reading: false,
+        problem: messageOf(err),
+        problemAction: this.problemAction?.title,
+      });
   }
 
   panelStates(): PanelState[] {
@@ -401,14 +531,8 @@ class ChangeAssistant {
   }
 
   private act(action: ReviewerAction): void {
-    if (action.type === "problemAction") {
-      const help = this.problemAction;
-      if (help)
-        void vscode.commands.executeCommand(
-          help.command,
-          ...(help.arguments ?? [])
-        );
-    } else if (action.type === "removeContext") {
+    if (action.type === "problemAction") this.helpWithProblem();
+    else if (action.type === "removeContext") {
       const context = [...(this.state.context ?? [])];
       context.splice(action.index, 1);
       this.update({ context: context.length ? context : undefined });
@@ -417,63 +541,13 @@ class ChangeAssistant {
       if (/^https?:\/\//i.test(action.url))
         void this.openLink(vscode.Uri.parse(action.url, true));
     } else if (action.type === "openReference") {
-      void this.openReference(action.path, action.startLine, action.endLine);
+      void openReference(
+        this.change,
+        action.path,
+        action.startLine,
+        action.endLine
+      );
     } else void this.ask(action.text);
-  }
-
-  /**
-   * Opens a file a reply points at, at those lines: a relative path in the
-   * head worktree, an absolute one in either worktree, and nothing outside
-   * them, even through a symbolic link.
-   */
-  private async openReference(
-    reference: string,
-    startLine: number,
-    endLine: number
-  ): Promise<void> {
-    const file = path.resolve(this.change.headDir, reference);
-    let real: string;
-    try {
-      real = fs.realpathSync(file);
-      if (!fs.statSync(real).isFile()) return;
-    } catch {
-      return;
-    }
-    const worktrees = [this.change.headDir, this.change.baseDir].flatMap(
-      (dir) => {
-        try {
-          return [fs.realpathSync(dir)];
-        } catch {
-          return [];
-        }
-      }
-    );
-    if (
-      !worktrees.some((dir) => {
-        const relative = path.relative(dir, real);
-        return (
-          relative && !relative.startsWith("..") && !path.isAbsolute(relative)
-        );
-      })
-    )
-      return;
-    const document = await vscode.workspace.openTextDocument(
-      vscode.Uri.file(file)
-    );
-    const last = document.lineCount - 1;
-    const start = Math.min(Math.max(startLine, 1) - 1, last);
-    const end = Math.min(Math.max(endLine, startLine) - 1, last);
-    const range = new vscode.Range(
-      start,
-      0,
-      end,
-      document.lineAt(end).range.end.character
-    );
-    await vscode.window.showTextDocument(document, {
-      viewColumn: vscode.ViewColumn.One,
-      selection: range,
-      preview: true,
-    });
   }
 
   private async ask(question: string): Promise<void> {
@@ -515,18 +589,23 @@ class ChangeAssistant {
         return;
       const prompt = await sinceLastReviewPrompt(change, from, this.note);
       this.note = undefined;
+      this.setOverview({
+        label: sinceLabel(from),
+        reading: true,
+        text: undefined,
+      });
       this.update({
         messages: [
           ...this.state.messages,
           {
             from: "note",
-            text: `What changed since your last Review, at ${from.slice(0, 7)}:`,
+            text: `Explained what changed since your last Review, at ${from.slice(0, 7)}, in the Change's overview.`,
           },
         ],
       });
-      await this.turn(prompt);
-      if (this.disposed) return;
-      this.explained = { from, to: change.headSha };
+      const text = await this.turn(prompt, "overview");
+      if (this.disposed || text === undefined) return;
+      this.explained = { from, to: change.headSha, text };
       this.save();
     });
   }
@@ -545,12 +624,12 @@ class ChangeAssistant {
   }
 
   /**
-   * Sends the prompt and streams the reply into the panel, unless it isn't
-   * `shown`, and gives the reply, if the Assistant is still open.
+   * Sends the prompt and streams the reply into the panel, or the overview,
+   * or neither, and gives the reply, if the Assistant is still open.
    */
   private async turn(
     prompt: string,
-    shown = true
+    into: "panel" | "overview" | "hidden" = "panel"
   ): Promise<string | undefined> {
     if (!this.cli)
       throw new ClaudeProblem(
@@ -567,7 +646,8 @@ class ChangeAssistant {
     const conversation = this.conversationNow(this.cli);
     const index = this.state.messages.length;
     const reply = (text: string) => {
-      if (!shown) return;
+      if (into === "overview") return this.setOverview({ text });
+      if (into === "hidden") return;
       const messages = [...this.state.messages];
       messages[index] = { from: "assistant", text };
       this.update({ messages });
@@ -601,9 +681,10 @@ class ChangeAssistant {
           },
         ],
       });
-      return this.turn(prompt, shown);
+      return this.turn(prompt, into);
     }
     if (this.disposed) return;
+    if (into === "overview") this.setOverview({ reading: false });
     this.update({ busy: false, steps: undefined });
     this.save(conversation);
     return text;
@@ -620,6 +701,20 @@ class ChangeAssistant {
       });
     }
     return this.conversation;
+  }
+
+  /** Changes what the overview shows; a problem lasts only until the next change. */
+  private setOverview(changes: Partial<AssistantOverview>): void {
+    const {
+      problem: _problem,
+      problemAction: _action,
+      ...kept
+    } = this.overviewState;
+    const next: AssistantOverview = { ...kept, ...changes };
+    for (const key of Object.keys(next) as (keyof AssistantOverview)[])
+      if (next[key] === undefined) delete next[key];
+    this.overviewState = next;
+    this.overviewChanged();
   }
 
   private noteNewHead(previousHead: string): void {
@@ -645,9 +740,14 @@ class ChangeAssistant {
       sessionId: id,
       headSha: this.change.headSha,
       messages: this.state.messages,
+      ...(this.summary && { summary: this.summary }),
       ...(this.explained && { sinceLastReview: this.explained }),
     });
   }
+}
+
+function sinceLabel(from: string): string {
+  return `Since your Review at ${from.slice(0, 7)}`;
 }
 
 /** The button that helps with a problem with `claude`, if one can. */

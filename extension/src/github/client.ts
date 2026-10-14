@@ -125,6 +125,8 @@ export interface CheckRun {
 export interface PullRequestTimeline {
   title: string;
   url: string;
+  /** The branch the pull request merges into. */
+  baseRef: string;
   /** The description first, then commits, Comments and submitted reviews in GitHub's order. */
   events: TimelineEvent[];
   /** The latest commit's checks; undefined when it has none. */
@@ -372,6 +374,7 @@ ${paths
       found ??= {
         title: pullRequest.title,
         url: pullRequest.url,
+        baseRef: pullRequest.baseRefName,
         events: [
           {
             kind: "description",
@@ -717,6 +720,7 @@ const PULL_REQUEST_TIMELINE = `query PullRequestTimeline($owner: String!, $name:
       url
       body
       createdAt
+      baseRefName
       author { login avatarUrl }
       commits(last: 1) {
         nodes {
@@ -823,6 +827,7 @@ interface TimelineData {
       url: string;
       body: string;
       createdAt: string;
+      baseRefName: string;
       author: GitHubUser | null;
       commits: { nodes: { commit: LatestCommitNode }[] };
       timelineItems: {

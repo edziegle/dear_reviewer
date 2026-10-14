@@ -5,6 +5,8 @@ date: 2026-10-13
 
 # Run the Assistant as one long-lived `claude` process per Change
 
+Amended by [ADR 0019](0019-change-overview.md): the summary is one short paragraph shown in the Change's overview, and the Assistant's panel opens only when the Reviewer asks.
+
 ## Context and Problem Statement
 
 The Assistant runs on the Reviewer's own installed `claude` CLI, so it uses whichever Claude login that machine has (`docs/research/claude-subscription-auth-macos.md`). It gives a summary when a Change opens, and later tickets add a chat per Change, Findings and Brief writing, all in the same conversation. A Change's worktrees hold code written by other people, which can include a `.claude/settings.json` with hooks or a `.mcp.json`. How should Dear Reviewer run `claude` for a Change?

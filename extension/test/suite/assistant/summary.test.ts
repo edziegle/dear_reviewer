@@ -1,6 +1,7 @@
 import * as assert from "assert";
 import * as fs from "fs";
 import * as path from "path";
+import * as vscode from "vscode";
 import {
   assistantRuns,
   callsToClaude,
@@ -12,7 +13,14 @@ import {
   userMessages,
   type RecordedClaudeCall,
   webviewTabs,
+  showAssistant,
 } from "../assistant";
+import {
+  clickOverview,
+  clickTakeReference,
+  overviewTake,
+  sentTimeline,
+} from "../timeline";
 import { buildFixtureRepo } from "../fixtures";
 import {
   activeTabLabel,
@@ -37,9 +45,9 @@ describe("The Assistant's summary when a Change opens", () => {
     title: `${path.basename(repo.path)} ${short(base)}..${short(head)}`,
   });
 
-  it("shows the Assistant's summary in a panel beside the diff, not inline in it", async () => {
+  it("shows the Assistant's short summary in the overview beside the diff, and opens no Assistant panel", async () => {
     const summary =
-      "Renames old_helper to new_helper and deletes obsolete.py. Risk: anything outside this repository that imports old_helper breaks.";
+      "Renames old_helper to new_helper and deletes obsolete.py. Start with util.py:1, where the rename happens, not README.md:1.";
     scriptClaude({ turns: [replyTurn(summary)] });
     const { request, title } = changeOf(
       repo.commits.initial,
@@ -51,18 +59,17 @@ describe("The Assistant's summary when a Change opens", () => {
 
     const [base, head] = foldersAddedSince(before);
     await eventually(async () =>
-      assert.deepStrictEqual(await renderedPanel(title), {
-        title,
-        login: "Claude subscription (Max)",
-        busy: false,
-        messages: [{ from: "assistant", text: summary }],
+      assert.deepStrictEqual(await overviewTake(title), {
+        label: "Assistant",
+        reading: false,
+        text: summary,
       })
     );
     assert.ok(
       activeTabLabel()?.includes(title.split(" ").pop()!),
       `the diff stays the active editor, not "${activeTabLabel()}"`
     );
-    assert.deepStrictEqual(webviewTabs(), [`Assistant: ${title}`]);
+    assert.deepStrictEqual(webviewTabs(), [title]);
 
     const [run] = assistantRuns();
     // The session lives in a folder of its own, which outlasts the worktrees.
@@ -83,6 +90,8 @@ describe("The Assistant's summary when a Change opens", () => {
       "added.py",
       repo.commits.initial,
       repo.commits.renamed,
+      "at most three sentences",
+      "where to start reading",
     ]) {
       assert.ok(prompt.includes(expected), `the prompt mentions ${expected}`);
     }
@@ -90,6 +99,81 @@ describe("The Assistant's summary when a Change opens", () => {
     await closeChange(request);
 
     await eventually(() => assert.deepStrictEqual(webviewTabs(), []));
+  });
+
+  it("orients the Reviewer in a local Change's overview: its commits, size and standing, and where to start", async () => {
+    scriptClaude({
+      turns: [
+        replyTurn(
+          "Adds a docstring. Start with util.py:2, not elsewhere.py:1."
+        ),
+      ],
+    });
+    const { request, title } = changeOf(
+      repo.commits.initial,
+      repo.commits.documented
+    );
+    const before = workspaceFolders();
+    await openChange(request);
+    const [, head] = foldersAddedSince(before);
+
+    await eventually(async () => {
+      const overview = await sentTimeline(title);
+      assert.strictEqual(overview.take.reading, false);
+      assert.strictEqual(overview.loading, false);
+      assert.ok(overview.size, "the size is counted");
+    });
+    const overview = await sentTimeline(title);
+    const commits = overview.items.length;
+    assert.ok(commits > 0, "the history lists the Change's commits");
+    assert.ok(overview.items.every((item) => item.kind === "commit"));
+    assert.strictEqual(overview.history, "Commits");
+    assert.strictEqual(overview.finish, "Write Brief…");
+    assert.strictEqual(
+      overview.byline,
+      `${path.basename(repo.path)} · ${commits} commit${commits === 1 ? "" : "s"}`
+    );
+    assert.match(overview.standing.at(-1) ?? "", /^0 of \d+ viewed$/);
+    const html = (overview.take as { html?: string }).html ?? "";
+    assert.ok(
+      html.includes('<a data-path="util.py" data-start="2" data-end="2">'),
+      html
+    );
+    assert.ok(
+      !html.includes('data-path="elsewhere.py"'),
+      `only the Change's files are references: ${html}`
+    );
+
+    await clickTakeReference(title, {
+      path: "util.py",
+      startLine: 2,
+      endLine: 2,
+    });
+    await eventually(() =>
+      assert.strictEqual(
+        vscode.window.activeTextEditor?.document.uri.fsPath,
+        path.join(head.path, "util.py")
+      )
+    );
+
+    await clickOverview(title, "nextFile");
+    await eventually(() =>
+      assert.ok(
+        vscode.window.tabGroups.activeTabGroup.activeTab?.input instanceof
+          vscode.TabInputTextDiff,
+        "a file's diff opens"
+      )
+    );
+
+    await clickOverview(title, "ask");
+    await eventually(() =>
+      assert.ok(
+        webviewTabs().includes(`Assistant: ${title}`),
+        `the Assistant opens: ${webviewTabs().join(", ")}`
+      )
+    );
+
+    await closeChange(request);
   });
 
   it("shows which Claude login the Assistant runs on, as claude auth status reports it", async () => {
@@ -106,6 +190,7 @@ describe("The Assistant's summary when a Change opens", () => {
     );
 
     await openChange(request);
+    await showAssistant(request);
 
     await eventually(async () => {
       const panel = await renderedPanel(title);
@@ -141,7 +226,7 @@ describe("The Assistant's summary when a Change opens", () => {
       await openChange(request);
 
       await eventually(async () =>
-        assert.strictEqual((await renderedPanel(title))?.messages.length, 1)
+        assert.strictEqual((await overviewTake(title))?.reading, false)
       );
       const calls = callsToClaude();
       assert.ok(calls.length >= 2, "auth status and the Assistant both ran");
@@ -192,7 +277,7 @@ describe("The Assistant's summary when a Change opens", () => {
       await openChange(request);
 
       await eventually(async () =>
-        assert.strictEqual((await renderedPanel(title))?.messages.length, 1)
+        assert.strictEqual((await overviewTake(title))?.reading, false)
       );
       const calls = callsToClaude();
       assert.ok(calls.length >= 2, "auth status and the Assistant both ran");

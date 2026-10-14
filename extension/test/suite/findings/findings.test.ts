@@ -4,6 +4,9 @@ import * as vscode from "vscode";
 import {
   assistantRuns,
   renderedPanel,
+  showAssistant,
+  summaryNote,
+  summaryWritten,
   replyTurn,
   scriptClaude,
   userMessages,
@@ -161,9 +164,8 @@ describe("Findings on request", () => {
     );
     [base, head] = foldersAddedSince(before).map((f) => f.path);
     assert.ok(base && head, "the pull request opened as a Change");
-    await eventually(async () =>
-      assert.strictEqual((await renderedPanel(title))?.busy, false)
-    );
+    await summaryWritten(title);
+    await showAssistant(change);
   });
 
   after(async () => {
@@ -239,7 +241,7 @@ describe("Findings on request", () => {
       const panel = await renderedPanel(title);
       assert.strictEqual(panel?.busy, false);
       assert.deepStrictEqual(panel?.messages, [
-        { from: "assistant", text: "A summary." },
+        summaryNote,
         {
           from: "note",
           text: "Raised 3 Findings, marked in the gutter of the diff and listed in the Findings view. Left out 4 that weren't on the lines of the diff.",

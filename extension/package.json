@@ -147,9 +147,9 @@
       },
       {
         "command": "dearReviewer.showTimeline",
-        "title": "Show Timeline",
+        "title": "Show Overview",
         "category": "Dear Reviewer",
-        "icon": "$(history)"
+        "icon": "$(info)"
       },
       {
         "command": "dearReviewer.sendSelectionToAssistant",
@@ -558,7 +558,7 @@
         },
         {
           "command": "dearReviewer.showTimeline",
-          "when": "view == dearReviewer.changeFiles && viewItem =~ /^change\\.pullRequest/",
+          "when": "view == dearReviewer.changeFiles && viewItem =~ /^change\\./",
           "group": "inline@2"
         },
         {
@@ -593,7 +593,7 @@
         },
         {
           "command": "dearReviewer.showTimeline",
-          "when": "view == dearReviewer.changeFiles && viewItem =~ /^change\\.pullRequest/",
+          "when": "view == dearReviewer.changeFiles && viewItem =~ /^change\\./",
           "group": "3_panels@1"
         },
         {
@@ -696,6 +696,11 @@
         "command": "dearReviewer.finishReview",
         "key": "ctrl+alt+r s",
         "when": "dearReviewer.hasOpenChange"
+      },
+      {
+        "command": "dearReviewer.showTimeline",
+        "key": "ctrl+alt+r o",
+        "when": "dearReviewer.hasOpenChange"
       }
     ],
     "viewsWelcome": [
@@ -768,7 +773,7 @@
           {
             "id": "review",
             "title": "Review a pull request",
-            "description": "Click a pull request in the Inbox to open it as a Change, in the review window. The first time, the review window opens in Restricted Mode: trust Dear Reviewer's folder of Changes once to turn on language servers and navigation. Comment in the diff's gutter, then submit your Review from the Change in Change Files, or from the timeline. Ctrl+Alt+R then N opens the next unviewed file, and Ctrl+Alt+R then S finishes the Review.\n[Show the Inbox](command:dearReviewer.inbox.focus)",
+            "description": "Click a pull request in the Inbox to open it as a Change, in the review window. Its overview opens beside the diff: what the Change is, where you stand on it, and the Assistant's short take, with where to start reading. The first time, the review window opens in Restricted Mode: trust Dear Reviewer's folder of Changes once to turn on language servers and navigation. Comment in the diff's gutter, then submit your Review from the overview or from the Change in Change Files. Ctrl+Alt+R then N opens the next unviewed file, and Ctrl+Alt+R then S finishes the Review.\n[Show the Inbox](command:dearReviewer.inbox.focus)",
             "media": {
               "image": "media/dear-reviewer.svg",
               "altText": "The Dear Reviewer icon"

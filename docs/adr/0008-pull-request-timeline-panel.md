@@ -5,6 +5,8 @@ date: 2026-10-13
 
 # Show a pull request's timeline in a panel that opens with its Change
 
+Amended by [ADR 0019](0019-change-overview.md): the panel is now every Change's overview, a local Change's included, with its commits as history. It opens in front, alone, holding the Assistant's short summary, and Show Timeline is now Show Overview.
+
 ## Context and Problem Statement
 
 The spec asks for a timeline of each pull request: its description, commits, Comments and reviews with their authors' avatars, and the check status of the latest commit with a link to each check's details. The Reviewer reads code in the diff, and the Assistant panel already sits beside it (ADR 0004). When does the timeline open, where does it go, and how does it get its data and open its links?

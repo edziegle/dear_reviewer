@@ -10,7 +10,10 @@ import {
   renderedPanel,
   scriptClaude,
   setClaudePath,
+  showAssistant,
+  summaryNote,
 } from "../assistant";
+import { overviewTake } from "../timeline";
 import { buildFixtureRepo } from "../fixtures";
 import { closeChange, eventually, openChange, short } from "../reviewer";
 
@@ -42,6 +45,7 @@ describe("Setting up the Assistant", () => {
     );
     try {
       await openChange(request);
+      await showAssistant(request);
 
       await eventually(async () => {
         const panel = await renderedPanel(title);
@@ -54,6 +58,10 @@ describe("Setting up the Assistant", () => {
       });
       assert.match((await loginStatus())?.text ?? "", /Claude: not found/);
       assert.deepStrictEqual(callsToClaude(), []);
+      const take = await overviewTake(title);
+      assert.ok(take?.problem?.includes(missing), "the overview says so too");
+      assert.strictEqual(take?.problemAction, "Set Claude Path");
+      assert.strictEqual(take?.reading, false);
     } finally {
       await setClaudePath(fakeClaudePath());
       await closeChange(request);
@@ -74,6 +82,8 @@ describe("Setting up the Assistant", () => {
     );
 
     await openChange(request);
+
+    await showAssistant(request);
 
     await eventually(async () => {
       const panel = await renderedPanel(title);
@@ -127,6 +137,8 @@ describe("Setting up the Assistant", () => {
       );
 
       await openChange(request);
+
+      await showAssistant(request);
 
       await eventually(async () =>
         assert.strictEqual((await renderedPanel(title))?.messages.length, 1)

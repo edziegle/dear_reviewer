@@ -520,6 +520,7 @@ export async function startFakeGitHub(): Promise<{
       url: `https://github.com/${pr.repository}/pull/${pr.number}`,
       body: pr.body ?? "",
       createdAt: pr.createdAt ?? "2026-10-01T00:00:00Z",
+      baseRefName: pr.baseRefName ?? "main",
       author: actor(pr.author),
       commits: {
         nodes: [

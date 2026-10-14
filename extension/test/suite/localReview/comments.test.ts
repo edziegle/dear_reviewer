@@ -1,7 +1,7 @@
 import * as assert from "assert";
 import * as path from "path";
 import * as vscode from "vscode";
-import { renderedPanel, replyTurn, scriptClaude } from "../assistant";
+import { replyTurn, scriptClaude, summaryWritten } from "../assistant";
 import { buildFixtureRepo } from "../fixtures";
 import {
   configure,
@@ -67,9 +67,7 @@ describe("Commenting on a local Change", () => {
     await openBranchFromInbox(inboxEntry(await inbox(), "agent/docs"));
     [base, head] = foldersAddedSince(before).map((f) => f.path);
     assert.ok(base && head, "the branch opened as a Change");
-    await eventually(async () =>
-      assert.strictEqual((await renderedPanel(title))?.busy, false)
-    );
+    await summaryWritten(title);
   });
 
   it("offers Comments on the diff's lines of both sides, as on a pull request", async () => {

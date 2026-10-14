@@ -39,10 +39,18 @@ const viewer = { login: "reviewer", token: "test-token" };
 const settingKeys = ["githubApiUrl", "repositories", "localClones"];
 
 /** The timeline without avatar URIs or rendered Markdown, which the tests check separately. */
-function withoutAvatars(timeline: Timeline | undefined) {
+/**
+ * The history and header as the panel shows them, without avatars or
+ * rendered Markdown, and without the overview's live parts, which change as
+ * the Assistant writes and the Reviewer works.
+ */
+function withoutAvatars(
+  timeline: (Partial<Timeline> & Pick<Timeline, "items">) | undefined
+) {
   if (!timeline) return timeline;
+  const { take: _take, standing: _standing, size: _size, ...rest } = timeline;
   return {
-    ...timeline,
+    ...rest,
     items: timeline.items.map((item) => {
       const { html: _, ...plain } = item as TimelineItem & { html?: string };
       return { ...plain, author: { login: item.author.login } };
@@ -65,7 +73,7 @@ function timelineTab(title: string): vscode.Tab | undefined {
 
 describe("A pull request's timeline", () => {
   const pr = buildPullRequestFixture("timeline", "acme/api", 21);
-  const title = "Timeline: acme/api #21";
+  const title = "acme/api #21";
   const fakePullRequest: FakePullRequest = {
     repository: pr.repository,
     number: pr.number,
@@ -215,9 +223,11 @@ describe("A pull request's timeline", () => {
       comments: 0,
     },
   ];
-  const expected: Timeline = {
+  const expected: Omit<Timeline, "take" | "standing"> = {
     title: "Restructure pkg",
-    pullRequest: "acme/api #21",
+    byline: "acme/api #21 · alice → main",
+    finish: "Submit Review…",
+    history: "Timeline",
     url: "https://github.com/acme/api/pull/21",
     loading: false,
     items: expectedItems,
@@ -300,13 +310,10 @@ describe("A pull request's timeline", () => {
       vscode.window.tabGroups.activeTabGroup,
       "the timeline is beside the diff, not over it"
     );
-    const assistant = vscode.window.tabGroups.all
-      .flatMap((group) => group.tabs)
-      .find((t) => t.label.startsWith("Assistant: "));
-    assert.strictEqual(
-      tab.group,
-      assistant?.group,
-      "the timeline shares the Assistant's group instead of adding a column"
+    assert.deepStrictEqual(
+      webviewTabs().filter((label) => label.startsWith("Assistant: ")),
+      [],
+      "the Assistant's panel waits until the Reviewer asks"
     );
   });
 

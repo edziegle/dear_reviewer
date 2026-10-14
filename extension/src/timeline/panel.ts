@@ -1,7 +1,9 @@
-// The timeline panel for one pull request: a webview beside the diff. The
-// extension sends it the whole timeline state; the webview renders it, says
-// which state it rendered, and asks the extension to open links, reload and
-// submit the Reviewer's Review.
+// The overview panel for one Change: a webview beside the diff that orients
+// the Reviewer (ADR 0019). It shows what the Change is, how big it is, where
+// the Reviewer stands on it and the Assistant's short take, then its history:
+// a pull request's timeline from GitHub, or a local Change's commits. The
+// extension sends it the whole state; the webview renders it, says which
+// state it rendered, and asks the extension for everything else.
 
 import * as crypto from "crypto";
 import * as vscode from "vscode";
@@ -42,14 +44,37 @@ export type TimelineItem =
       comments: number;
     };
 
+/** What the overview shows from the Change's Assistant. */
+export interface OverviewTake {
+  /** "Assistant", or which Review an explanation of new commits is since. */
+  label: string;
+  /** Whether the Assistant is writing it. */
+  reading: boolean;
+  /** Markdown, as the Assistant wrote it so far. */
+  text?: string;
+  /** Why the Assistant can't write it. */
+  problem?: string;
+  /** The label of the button that helps with the problem. */
+  problemAction?: string;
+}
+
 export interface TimelineState {
-  /** The pull request's title, once loaded. */
+  /** The pull request's title, or the branch or commits of a local Change. */
   title: string;
-  /** owner/name #number */
-  pullRequest: string;
+  /** What the Change is and where it goes, such as `acme/api #7 · alice → main`. */
+  byline: string;
   /** The pull request on GitHub. */
   url?: string;
-  /** Whether a reload from GitHub is under way. */
+  /** How big the Change is, such as `12 files · +340 −58`, once counted. */
+  size?: { files: number; additions: number; deletions: number };
+  /** Where the Reviewer stands: new commits since their Review, pending Comments, files viewed. */
+  standing: string[];
+  take: OverviewTake;
+  /** The button that finishes the Review: "Submit Review…" or "Write Brief…". */
+  finish: string;
+  /** "Timeline" for a pull request, "Commits" for a local Change. */
+  history: string;
+  /** Whether a reload is under way. */
   loading: boolean;
   items: TimelineItem[];
   /** The latest commit's checks; absent when it has none. */
@@ -65,10 +90,12 @@ export interface TimelineState {
 }
 
 /**
- * The timeline as the webview gets it: each description, Comment and review
- * body also rendered from Markdown and sanitised (ADR 0011).
+ * The overview as the webview gets it: the Assistant's take, and each
+ * description, Comment and review body, also rendered from Markdown and
+ * sanitised (ADR 0011).
  */
 export interface ShownTimeline extends TimelineState {
+  take: OverviewTake & { html?: string };
   items: (TimelineItem & { html?: string })[];
 }
 
@@ -76,46 +103,43 @@ export interface ShownTimeline extends TimelineState {
 export type FromWebview =
   | Handshake
   | { type: "openLink"; url: string }
+  | { type: "openReference"; path: string; startLine: number; endLine: number }
   | { type: "refresh" }
-  | { type: "submit" }
+  | { type: "finish" }
+  | { type: "nextFile" }
+  | { type: "ask" }
+  | { type: "takeAction" }
   | { type: "problemAction" };
+
+/** What the Reviewer does in the panel. */
+export type OverviewAction = Exclude<FromWebview, Handshake>;
 
 export class TimelinePanel {
   private readonly view: MarkdownPanel<TimelineState, ShownTimeline>;
-  private readonly linkClicked = new vscode.EventEmitter<string>();
-  private readonly refreshClicked = new vscode.EventEmitter<void>();
-  private readonly submitClicked = new vscode.EventEmitter<void>();
-  private readonly problemActionClicked = new vscode.EventEmitter<void>();
   /** Fires when the Reviewer closes the panel. */
   readonly onDidDispose: vscode.Event<void>;
-  /** Fires with the URL of a link the Reviewer clicked, as the webview gave it. */
-  readonly onDidClickLink = this.linkClicked.event;
-  readonly onDidClickRefresh = this.refreshClicked.event;
-  /** Fires when the Reviewer clicks Submit Review. */
-  readonly onDidClickSubmit = this.submitClicked.event;
-  /** Fires when the Reviewer clicks the button that goes with the problem. */
-  readonly onDidClickProblemAction = this.problemActionClicked.event;
 
-  /** `avatarDir` holds the cached avatars, the only files the webview may load. */
-  constructor(state: TimelineState, avatarDir: vscode.Uri) {
+  /**
+   * `avatarDir` holds the cached avatars, the only files the webview may
+   * load. `isChangedFile` says which paths in the Assistant's take become
+   * references to open, and `onAction` gets what the Reviewer does.
+   */
+  constructor(
+    state: TimelineState,
+    title: string,
+    avatarDir: vscode.Uri,
+    isChangedFile: (path: string) => boolean,
+    private readonly onAction: (action: OverviewAction) => void
+  ) {
     this.view = new MarkdownPanel(state, {
       viewType: "dearReviewer.timeline",
-      title: `Timeline: ${state.pullRequest}`,
+      title,
       localResourceRoots: [avatarDir],
       html: (webview) => html(webview.cspSource),
-      show: shown,
+      show: (shownState, render) => shown(shownState, render, isChangedFile),
       receive: (message) => this.receive(message as FromWebview),
     });
     this.onDidDispose = this.view.onDidDispose;
-    this.view.onDidDispose(() => {
-      for (const emitter of [
-        this.linkClicked,
-        this.refreshClicked,
-        this.submitClicked,
-        this.problemActionClicked,
-      ])
-        emitter.dispose();
-    });
   }
 
   get title(): string {
@@ -150,11 +174,27 @@ export class TimelinePanel {
   /** Handles a message from the webview; the tests send clicks through here too. */
   receive(message: FromWebview): void {
     if (this.view.handshake(message)) return;
-    if (message.type === "openLink" && typeof message.url === "string")
-      this.linkClicked.fire(message.url);
-    else if (message.type === "refresh") this.refreshClicked.fire();
-    else if (message.type === "submit") this.submitClicked.fire();
-    else if (message.type === "problemAction") this.problemActionClicked.fire();
+    if (message.type === "openLink") {
+      if (typeof message.url === "string") this.onAction(message);
+    } else if (message.type === "openReference") {
+      const { path, startLine, endLine } = message;
+      if (
+        typeof path === "string" &&
+        Number.isInteger(startLine) &&
+        Number.isInteger(endLine)
+      )
+        this.onAction({ type: "openReference", path, startLine, endLine });
+    } else if (
+      [
+        "refresh",
+        "finish",
+        "nextFile",
+        "ask",
+        "takeAction",
+        "problemAction",
+      ].includes(message.type)
+    )
+      this.onAction({ type: message.type } as OverviewAction);
   }
 
   update(state: TimelineState): void {
@@ -170,14 +210,27 @@ export class TimelinePanel {
   }
 }
 
-/** Renders each description, Comment and review body. */
-function shown(state: TimelineState, render: RenderInto): ShownTimeline {
+/**
+ * Renders the Assistant's take, whose `path:line` references to the
+ * Change's files open them, and each description, Comment and review body.
+ */
+function shown(
+  state: TimelineState,
+  render: RenderInto,
+  isChangedFile: (path: string) => boolean
+): ShownTimeline {
   const items = state.items.map((item) =>
     item.kind === "commit" || !item.body
       ? item
       : { ...item, html: render(item.body) }
   );
-  return { ...state, items };
+  const take = state.take.text
+    ? {
+        ...state.take,
+        html: render(state.take.text, { references: isChangedFile }),
+      }
+    : state.take;
+  return { ...state, take, items };
 }
 
 function html(cspSource: string): string {
@@ -190,20 +243,32 @@ function html(cspSource: string): string {
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style nonce="${nonce}">${sharedStyles}
   body { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); padding: 0 16px 16px; }
-  header { position: sticky; top: 0; background: var(--vscode-editor-background); padding: 12px 0 8px; border-bottom: 1px solid var(--vscode-panel-border); display: flex; gap: 8px; align-items: baseline; }
-  header .heading { flex: 1; min-width: 0; }
-  h1 { font-size: 1.1em; margin: 0 0 4px; }
+  header { position: sticky; top: 0; z-index: 1; background: var(--vscode-editor-background); padding: 12px 0 8px; border-bottom: 1px solid var(--vscode-panel-border); display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+  header .heading { flex: 1 1 16em; min-width: 0; }
+  h1 { font-size: 1.1em; margin: 0 0 4px; overflow-wrap: anywhere; }
   h2 { font-size: 1em; margin: 16px 0 8px; }
   .muted { color: var(--vscode-descriptionForeground); font-size: 0.9em; }
   button.link { background: none; border: none; padding: 0; color: var(--vscode-textLink-foreground); cursor: pointer; font: inherit; text-align: start; }
   button.link:hover { text-decoration: underline; }
-  header .actions { display: flex; gap: 6px; flex: none; }
-  button.refresh { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); border: none; padding: 2px 8px; border-radius: 2px; cursor: pointer; font: inherit; }
-  button.submit { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; padding: 2px 8px; border-radius: 2px; cursor: pointer; font: inherit; }
-  button.submit:hover { background: var(--vscode-button-hoverBackground); }
+  .actions { display: flex; flex-wrap: wrap; gap: 6px; }
+  header .actions { flex: none; }
+  button.secondary { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); border: none; padding: 2px 8px; border-radius: 2px; cursor: pointer; font: inherit; }
+  button.secondary:hover { background: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-secondaryBackground)); }
+  button.primary { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; padding: 2px 8px; border-radius: 2px; cursor: pointer; font: inherit; }
+  button.primary:hover { background: var(--vscode-button-hoverBackground); }
+  .overview { padding: 12px 0 14px; border-bottom: 1px solid var(--vscode-panel-border); }
+  .overview p { margin: 0 0 4px; }
+  .facts { font-variant-numeric: tabular-nums; }
+  .facts .added { color: var(--vscode-gitDecoration-addedResourceForeground); }
+  .facts .deleted { color: var(--vscode-gitDecoration-deletedResourceForeground); }
+  .take h2 { margin-top: 14px; margin-bottom: 4px; }
+  .take .markdown { line-height: 1.5; max-width: 72ch; }
+  .take .reading { font-style: italic; }
+  .take .problem-line button.link { margin-left: 4px; }
+  .overview .actions { margin-top: 12px; }
   ul { list-style: none; padding: 0; margin: 0; }
   .checks li { display: flex; gap: 8px; align-items: baseline; padding: 2px 0; }
-  .checks .name { flex: 1; }
+  .checks .name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
   .status { font-size: 0.85em; padding: 0 6px; border-radius: 8px; border: 1px solid currentColor; }
   .status.passed { color: var(--vscode-testing-iconPassed); }
   .status.failed { color: var(--vscode-testing-iconFailed); }
@@ -220,15 +285,29 @@ function html(cspSource: string): string {
 </head>
 <body>
 <header>
-  <div class="heading"><h1 id="title"></h1><div class="muted" id="pullRequest"></div></div>
+  <div class="heading"><h1 id="title"></h1><div class="muted" id="byline"></div></div>
   <div class="actions">
-    <button class="refresh" id="refresh" title="Reload the timeline from GitHub">Refresh</button>
-    <button class="submit" id="submit" title="Choose a verdict and publish your pending Comments to GitHub">Submit Review…</button>
+    <button class="secondary" id="refresh" title="Load the history again">Refresh</button>
+    <button class="primary" id="finish"></button>
   </div>
 </header>
 <div class="problem" id="problem" role="alert" hidden></div>
+<section class="overview" aria-label="Overview">
+  <p class="facts" id="facts" hidden></p>
+  <p class="muted" id="standing" hidden></p>
+  <div class="take">
+    <h2 id="takeLabel"></h2>
+    <div class="markdown" id="take"></div>
+    <div class="muted reading" id="reading" role="status"></div>
+    <div class="muted problem-line" id="takeProblem" hidden></div>
+  </div>
+  <div class="actions">
+    <button class="secondary" id="nextFile" title="Open the diff of the next file you haven't viewed">Next unviewed file</button>
+    <button class="secondary" id="ask" title="Open the Assistant's chat about this Change">Ask the Assistant</button>
+  </div>
+</section>
 <section id="checks" hidden><h2 id="checksHeading"></h2><ul class="checks" id="checkRuns"></ul></section>
-<section><h2>Timeline</h2><div class="muted" id="loading" role="status" hidden>Loading from GitHub…</div><div id="items"></div></section>
+<section><h2 id="history"></h2><div class="muted" id="loading" role="status" hidden>Loading…</div><div id="items"></div></section>
 <script nonce="${nonce}">
   const vscode = acquireVsCodeApi();
   const byId = (id) => document.getElementById(id);
@@ -256,18 +335,30 @@ function html(cspSource: string): string {
     commented: "reviewed",
     dismissed: "reviewed (dismissed)",
   };
-  byId("refresh").addEventListener("click", () => vscode.postMessage({ type: "refresh" }));
-  byId("submit").addEventListener("click", () => vscode.postMessage({ type: "submit" }));
-  // Links in bodies open through the extension, which checks them.
-  byId("items").addEventListener("click", (event) => {
-    const link = event.target instanceof Element ? event.target.closest("a[data-href]") : null;
-    if (!link) return;
+  for (const type of ["refresh", "finish", "nextFile", "ask"])
+    byId(type).addEventListener("click", () => vscode.postMessage({ type }));
+  // Links and file references open through the extension, which checks them.
+  document.body.addEventListener("click", (event) => {
+    const a = event.target instanceof Element ? event.target.closest("a[data-href], a[data-path]") : null;
+    if (!a) return;
     event.preventDefault();
-    vscode.postMessage({ type: "openLink", url: link.dataset.href });
+    if (a.dataset.href) vscode.postMessage({ type: "openLink", url: a.dataset.href });
+    else vscode.postMessage({
+      type: "openReference",
+      path: a.dataset.path,
+      startLine: Number(a.dataset.start),
+      endLine: Number(a.dataset.end),
+    });
   });
-  byId("items").addEventListener("keydown", (event) => {
+  document.body.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && event.target instanceof HTMLAnchorElement) event.target.click();
   });
+  const focusable = (root) => {
+    for (const a of root.querySelectorAll("a[data-href], a[data-path]")) {
+      a.tabIndex = 0;
+      a.setAttribute("role", "link");
+    }
+  };
 
   function item(entry) {
     const row = el("div", "item " + entry.kind);
@@ -293,10 +384,7 @@ function html(cspSource: string): string {
       const body = el("div", "body markdown");
       // Rendered and sanitised by the extension; see renderMarkdown.
       body.innerHTML = entry.html;
-      for (const a of body.querySelectorAll("a[data-href]")) {
-        a.tabIndex = 0;
-        a.setAttribute("role", "link");
-      }
+      focusable(body);
       content.append(body);
     } else if (entry.body) {
       content.append(el("div", "body", entry.body));
@@ -310,12 +398,60 @@ function html(cspSource: string): string {
     return row;
   }
 
+  function facts(state) {
+    const node = byId("facts");
+    const parts = [];
+    if (state.size) {
+      const { files, additions, deletions } = state.size;
+      const size = el("span");
+      size.append(files + (files === 1 ? " file · " : " files · "), el("span", "added", "+" + additions), " ", el("span", "deleted", "−" + deletions));
+      size.setAttribute("aria-label", files + " files, " + additions + " lines added, " + deletions + " removed");
+      parts.push(size);
+    }
+    if (state.checks && state.checks.status) parts.push("checks " + state.checks.status);
+    node.hidden = parts.length === 0;
+    node.replaceChildren();
+    parts.forEach((part, i) => node.append(...(i ? [" · ", part] : [part])));
+  }
+
+  function take(state) {
+    const t = state.take;
+    byId("takeLabel").textContent = t.label;
+    const body = byId("take");
+    if (t.html !== undefined) {
+      // Rendered and sanitised by the extension; see renderMarkdown.
+      body.innerHTML = t.html;
+      focusable(body);
+    } else body.replaceChildren();
+    byId("reading").textContent = t.reading
+      ? (t.text ? "" : "The Assistant is reading the Change…")
+      : (!t.text && !t.problem ? "The Assistant hasn't summarised this Change." : "");
+    const problem = byId("takeProblem");
+    problem.hidden = !t.problem;
+    problem.replaceChildren();
+    if (t.problem) {
+      problem.append(t.problem);
+      if (t.problemAction) {
+        const button = el("button", "link", t.problemAction);
+        button.type = "button";
+        button.addEventListener("click", () => vscode.postMessage({ type: "takeAction" }));
+        problem.append(" ", button);
+      }
+    }
+  }
+
   window.addEventListener("message", (event) => {
     const message = event.data;
     if (message.type !== "state") return;
     const state = message.state;
     byId("title").replaceChildren(state.url ? link(state.title, state.url) : state.title);
-    byId("pullRequest").textContent = state.pullRequest;
+    byId("byline").textContent = state.byline;
+    byId("finish").textContent = state.finish;
+    facts(state);
+    byId("standing").hidden = state.standing.length === 0;
+    byId("standing").textContent = state.standing.join(" · ");
+    take(state);
+    byId("history").textContent = state.history;
     byId("loading").hidden = !state.loading;
     byId("problem").hidden = !state.problem;
     byId("problem").textContent = state.problem || "";

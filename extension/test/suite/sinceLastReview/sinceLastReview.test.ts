@@ -6,7 +6,9 @@ import {
   askAssistant,
   assistantRuns,
   flag,
+  assistantTake,
   renderedPanel,
+  summaryWritten,
   replyTurn,
   scriptClaude,
   sendSelection,
@@ -148,9 +150,7 @@ describe("What changed since my last Review", () => {
   it("records the head commit a submitted Review covered", async () => {
     scriptClaude({ turns: [replyTurn("A summary.")] });
     await openFromInbox(await entry("Restructure pkg"));
-    await eventually(async () =>
-      assert.strictEqual((await renderedPanel(titleAt(pr.head)))?.busy, false)
-    );
+    await summaryWritten(titleAt(pr.head));
 
     await submitReview(requestAt(pr.head), "approve", "Looks good.");
 
@@ -226,7 +226,7 @@ describe("What changed since my last Review", () => {
     );
   });
 
-  it("has the Assistant explain in its panel what changed since the last Review", async () => {
+  it("has the Assistant explain in the overview what changed since the last Review", async () => {
     scriptClaude({
       turns: [replyTurn("new_helper now returns 3, and since.py is new.")],
     });
@@ -235,25 +235,10 @@ describe("What changed since my last Review", () => {
 
     const title = titleAt(newHead);
     await eventually(async () =>
-      assert.deepStrictEqual(await renderedPanel(title), {
-        title,
-        login: "Claude subscription (Max)",
-        busy: false,
-        messages: [
-          { from: "assistant", text: "A summary." },
-          {
-            from: "note",
-            text: `New commits: the Change is now at ${short(newHead)}, after ${short(pr.head)}.`,
-          },
-          {
-            from: "note",
-            text: `What changed since your last Review, at ${short(pr.head)}:`,
-          },
-          {
-            from: "assistant",
-            text: "new_helper now returns 3, and since.py is new.",
-          },
-        ],
+      assert.deepStrictEqual(await assistantTake(title), {
+        label: `Since your Review at ${short(pr.head)}`,
+        reading: false,
+        text: "new_helper now returns 3, and since.py is new.",
       })
     );
     const [run, ...others] = assistantRuns();
@@ -270,19 +255,19 @@ describe("What changed since my last Review", () => {
 
   it("doesn't explain the same commits again when the Change opens again", async () => {
     const title = titleAt(newHead);
-    const before = (await renderedPanel(title))?.messages;
+    const before = await assistantTake(title);
     scriptClaude({ turns: [replyTurn("Again?")] });
     await closeChange(requestAt(newHead));
 
     await openFromInbox(await entry("Restructure pkg"));
 
     await eventually(async () =>
-      assert.deepStrictEqual((await renderedPanel(title))?.messages, before)
+      assert.deepStrictEqual(await assistantTake(title), before)
     );
     // Long enough for an explanation to have started.
     await new Promise((resolve) => setTimeout(resolve, 1000));
     assert.deepStrictEqual(assistantRuns(), []);
-    assert.strictEqual((await renderedPanel(title))?.busy, false);
+    assert.deepStrictEqual(await assistantTake(title), before);
   });
 
   it("opens a diff of only what changed since the last Review", async () => {

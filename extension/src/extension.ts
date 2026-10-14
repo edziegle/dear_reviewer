@@ -145,16 +145,42 @@ export function activate(context: vscode.ExtensionContext) {
       void inbox.refresh();
     }
   );
-  const timelines = new Timelines(
-    github,
-    avatars,
-    (uri) => openLink(uri),
-    (change) =>
-      void vscode.commands.executeCommand(
-        "dearReviewer.submitReview",
-        requestOf(change)
-      )
-  );
+  const timelines = new Timelines(github, avatars, (uri) => openLink(uri), {
+    standing: (change) => standingOf(change),
+    take: (change) => assistants.overviewOf(change),
+    act: (change, action) => {
+      if (action === "ask") void assistants.open(change, true);
+      else if (action === "takeAction") assistants.helpWithProblem(change);
+      else
+        void vscode.commands.executeCommand(
+          action === "finish"
+            ? "dearReviewer.finishReview"
+            : "dearReviewer.nextUnviewedFile",
+          requestOf(change)
+        );
+    },
+  });
+
+  /** Where the Reviewer stands on the Change, for its overview. */
+  async function standingOf(change: Change): Promise<string[]> {
+    const standing: string[] = [];
+    const since = await changeFiles.sinceReview(change);
+    if (since === "newCommits") standing.push("New commits since your Review");
+    if (since === "noNewCommits")
+      standing.push("Nothing new since your Review");
+    const pending = review.pendingCount(change);
+    if (pending > 0) standing.push(countOf(pending, "pending Comment"));
+    const { viewed, total } = await changeFiles.viewedCount(change);
+    standing.push(`${viewed} of ${total} viewed`);
+    return standing;
+  }
+
+  // Many threads load at once, so the overviews catch up once they have.
+  let standingTimer: NodeJS.Timeout | undefined;
+  function showStanding(): void {
+    clearTimeout(standingTimer);
+    standingTimer = setTimeout(() => void timelines.refreshStanding(), 50);
+  }
   const findings = new Findings(
     context.extensionUri,
     (change) => assistants.findIssues(change),
@@ -263,10 +289,17 @@ export function activate(context: vscode.ExtensionContext) {
   /** Moves to the next or previous file not yet viewed, first marking the one shown viewed if asked. */
   async function stepUnviewed(
     direction: 1 | -1,
-    markShown: boolean
+    markShown: boolean,
+    target?: ChangeTarget
   ): Promise<void> {
+    // Given a Change, such as by its overview, step through that one.
+    const given = target && (await changeFor(target, "Next Unviewed File"));
+    if (target && !given) return;
     const where = activeFile();
-    const here = where?.file.side === "commit" ? undefined : where;
+    const here =
+      where?.file.side === "commit" || (given && where?.change.id !== given.id)
+        ? undefined
+        : where;
     if (markShown && !here) {
       void vscode.window.showInformationMessage(
         "Open a file's diff from Change Files to mark it viewed."
@@ -274,6 +307,7 @@ export function activate(context: vscode.ExtensionContext) {
       return;
     }
     const change =
+      given ??
       here?.change ??
       (await changeFor(
         undefined,
@@ -509,12 +543,18 @@ export function activate(context: vscode.ExtensionContext) {
         showOpenChanges();
       }
     ),
-    // The timeline opens first, so the Assistant's summary is the side
-    // panel the Reviewer sees, with the timeline a tab away.
+    // The overview is the one panel a Change opens beside its diff; the
+    // Assistant starts behind it, writing the overview's summary, and its
+    // panel opens when the Reviewer asks (ADR 0019).
     timelines,
     changes.onDidShowChange((change) => void timelines.open(change)),
     assistants,
-    changes.onDidShowChange((change) => void assistants.open(change)),
+    changes.onDidShowChange((change) => void assistants.start(change)),
+    assistants.onDidChangeOverview((conversation) =>
+      timelines.refreshTake(conversation)
+    ),
+    changeFiles.onDidChangeTreeData(() => showStanding()),
+    review.onDidChange(() => showStanding()),
     review,
     changes.onDidShowChange(() => void review.sync()),
     vscode.commands.registerCommand(
@@ -705,8 +745,9 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("dearReviewer.previousFinding", () =>
       stepFinding(-1)
     ),
-    vscode.commands.registerCommand("dearReviewer.nextUnviewedFile", () =>
-      stepUnviewed(1, false)
+    vscode.commands.registerCommand(
+      "dearReviewer.nextUnviewedFile",
+      (target?: ChangeTarget) => stepUnviewed(1, false, target)
     ),
     vscode.commands.registerCommand("dearReviewer.previousUnviewedFile", () =>
       stepUnviewed(-1, false)
@@ -761,26 +802,14 @@ export function activate(context: vscode.ExtensionContext) {
       "dearReviewer.showAssistant",
       async (target?: ChangeTarget) => {
         const change = await changeFor(target, "Show Assistant");
-        if (change) await assistants.open(change);
+        if (change) await assistants.open(change, true);
       }
     ),
     vscode.commands.registerCommand(
       "dearReviewer.showTimeline",
       async (target?: ChangeTarget) => {
-        const change = await changeFor(
-          target,
-          "Show Timeline",
-          (c) => !!c.pullRequest,
-          "No pull request's Change is open in this window. A local Change has no timeline."
-        );
-        if (!change) return;
-        if (!change.pullRequest) {
-          void vscode.window.showErrorMessage(
-            "A local Change has no timeline."
-          );
-          return;
-        }
-        await timelines.open(change);
+        const change = await changeFor(target, "Show Overview");
+        if (change) await timelines.open(change);
       }
     ),
     vscode.commands.registerCommand(
@@ -937,8 +966,11 @@ export function activate(context: vscode.ExtensionContext) {
   const reviewWindow = new ReviewWindow(context.globalStorageUri.fsPath);
   if (reviewWindow.isThisWindow() && !vscode.workspace.isTrusted)
     void askToTrustReviewWindow(context.globalStorageUri.fsPath);
-  // After a reload, the Changes still in this window get their Assistant back.
-  for (const change of changes.shownHere()) void assistants.open(change);
+  // After a reload, the Changes still in this window get their overview and Assistant back.
+  for (const change of changes.shownHere()) {
+    void timelines.open(change);
+    void assistants.start(change);
+  }
   // The views are how the Reviewer sees the Inbox, a Change's files, the
   // Assistant and their Comments; tests read them the same way.
   return {
@@ -954,6 +986,7 @@ export function activate(context: vscode.ExtensionContext) {
     },
     assistant: {
       panels: () => assistants.panels(),
+      overviews: () => assistants.overviews(),
       loginStatus: () => assistants.loginStatus(),
     },
     timeline: {

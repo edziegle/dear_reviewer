@@ -118,6 +118,9 @@ export class ReviewComments implements vscode.Disposable {
   private loading: Promise<void> = Promise.resolve();
   private readonly hunks = new Map<string, Promise<Hunks>>();
   private viewerIcon?: vscode.Uri;
+  private readonly changed = new vscode.EventEmitter<void>();
+  /** Fires when the threads shown, or their Comments, change. */
+  readonly onDidChange = this.changed.event;
 
   constructor(
     private readonly openChanges: () => Change[],
@@ -137,6 +140,7 @@ export class ReviewComments implements vscode.Disposable {
 
   dispose(): void {
     this.controller.dispose();
+    this.changed.dispose();
   }
 
   /** Every thread shown, for every Change. */
@@ -246,6 +250,7 @@ export class ReviewComments implements vscode.Disposable {
             new Date()
           ),
     ];
+    this.changed.fire();
   }
 
   /** Resolves or unresolves a published thread on GitHub. */
@@ -355,6 +360,7 @@ export class ReviewComments implements vscode.Disposable {
     const thread = comment.thread;
     thread.comments = thread.comments.filter((c) => c !== comment);
     if (thread.comments.length === 0) this.drop(thread);
+    this.changed.fire();
   }
 
   /** Saves a draft Comment into the Review under way, as the first Comment of its thread. */
@@ -384,6 +390,7 @@ export class ReviewComments implements vscode.Disposable {
   private drop(thread: vscode.CommentThread): void {
     for (const threads of this.shown.values()) threads.delete(thread);
     thread.dispose();
+    this.changed.fire();
   }
 
   /**
@@ -503,6 +510,7 @@ export class ReviewComments implements vscode.Disposable {
     let threads = this.shown.get(changeId);
     if (!threads) this.shown.set(changeId, (threads = new Set()));
     threads.add(thread);
+    this.changed.fire();
   }
 
   /**
@@ -533,6 +541,7 @@ export class ReviewComments implements vscode.Disposable {
   private clear(changeId: string): void {
     for (const thread of this.shown.get(changeId) ?? []) thread.dispose();
     this.shown.delete(changeId);
+    this.changed.fire();
   }
 
   private author(): vscode.CommentAuthorInformation {

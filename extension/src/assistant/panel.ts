@@ -66,6 +66,8 @@ export type ReviewerAction = Exclude<FromWebview, Handshake>;
 
 export class AssistantPanel {
   private readonly view: MarkdownPanel<ConversationState, ShownConversation>;
+  /** Whether the message box takes the cursor once the webview is ready. */
+  private focusWhenReady = false;
   /** Fires when the Reviewer closes the panel. */
   readonly onDidDispose: vscode.Event<void>;
 
@@ -106,6 +108,12 @@ export class AssistantPanel {
 
   /** Handles a message from the webview; the tests send them here too. */
   receive(message: FromWebview): void {
+    if (message.type === "ready" && this.focusWhenReady) {
+      this.focusWhenReady = false;
+      void this.view.webview.postMessage({
+        type: "focus",
+      } satisfies ToWebview);
+    }
     if (this.view.handshake(message)) return;
     if (message.type === "ask") {
       if (typeof message.text === "string" && message.text.trim())
@@ -132,10 +140,12 @@ export class AssistantPanel {
   /** Brings the panel forward; with `focus`, puts the cursor in its message box. */
   reveal(focus = false): void {
     this.view.reveal(!focus);
-    if (focus)
-      void this.view.webview.postMessage({
-        type: "focus",
-      } satisfies ToWebview);
+    if (!focus) return;
+    // A webview that hasn't loaded yet would drop the message.
+    this.focusWhenReady = true;
+    void this.view.webview.postMessage({
+      type: "focus",
+    } satisfies ToWebview);
   }
 
   dispose(): void {

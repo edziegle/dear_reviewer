@@ -1,6 +1,7 @@
-// Reads a pull request's timeline panel the way the Reviewer sees it: the
-// state the extension sends it and the state it rendered. Clicks in the
-// panel are the messages the webview would send.
+// Reads a Change's overview panel, with a pull request's timeline or a local
+// Change's commits, the way the Reviewer sees it: the state the extension
+// sends it and the state it rendered. Clicks in the panel are the messages
+// the webview would send.
 
 import * as fs from "fs";
 import * as vscode from "vscode";
@@ -48,11 +49,27 @@ export type TimelineItem =
       comments: number;
     };
 
+/** What the overview shows from the Change's Assistant. */
+export interface Take {
+  label: string;
+  reading: boolean;
+  text?: string;
+  /** The text's Markdown, rendered and sanitised. */
+  html?: string;
+  problem?: string;
+  problemAction?: string;
+}
+
 export interface Timeline {
   title: string;
-  /** owner/name #number */
-  pullRequest: string;
+  /** Such as `acme/api #7 · alice → main`. */
+  byline: string;
   url?: string;
+  size?: { files: number; additions: number; deletions: number };
+  standing: string[];
+  take: Take;
+  finish: string;
+  history: string;
   loading: boolean;
   items: TimelineItem[];
   checks?: {
@@ -88,7 +105,7 @@ async function timelineApi(): Promise<TimelineApi> {
 
 async function panel(title: string) {
   const found = (await timelineApi()).panels().find((p) => p.title === title);
-  if (!found) throw new Error(`no timeline panel "${title}"`);
+  if (!found) throw new Error(`no overview panel "${title}"`);
   return found;
 }
 
@@ -112,6 +129,32 @@ export async function clickLink(title: string, url: string): Promise<void> {
 /** Clicks the panel's refresh button. */
 export async function clickRefresh(title: string): Promise<void> {
   (await panel(title)).receive({ type: "refresh" });
+}
+
+/** Clicks one of the overview's buttons. */
+export async function clickOverview(
+  title: string,
+  button: "finish" | "nextFile" | "ask" | "takeAction"
+): Promise<void> {
+  (await panel(title)).receive({ type: button });
+}
+
+/** Clicks a `path:line` reference in the Assistant's take. */
+export async function clickTakeReference(
+  title: string,
+  reference: { path: string; startLine: number; endLine: number }
+): Promise<void> {
+  (await panel(title)).receive({ type: "openReference", ...reference });
+}
+
+/** What the overview with this title shows from the Assistant, as last sent. */
+export async function overviewTake(
+  title: string
+): Promise<Omit<Take, "html"> | undefined> {
+  const found = (await timelineApi()).panels().find((p) => p.title === title);
+  if (!found) return;
+  const { html: _, ...take } = found.sent.take;
+  return take;
 }
 
 /** Clicks the button that goes with the problem the timeline shows. */

@@ -7,6 +7,8 @@ date: 2026-10-14
 
 Amended by [ADR 0016](0016-local-comments-and-briefs.md): a local Change's last Review is the one its last Brief ended, so it gets the diff, the explanation and the Inbox mark too.
 
+Amended by [ADR 0019](0019-change-overview.md): the Assistant's explanation of what changed is one short paragraph, shown in the Change's overview in place of the summary rather than in the Assistant's panel.
+
 ## Context and Problem Statement
 
 A Change can have more than one Review as new commits arrive. The spec asks Dear Reviewer to remember which head commit each Review covered (#23), to show a diff of only what changed since the Reviewer's last Review, to have the Assistant explain that in plain words (#40), and to mark Inbox entries that changed since (#11). ADR 0009 left the explanation to this work, and ADR 0012 says the diff opens with `vscode.changes`, from the last reviewed head to the new head. Where is the reviewed commit kept, how does the diff get the old side's files, and when does the Assistant explain?

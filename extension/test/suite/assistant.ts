@@ -6,6 +6,8 @@ import * as path from "path";
 import * as vscode from "vscode";
 import type { FakeClaudeScript, RecordedClaudeCall } from "../fakeClaude";
 import { toolUse, waitFor } from "../fakeClaude";
+import { eventually, type ChangeRequest } from "./reviewer";
+import type { Take } from "./timeline";
 
 export type { FakeClaudeScript, RecordedClaudeCall };
 export { toolUse, waitFor };
@@ -145,6 +147,8 @@ interface AssistantApi {
     rendered?: Conversation;
     receive(message: unknown): void;
   }[];
+  /** What each running Assistant has for its Change's overview, by the Change's title. */
+  overviews(): { title: string; take: Take }[];
   /** The Claude login status bar item, once a login has been checked. */
   loginStatus(): { text: string; tooltip?: string } | undefined;
 }
@@ -184,6 +188,22 @@ async function sendToPanel(title: string, message: unknown): Promise<void> {
   const panel = (await assistantApi()).panels().find((p) => p.title === title);
   if (!panel) throw new Error(`No Assistant panel for ${title}`);
   panel.receive(message);
+}
+
+/** What the Assistant has for the Change's overview, while it runs, by the Change's title. */
+export async function assistantTake(title: string): Promise<Take | undefined> {
+  return (await assistantApi()).overviews().find((o) => o.title === title)
+    ?.take;
+}
+
+/** Waits until the Assistant has written what the Change's overview shows. */
+export async function summaryWritten(title: string): Promise<Take> {
+  let take: Take | undefined;
+  await eventually(async () => {
+    take = await assistantTake(title);
+    if (!take || take.reading) throw new Error(`no summary of ${title} yet`);
+  });
+  return take!;
 }
 
 /** Types the message into the Change's Assistant panel and sends it. */
@@ -234,6 +254,17 @@ export async function loginStatus(): Promise<
 > {
   return (await assistantApi()).loginStatus();
 }
+
+/** Runs Show Assistant on the Change, which opens its chat panel. */
+export function showAssistant(change: ChangeRequest): Thenable<unknown> {
+  return vscode.commands.executeCommand("dearReviewer.showAssistant", change);
+}
+
+/** The note an Assistant panel starts with: the summary itself is in the Change's overview. */
+export const summaryNote = {
+  from: "note",
+  text: "Summarised the Change in its overview, beside the diff.",
+} as const;
 
 /** The editor tabs that hold a webview, such as the Assistant panel, by label. */
 export function webviewTabs(): string[] {

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-14T16:00:00Z",
+  "generatedAt": "2026-10-14T17:30:00Z",
   "title": "Design System: Dear Reviewer",
   "extensions": {
     "colorMeta": {
@@ -296,6 +296,11 @@
         "name": "The Hairline Rule",
         "body": "Separate with a 1px `hairline` or a theme tint, never a shadow, gradient or blur. If something needs to float, it should be native VS Code UI (a quick pick, hover or notification), not a webview layer.",
         "section": "elevation"
+      },
+      {
+        "name": "The One Paragraph Rule",
+        "body": "The Assistant's take is at most three sentences and ends by naming where to start. If it needs more, the Reviewer asks for it in the chat.",
+        "section": "components"
       }
     ],
     "dos": [

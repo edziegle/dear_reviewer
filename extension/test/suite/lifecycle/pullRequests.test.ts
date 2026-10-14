@@ -5,7 +5,8 @@ import * as vscode from "vscode";
 import {
   assistantRuns,
   flag,
-  renderedPanel,
+  assistantTake,
+  summaryWritten,
   replyTurn,
   scriptClaude,
 } from "../assistant";
@@ -73,9 +74,7 @@ describe("Pull requests that are merged or closed", () => {
     await refreshInbox();
     await openFromInbox(inboxEntry(await inbox(), titles.get(pr)!));
     // The Assistant's summary is saved as the start of the conversation.
-    await eventually(async () =>
-      assert.strictEqual((await renderedPanel(changeTitle(pr)))?.busy, false)
-    );
+    await summaryWritten(changeTitle(pr));
   }
 
   before(async () => {
@@ -150,9 +149,9 @@ describe("Pull requests that are merged or closed", () => {
     );
     for (const pr of [merged, closed])
       assert.strictEqual(
-        await renderedPanel(changeTitle(pr)),
+        await assistantTake(changeTitle(pr)),
         undefined,
-        `${titles.get(pr)} has no Assistant panel`
+        `${titles.get(pr)} has no Assistant running`
       );
   });
 
@@ -166,9 +165,9 @@ describe("Pull requests that are merged or closed", () => {
     const [run] = assistantRuns();
     assert.ok(run, "the Assistant ran");
     assert.strictEqual(flag(run, "--resume"), undefined);
-    assert.deepStrictEqual(
-      (await renderedPanel(changeTitle(closed)))?.messages,
-      [{ from: "assistant", text: "A new summary." }]
+    assert.strictEqual(
+      (await assistantTake(changeTitle(closed)))?.text,
+      "A new summary."
     );
   });
 
@@ -186,8 +185,9 @@ describe("Pull requests that are merged or closed", () => {
     const [run] = assistantRuns();
     assert.ok(run, "the Assistant ran");
     assert.strictEqual(flag(run, "--resume"), undefined);
-    assert.deepStrictEqual((await renderedPanel(changeTitle(open)))?.messages, [
-      { from: "assistant", text: "Another new summary." },
-    ]);
+    assert.strictEqual(
+      (await assistantTake(changeTitle(open)))?.text,
+      "Another new summary."
+    );
   });
 });

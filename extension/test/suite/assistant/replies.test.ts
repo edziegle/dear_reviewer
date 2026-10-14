@@ -12,6 +12,8 @@ import {
   scriptClaude,
   toolUse,
   waitFor,
+  showAssistant,
+  summaryNote,
 } from "../assistant";
 import { buildFixtureRepo } from "../fixtures";
 import {
@@ -68,6 +70,7 @@ describe("The Assistant's work and replies in its panel", () => {
       repo.commits.renamed
     );
     await openChange(request);
+    await showAssistant(request);
     await eventually(async () =>
       assert.strictEqual((await renderedPanel(title))?.busy, false)
     );
@@ -84,7 +87,7 @@ describe("The Assistant's work and replies in its panel", () => {
       ]);
       assert.deepStrictEqual(
         panel?.messages.map((m) => m.from),
-        ["assistant", "reviewer"],
+        ["note", "reviewer"],
         "no empty reply while the Assistant only uses tools"
       );
     });
@@ -121,16 +124,21 @@ describe("The Assistant's work and replies in its panel", () => {
       "print(new_helper())",
       "```",
     ].join("\n");
-    scriptClaude({ turns: [replyTurn(reply)] });
+    scriptClaude({ turns: [replyTurn("A summary."), replyTurn(reply)] });
     const { request, title } = changeOf(
       repo.commits.initial,
       repo.commits.documented
     );
     await openChange(request);
+    await showAssistant(request);
     await eventually(async () =>
       assert.strictEqual((await renderedPanel(title))?.busy, false)
     );
-    const [message] = (await renderedPanelWithHtml(title))!.messages;
+    await askAssistant(title, "What does it do?");
+    await eventually(async () =>
+      assert.strictEqual((await renderedPanel(title))?.messages.length, 3)
+    );
+    const message = (await renderedPanelWithHtml(title))!.messages[2];
     assert.strictEqual(message.text, reply, "the reply's text stays as it was");
     const html = message.html ?? "";
     for (const expected of [
@@ -165,18 +173,23 @@ describe("The Assistant's work and replies in its panel", () => {
   it("opens path:line and path:start-end references at that range in the Change's worktrees, and nowhere else", async () => {
     const reply =
       "See `util.py:1-2`, main.py:3 and pkg/core.py:1, not 10:30 or ../outside.py:1.";
-    scriptClaude({ turns: [replyTurn(reply)] });
+    scriptClaude({ turns: [replyTurn("A summary."), replyTurn(reply)] });
     const { request, title } = changeOf(
       repo.commits.initial,
       repo.commits.restructured
     );
     const before = workspaceFolders();
     await openChange(request);
+    await showAssistant(request);
     const [base, head] = foldersAddedSince(before);
     await eventually(async () =>
       assert.strictEqual((await renderedPanel(title))?.busy, false)
     );
-    const html = (await renderedPanelWithHtml(title))!.messages[0].html ?? "";
+    await askAssistant(title, "Where should I look?");
+    await eventually(async () =>
+      assert.strictEqual((await renderedPanel(title))?.messages.length, 3)
+    );
+    const html = (await renderedPanelWithHtml(title))!.messages[2].html ?? "";
     for (const expected of [
       '<a data-path="util.py" data-start="1" data-end="2"><code>util.py:1-2</code></a>',
       '<a data-path="main.py" data-start="3" data-end="3">main.py:3</a>',

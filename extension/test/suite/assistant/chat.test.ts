@@ -14,6 +14,8 @@ import {
   userMessages,
   waitFor,
   webviewTabs,
+  showAssistant,
+  summaryNote,
 } from "../assistant";
 import { buildFixtureRepo } from "../fixtures";
 import {
@@ -51,6 +53,7 @@ describe("Chatting with the Assistant about a Change", () => {
       repo.commits.renamed
     );
     await openChange(request);
+    await showAssistant(request);
     await eventually(async () =>
       assert.strictEqual((await renderedPanel(title))?.busy, false)
     );
@@ -70,7 +73,7 @@ describe("Chatting with the Assistant about a Change", () => {
       const panel = await renderedPanel(title);
       assert.strictEqual(panel?.busy, false);
       assert.deepStrictEqual(panel?.messages, [
-        { from: "assistant", text: "A summary." },
+        summaryNote,
         { from: "reviewer", text: "What does util.py do?" },
         { from: "assistant", text: answer },
       ]);
@@ -90,6 +93,7 @@ describe("Chatting with the Assistant about a Change", () => {
     );
     const before = workspaceFolders();
     await openChange(request);
+    await showAssistant(request);
     const [base, head] = foldersAddedSince(before);
     await eventually(async () =>
       assert.strictEqual((await renderedPanel(title))?.busy, false)
@@ -170,7 +174,9 @@ describe("Chatting with the Assistant about a Change", () => {
     const second = changeOf(repo.commits.renamed, repo.commits.restructured);
     try {
       await openChange(first.request);
+      await showAssistant(first.request);
       await openChange(second.request);
+      await showAssistant(second.request);
       for (const { title } of [first, second])
         await eventually(async () =>
           assert.strictEqual((await renderedPanel(title))?.busy, false)
@@ -183,12 +189,12 @@ describe("Chatting with the Assistant about a Change", () => {
         assert.strictEqual(panel?.busy, false);
         assert.deepStrictEqual(
           panel?.messages.map((m) => m.text),
-          ["A summary.", "Only for the second?", "An answer."]
+          [summaryNote.text, "Only for the second?", "An answer."]
         );
       });
       assert.deepStrictEqual(
         (await renderedPanel(first.title))?.messages.map((m) => m.text),
-        ["A summary."]
+        [summaryNote.text]
       );
     } finally {
       await closeChange(first.request);
@@ -216,6 +222,7 @@ describe("Chatting with the Assistant about a Change", () => {
     };
     const before = workspaceFolders();
     await openChange(request);
+    await showAssistant(request);
     const [oldBase, oldHead] = foldersAddedSince(before);
     const oldTitle = changeOf(repo.commits.initial, repo.commits.renamed).title;
     await eventually(async () =>
@@ -231,6 +238,7 @@ describe("Chatting with the Assistant about a Change", () => {
     repo.git("branch", "-f", "chat-feature", repo.commits.documented);
     scriptClaude({ turns: [replyTurn("Second answer.")] });
     await openChange(request);
+    await showAssistant(request);
     const newTitle = changeOf(
       repo.commits.initial,
       repo.commits.documented
@@ -242,7 +250,7 @@ describe("Chatting with the Assistant about a Change", () => {
         login: "Claude subscription (Max)",
         busy: false,
         messages: [
-          { from: "assistant", text: "A summary." },
+          summaryNote,
           { from: "reviewer", text: "First question?" },
           { from: "assistant", text: "First answer." },
           { from: "note", text: note },
@@ -291,6 +299,7 @@ describe("Chatting with the Assistant about a Change", () => {
     const olderRequest = { ...older.request, pullRequest };
     const newerRequest = { ...newer.request, pullRequest };
     await openChange(olderRequest);
+    await showAssistant(olderRequest);
     await eventually(async () =>
       assert.strictEqual((await renderedPanel(older.title))?.busy, false)
     );
@@ -301,10 +310,12 @@ describe("Chatting with the Assistant about a Change", () => {
 
     await openChange(newerRequest);
 
+    await showAssistant(newerRequest);
+
     await eventually(async () =>
       assert.deepStrictEqual(
         (await renderedPanel(newer.title))?.messages.map((m) => m.from),
-        ["assistant", "reviewer", "assistant", "note"]
+        ["note", "reviewer", "assistant", "note"]
       )
     );
     assert.deepStrictEqual(assistantTabs(), [`Assistant: ${newer.title}`]);
@@ -333,6 +344,7 @@ describe("Chatting with the Assistant about a Change", () => {
       repo.commits.restructured
     );
     await openChange(request);
+    await showAssistant(request);
     await eventually(async () =>
       assert.strictEqual((await renderedPanel(title))?.busy, false)
     );
@@ -340,6 +352,7 @@ describe("Chatting with the Assistant about a Change", () => {
     forgetClaudeSessions();
     scriptClaude({ turns: [replyTurn("A fresh answer.")] });
     await openChange(request);
+    await showAssistant(request);
     await eventually(async () =>
       assert.strictEqual((await renderedPanel(title))?.messages.length, 1)
     );
@@ -348,7 +361,7 @@ describe("Chatting with the Assistant about a Change", () => {
 
     await eventually(async () =>
       assert.deepStrictEqual((await renderedPanel(title))?.messages, [
-        { from: "assistant", text: "A summary." },
+        summaryNote,
         { from: "reviewer", text: "Still there?" },
         {
           from: "note",

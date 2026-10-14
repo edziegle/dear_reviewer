@@ -126,7 +126,7 @@ components:
 
 The Change's code is the page, and the code lives only in the editor. Dear Reviewer writes in the margin beside it: the timeline, the Assistant's replies and the Findings list are notes about the code, never a second copy of it (ADR 0012). A margin note is in the reader's own hand and the book's own ink. Every surface takes its color, type and controls from the active VS Code theme, and must look right in light, dark and high-contrast themes without a single theme-specific rule.
 
-The system has almost nothing of its own on purpose. Native UI comes first: tree views, comment threads, gutter decorations, codicons, quick picks and the status bar. The two webviews, the pull-request timeline and the Assistant panel, exist only where no native view fits, and they behave like editor panels: compact, text-led, flat, divided by hairlines, readable for a whole working day. Density is the editor's density. A Reviewer who glances from the diff to the margin should notice the content, not the change of world.
+The system has almost nothing of its own on purpose. Native UI comes first: tree views, comment threads, gutter decorations, codicons, quick picks and the status bar. The two webviews, each Change's overview and the Assistant panel, exist only where no native view fits, and they behave like editor panels: compact, text-led, flat, divided by hairlines, readable for a whole working day. Density is the editor's density. A Reviewer who glances from the diff to the margin should notice the content, not the change of world.
 
 Rejected on sight: the GitHub Pull Requests extension's webviews, which are slow, custom-styled review pages that look wrong next to VSCodium, and branded AI chat panels with gradients, glows, sparkle motifs or a face for the bot. The Assistant is a plain panel of prose, not a character.
 
@@ -224,7 +224,7 @@ The feel of every control is quiet and editor-plain. If a control looks custom, 
 ### Buttons
 
 - **Shape:** nearly square (2px), no border.
-- **Primary:** `action-background` on `action-foreground`, 4px 12px padding, inheriting the body font. Used for Send, for a problem's fix, and, at the tighter header size (2px 8px), for Submit Review… in the timeline's header beside Refresh.
+- **Primary:** `action-background` on `action-foreground`, 4px 12px padding, inheriting the body font. Used for Send, for a problem's fix, and, at the tighter header size (2px 8px), for the button that finishes the Review (Submit Review… or Write Brief…) in the overview's header beside Refresh.
 - **Hover / Focus:** hover switches to `action-hover` with no transition. Focus shows a 1px `focus` outline; every button and link needs a visible `:focus-visible` state.
 - **Disabled:** 50% opacity with the default cursor, such as Send while the Assistant works.
 - **Secondary:** `secondary-background` on `secondary-foreground`, tighter (2px 8px), for Refresh.
@@ -254,6 +254,19 @@ The feel of every control is quiet and editor-plain. If a control looks custom, 
 Navigation is native: the activity-bar container holds the Inbox, Change Files and Findings tree views, with codicons (`account`, `git-branch`, `git-compare`, `lightbulb`, `error`) and git decoration colors for file status. The status bar item shows `$(sparkle) Claude: <login>`, switching to `$(warning)` on a warning background when the login is missing or billed per token. Webviews never build their own navigation; links and `path:line` references go back to the extension, which opens them in the editor or the browser.
 
 Each Change in Change Files carries its finishing actions as inline codicon buttons (`check-all` Submit Review or `note` Write Brief, `history` Show Timeline, `comment-discussion` Show Assistant), with the rest in its context menu, and says in its description whether there are new commits since the Reviewer's last Review. The Inbox marks a pull request or branch `opening…` and then `open`. Review keys sit under one chord, `Ctrl+Alt+R`, so they don't take over keys the editor already uses.
+
+### Change Overview (signature)
+
+The first thing beside the diff when a Change opens, and the only panel that opens by itself (ADR 0019). It reads top to bottom as four answers, each one line or one paragraph, then the history:
+
+- **What is this:** the title (a link button to the pull request) and a muted byline, `acme/api #482 · octocat → main`.
+- **How big, and is it healthy:** `12 files · +340 −58 · checks failed`, with tabular numerals, additions and deletions in the git decoration colors.
+- **Where am I:** a muted line, `New commits since your Review · 2 pending Comments · 3 of 12 viewed`.
+- **The Assistant's take:** a small "Assistant" heading (or "Since your Review at `3f9c2a1`") over one paragraph of rendered Markdown, capped at 72ch. While it is written, a muted italic line that screen readers hear; when `claude` can't run, a muted line with a link button that helps. Never a red banner: the overview works without the Assistant.
+
+Under the take, two secondary buttons: Next unviewed file and Ask the Assistant. A hairline closes the overview, and the history follows: the pull request's timeline, or a local Change's commits.
+
+**The One Paragraph Rule.** The Assistant's take is at most three sentences and ends by naming where to start. If it needs more, the Reviewer asks for it in the chat.
 
 ### Rendered Markdown
 

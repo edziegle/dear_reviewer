@@ -5,7 +5,9 @@ import * as vscode from "vscode";
 import {
   assistantRuns,
   flag,
+  assistantTake,
   renderedPanel,
+  showAssistant,
   replyTurn,
   scriptClaude,
   userMessages,
@@ -87,6 +89,7 @@ describe("Ending a local Review with a Brief", () => {
   });
 
   it("keeps the Review going when the Assistant can't write the Brief", async () => {
+    await showAssistant(change);
     await eventually(async () =>
       assert.strictEqual((await renderedPanel(title))?.busy, false)
     );
@@ -230,17 +233,13 @@ describe("Ending a local Review with a Brief", () => {
     await openBranchFromInbox(inboxEntry(await inbox(), "agent/docs"));
 
     const newTitle = `${repo} ${short(change.base)}..${short(newHead)}`;
-    await eventually(async () => {
-      const panel = await renderedPanel(newTitle);
-      assert.strictEqual(panel?.busy, false);
-      assert.deepStrictEqual(panel?.messages.slice(-2), [
-        {
-          from: "note",
-          text: `What changed since your last Review, at ${short(change.head)}:`,
-        },
-        { from: "assistant", text: "since.py is new." },
-      ]);
-    });
+    await eventually(async () =>
+      assert.deepStrictEqual(await assistantTake(newTitle), {
+        label: `Since your Review at ${short(change.head)}`,
+        reading: false,
+        text: "since.py is new.",
+      })
+    );
     const [run] = assistantRuns();
     const [prompt] = userMessages(run);
     for (const expected of [change.head, newHead, "since.py"])

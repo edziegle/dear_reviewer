@@ -188,6 +188,27 @@ export class ChangeFilesView
     return { total: files.length };
   }
 
+  /** Whether the Change has new commits since the last Review, if one ended. */
+  async sinceReview(
+    change: Change
+  ): Promise<"newCommits" | "noNewCommits" | undefined> {
+    const reviewed = await this.reviewedOf(change);
+    if (!reviewed) return;
+    return reviewed === change.headSha ? "noNewCommits" : "newCommits";
+  }
+
+  /** How many of the Change's files are viewed, of how many. */
+  async viewedCount(
+    change: Change
+  ): Promise<{ viewed: number; total: number }> {
+    const files = await this.filesOf(change);
+    const viewed = await this.viewedFiles.viewed(change);
+    return {
+      viewed: files.filter((f) => viewed.has(f.path)).length,
+      total: files.length,
+    };
+  }
+
   /** Opens the diff of one of the Change's files. */
   openFile(change: Change, file: ChangedFile): Promise<void> {
     return this.openDiff({ kind: "file", change, file, viewed: false });

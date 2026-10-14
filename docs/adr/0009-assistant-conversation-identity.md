@@ -11,6 +11,8 @@ Amended by [ADR 0015](0015-what-changed-since-the-last-review.md): when the Assi
 
 Amended by [ADR 0016](0016-local-comments-and-briefs.md): a local Change's Comments and last Brief are kept under its conversation name too, and the Assistant writes the Brief in the Change's conversation.
 
+Amended by [ADR 0019](0019-change-overview.md): the saved conversation also keeps the Assistant's summary and its last explanation of what changed, which the Change's overview shows again after a reload without asking Claude.
+
 ## Context and Problem Statement
 
 The glossary says a Change's conversation with the Assistant lasts for the life of the Change: across Reviews and window reloads, until the Change is merged or closed. ADR 0004 runs one `claude -p` process per Change, so the conversation ends when the window reloads. Dear Reviewer's Change id hashes the repository, merge base and head, so a new commit gives a new id, new worktrees and, for a pull request, a new open Change. What should the saved conversation be keyed on, what happens to it when a new head arrives, and where does `claude` run so that its session can be resumed?

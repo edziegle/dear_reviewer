@@ -107,6 +107,10 @@ export function newHeadNote(change: Change, previousHead: string): string {
   ].join("\n");
 }
 
+/**
+ * Asks for the short summary the Change's overview shows: what the Change
+ * does and where to start reading, since the Reviewer reads the diff itself.
+ */
 export async function summaryPrompt(change: Change): Promise<string> {
   const files = await changedFiles(change);
   const { diff, truncated } = await cappedDiff(
@@ -117,9 +121,9 @@ export async function summaryPrompt(change: Change): Promise<string> {
   return [
     `The Reviewer has opened the Change ${changeTitle(change)}: from ${change.mergeBase} to ${change.headSha}.`,
     "",
-    "Summarise it for them, briefly:",
-    "1. What the Change does and why, as far as the code shows.",
-    "2. Where the risk is: what could break, and which files or spots deserve the closest look.",
+    "Summarise it for them in one short paragraph of plain prose: at most three sentences and about 60 words, with no headings, lists or code blocks.",
+    "Say what the Change does and why, as far as the code shows. Then say where to start reading, as one `path:line` reference to a changed file in the head worktree, and why there.",
+    "Don't go through the files one by one or list risks: the Reviewer reads the diff themselves, and asks for Findings when they want them.",
     "",
     `Changed files (${files.length}):`,
     ...files.map((f) => `- ${f.status}: ${f.path}`),
@@ -163,7 +167,7 @@ export async function sinceLastReviewPrompt(
     ...(note ? [note, ""] : []),
     `The Reviewer's last Review of this Change covered commit ${from}. The Change is now at ${change.headSha}.`,
     "",
-    "Explain to them in plain words, briefly, what changed since that Review: what the new commits do, and anything that deserves a fresh look. Leave out what they already reviewed.",
+    "Explain what changed since that Review in one short paragraph of plain prose: at most three sentences and about 60 words, with no headings, lists or code blocks. Say what the new commits do, then where to look first, as one `path:line` reference to a file they changed. Leave out what the Reviewer already reviewed.",
     "",
     "Commits since:",
     commits || "(none: the history was rewritten, so compare the two commits)",

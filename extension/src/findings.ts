@@ -71,9 +71,14 @@ export class Findings
       body: string
     ) => vscode.CommentThread
   ) {
-    // A gutter marker and a mark on the scroll bar: nothing in the text.
+    // A gutter marker and a mark on the scroll bar: nothing in the text. A
+    // gutter icon can't take a theme color, so each theme kind gets an icon
+    // in its default editorWarning.foreground.
+    const icon = (file: string) =>
+      vscode.Uri.joinPath(extensionUri, "media", file);
     this.decoration = vscode.window.createTextEditorDecorationType({
-      gutterIconPath: vscode.Uri.joinPath(extensionUri, "media", "finding.svg"),
+      light: { gutterIconPath: icon("finding-light.svg") },
+      dark: { gutterIconPath: icon("finding.svg") },
       gutterIconSize: "contain",
       overviewRulerColor: new vscode.ThemeColor("editorWarning.foreground"),
       overviewRulerLane: vscode.OverviewRulerLane.Right,

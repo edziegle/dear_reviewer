@@ -7,6 +7,31 @@
 import * as vscode from "vscode";
 import { renderMarkdown, type RenderOptions } from "./markdown";
 
+/**
+ * The styles both webviews share: rendered Markdown, the problem banner and
+ * its button, and the focus outline on every button and link (DESIGN.md).
+ */
+export const sharedStyles = `
+  button:focus-visible, .markdown a:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
+  .markdown > :first-child { margin-top: 0; }
+  .markdown > :last-child { margin-bottom: 0; }
+  .markdown h1, .markdown h2, .markdown h3, .markdown h4 { font-size: 1.05em; margin: 1em 0 0.4em; }
+  .markdown h1 { font-size: 1.2em; }
+  .markdown h2 { font-size: 1.1em; }
+  .markdown p, .markdown ul, .markdown ol, .markdown pre, .markdown blockquote, .markdown table { margin: 0.5em 0; }
+  .markdown ul, .markdown ol { padding-left: 1.6em; list-style: revert; }
+  .markdown code { font-family: var(--vscode-editor-font-family); font-size: var(--vscode-editor-font-size); background: var(--vscode-textCodeBlock-background); padding: 0 3px; border-radius: 3px; }
+  .markdown pre { background: var(--vscode-textCodeBlock-background); padding: 8px; border-radius: 3px; overflow-x: auto; }
+  .markdown pre code { padding: 0; background: none; white-space: pre; }
+  .markdown blockquote { background: var(--vscode-textBlockQuote-background); padding: 4px 8px; border-radius: 3px; color: var(--vscode-textBlockQuote-foreground, inherit); }
+  .markdown table { border-collapse: collapse; }
+  .markdown th, .markdown td { border: 1px solid var(--vscode-panel-border); padding: 2px 6px; }
+  .markdown a[data-href], .markdown a[data-path] { color: var(--vscode-textLink-foreground); cursor: pointer; text-decoration: none; }
+  .markdown a[data-href]:hover, .markdown a[data-path]:hover { text-decoration: underline; }
+  .problem { margin: 12px 0; padding: 8px; border: 1px solid var(--vscode-inputValidation-errorBorder); background: var(--vscode-inputValidation-errorBackground); white-space: pre-wrap; }
+  .problem button { display: block; margin-top: 8px; padding: 4px 10px; border: none; border-radius: 2px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); cursor: pointer; font: inherit; }
+  .problem button:hover { background: var(--vscode-button-hoverBackground); }`;
+
 /** Renders Markdown to sanitised HTML, keeping the links it has. */
 export type RenderInto = (text: string, options?: RenderOptions) => string;
 

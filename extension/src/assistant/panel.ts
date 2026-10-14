@@ -7,7 +7,12 @@
 
 import * as crypto from "crypto";
 import * as vscode from "vscode";
-import { Handshake, MarkdownPanel, RenderInto } from "../markdownPanel";
+import {
+  Handshake,
+  MarkdownPanel,
+  RenderInto,
+  sharedStyles,
+} from "../markdownPanel";
 import type { Step } from "./activity";
 import type { Selection } from "./prompts";
 
@@ -154,7 +159,7 @@ function html(): string {
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}';">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<style nonce="${nonce}">
+<style nonce="${nonce}">${sharedStyles}
   body { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); padding: 0 16px; margin: 0; display: flex; flex-direction: column; min-height: 100vh; }
   header { position: sticky; top: 0; background: var(--vscode-editor-background); padding: 12px 0 8px; border-bottom: 1px solid var(--vscode-panel-border); }
   h1 { font-size: 1.1em; margin: 0 0 4px; }
@@ -166,9 +171,6 @@ function html(): string {
   .context { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
   .chip { font-family: var(--vscode-editor-font-family); font-size: 0.85em; padding: 1px 6px; border-radius: 3px; background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); white-space: nowrap; }
   .chip button { background: none; border: none; color: inherit; cursor: pointer; padding: 0 0 0 4px; font: inherit; }
-  .problem { margin: 12px 0; padding: 8px; border: 1px solid var(--vscode-inputValidation-errorBorder); background: var(--vscode-inputValidation-errorBackground); white-space: pre-wrap; }
-  .problem button { display: block; margin-top: 8px; padding: 4px 10px; border: none; border-radius: 2px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); cursor: pointer; font: inherit; }
-  .problem button:hover { background: var(--vscode-button-hoverBackground); }
   .busy { color: var(--vscode-descriptionForeground); margin: 8px 0; }
   .busy .now { font-style: italic; }
   .busy code { font-family: var(--vscode-editor-font-family); font-style: normal; }
@@ -176,21 +178,6 @@ function html(): string {
   .busy summary { cursor: pointer; }
   .busy ol { margin: 4px 0; padding-left: 20px; }
   .message.assistant { white-space: normal; }
-  .markdown > :first-child { margin-top: 0; }
-  .markdown > :last-child { margin-bottom: 0; }
-  .markdown h1, .markdown h2, .markdown h3, .markdown h4 { font-size: 1.05em; margin: 1em 0 0.4em; }
-  .markdown h1 { font-size: 1.2em; }
-  .markdown h2 { font-size: 1.1em; }
-  .markdown p, .markdown ul, .markdown ol, .markdown pre, .markdown blockquote, .markdown table { margin: 0.5em 0; }
-  .markdown ul, .markdown ol { padding-left: 1.6em; }
-  .markdown code { font-family: var(--vscode-editor-font-family); font-size: var(--vscode-editor-font-size); background: var(--vscode-textCodeBlock-background); padding: 0 3px; border-radius: 3px; }
-  .markdown pre { background: var(--vscode-textCodeBlock-background); padding: 8px; border-radius: 3px; overflow-x: auto; }
-  .markdown pre code { padding: 0; background: none; white-space: pre; }
-  .markdown blockquote { background: var(--vscode-textBlockQuote-background); padding: 4px 8px; border-radius: 3px; color: var(--vscode-textBlockQuote-foreground, inherit); }
-  .markdown table { border-collapse: collapse; }
-  .markdown th, .markdown td { border: 1px solid var(--vscode-panel-border); padding: 2px 6px; }
-  .markdown a[data-href], .markdown a[data-path] { color: var(--vscode-textLink-foreground); cursor: pointer; text-decoration: none; }
-  .markdown a[data-href]:hover, .markdown a[data-path]:hover { text-decoration: underline; }
   footer { position: sticky; bottom: 0; background: var(--vscode-editor-background); padding: 8px 0 12px; border-top: 1px solid var(--vscode-panel-border); }
   form { display: flex; gap: 6px; align-items: flex-end; }
   textarea { flex: 1; resize: vertical; min-height: 2.6em; font: inherit; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); border-radius: 2px; padding: 4px 6px; }

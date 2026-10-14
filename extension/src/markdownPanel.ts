@@ -9,10 +9,12 @@ import { renderMarkdown, type RenderOptions } from "./markdown";
 
 /**
  * The styles both webviews share: rendered Markdown, the problem banner and
- * its button, and the focus outline on every button and link (DESIGN.md).
+ * its button, the focus outline on every button, link and summary, and the
+ * theme's button border, which only high-contrast themes draw (DESIGN.md).
  */
 export const sharedStyles = `
-  button:focus-visible, .markdown a:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
+  button:focus-visible, a:focus-visible, summary:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
+  button.primary, button.secondary, button.send, .problem button { border: 1px solid var(--vscode-button-border, var(--vscode-contrastBorder, transparent)); }
   .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .markdown > :first-child { margin-top: 0; }
   .markdown > :last-child { margin-bottom: 0; }
@@ -27,11 +29,45 @@ export const sharedStyles = `
   .markdown blockquote { background: var(--vscode-textBlockQuote-background); padding: 4px 8px; border-radius: 3px; color: var(--vscode-textBlockQuote-foreground, inherit); }
   .markdown table { border-collapse: collapse; }
   .markdown th, .markdown td { border: 1px solid var(--vscode-panel-border); padding: 2px 6px; }
-  .markdown a[data-href], .markdown a[data-path] { color: var(--vscode-textLink-foreground); cursor: pointer; text-decoration: none; }
-  .markdown a[data-href]:hover, .markdown a[data-path]:hover { text-decoration: underline; }
+  .markdown a[data-href], .markdown a[data-path] { color: var(--vscode-textLink-foreground); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+  .markdown a[data-href]:hover, .markdown a[data-path]:hover { color: var(--vscode-textLink-activeForeground, var(--vscode-textLink-foreground)); }
   .problem { margin: 12px 0; padding: 8px; border: 1px solid var(--vscode-inputValidation-errorBorder); background: var(--vscode-inputValidation-errorBackground); white-space: pre-wrap; }
-  .problem button { display: block; margin-top: 8px; padding: 4px 10px; border: none; border-radius: 2px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); cursor: pointer; font: inherit; }
+  .problem code { font-family: var(--vscode-editor-font-family); }
+  .problem button { display: block; margin-top: 8px; padding: 4px 10px; border-radius: 2px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); cursor: pointer; font: inherit; }
   .problem button:hover { background: var(--vscode-button-hoverBackground); }`;
+
+/**
+ * The script both webviews share: `keepFocus` runs a render and puts the
+ * focus back on the element at the same place if the render replaced the
+ * focused one; `setText` changes a node's text only when it differs, so a
+ * live region speaks only of a change; `appendWithCode` shows the
+ * backticked parts of plain text, such as a problem, as code.
+ */
+export const sharedScript = `
+  const focusables = (root) => [...root.querySelectorAll("a[role=link], button, summary, textarea")];
+  const keepFocus = (render) => {
+    const active = document.activeElement;
+    const scope = active && active !== document.body && active.parentElement ? active.parentElement.closest("[id]") : null;
+    const index = scope ? focusables(scope).indexOf(active) : -1;
+    render();
+    if (index < 0 || active.isConnected) return;
+    const now = document.getElementById(scope.id);
+    const target = now && focusables(now)[index];
+    if (target) target.focus({ preventScroll: true });
+  };
+  const setText = (node, text) => {
+    if (node.textContent !== text) node.textContent = text;
+  };
+  const appendWithCode = (node, text) => {
+    text.split("\`").forEach((part, i) => {
+      if (i % 2 === 0) node.append(part);
+      else {
+        const code = document.createElement("code");
+        code.textContent = part;
+        node.append(code);
+      }
+    });
+  };`;
 
 /** Renders Markdown to sanitised HTML, keeping the links it has. */
 export type RenderInto = (text: string, options?: RenderOptions) => string;

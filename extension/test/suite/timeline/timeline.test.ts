@@ -24,6 +24,7 @@ import {
   avatarBytes,
   catchLinks,
   clickLink,
+  clickOverview,
   clickProblemAction,
   clickRefresh,
   releaseLinks,
@@ -34,6 +35,7 @@ import {
   type TimelineItem,
 } from "../timeline";
 import { webviewTabs } from "../assistant";
+import { standInForTrust } from "../trust";
 
 const viewer = { login: "reviewer", token: "test-token" };
 const settingKeys = ["githubApiUrl", "repositories", "localClones"];
@@ -48,7 +50,14 @@ function withoutAvatars(
   timeline: (Partial<Timeline> & Pick<Timeline, "items">) | undefined
 ) {
   if (!timeline) return timeline;
-  const { take: _take, standing: _standing, size: _size, ...rest } = timeline;
+  const {
+    take: _take,
+    standing: _standing,
+    progress: _progress,
+    navigationOff: _navigationOff,
+    size: _size,
+    ...rest
+  } = timeline;
   return {
     ...rest,
     items: timeline.items.map((item) => {
@@ -322,6 +331,32 @@ describe("A pull request's timeline", () => {
         `${login}'s avatar is the one GitHub serves`
       );
     }
+  });
+
+  it("counts the files viewed, and says when navigation is off, with a way to trust the review window", async () => {
+    const sent = await sentTimeline(title);
+    assert.strictEqual(sent.progress?.viewed, 0);
+    assert.ok((sent.progress?.total ?? 0) > 0, "the files are counted");
+    assert.notStrictEqual(sent.navigationOff, true);
+
+    let shown = 0;
+    await standInForTrust({
+      isTrusted: false,
+      isReviewWindow: true,
+      showWorkspaceTrust: () => shown++,
+    });
+    try {
+      await eventually(async () =>
+        assert.strictEqual((await renderedTimeline(title))?.navigationOff, true)
+      );
+      await clickOverview(title, "trust");
+      await eventually(async () => assert.strictEqual(shown, 1));
+    } finally {
+      await standInForTrust({ isTrusted: true, isReviewWindow: false });
+    }
+    await eventually(async () =>
+      assert.strictEqual((await renderedTimeline(title))?.navigationOff, false)
+    );
   });
 
   it("renders descriptions, Comments and reviews as Markdown, without raw HTML, scripts or remote images", async () => {

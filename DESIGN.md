@@ -153,7 +153,7 @@ The palette is borrowed whole from the active theme; Dear Reviewer chooses roles
 
 ### Tertiary
 
-- **Check Signals** (`check-passed`, `check-failed`, `check-running`): the outline and text of a check's status. Skipped and neutral checks use `muted-foreground`.
+- **Check Signals** (`check-passed`, `check-failed`, `check-running`): the outline of a check's status. The word inside stays in `foreground`: these are icon colors, meant for 3:1, and too faint for small text in light themes. Skipped and neutral checks use `muted-foreground`.
 - **Finding** (`finding`): the Assistant's Findings: the tree icon, the overview-ruler mark and the gutter marker. A gutter icon can't take a theme color, so the marker is two SVGs in VS Code's default `editorWarning.foreground` for each theme kind: `#cca700` in `extension/media/finding.svg` for dark themes and `#bf8803` in `extension/media/finding-light.svg` for light ones. These are the only literal colors in the system; change them only if VS Code's defaults change.
 - **Problem** (`problem-background` with a `problem-border` outline): the banner that says what went wrong, in words for the Reviewer.
 
@@ -223,26 +223,28 @@ The feel of every control is quiet and editor-plain. If a control looks custom, 
 
 ### Buttons
 
-- **Shape:** nearly square (2px), no border.
-- **Primary:** `action-background` on `action-foreground`, 4px 12px padding, inheriting the body font. Used for Send, for a problem's fix, and, at the tighter header size (2px 8px), for the button that finishes the Review (Submit Review… or Write Brief…) in the overview's header beside Refresh.
+- **Shape:** nearly square (2px), with a 1px border in `--vscode-button-border`, else `--vscode-contrastBorder`, else transparent. Only high-contrast themes draw it, and there it is the button's only edge.
+- **Primary:** `action-background` on `action-foreground`, 4px 12px padding, inheriting the body font. Used for Send, for a problem's fix, and in the overview for whatever comes next in the Review: the way in while files are unviewed, then the finishing button (see Change Overview).
 - **Hover / Focus:** hover switches to `action-hover` with no transition. Focus shows a 1px `focus` outline; every button and link needs a visible `:focus-visible` state.
 - **Disabled:** 50% opacity with the default cursor, such as Send while the Assistant works.
-- **Secondary:** `secondary-background` on `secondary-foreground`, tighter (2px 8px), for Refresh.
-- **Link button:** no background, border or padding, in `link`, underlined on hover. Used where an action reads as a destination (the title, Details).
+- **Secondary:** `secondary-background` on `secondary-foreground`, tighter (2px 8px), for the finishing button until every file is viewed, and for Retry beside a problem's fix.
+- **Icon button:** Refresh, a 16px codicon glyph as inline SVG with 4px padding (a 24px target), no fill until hover (`toolbar-hoverBackground`).
+- **Link:** no background, border or padding, in `link`, underlined on hover. Where it opens a page, such as the title or Details, it is an `a` with the `link` role; where it does something, such as Show all, a button. Inline in a sentence, as after a problem, it is always underlined, so it doesn't rely on color alone.
 
 ### Chips
 
 - **Style:** selection chips use `badge-background` on `badge-foreground`, the editor font at 0.85em, 3px corners and 1px 6px padding. They read as `path · side · lines`, and a long path wraps inside the chip rather than running off a narrow panel.
-- **State:** a chip waiting to be sent carries a `×` text button that removes it; chips on a sent message have none.
-- **Status pills:** a check's status as a word in an 8px-round outline of its own state color, with no fill.
+- **State:** a chip waiting to be sent carries a close button, the codicon close glyph as inline SVG in a 20px target, named for the selection it drops; chips on a sent message have none.
+- **Status pills:** a check's status as a word in `foreground`, in an 8px-round outline of its own state color, with no fill.
 
 ### Cards / Containers
 
 - **Timeline row:** avatar, then author in bold, verb and muted date on one line, then the body; a hairline below. No card chrome.
 - **Reviewer message:** the only filled message, in `quiet-tint` with 4px corners and 8px padding, so the Reviewer's words stand out from the Assistant's without either looking like a chat bubble app.
-- **Assistant reply:** plain rendered Markdown on the ground, with no fill, no avatar and no name.
+- **Assistant reply:** plain rendered Markdown on the ground, with no fill, no avatar and no visible name. Every message starts with a visually hidden speaker ("You:", "Assistant:", "Dear Reviewer:") so a screen reader can tell them apart.
 - **Note:** Dear Reviewer's own remarks (new commits arrived, for example) in italic `muted-foreground`.
-- **Problem banner:** `problem-background` with a 1px `problem-border` outline, 8px padding, the message in plain words and an optional primary button below it.
+- **Problem banner:** the Assistant panel's alone. `problem-background` with a 1px `problem-border` outline, 8px padding, the message in plain words with backticked words in the editor font, and below it the button that helps, with Retry as a secondary beside it when `claude` couldn't start. While `claude` can't run, Send is off and the message box's placeholder says why.
+- **Working line:** while the Assistant writes, its latest step in muted italic, the steps so far behind a disclosure, and a Stop link that ends the reply; the conversation goes on with the next message.
 
 ### Inputs / Fields
 
@@ -259,12 +261,16 @@ Each Change in Change Files carries its finishing actions as inline codicon butt
 
 The only thing that opens when a Change opens: alone in the main column, with the focus, while the bottom panel closes and other Changes' editors go (ADR 0019, ADR 0020). Once the Reviewer starts, code opens in the column beside it, and the overview stays put. It reads top to bottom as four answers, each one line or one paragraph, then the history:
 
-- **What is this:** the title (a link button to the pull request) and a muted byline, `acme/api #482 · octocat → main`.
-- **How big, and is it healthy:** `12 files · +340 −58 · checks failed`, with tabular numerals, additions and deletions in the git decoration colors.
-- **Where am I:** a muted line, `New commits since your Review · 2 pending Comments · 3 of 12 viewed`.
-- **The Assistant's take:** a small "Assistant" heading (or "Since your Review at `3f9c2a1`") over one paragraph of rendered Markdown, capped at 72ch. While it is written, a muted italic line that screen readers hear; when `claude` can't run, a muted line with a link button that helps. Never a red banner: the overview works without the Assistant.
+- **What is this:** the title (a link to the pull request) and a muted byline, `acme/api #482 · octocat → main`. Until the pull request loads, the title is its name and the byline is empty, so nothing shows twice.
+- **How big, and is it healthy:** `12 files · +340 −58 · checks failed`, with tabular numerals, additions and deletions in the git decoration colors mixed 60% with `foreground` (`color-mix`), which keeps the hue and lifts small text past 4.5:1.
+- **Where am I:** a muted line, `New commits since your Review · 2 pending Comments · 3 of 12 viewed`. In an untrusted review window it ends `Navigation off: Trust the review window…`, a link that shows Workspace Trust. That says why go to definition does nothing, where the Reviewer is looking; it informs rather than asks, so ADR 0021's one prompt stays the only one.
+- **The Assistant's take:** a small "Assistant" heading (or "Since your Review at `3f9c2a1`") over one paragraph of rendered Markdown, capped at 72ch. While it is written, a muted italic "Reading the Change…"; when `claude` can't run, a muted line with a link that helps and, when trying again can mend it, Retry. Both sit in one status region that screen readers hear only when its words change. Never a red banner: the overview works without the Assistant.
 
-The take shows at most three sentences, with a Show all link for the rest, then its first reference to a changed file as its own line, `Start at path:line`, in the editor font, wrapping anywhere. Under it, two secondary buttons: Next unviewed file and Ask the Assistant. Refresh is an icon button (the codicon refresh glyph as inline SVG) beside the finishing button. A hairline closes the overview, and the history follows: the pull request's timeline, or a local Change's commits.
+The take shows at most three sentences, with a Show all link (with `aria-expanded`) for the rest. Under it is one row of buttons: Start at `session.ts:42` (the take's first reference to a changed file, by file name, with the full path in its tooltip), Next unviewed file once the files are counted, and Ask the Assistant. The reference also stays a link inside the take's sentence, where its reason is. Refresh is an icon button beside the finishing button in the header. A hairline closes the overview, and the history follows: the pull request's timeline, or a local Change's commits, as a list. If the history can't load, a muted line under its heading says so in plain words with Retry; the rest of the overview is fine, so it doesn't shout.
+
+**The Next Step Rule.** The overview fills only the button for what comes next. While files are unviewed, that is the way in: Start at, or Next unviewed file when the take names no file. Once every file is viewed, it is Submit Review… or Write Brief…, which stays in the same place in the sticky header throughout and is secondary until then. Tooltips give each button's `Ctrl+Alt+R` key.
+
+**The Steady Focus Rule.** An update never moves the Reviewer's focus. The webviews rebuild only what changed, such as the reply being written or a history that loaded again, and if a rebuilt element had the focus, it goes to the element in the same place.
 
 **The One Paragraph Rule.** The Assistant's take is at most three sentences and ends by naming where to start. The overview enforces it: anything longer waits behind Show all.
 
@@ -282,7 +288,9 @@ The shared reading style for timeline bodies and Assistant replies: tight margin
 - **Do** reach for native UI first (tree views, comment threads, decorations, quick picks, status bar) and add a webview only when an ADR says why none fits.
 - **Do** put styles both webviews use in `sharedStyles` in `extension/src/markdownPanel.ts`, never a copy in each panel.
 - **Do** give every interactive element a visible `:focus-visible` outline in `focus`, and make links in rendered Markdown reachable with Tab and Enter.
-- **Do** announce status to screen readers: `role="status"` for loading and working lines, `role="alert"` for the problem banner, and a visually hidden status line for changes that are otherwise only visual, such as a reply finishing.
+- **Do** announce status to screen readers: `role="status"` for loading and working lines, `role="alert"` for the problem banner, and a visually hidden status line for changes that are otherwise only visual, such as a reply finishing. Set a live region's text only when it changes (`setText` in `sharedScript`), or every update speaks it again.
+- **Do** keep the focus through updates with `keepFocus` in `sharedScript`, and build only the parts of a webview that changed.
+- **Do** give every element that has a fill a theme border or outline that high-contrast themes draw: `--vscode-button-border` on buttons, `--vscode-contrastBorder` on tints such as the Reviewer's message and the avatar disc.
 - **Do** color placeholders with `--vscode-input-placeholderForeground`; the browser's default gray fails contrast on dark themes.
 - **Do** check every webview change in a light, a dark and a high-contrast theme in VSCodium.
 - **Do** size type in `em` from the theme size, and use the editor font for SHAs, paths and code.

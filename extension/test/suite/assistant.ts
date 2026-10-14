@@ -134,6 +134,10 @@ export interface Conversation {
   problem?: string;
   /** The button that goes with the problem, by its label. */
   problemAction?: string;
+  /** Whether `claude` couldn't run, so Send is off and Retry shows. */
+  unavailable?: boolean;
+  /** Whether Stop shows, for the turn under way. */
+  stoppable?: boolean;
 }
 
 interface AssistantApi {
@@ -224,6 +228,16 @@ export function clickReference(
   return sendToPanel(title, { type: "openReference", ...reference });
 }
 
+/** Clicks Stop while the Assistant writes a reply. */
+export function stopAssistant(title: string): Promise<void> {
+  return sendToPanel(title, { type: "stop" });
+}
+
+/** Clicks Retry in the panel's problem, which starts the Assistant again. */
+export function retryAssistant(title: string): Promise<void> {
+  return sendToPanel(title, { type: "retry" });
+}
+
 /** Clicks the remove button of a selection waiting in the panel, counted from 0. */
 export function removeSelection(title: string, index: number): Promise<void> {
   return sendToPanel(title, { type: "removeContext", index });
@@ -263,7 +277,7 @@ export function showAssistant(change: ChangeRequest): Thenable<unknown> {
 /** The note an Assistant panel starts with: the summary itself is in the Change's overview. */
 export const summaryNote = {
   from: "note",
-  text: "Summarised the Change in its overview, beside the diff.",
+  text: "The Assistant's summary of this Change is in its overview.",
 } as const;
 
 /** The editor tabs that hold a webview, such as the Assistant panel, by label. */

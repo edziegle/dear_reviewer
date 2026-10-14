@@ -13,6 +13,7 @@ import {
   Handshake,
   MarkdownPanel,
   RenderInto,
+  sharedScript,
   sharedStyles,
 } from "../markdownPanel";
 import type {
@@ -58,6 +59,8 @@ export interface OverviewTake {
   problem?: string;
   /** The label of the button that helps with the problem. */
   problemAction?: string;
+  /** Whether trying again can mend the problem, once its button has helped. */
+  canRetry?: boolean;
 }
 
 export interface TimelineState {
@@ -71,6 +74,10 @@ export interface TimelineState {
   size?: { files: number; additions: number; deletions: number };
   /** Where the Reviewer stands: new commits since their Review, pending Comments, files viewed. */
   standing: string[];
+  /** How many of the Change's files the Reviewer has viewed, once counted. */
+  progress?: { viewed: number; total: number };
+  /** Whether the review window is untrusted, so code navigation is off. */
+  navigationOff?: boolean;
   take: OverviewTake;
   /** The button that finishes the Review: "Submit Review…" or "Write Brief…". */
   finish: string;
@@ -118,6 +125,8 @@ export type FromWebview =
   | { type: "nextFile" }
   | { type: "ask" }
   | { type: "takeAction" }
+  | { type: "takeRetry" }
+  | { type: "trust" }
   | { type: "problemAction" };
 
 /** What the Reviewer does in the panel. */
@@ -202,6 +211,8 @@ export class TimelinePanel {
         "nextFile",
         "ask",
         "takeAction",
+        "takeRetry",
+        "trust",
         "problemAction",
       ].includes(message.type)
     )
@@ -294,45 +305,47 @@ function html(cspSource: string): string {
   h2 { font-size: 1em; margin: 16px 0 8px; }
   .muted { color: var(--vscode-descriptionForeground); font-size: 0.9em; }
   #byline span { display: inline-block; max-width: 100%; overflow-wrap: anywhere; }
-  button.icon { background: none; border: none; padding: 3px; border-radius: 4px; color: var(--vscode-icon-foreground, var(--vscode-foreground)); cursor: pointer; display: inline-flex; }
+  button.icon { background: none; border: none; padding: 4px; border-radius: 2px; color: var(--vscode-icon-foreground, var(--vscode-foreground)); cursor: pointer; display: inline-flex; }
   button.icon:hover { background: var(--vscode-toolbar-hoverBackground); }
   button.icon svg { width: 16px; height: 16px; }
-  button.link { background: none; border: none; padding: 0; color: var(--vscode-textLink-foreground); cursor: pointer; font: inherit; text-align: start; }
-  button.link:hover { text-decoration: underline; }
+  .link { background: none; border: none; padding: 0; color: var(--vscode-textLink-foreground); cursor: pointer; font: inherit; text-align: start; text-decoration: none; }
+  .link:hover { text-decoration: underline; }
   .actions { display: flex; flex-wrap: wrap; gap: 6px; }
-  header .actions { flex: none; }
-  button.secondary { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); border: none; padding: 2px 8px; border-radius: 2px; cursor: pointer; font: inherit; }
+  header .actions { flex: none; align-items: center; }
+  button.secondary { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); padding: 2px 8px; border-radius: 2px; cursor: pointer; font: inherit; }
   button.secondary:hover { background: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-secondaryBackground)); }
-  button.primary { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; padding: 2px 8px; border-radius: 2px; cursor: pointer; font: inherit; }
+  button.primary { background: var(--vscode-button-background); color: var(--vscode-button-foreground); padding: 2px 8px; border-radius: 2px; cursor: pointer; font: inherit; }
   button.primary:hover { background: var(--vscode-button-hoverBackground); }
+  .overview .actions button.primary { padding: 4px 12px; }
+  .overview .actions button { max-width: 100%; overflow-wrap: anywhere; text-align: start; }
+  #start code { font-family: var(--vscode-editor-font-family); color: inherit; background: none; padding: 0; }
   .overview { padding: 12px 0 14px; border-bottom: 1px solid var(--vscode-panel-border); }
   .overview p { margin: 0 0 4px; }
   .facts { font-variant-numeric: tabular-nums; }
-  .facts .added { color: var(--vscode-gitDecoration-addedResourceForeground); }
-  .facts .deleted { color: var(--vscode-gitDecoration-deletedResourceForeground); }
+  .facts .added { color: var(--vscode-gitDecoration-addedResourceForeground); color: color-mix(in srgb, var(--vscode-gitDecoration-addedResourceForeground) 60%, var(--vscode-foreground)); }
+  .facts .deleted { color: var(--vscode-gitDecoration-deletedResourceForeground); color: color-mix(in srgb, var(--vscode-gitDecoration-deletedResourceForeground) 60%, var(--vscode-foreground)); }
   .take h2 { margin-top: 14px; margin-bottom: 4px; }
   .take .markdown { line-height: 1.5; max-width: 40em; }
-  .take .start { margin-top: 8px; }
-  .take .start button.link { font-family: var(--vscode-editor-font-family); font-size: var(--vscode-editor-font-size); overflow-wrap: anywhere; }
   .take .more { margin-top: 4px; font-size: 0.9em; }
   .take .reading { font-style: italic; }
-  .take .problem-line button.link { margin-left: 4px; }
+  .problem-line .link { margin-left: 4px; text-decoration: underline; }
   .overview .actions { margin-top: 12px; }
   ul { list-style: none; padding: 0; margin: 0; }
-  .checks li { display: flex; gap: 8px; align-items: baseline; padding: 2px 0; }
-  .checks .name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-  .status { font-size: 0.85em; padding: 0 6px; border-radius: 8px; border: 1px solid currentColor; }
-  .status.passed { color: var(--vscode-testing-iconPassed); }
-  .status.failed { color: var(--vscode-testing-iconFailed); }
-  .status.running { color: var(--vscode-testing-iconQueued); }
+  .checks li { display: flex; flex-wrap: wrap; gap: 0 8px; align-items: baseline; padding: 2px 0; }
+  .checks .name { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; }
+  .status { font-size: 0.85em; padding: 0 6px; border-radius: 8px; border: 1px solid var(--vscode-descriptionForeground); }
+  .status.passed { border-color: var(--vscode-testing-iconPassed); }
+  .status.failed { border-color: var(--vscode-testing-iconFailed); }
+  .status.running { border-color: var(--vscode-testing-iconQueued); }
   .status.skipped, .status.neutral { color: var(--vscode-descriptionForeground); }
   .item { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--vscode-panel-border); }
-  .item img, .item .no-avatar { width: 24px; height: 24px; border-radius: 50%; flex: none; background: var(--vscode-editor-inactiveSelectionBackground); }
+  .item img, .item .no-avatar { width: 24px; height: 24px; border-radius: 50%; flex: none; background: var(--vscode-editor-inactiveSelectionBackground); outline: 1px solid var(--vscode-contrastBorder, transparent); outline-offset: -1px; }
   .item .content { flex: 1; min-width: 0; }
   .item .author { font-weight: 600; }
   .item .body { white-space: pre-wrap; line-height: 1.5; margin-top: 6px; overflow-wrap: anywhere; }
   .item .body.markdown { white-space: normal; }
   .item.commit .sha { font-family: var(--vscode-editor-font-family); }
+  #historyProblem { margin: 0 0 8px; }
 </style>
 </head>
 <body>
@@ -340,29 +353,30 @@ function html(cspSource: string): string {
   <div class="heading"><h1 id="title"></h1><div class="muted" id="byline"></div></div>
   <div class="actions">
     <button class="icon" id="refresh" title="Load the overview again" aria-label="Refresh"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" clip-rule="evenodd" d="M4.681 3H2V2h3.5l.5.5V6H5V4a5 5 0 1 0 4.53-.761l.302-.954A6 6 0 1 1 4.681 3z"/></svg></button>
-    <button class="primary" id="finish"></button>
+    <button class="secondary" id="finish"></button>
   </div>
 </header>
-<div class="problem" id="problem" role="alert" hidden></div>
 <section class="overview" aria-label="Overview">
   <p class="facts" id="facts" hidden></p>
   <p class="muted" id="standing" hidden></p>
   <div class="take">
     <h2 id="takeLabel"></h2>
     <div class="markdown" id="take"></div>
-    <button class="link more" id="more" type="button" hidden>Show all</button>
-    <div class="start" id="start" hidden></div>
-    <div class="muted reading" id="reading" role="status"></div>
-    <div class="muted problem-line" id="takeProblem" hidden></div>
+    <button class="link more" id="more" type="button" aria-controls="take" aria-expanded="false" hidden>Show all</button>
+    <div role="status" id="takeStatus">
+      <div class="muted reading" id="reading"></div>
+      <div class="muted problem-line" id="takeProblem" hidden></div>
+    </div>
   </div>
-  <div class="actions">
-    <button class="secondary" id="nextFile" title="Open the diff of the next file you haven't viewed">Next unviewed file</button>
-    <button class="secondary" id="ask" title="Open the Assistant's chat about this Change">Ask the Assistant</button>
+  <div class="actions" id="ways">
+    <button class="primary" id="start" type="button" hidden></button>
+    <button class="secondary" id="nextFile" type="button" hidden>Next unviewed file</button>
+    <button class="secondary" id="ask" type="button" title="Open the Assistant's chat about this Change (Ctrl+Alt+R A)">Ask the Assistant</button>
   </div>
 </section>
 <section id="checks" hidden><h2 id="checksHeading"></h2><ul class="checks" id="checkRuns"></ul></section>
-<section><h2 id="history"></h2><div class="muted" id="loading" role="status" hidden>Loading…</div><div id="items"></div></section>
-<script nonce="${nonce}">
+<section aria-labelledby="history"><h2 id="history"></h2><div class="muted" id="loading" role="status"></div><div class="muted problem-line" id="historyProblem" role="status" hidden></div><div id="items" role="list"></div></section>
+<script nonce="${nonce}">${sharedScript}
   const vscode = acquireVsCodeApi();
   const byId = (id) => document.getElementById(id);
   const el = (tag, className, text) => {
@@ -371,9 +385,18 @@ function html(cspSource: string): string {
     if (text !== undefined) node.textContent = text;
     return node;
   };
+  // A web link, which the body's click handler opens through the extension.
   const link = (text, url) => {
+    const a = el("a", "link", text);
+    a.dataset.href = url;
+    a.tabIndex = 0;
+    a.setAttribute("role", "link");
+    return a;
+  };
+  const textButton = (text, onClick) => {
     const button = el("button", "link", text);
-    button.addEventListener("click", () => vscode.postMessage({ type: "openLink", url }));
+    button.type = "button";
+    button.addEventListener("click", onClick);
     return button;
   };
   const when = (iso) => {
@@ -416,6 +439,7 @@ function html(cspSource: string): string {
 
   function item(entry) {
     const row = el("div", "item " + entry.kind);
+    row.setAttribute("role", "listitem");
     if (entry.author.avatar) {
       const img = el("img");
       img.src = entry.author.avatar;
@@ -468,79 +492,119 @@ function html(cspSource: string): string {
     parts.forEach((part, i) => node.append(...(i ? [" · ", part] : [part])));
   }
 
+  function standing(state) {
+    const node = byId("standing");
+    node.hidden = state.standing.length === 0 && !state.navigationOff;
+    node.replaceChildren(state.standing.join(" · "));
+    if (state.navigationOff) {
+      node.append(state.standing.length ? " · " : "", "Navigation off: ", textButton("Trust the review window…", () => vscode.postMessage({ type: "trust" })));
+      node.lastChild.title = "The review window is in Restricted Mode, so go to definition and other code navigation are off";
+    }
+  }
+
   let showAll = false;
   let lastTake;
+  let lastState;
   byId("more").addEventListener("click", () => {
     showAll = !showAll;
-    take(lastTake);
+    keepFocus(() => take(lastTake));
+  });
+  byId("start").addEventListener("click", () => {
+    const start = lastTake && lastTake.take.start;
+    if (start) vscode.postMessage({ type: "openReference", ...start });
   });
   function take(state) {
     lastTake = state;
     const t = state.take;
-    byId("takeLabel").textContent = t.label;
+    setText(byId("takeLabel"), t.label);
     const body = byId("take");
     const html = showAll && t.fullHtml !== undefined ? t.fullHtml : t.html;
-    if (html !== undefined) {
+    if (html === undefined) body.replaceChildren();
+    else if (body.dataset.html !== html) {
       // Rendered and sanitised by the extension; see renderMarkdown.
       body.innerHTML = html;
       focusable(body);
-    } else body.replaceChildren();
+    }
+    body.dataset.html = html === undefined ? "" : html;
     const more = byId("more");
     more.hidden = t.fullHtml === undefined;
-    more.textContent = showAll ? "Show less" : "Show all";
-    const start = byId("start");
-    start.hidden = !t.start;
-    start.replaceChildren();
-    if (t.start) {
-      const where = t.start.path + ":" + t.start.startLine + (t.start.endLine > t.start.startLine ? "-" + t.start.endLine : "");
-      const button = el("button", "link", where);
-      button.type = "button";
-      button.addEventListener("click", () => vscode.postMessage({ type: "openReference", ...t.start }));
-      start.append("Start at ", button);
-    }
-    byId("reading").textContent = t.reading
-      ? (t.text ? "" : "The Assistant is reading the Change…")
-      : (!t.text && !t.problem ? "The Assistant hasn't summarised this Change." : "");
+    setText(more, showAll ? "Show less" : "Show all");
+    more.setAttribute("aria-expanded", String(showAll));
+    setText(byId("reading"), t.reading
+      ? (t.text ? "" : "Reading the Change…")
+      : (!t.text && !t.problem ? "The Assistant hasn't summarised this Change." : ""));
     const problem = byId("takeProblem");
     problem.hidden = !t.problem;
-    problem.replaceChildren();
-    if (t.problem) {
-      problem.append(t.problem);
-      if (t.problemAction) {
-        const button = el("button", "link", t.problemAction);
-        button.type = "button";
-        button.addEventListener("click", () => vscode.postMessage({ type: "takeAction" }));
-        problem.append(" ", button);
+    const said = JSON.stringify([t.problem, t.problemAction, t.canRetry]);
+    if (problem.dataset.said !== said) {
+      problem.dataset.said = said;
+      problem.replaceChildren();
+      if (t.problem) {
+        appendWithCode(problem, t.problem);
+        if (t.problemAction) problem.append(" ", textButton(t.problemAction, () => vscode.postMessage({ type: "takeAction" })));
+        if (t.canRetry) problem.append(t.problemAction ? " · " : " ", textButton("Retry", () => vscode.postMessage({ type: "takeRetry" })));
       }
     }
   }
 
-  window.addEventListener("message", (event) => {
-    const message = event.data;
-    if (message.type !== "state") return;
+  // The way in is the filled button until every file is viewed; then
+  // finishing the Review is.
+  function ways(state) {
+    const t = state.take;
+    const progress = state.progress;
+    const reading = !progress || progress.viewed < progress.total;
+    const start = byId("start");
+    start.hidden = !t.start;
+    if (t.start) {
+      const lines = t.start.startLine + (t.start.endLine > t.start.startLine ? "-" + t.start.endLine : "");
+      const where = t.start.path + ":" + lines;
+      if (start.dataset.where !== where) {
+        start.dataset.where = where;
+        start.replaceChildren("Start at ", el("code", "", t.start.path.split("/").pop() + ":" + lines));
+        start.title = "Open " + where + ", where the Assistant says to start";
+      }
+    }
+    const next = byId("nextFile");
+    next.hidden = !progress || progress.viewed >= progress.total;
+    next.title = "Open the diff of the next file you haven't viewed (Ctrl+Alt+R N)";
+    const first = t.start ? start : next;
+    start.className = reading && first === start ? "primary" : "secondary";
+    next.className = reading && first === next ? "primary" : "secondary";
+    const finish = byId("finish");
+    setText(finish, state.finish);
+    finish.title = (state.finish.startsWith("Submit") ? "Submit your Review to GitHub" : "Write a Brief of your Comments for an agent") + " (Ctrl+Alt+R S)";
+    finish.className = reading ? "secondary" : "primary";
+  }
+
+  function render(message) {
     const state = message.state;
-    byId("title").replaceChildren(state.url ? link(state.title, state.url) : state.title);
+    const was = lastState || { items: [] };
+    lastState = state;
+    if (state.title !== was.title || state.url !== was.url)
+      byId("title").replaceChildren(state.url ? link(state.title, state.url) : state.title);
     // Parts wrap between each other before inside one.
-    byId("byline").replaceChildren(...state.byline.split(" · ").flatMap((part, i) => (i ? [" · ", el("span", "", part)] : [el("span", "", part)])));
-    byId("finish").textContent = state.finish;
+    if (state.byline !== was.byline)
+      byId("byline").replaceChildren(...state.byline.split(" · ").filter(Boolean).flatMap((part, i) => (i ? [" · ", el("span", "", part)] : [el("span", "", part)])));
     facts(state);
-    byId("standing").hidden = state.standing.length === 0;
-    byId("standing").textContent = state.standing.join(" · ");
+    standing(state);
     take(state);
-    byId("history").textContent = state.history;
-    byId("loading").hidden = !state.loading;
-    byId("problem").hidden = !state.problem;
-    byId("problem").textContent = state.problem || "";
-    if (state.problem && state.problemAction) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.textContent = state.problemAction;
-      button.addEventListener("click", () => vscode.postMessage({ type: "problemAction" }));
-      byId("problem").append(button);
+    ways(state);
+    setText(byId("history"), state.history);
+    setText(byId("loading"), state.loading ? "Loading…" : "");
+    const problem = byId("historyProblem");
+    problem.hidden = !state.problem;
+    const said = JSON.stringify([state.problem, state.problemAction]);
+    if (problem.dataset.said !== said) {
+      problem.dataset.said = said;
+      problem.replaceChildren();
+      if (state.problem) {
+        appendWithCode(problem, state.problem);
+        if (state.problemAction) problem.append(" ", textButton(state.problemAction, () => vscode.postMessage({ type: "problemAction" })));
+      }
     }
     const checks = state.checks;
     byId("checks").hidden = !checks;
-    if (checks) {
+    if (checks && JSON.stringify(checks) !== JSON.stringify(was.checks)) {
       byId("checksHeading").textContent = "Checks on " + checks.commit + (checks.status ? ": " + checks.status : "");
       byId("checkRuns").replaceChildren(...checks.runs.map((run) => {
         const li = el("li");
@@ -549,7 +613,15 @@ function html(cspSource: string): string {
         return li;
       }));
     }
-    byId("items").replaceChildren(...state.items.map(item));
+    // Only a changed history is built again, so the focus in it stays put.
+    if (JSON.stringify(state.items) !== JSON.stringify(was.items))
+      byId("items").replaceChildren(...state.items.map(item));
+  }
+
+  window.addEventListener("message", (event) => {
+    const message = event.data;
+    if (message.type !== "state") return;
+    keepFocus(() => render(message));
     vscode.postMessage({ type: "rendered", revision: message.revision });
   });
   vscode.postMessage({ type: "ready" });

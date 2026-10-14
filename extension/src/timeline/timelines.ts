@@ -33,22 +33,32 @@ import {
   type TimelineItem,
   type TimelineState,
 } from "./panel";
-import { messageOf } from "../errors";
+import { isUnreachable, messageOf } from "../errors";
 
 const signIn = "Sign In to GitHub";
 
 export type LinkOpener = (uri: vscode.Uri) => Thenable<unknown>;
 
+/** Where the Reviewer stands on a Change. */
+export interface Standing {
+  /** New commits since their Review, pending Comments, files viewed, in words. */
+  notes: string[];
+  viewed: number;
+  total: number;
+}
+
 /** What the overview learns from the rest of Dear Reviewer, and how it acts. */
 export interface OverviewSources {
-  /** Where the Reviewer stands on the Change: new commits since their Review, pending Comments, files viewed. */
-  standing(change: Change): Promise<string[]>;
+  /** Where the Reviewer stands on the Change. */
+  standing(change: Change): Promise<Standing>;
+  /** Whether the review window is untrusted, so code navigation is off in it. */
+  navigationOff(): boolean;
   /** What the Change's Assistant has to show, once it has started. */
   take(change: Change): OverviewTake | undefined;
   /** Runs an action the overview offers for the Change. */
   act(
     change: Change,
-    action: "finish" | "nextFile" | "ask" | "takeAction"
+    action: "finish" | "nextFile" | "ask" | "takeAction" | "takeRetry" | "trust"
   ): void;
 }
 
@@ -201,9 +211,12 @@ class ChangeTimeline {
     } catch (err) {
       if (load !== this.loads) return;
       const signedOut = err instanceof NotSignedInError;
+      const history = this.state.history.toLowerCase();
       const problem = signedOut
         ? "Sign in to GitHub to see the timeline."
-        : `Couldn't load the ${this.state.history.toLowerCase()}: ${messageOf(err)}`;
+        : isUnreachable(err)
+          ? `Couldn't reach GitHub to load the ${history}. Check the connection, then retry.`
+          : `Couldn't load the ${history}: ${messageOf(err)}`;
       this.update({
         loading: false,
         problem,
@@ -214,8 +227,14 @@ class ChangeTimeline {
 
   async showStanding(): Promise<void> {
     if (!this.panel) return;
-    const standing = await this.sources.standing(this.change).catch(() => []);
-    this.update({ standing });
+    const found = await this.sources
+      .standing(this.change)
+      .catch(() => undefined);
+    this.update({
+      standing: found?.notes ?? [],
+      navigationOff: this.sources.navigationOff(),
+      ...(found && { progress: { viewed: found.viewed, total: found.total } }),
+    });
   }
 
   /** Beside the overview while it holds the first column, or else the first. */
@@ -369,9 +388,13 @@ class ChangeTimeline {
   }
 }
 
-/** What the Change is, before anything is loaded: its pull request, or its branch or commits and repository. */
+/**
+ * What the Change is, before anything is loaded: nothing more for a pull
+ * request, whose name is the title until its own loads, or a local Change's
+ * branch or commits and repository.
+ */
 function bylineOf(change: Change, commits?: number): string {
-  if (change.pullRequest) return pullRequestName(change.pullRequest);
+  if (change.pullRequest) return "";
   const repo = path.basename(change.repository);
   const branch = branchOfConversation(change.conversation);
   const count =

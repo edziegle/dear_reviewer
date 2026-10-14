@@ -40,7 +40,7 @@ import {
   showChangesSince,
 } from "./reviews";
 import type { FromWebview } from "./timeline/panel";
-import { LinkOpener, Timelines } from "./timeline/timelines";
+import { LinkOpener, Standing, Timelines } from "./timeline/timelines";
 import {
   GitHubViewedFiles,
   LocalViewedFiles,
@@ -158,10 +158,13 @@ export function activate(context: vscode.ExtensionContext) {
   );
   const timelines = new Timelines(github, avatars, (uri) => openLink(uri), {
     standing: (change) => standingOf(change),
+    navigationOff: () => trust.navigationOff,
     take: (change) => assistants.overviewOf(change),
     act: (change, action) => {
       if (action === "ask") void assistants.open(change, true);
       else if (action === "takeAction") assistants.helpWithProblem(change);
+      else if (action === "takeRetry") void assistants.retry(change);
+      else if (action === "trust") void trust.trust();
       else
         void vscode.commands.executeCommand(
           action === "finish"
@@ -173,7 +176,7 @@ export function activate(context: vscode.ExtensionContext) {
   });
 
   /** Where the Reviewer stands on the Change, for its overview. */
-  async function standingOf(change: Change): Promise<string[]> {
+  async function standingOf(change: Change): Promise<Standing> {
     const standing: string[] = [];
     const since = await changeFiles.sinceReview(change);
     if (since === "newCommits") standing.push("New commits since your Review");
@@ -183,8 +186,9 @@ export function activate(context: vscode.ExtensionContext) {
     if (pending > 0) standing.push(countOf(pending, "pending Comment"));
     const { viewed, total } = await changeFiles.viewedCount(change);
     standing.push(`${viewed} of ${total} viewed`);
-    return standing;
+    return { notes: standing, viewed, total };
   }
+  context.subscriptions.push(trust.onDidChangeNavigation(() => showStanding()));
 
   // Many threads load at once, so the overviews catch up once they have.
   let standingTimer: NodeJS.Timeout | undefined;

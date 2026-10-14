@@ -58,6 +58,7 @@ export interface Take {
   html?: string;
   problem?: string;
   problemAction?: string;
+  canRetry?: boolean;
 }
 
 export interface Timeline {
@@ -67,6 +68,8 @@ export interface Timeline {
   url?: string;
   size?: { files: number; additions: number; deletions: number };
   standing: string[];
+  progress?: { viewed: number; total: number };
+  navigationOff?: boolean;
   take: Take;
   finish: string;
   history: string;
@@ -134,7 +137,7 @@ export async function clickRefresh(title: string): Promise<void> {
 /** Clicks one of the overview's buttons. */
 export async function clickOverview(
   title: string,
-  button: "finish" | "nextFile" | "ask" | "takeAction"
+  button: "finish" | "nextFile" | "ask" | "takeAction" | "takeRetry" | "trust"
 ): Promise<void> {
   (await panel(title)).receive({ type: button });
 }

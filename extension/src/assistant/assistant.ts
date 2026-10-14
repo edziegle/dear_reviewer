@@ -57,6 +57,8 @@ export interface AssistantOverview {
   problem?: string;
   /** The label of the button that helps with the problem, if one does. */
   problemAction?: string;
+  /** Whether starting the Assistant again can mend the problem, such as once the Reviewer signed in. */
+  canRetry?: boolean;
 }
 
 interface PanelState {
@@ -113,7 +115,8 @@ export class Assistants implements vscode.Disposable {
       this.openLink,
       this.lastReview,
       () => this.overviewChanged.fire(change.conversation),
-      (current) => this.codeColumn(current)
+      (current) => this.codeColumn(current),
+      () => this.retryStart(assistant)
     );
     this.byConversation.set(change.conversation, assistant);
     // Its overview may already be open, showing nothing from it yet.
@@ -147,6 +150,24 @@ export class Assistants implements vscode.Disposable {
     this.byConversation.get(change.conversation)?.helpWithProblem();
   }
 
+  /** Starts the Change's Assistant again if `claude` couldn't run, such as once the Reviewer has signed in. */
+  async retry(change: Change): Promise<void> {
+    const assistant = this.byConversation.get(change.conversation);
+    if (assistant) await this.retryStart(assistant);
+  }
+
+  private readonly retrying = new Set<ChangeAssistant>();
+
+  private async retryStart(assistant: ChangeAssistant): Promise<void> {
+    if (!assistant.unavailable || this.retrying.has(assistant)) return;
+    this.retrying.add(assistant);
+    try {
+      await this.boot(assistant);
+    } finally {
+      this.retrying.delete(assistant);
+    }
+  }
+
   private async boot(assistant: ChangeAssistant): Promise<void> {
     try {
       const cli = new ClaudeCli(findClaude(this.claudePath()));
@@ -155,7 +176,7 @@ export class Assistants implements vscode.Disposable {
       if (!login.signedIn) {
         throw new ClaudeProblem(
           "notSignedIn",
-          "Claude Code isn't signed in on this machine. To use the Assistant, run `claude` in a terminal and sign in there, then reopen the Change."
+          "Claude Code isn't signed in on this machine. To use the Assistant, run `claude` in a terminal and sign in there, then choose Retry."
         );
       }
       await assistant.start(cli);
@@ -308,6 +329,8 @@ class ChangeAssistant {
   private disposed = false;
   /** What the problem's button runs. */
   private problemAction?: vscode.Command;
+  /** Whether the Reviewer asked to stop the turn under way. */
+  private stopping = false;
   /** Settles once the Assistant has started, or failed to. */
   private readonly ready: Promise<void>;
   private settle!: () => void;
@@ -324,7 +347,9 @@ class ChangeAssistant {
     /** Tells the Change's overview that what it shows from the Assistant changed. */
     private readonly overviewChanged: () => void,
     /** The column the Change's code opens in. */
-    private readonly codeColumn: (change: Change) => vscode.ViewColumn
+    private readonly codeColumn: (change: Change) => vscode.ViewColumn,
+    /** Starts the Assistant again, once `claude` couldn't run. */
+    private readonly retry: () => void
   ) {
     this.state = {
       title: changeTitle(change),
@@ -360,6 +385,18 @@ class ChangeAssistant {
   /** What the Change's overview shows from the Assistant. */
   get overview(): AssistantOverview {
     return this.overviewState;
+  }
+
+  /** Whether `claude` couldn't run, so the Assistant can't take a turn. */
+  get unavailable(): boolean {
+    return !this.cli;
+  }
+
+  /** Stops the turn under way; the next turn resumes the conversation. */
+  stop(): void {
+    if (!this.state.stoppable || !this.conversation) return;
+    this.stopping = true;
+    this.conversation.dispose();
   }
 
   /** Runs the button that helps with the Assistant's problem, if it has one. */
@@ -418,6 +455,14 @@ class ChangeAssistant {
   async start(cli: ClaudeCli): Promise<void> {
     if (this.disposed) return;
     this.cli = cli;
+    // A retry starts again after the problem that stopped the last start.
+    this.problemAction = undefined;
+    this.update({
+      problem: undefined,
+      problemAction: undefined,
+      unavailable: undefined,
+    });
+    if (this.overviewState.problem) this.setOverview({});
     let summary = Promise.resolve();
     if (this.session) this.update({ busy: false });
     else
@@ -430,10 +475,7 @@ class ChangeAssistant {
         this.update({
           messages: [
             ...this.state.messages,
-            {
-              from: "note",
-              text: "Summarised the Change in its overview, beside the diff.",
-            },
+            { from: "note", text: summaryNote },
           ],
         });
         const text = await this.turn(
@@ -513,9 +555,11 @@ class ChangeAssistant {
       err instanceof ClaudeProblem ? helpWith(err) : undefined;
     this.update({
       busy: false,
+      stoppable: undefined,
       steps: undefined,
       problem: messageOf(err),
       problemAction: this.problemAction?.title,
+      unavailable: this.unavailable || undefined,
     });
     // A later failure, such as of a chat turn, leaves a written summary be.
     if (this.overviewState.reading || !this.overviewState.text)
@@ -523,6 +567,7 @@ class ChangeAssistant {
         reading: false,
         problem: messageOf(err),
         problemAction: this.problemAction?.title,
+        canRetry: this.unavailable || undefined,
       });
   }
 
@@ -547,6 +592,8 @@ class ChangeAssistant {
 
   private act(action: ReviewerAction): void {
     if (action.type === "problemAction") this.helpWithProblem();
+    else if (action.type === "retry") this.retry();
+    else if (action.type === "stop") this.stop();
     else if (action.type === "removeContext") {
       const context = [...(this.state.context ?? [])];
       context.splice(action.index, 1);
@@ -655,6 +702,7 @@ class ChangeAssistant {
     this.problemAction = undefined;
     this.update({
       busy: true,
+      stoppable: true,
       steps: undefined,
       problem: undefined,
       problemAction: undefined,
@@ -681,6 +729,21 @@ class ChangeAssistant {
       // The next turn starts `claude` again, resuming the session if it has one.
       conversation.dispose();
       if (this.conversation === conversation) this.conversation = undefined;
+      if (this.stopping) {
+        this.stopping = false;
+        this.save(conversation);
+        if (into === "overview") this.setOverview({ reading: false });
+        this.update({
+          busy: false,
+          stoppable: undefined,
+          steps: undefined,
+          messages: [
+            ...this.state.messages,
+            { from: "note", text: "Stopped before the reply was finished." },
+          ],
+        });
+        return;
+      }
       if (!conversation.resumed || conversation.answered) {
         this.save(conversation);
         throw err;
@@ -701,7 +764,7 @@ class ChangeAssistant {
     }
     if (this.disposed) return;
     if (into === "overview") this.setOverview({ reading: false });
-    this.update({ busy: false, steps: undefined });
+    this.update({ busy: false, stoppable: undefined, steps: undefined });
     this.save(conversation);
     return text;
   }
@@ -724,6 +787,7 @@ class ChangeAssistant {
     const {
       problem: _problem,
       problemAction: _action,
+      canRetry: _retry,
       ...kept
     } = this.overviewState;
     const next: AssistantOverview = { ...kept, ...changes };
@@ -761,6 +825,10 @@ class ChangeAssistant {
     });
   }
 }
+
+/** The note a conversation starts with, before the summary is written, which may still fail. */
+const summaryNote =
+  "The Assistant's summary of this Change is in its overview.";
 
 function sinceLabel(from: string): string {
   return `Since your Review at ${from.slice(0, 7)}`;

@@ -8,6 +8,8 @@ import {
   fakeClaudePath,
   loginStatus,
   renderedPanel,
+  replyTurn,
+  retryAssistant,
   scriptClaude,
   setClaudePath,
   showAssistant,
@@ -94,6 +96,43 @@ describe("Setting up the Assistant", () => {
     });
     assert.match((await loginStatus())?.text ?? "", /Claude: not signed in/);
     assert.deepStrictEqual(assistantRuns(), [], "the Assistant didn't start");
+
+    await closeChange(request);
+  });
+
+  it("starts the Assistant on Retry once Claude Code is signed in", async () => {
+    scriptClaude({
+      authStatus: {
+        loggedIn: false,
+        authMethod: "none",
+        apiProvider: "firstParty",
+      },
+    });
+    const { request, title } = changeOf(
+      repo.commits.initial,
+      repo.commits.restructured
+    );
+    await openChange(request);
+    await showAssistant(request);
+    await eventually(async () => {
+      const panel = await renderedPanel(title);
+      assert.match(panel?.problem ?? "", /then choose Retry/);
+      assert.strictEqual(panel?.unavailable, true, "Send is off");
+      assert.strictEqual((await overviewTake(title))?.canRetry, true);
+    });
+
+    scriptClaude({ turns: [replyTurn("A summary.")] });
+    await retryAssistant(title);
+
+    await eventually(async () => {
+      const panel = await renderedPanel(title);
+      assert.strictEqual(panel?.problem, undefined);
+      assert.strictEqual(panel?.unavailable, undefined);
+      const take = await overviewTake(title);
+      assert.strictEqual(take?.problem, undefined);
+      assert.strictEqual(take?.text, "A summary.");
+    });
+    assert.strictEqual(assistantRuns().length, 1, "the Assistant started");
 
     await closeChange(request);
   });

@@ -11,6 +11,7 @@ import {
   Handshake,
   MarkdownPanel,
   RenderInto,
+  sharedScript,
   sharedStyles,
 } from "../markdownPanel";
 import type { Step } from "./activity";
@@ -43,6 +44,10 @@ export interface ConversationState {
   problem?: string;
   /** The label of the button that helps with the problem, if one does. */
   problemAction?: string;
+  /** Whether `claude` couldn't run, so the Assistant can't reply until it is started again. */
+  unavailable?: boolean;
+  /** Whether the Assistant is taking a turn the Reviewer can stop. */
+  stoppable?: boolean;
 }
 
 /** The conversation as the webview gets it, with each reply's Markdown rendered. */
@@ -58,6 +63,8 @@ export type FromWebview =
   | { type: "ask"; text: string }
   | { type: "removeContext"; index: number }
   | { type: "problemAction" }
+  | { type: "retry" }
+  | { type: "stop" }
   | { type: "openLink"; url: string }
   | { type: "openReference"; path: string; startLine: number; endLine: number };
 
@@ -120,8 +127,12 @@ export class AssistantPanel {
         this.onAction({ type: "ask", text: message.text.trim() });
     } else if (message.type === "removeContext") {
       if (Number.isInteger(message.index)) this.onAction(message);
-    } else if (message.type === "problemAction") {
-      this.onAction({ type: "problemAction" });
+    } else if (
+      message.type === "problemAction" ||
+      message.type === "retry" ||
+      message.type === "stop"
+    ) {
+      this.onAction({ type: message.type });
     } else if (message.type === "openLink") {
       // Only links in the replies sent, the only ones the panel may open.
       if (typeof message.url === "string" && this.view.hasLink(message.url))
@@ -181,24 +192,32 @@ function html(): string {
   .login { color: var(--vscode-descriptionForeground); font-size: 0.9em; }
   main { flex: 1; }
   .message { white-space: pre-wrap; line-height: 1.5; margin: 12px 0; }
-  .message.reviewer { padding: 8px; border-radius: 4px; background: var(--vscode-editor-inactiveSelectionBackground); }
+  .message.reviewer { padding: 8px; border-radius: 4px; background: var(--vscode-editor-inactiveSelectionBackground); outline: 1px solid var(--vscode-contrastBorder, transparent); outline-offset: -1px; }
   .message.note { color: var(--vscode-descriptionForeground); font-style: italic; }
   .context { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
-  .chip { font-family: var(--vscode-editor-font-family); font-size: 0.85em; padding: 1px 6px; border-radius: 3px; background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); max-width: 100%; overflow-wrap: anywhere; }
-  .chip button { background: none; border: none; color: inherit; cursor: pointer; padding: 0 0 0 4px; font: inherit; }
+  .chip { display: inline-flex; align-items: center; font-family: var(--vscode-editor-font-family); font-size: 0.85em; padding: 1px 6px; border-radius: 3px; background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); max-width: 100%; overflow-wrap: anywhere; }
+  .chip button { display: inline-flex; align-items: center; justify-content: center; flex: none; min-width: 20px; min-height: 20px; margin: -2px -5px -2px 2px; padding: 0; background: none; border: none; border-radius: 2px; color: inherit; cursor: pointer; }
+  .chip button:hover { background: var(--vscode-toolbar-hoverBackground); }
+  .chip button svg { width: 12px; height: 12px; }
   .busy { color: var(--vscode-descriptionForeground); margin: 8px 0; }
   .busy .now { font-style: italic; }
   .busy code { font-family: var(--vscode-editor-font-family); font-style: normal; }
   .busy details { margin-top: 2px; font-size: 0.9em; }
   .busy summary { cursor: pointer; }
   .busy ol { margin: 4px 0; padding-left: 20px; }
+  button.stop { background: none; border: none; padding: 0; margin-top: 2px; color: var(--vscode-textLink-foreground); cursor: pointer; font: inherit; font-size: 0.9em; }
+  button.stop:hover { text-decoration: underline; }
   .message.assistant { white-space: normal; }
+  .problem .buttons { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .problem .buttons button { margin-top: 0; }
+  .problem button.secondary { color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); }
+  .problem button.secondary:hover { background: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-secondaryBackground)); }
   footer { position: sticky; bottom: 0; background: var(--vscode-editor-background); padding: 8px 0 12px; border-top: 1px solid var(--vscode-panel-border); }
   form { display: flex; gap: 6px; align-items: flex-end; }
   textarea { flex: 1; resize: vertical; min-height: 2.6em; font: inherit; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); border-radius: 2px; padding: 4px 6px; }
   textarea:focus { outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
   textarea::placeholder { color: var(--vscode-input-placeholderForeground); opacity: 1; }
-  button.send { font: inherit; color: var(--vscode-button-foreground); background: var(--vscode-button-background); border: none; border-radius: 2px; padding: 4px 12px; cursor: pointer; }
+  button.send { font: inherit; color: var(--vscode-button-foreground); background: var(--vscode-button-background); border-radius: 2px; padding: 4px 12px; cursor: pointer; }
   button.send:hover { background: var(--vscode-button-hoverBackground); }
   button.send:disabled { opacity: 0.5; cursor: default; }
 </style>
@@ -206,20 +225,21 @@ function html(): string {
 <body>
 <header><h1 id="title"></h1><div class="login" id="login"></div></header>
 <main id="messages"></main>
-<div class="busy" id="busy" hidden><div class="now" id="now"></div><details id="steps" hidden><summary id="stepCount"></summary><ol id="stepList"></ol></details></div>
+<div class="busy" id="busy" hidden><div class="now" id="now"></div><details id="steps" hidden><summary id="stepCount"></summary><ol id="stepList"></ol></details><button class="stop" id="stop" type="button" title="Stop this reply; the conversation goes on with your next message" hidden>Stop</button></div>
 <div class="problem" id="problem" role="alert" hidden></div>
 <div class="visually-hidden" id="announce" role="status"></div>
 <footer>
   <div class="context" id="context"></div>
   <form id="ask">
-    <textarea id="text" rows="2" aria-label="Ask the Assistant about this Change" placeholder="Ask about this Change. Enter sends; Shift+Enter starts a new line."></textarea>
+    <textarea id="text" rows="2" aria-label="Ask the Assistant about this Change"></textarea>
     <button class="send" id="send" type="submit">Send</button>
   </form>
 </footer>
-<script nonce="${nonce}">
+<script nonce="${nonce}">${sharedScript}
   const vscode = acquireVsCodeApi();
   const byId = (id) => document.getElementById(id);
   const lines = (s) => s.startLine === s.endLine ? "line " + s.startLine : "lines " + s.startLine + "–" + s.endLine;
+  const closeIcon = '<svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" clip-rule="evenodd" d="M8 8.707l3.646 3.647.708-.707L8.707 8l3.647-3.646-.707-.708L8 7.293 4.354 3.646l-.707.708L7.293 8l-3.646 3.646.707.708L8 8.707z"/></svg>';
   const chip = (s, onRemove) => {
     const span = document.createElement("span");
     span.className = "chip";
@@ -228,8 +248,9 @@ function html(): string {
     if (onRemove) {
       const button = document.createElement("button");
       button.type = "button";
-      button.textContent = "×";
+      button.innerHTML = closeIcon;
       button.title = "Don't send this selection";
+      button.setAttribute("aria-label", "Don't send " + s.path + ", " + lines(s));
       button.addEventListener("click", onRemove);
       span.append(button);
     }
@@ -244,6 +265,66 @@ function html(): string {
     }
     nodes.push(end);
     return nodes;
+  };
+  // Who said it, for screen readers; the look already tells.
+  const speakers = { reviewer: "You: ", assistant: "Assistant: ", note: "Dear Reviewer: " };
+  const messageNode = (m) => {
+    const div = document.createElement("div");
+    div.className = "message " + m.from;
+    const speaker = document.createElement("span");
+    speaker.className = "visually-hidden";
+    speaker.textContent = speakers[m.from] || "";
+    div.append(speaker);
+    if (m.context && m.context.length) {
+      const context = document.createElement("div");
+      context.className = "context";
+      context.append(...m.context.map((s) => chip(s)));
+      div.append(context);
+    }
+    if (m.html !== undefined) {
+      const body = document.createElement("div");
+      body.className = "markdown";
+      // Rendered and sanitised by the extension; see renderMarkdown.
+      body.innerHTML = m.html;
+      for (const a of body.querySelectorAll("a[data-href], a[data-path]")) {
+        a.tabIndex = 0;
+        a.setAttribute("role", "link");
+      }
+      div.append(body);
+    } else {
+      div.append(document.createTextNode(m.text));
+    }
+    return div;
+  };
+  // Builds only the messages that changed, such as the reply being written,
+  // so the focus on a link in an earlier one stays put.
+  const shownMessages = [];
+  const showMessages = (messages) => {
+    const root = byId("messages");
+    let changed = false;
+    messages.forEach((m, i) => {
+      const key = JSON.stringify(m);
+      if (shownMessages[i] === key) return;
+      shownMessages[i] = key;
+      changed = true;
+      const node = messageNode(m);
+      if (root.children[i]) root.children[i].replaceWith(node);
+      else root.append(node);
+    });
+    while (root.children.length > messages.length) {
+      root.lastElementChild.remove();
+      changed = true;
+    }
+    shownMessages.length = messages.length;
+    return changed;
+  };
+  const button = (label, type, className) => {
+    const node = document.createElement("button");
+    node.type = "button";
+    node.textContent = label;
+    if (className) node.className = className;
+    node.addEventListener("click", () => vscode.postMessage({ type }));
+    return node;
   };
   // Links and file references open through the extension, which checks them.
   byId("messages").addEventListener("click", (event) => {
@@ -261,11 +342,13 @@ function html(): string {
   byId("messages").addEventListener("keydown", (event) => {
     if (event.key === "Enter" && event.target instanceof HTMLAnchorElement) event.target.click();
   });
+  byId("stop").addEventListener("click", () => vscode.postMessage({ type: "stop" }));
   let busy;
+  let unavailable = false;
   const text = byId("text");
   const send = () => {
     const value = text.value.trim();
-    if (!value || busy) return;
+    if (!value || busy || unavailable) return;
     vscode.postMessage({ type: "ask", text: value });
     text.value = "";
   };
@@ -273,64 +356,63 @@ function html(): string {
   text.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); send(); }
   });
-  window.addEventListener("message", (event) => {
-    const message = event.data;
-    if (message.type === "focus") { text.focus(); return; }
-    if (message.type !== "state") return;
-    const state = message.state;
-    byId("title").textContent = state.title;
-    byId("login").textContent = state.login ? "Claude login: " + state.login : "";
-    byId("messages").replaceChildren(...state.messages.map((m) => {
-      const div = document.createElement("div");
-      div.className = "message " + m.from;
-      if (m.context && m.context.length) {
-        const context = document.createElement("div");
-        context.className = "context";
-        context.append(...m.context.map((s) => chip(s)));
-        div.append(context);
-      }
-      if (m.html !== undefined) {
-        const body = document.createElement("div");
-        body.className = "markdown";
-        // Rendered and sanitised by the extension; see renderMarkdown.
-        body.innerHTML = m.html;
-        for (const a of body.querySelectorAll("a[data-href], a[data-path]")) {
-          a.tabIndex = 0;
-          a.setAttribute("role", "link");
-        }
-        div.append(body);
-      } else {
-        div.append(document.createTextNode(m.text));
-      }
-      return div;
-    }));
+  const render = (state) => {
+    // A Reviewer reading at the end keeps following the reply as it grows.
+    const following = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 24;
+    setText(byId("title"), state.title);
+    setText(byId("login"), state.login ? "Claude login: " + state.login : "");
+    const grew = showMessages(state.messages);
     const steps = state.steps || [];
     const last = steps[steps.length - 1];
     byId("now").replaceChildren(...(last ? stepNodes(last, "…") : ["The Assistant is working…"]));
     byId("steps").hidden = steps.length < 2;
-    byId("stepCount").textContent = steps.length + " steps so far";
-    byId("stepList").replaceChildren(...steps.map((step) => {
-      const li = document.createElement("li");
-      li.append(...stepNodes(step, ""));
-      return li;
-    }));
-    byId("context").replaceChildren(...(state.context || []).map((s, index) =>
-      chip(s, () => vscode.postMessage({ type: "removeContext", index }))));
+    setText(byId("stepCount"), steps.length + " steps so far");
+    if (byId("stepList").children.length !== steps.length)
+      byId("stepList").replaceChildren(...steps.map((step) => {
+        const li = document.createElement("li");
+        li.append(...stepNodes(step, ""));
+        return li;
+      }));
+    byId("stop").hidden = !state.stoppable;
+    const context = JSON.stringify(state.context || []);
+    if (byId("context").dataset.shown !== context) {
+      byId("context").dataset.shown = context;
+      byId("context").replaceChildren(...(state.context || []).map((s, index) =>
+        chip(s, () => vscode.postMessage({ type: "removeContext", index }))));
+    }
     // Tells a screen reader when a reply starts and ends, not each step.
     if (busy !== undefined && state.busy !== busy)
       byId("announce").textContent = state.busy ? "The Assistant is working on a reply." : "The Assistant replied.";
     busy = state.busy;
-    byId("send").disabled = busy;
+    unavailable = !!state.unavailable;
+    byId("send").disabled = busy || unavailable;
+    text.placeholder = unavailable
+      ? "The Assistant can't reply until Claude Code runs; see above."
+      : "Ask about this Change. Enter sends; Shift+Enter starts a new line.";
     byId("busy").hidden = !state.busy;
-    byId("problem").hidden = !state.problem;
-    byId("problem").textContent = state.problem || "";
-    if (state.problem && state.problemAction) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.textContent = state.problemAction;
-      button.addEventListener("click", () => vscode.postMessage({ type: "problemAction" }));
-      byId("problem").append(button);
+    const problem = byId("problem");
+    problem.hidden = !state.problem;
+    const said = JSON.stringify([state.problem, state.problemAction, unavailable]);
+    if (problem.dataset.said !== said) {
+      problem.dataset.said = said;
+      problem.replaceChildren();
+      if (state.problem) {
+        appendWithCode(problem, state.problem);
+        const buttons = document.createElement("div");
+        buttons.className = "buttons";
+        if (state.problemAction) buttons.append(button(state.problemAction, "problemAction"));
+        // One filled button: Retry is secondary beside the one that helps.
+        if (unavailable) buttons.append(button("Retry", "retry", state.problemAction ? "secondary" : ""));
+        if (buttons.children.length) problem.append(buttons);
+      }
     }
+    if (following && grew) window.scrollTo(0, document.documentElement.scrollHeight);
+  };
+  window.addEventListener("message", (event) => {
+    const message = event.data;
+    if (message.type === "focus") { text.focus(); return; }
+    if (message.type !== "state") return;
+    keepFocus(() => render(message.state));
     vscode.postMessage({ type: "rendered", revision: message.revision });
   });
   vscode.postMessage({ type: "ready" });

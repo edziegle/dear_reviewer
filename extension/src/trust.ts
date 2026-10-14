@@ -28,6 +28,9 @@ export class ReviewWindowTrust implements vscode.Disposable {
   private readonly file: string;
   private hintShown = false;
   private readonly hintItem: vscode.StatusBarItem;
+  private readonly changed = new vscode.EventEmitter<void>();
+  /** Fires when code navigation in the review window turns on or off. */
+  readonly onDidChangeNavigation = this.changed.event;
   private readonly subscriptions: vscode.Disposable[] = [];
 
   /** Keeps what windows tell each other in `trust.json` in the storage folder. */
@@ -48,6 +51,7 @@ export class ReviewWindowTrust implements vscode.Disposable {
     this.hintItem.command = "dearReviewer.trustReviewWindow";
     this.subscriptions.push(
       this.hintItem,
+      this.changed,
       vscode.workspace.onDidGrantWorkspaceTrust(() => this.refresh()),
       // The review window may have been trusted, or asked to show Workspace
       // Trust, while another window had focus.
@@ -70,6 +74,11 @@ export class ReviewWindowTrust implements vscode.Disposable {
     }
     this.remember({ showWorkspaceTrust: true });
     await this.showReviewWindow();
+  }
+
+  /** Whether this is the review window and it is untrusted, so code navigation is off. */
+  get navigationOff(): boolean {
+    return this.hintShown;
   }
 
   /** The status-bar hint while it shows, for the tests. */
@@ -123,7 +132,9 @@ export class ReviewWindowTrust implements vscode.Disposable {
         if (!this.isTrusted()) void this.showWorkspaceTrust();
       }
     }
+    const wasShown = this.hintShown;
     this.hintShown = this.isReviewWindow() && !this.isTrusted();
+    if (this.hintShown !== wasShown) this.changed.fire();
     if (this.hintShown) this.hintItem.show();
     else this.hintItem.hide();
     void setContext("dearReviewer.reviewWindowTrusted", this.knownTrusted());

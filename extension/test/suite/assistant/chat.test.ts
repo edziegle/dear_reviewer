@@ -15,6 +15,7 @@ import {
   waitFor,
   webviewTabs,
   showAssistant,
+  stopAssistant,
   summaryNote,
 } from "../assistant";
 import { buildFixtureRepo } from "../fixtures";
@@ -81,6 +82,60 @@ describe("Chatting with the Assistant about a Change", () => {
     const runs = assistantRuns();
     assert.strictEqual(runs.length, 1, "both turns went to one claude");
     assert.strictEqual(userMessages(runs[0])[1], "What does util.py do?");
+
+    await closeChange(request);
+  });
+
+  it("stops a reply when the Reviewer asks, and goes on with the next message", async () => {
+    const answer = "util.py defines new_helper, which returns 2.";
+    scriptClaude({
+      turns: [
+        replyTurn("A summary."),
+        [...replyTurn(answer).slice(0, 2), waitFor("chat-never")],
+        replyTurn("Picked up."),
+      ],
+    });
+    const { request, title } = changeOf(
+      repo.commits.initial,
+      repo.commits.restructured
+    );
+    await openChange(request);
+    await showAssistant(request);
+    await eventually(async () =>
+      assert.strictEqual((await renderedPanel(title))?.busy, false)
+    );
+
+    await askAssistant(title, "What does util.py do?");
+    await eventually(async () => {
+      const panel = await renderedPanel(title);
+      assert.strictEqual(panel?.stoppable, true);
+      assert.strictEqual(panel?.messages.length, 3);
+    });
+    await stopAssistant(title);
+
+    await eventually(async () => {
+      const panel = await renderedPanel(title);
+      assert.strictEqual(panel?.busy, false);
+      assert.strictEqual(panel?.stoppable, undefined);
+      assert.strictEqual(panel?.problem, undefined);
+      assert.deepStrictEqual(panel?.messages, [
+        summaryNote,
+        { from: "reviewer", text: "What does util.py do?" },
+        { from: "assistant", text: answer.slice(0, answer.length / 2) },
+        { from: "note", text: "Stopped before the reply was finished." },
+      ]);
+    });
+
+    await askAssistant(title, "Go on.");
+    await eventually(async () =>
+      assert.deepStrictEqual((await renderedPanel(title))?.messages.at(-1), {
+        from: "assistant",
+        text: "Picked up.",
+      })
+    );
+    const runs = assistantRuns();
+    assert.strictEqual(runs.length, 2, "the next message started claude again");
+    assert.ok(flag(runs[1], "--resume"), "and resumed the conversation");
 
     await closeChange(request);
   });

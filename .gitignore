@@ -17,3 +17,7 @@ node_modules/
 
 # JetBrains project settings
 .idea/
+
+# Impeccable: session cache and per-developer overrides (config.json is shared)
+.impeccable/hook.cache.json
+.impeccable/config.local.json

@@ -1,9 +1,9 @@
 // A fake GitHub API on localhost for the tests. It serves pull requests from
 // fixtures through the GraphQL `search` the Inbox uses, serves a pull
-// request's files with their viewed state, marks files viewed and unviewed,
-// keeps reviews (a pending review, its threads and Comments, and submitting
-// it), serves a pull request's timeline and its latest commit's checks,
-// serves avatars, and records every request it receives.
+// request's state and its files with their viewed state, marks files viewed
+// and unviewed, keeps reviews (a pending review, its threads and Comments,
+// and submitting it), serves a pull request's timeline and its latest
+// commit's checks, serves avatars, and records every request it receives.
 //
 // Tests control it over HTTP:
 //   PUT /_fake/state      replaces the fixtures and clears what was recorded
@@ -275,8 +275,9 @@ export async function startFakeGitHub(): Promise<{
   }
 
   /**
-   * A pull request's id, its files in pages of 100 after the cursor, the
-   * viewer's pending review, and the review threads the viewer can see.
+   * A pull request's id and state, its files in pages of 100 after the
+   * cursor, the viewer's pending review, and the review threads the viewer
+   * can see.
    */
   function pullRequest(query: string, vars: Record<string, unknown>) {
     const pr = findPullRequest(
@@ -296,6 +297,7 @@ export async function startFakeGitHub(): Promise<{
       : visible;
     return {
       id: fakePullRequestId(pr),
+      state: pr.state ?? "OPEN",
       ...(/\btimelineItems\(/.test(query) &&
         timelineFields(pr, visible, vars.after)),
       reviews: {

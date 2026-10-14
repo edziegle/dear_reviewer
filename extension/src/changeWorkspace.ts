@@ -1,7 +1,7 @@
 // Owns each open Change's pair of worktrees: creates detached base and head
 // worktrees in the extension's storage, puts them in a window as workspace
 // folders, opens the multi-file diff between them, and cleans up when the
-// Change is closed.
+// Change is closed or is over (see ADR 0013).
 
 import * as crypto from "crypto";
 import * as fs from "fs";
@@ -33,13 +33,19 @@ export class ChangeWorkspace {
   private readonly shown = new vscode.EventEmitter<Change>();
   /** Fires when this window shows a Change's diff. */
   readonly onDidShowChange = this.shown.event;
+  /** Opening, closing and tidying run one after another. */
+  private queue: Promise<unknown> = Promise.resolve();
 
   constructor(private readonly storageDir: string) {
     this.openChanges = new OpenChanges(storageDir);
     this.reviewWindow = new ReviewWindow(storageDir);
   }
 
-  async open(request: ChangeRequest): Promise<Change> {
+  open(request: ChangeRequest): Promise<Change> {
+    return this.serially(() => this.openNow(request));
+  }
+
+  private async openNow(request: ChangeRequest): Promise<Change> {
     const change = await this.resolve(request);
     if (change.mergeBase === change.headSha)
       throw new Error(
@@ -66,19 +72,41 @@ export class ChangeWorkspace {
     return change;
   }
 
-  async close(request: ChangeRequest): Promise<Change> {
-    const change = await this.resolve(request);
-    const wasInReviewWindow = this.openChanges.get(change.id)?.inReviewWindow;
-    await removeFolders([change.headDir, change.baseDir]);
-    this.openChanges.remove(change.id);
-    if (wasInReviewWindow && !this.reviewWindow.isThisWindow()) {
-      this.syncReviewWindow();
-    }
-    for (const dir of [change.baseDir, change.headDir]) {
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
-    await git(change.repository, "worktree", "prune");
-    return change;
+  close(request: ChangeRequest): Promise<Change> {
+    return this.serially(async () => {
+      const change = await this.resolve(request);
+      await this.remove(change);
+      return change;
+    });
+  }
+
+  /**
+   * Closes the Changes that are over: those `isOver` names, such as a merged
+   * pull request's, and those whose worktrees or repository were deleted.
+   * Then takes out of this window any Change folders no open Change has,
+   * such as those of a Change another window closed. Gives the Changes it
+   * closed.
+   */
+  tidy(isOver: (change: Change) => boolean): Promise<Change[]> {
+    return this.serially(async () => {
+      const closed: Change[] = [];
+      for (const change of this.openChanges.all()) {
+        if (!isOver(change) && !isBroken(change)) continue;
+        await this.remove(change);
+        closed.push(change);
+      }
+      const kept = new Set(
+        this.openChanges.all().flatMap((c) => [c.baseDir, c.headDir])
+      );
+      const changesDir = path.join(this.storageDir, "changes") + path.sep;
+      await removeFolders(
+        (vscode.workspace.workspaceFolders ?? [])
+          .filter((f) => f.uri.scheme === "file")
+          .map((f) => f.uri.fsPath)
+          .filter((dir) => dir.startsWith(changesDir) && !kept.has(dir))
+      );
+      return closed;
+    });
   }
 
   /** The Change the request names, if it is open in this window. */
@@ -113,6 +141,28 @@ export class ChangeWorkspace {
       await showDiff(change);
       this.shown.fire(change);
     }
+  }
+
+  /** Removes the Change's folders, its worktrees and git's records of them. */
+  private async remove(change: Change): Promise<void> {
+    const wasInReviewWindow = this.openChanges.get(change.id)?.inReviewWindow;
+    await removeFolders([change.headDir, change.baseDir]);
+    this.openChanges.remove(change.id);
+    if (wasInReviewWindow && !this.reviewWindow.isThisWindow()) {
+      this.syncReviewWindow();
+    }
+    for (const dir of [change.baseDir, change.headDir]) {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+    // A repository that was deleted has no records left to prune.
+    if (fs.existsSync(change.repository))
+      await git(change.repository, "worktree", "prune");
+  }
+
+  private serially<T>(work: () => Promise<T>): Promise<T> {
+    const result = this.queue.then(work);
+    this.queue = result.catch(() => undefined);
+    return result;
   }
 
   /** Lists in the review window's workspace file exactly the Changes it holds. */
@@ -178,10 +228,7 @@ async function conversationName(
   mergeBase: string,
   headSha: string
 ): Promise<string> {
-  if (request.pullRequest) {
-    const { repository: name, number } = request.pullRequest;
-    return `pull request ${name.toLowerCase()}#${number}`;
-  }
+  if (request.pullRequest) return pullRequestConversation(request.pullRequest);
   const ref = await git(
     repository,
     "rev-parse",
@@ -191,6 +238,26 @@ async function conversationName(
   if (ref.startsWith("refs/heads/"))
     return `branch ${ref.slice("refs/heads/".length)} in ${repository}`;
   return `range ${mergeBase}..${headSha} in ${repository}`;
+}
+
+/** The name a pull request's Change keeps its Assistant conversation under. */
+export function pullRequestConversation(pullRequest: PullRequestRef): string {
+  return `pull request ${pullRequest.repository.toLowerCase()}#${pullRequest.number}`;
+}
+
+/** The pull request a conversation name gives, if it names one. */
+export function pullRequestOfConversation(
+  name: string
+): PullRequestRef | undefined {
+  const match = /^pull request ([^#\s]+)#(\d+)$/.exec(name);
+  if (match) return { repository: match[1], number: Number(match[2]) };
+}
+
+/** Whether a worktree, or the repository it belongs to, was deleted outside Dear Reviewer. */
+function isBroken(change: Change): boolean {
+  return [change.repository, change.baseDir, change.headDir].some(
+    (dir) => !fs.existsSync(dir)
+  );
 }
 
 /**

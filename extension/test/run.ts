@@ -177,6 +177,9 @@ async function main() {
       "localBranches",
       multiRootWorkspace("local-branches", "local-branches")
     );
+    const lifecycle = multiRootWorkspace("lifecycle", "lifecycle");
+    await runSuite("lifecycle", lifecycle);
+    await runSuite("lifecycle/afterReload", lifecycle);
     // Last, so the repositories it remembers can't reach other suites; it forgets them when done.
     await runSuite(
       "openFolders",

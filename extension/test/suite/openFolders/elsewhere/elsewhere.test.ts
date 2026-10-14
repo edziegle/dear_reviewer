@@ -99,7 +99,17 @@ describe("Repositories remembered from other windows", () => {
     await forgetRepository(handoff.repository);
 
     assert.deepStrictEqual(await showInbox(), []);
-    assert.deepStrictEqual(await requestsToGitHub(), []);
+    // Refreshing also asks for the state of pull requests with a saved
+    // conversation, which earlier suites left; the Inbox itself asks nothing.
+    assert.deepStrictEqual(
+      (await requestsToGitHub()).filter(
+        (r) =>
+          !/\bquery PullRequestState\b/.test(
+            String((r.body as { query?: string })?.query)
+          )
+      ),
+      []
+    );
   });
 
   it("asks where a clone is, and remembers the folder the Reviewer picks", async () => {

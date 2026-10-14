@@ -33,6 +33,11 @@ export class Conversations {
     this.write({ ...this.all(), [name]: conversation });
   }
 
+  /** The names of every saved conversation. */
+  names(): string[] {
+    return Object.keys(this.all());
+  }
+
   forget(name: string): void {
     const all = this.all();
     delete all[name];

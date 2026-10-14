@@ -5,6 +5,8 @@ date: 2026-10-13
 
 # Keep each Change's Assistant conversation by pull request or branch, and resume it with `claude --resume`
 
+Amended by [ADR 0013](0013-end-changes-that-are-over.md): the conversation of a pull request that GitHub says was merged or closed is forgotten, whether or not its Change is still open.
+
 ## Context and Problem Statement
 
 The glossary says a Change's conversation with the Assistant lasts for the life of the Change: across Reviews and window reloads, until the Change is merged or closed. ADR 0004 runs one `claude -p` process per Change, so the conversation ends when the window reloads. Dear Reviewer's Change id hashes the repository, merge base and head, so a new commit gives a new id, new worktrees and, for a pull request, a new open Change. What should the saved conversation be keyed on, what happens to it when a new head arrives, and where does `claude` run so that its session can be resumed?

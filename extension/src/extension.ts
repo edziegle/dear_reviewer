@@ -19,6 +19,7 @@ import { selectionInChange } from "./assistant/selection";
 import { GitHubAuth } from "./github/auth";
 import { GitHubClient, PullRequestSummary } from "./github/client";
 import { Avatars, InboxNode, InboxTree, setContext } from "./inbox";
+import { Lifecycle } from "./lifecycle";
 import { Repositories } from "./repositories";
 import { ReviewWindow } from "./reviewWindow";
 import { PendingReviews } from "./pendingReview";
@@ -70,10 +71,11 @@ export function activate(context: vscode.ExtensionContext) {
   // Links leave VS Code through the extension; the tests catch them instead.
   const openExternal: LinkOpener = (uri) => vscode.env.openExternal(uri);
   let openLink = openExternal;
+  const conversations = new Conversations(context.globalStorageUri.fsPath);
   const assistants = new Assistants(
     () =>
       expandHome(settings().inspect<string>("claudePath")?.globalValue ?? ""),
-    new Conversations(context.globalStorageUri.fsPath),
+    conversations,
     (uri) => openLink(uri)
   );
   // Only the user's own setting counts: a workspace must not be able to
@@ -105,6 +107,24 @@ export function activate(context: vscode.ExtensionContext) {
     avatars
   );
   const timelines = new Timelines(github, avatars, (uri) => openLink(uri));
+
+  /** Lets go of a Change that was closed: its panels, Comments and viewed files. */
+  async function letGo(change: Change): Promise<void> {
+    assistants.close(change);
+    timelines.close(change);
+    review.forget(change);
+    await viewedFiles.forget(change);
+  }
+
+  const lifecycle = new Lifecycle(
+    changes,
+    github,
+    conversations,
+    async (change) => {
+      await letGo(change);
+      changeFiles.refresh();
+    }
+  );
 
   /**
    * Remembers the folder as the repository's clone: the one given (by a
@@ -286,11 +306,7 @@ export function activate(context: vscode.ExtensionContext) {
       async (request?: ChangeRequest) => {
         request ??= await pickOpenChange(changes.list(), "Close Change");
         if (!request) return;
-        const closed = await changes.close(request);
-        assistants.close(closed);
-        timelines.close(closed);
-        review.forget(closed);
-        await viewedFiles.forget(closed);
+        await letGo(await changes.close(request));
         changeFiles.refresh();
       }
     ),
@@ -467,8 +483,9 @@ export function activate(context: vscode.ExtensionContext) {
     ),
     repositories.onDidChange(() => inbox.refresh()),
     vscode.workspace.onDidGrantWorkspaceTrust(() => repositories.scanWindow()),
+    // Refreshing is also when merged and closed pull requests' Changes go.
     vscode.commands.registerCommand("dearReviewer.refreshInbox", () =>
-      inbox.refresh()
+      Promise.all([inbox.refresh(), lifecycle.tidy()])
     ),
     vscode.commands.registerCommand(
       "dearReviewer.setToken",
@@ -496,6 +513,7 @@ export function activate(context: vscode.ExtensionContext) {
     ),
     auth.onDidChange(() => {
       void showSignedIn();
+      void lifecycle.tidy();
       void review.sync();
       void timelines.refreshAll();
       return inbox.refresh();
@@ -518,6 +536,7 @@ export function activate(context: vscode.ExtensionContext) {
   );
   void repositories.scanWindow();
   void showSignedIn();
+  void lifecycle.tidy();
   void changes.showPendingDiffs();
   void review.sync();
   const reviewWindow = new ReviewWindow(context.globalStorageUri.fsPath);

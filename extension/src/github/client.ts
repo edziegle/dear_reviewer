@@ -32,6 +32,8 @@ export interface PullRequestFiles {
 }
 
 /** GitHub's name for a side of a pull request's diff: LEFT is the base, RIGHT the head. */
+export type PullRequestState = "OPEN" | "MERGED" | "CLOSED";
+
 export type DiffSide = "LEFT" | "RIGHT";
 
 export type ReviewEvent = "APPROVE" | "REQUEST_CHANGES" | "COMMENT";
@@ -195,6 +197,18 @@ ${INBOX_PULL_REQUEST}`;
       after = page?.hasNextPage ? page.endCursor : null;
     } while (after);
     return { id, files };
+  }
+
+  /** Whether the pull request is open, merged or closed; undefined if GitHub has no such pull request. */
+  async pullRequestState(
+    repository: string,
+    number: number
+  ): Promise<PullRequestState | undefined> {
+    const [owner, name] = repository.split("/");
+    const data = await this.graphql<{
+      repository: { pullRequest: { state: PullRequestState } | null } | null;
+    }>(PULL_REQUEST_STATE, { owner, name, number });
+    return data.repository?.pullRequest?.state;
   }
 
   /** Marks these files of the pull request viewed, or not viewed, in one request. */
@@ -451,6 +465,12 @@ function graphqlUrl(apiUrl: string): string {
     ? `${base.slice(0, -"/v3".length)}/graphql`
     : `${base}/graphql`;
 }
+
+const PULL_REQUEST_STATE = `query PullRequestState($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) { state }
+  }
+}`;
 
 const PULL_REQUEST_FILES = `query PullRequestFiles($owner: String!, $name: String!, $number: Int!, $after: String) {
   repository(owner: $owner, name: $name) {

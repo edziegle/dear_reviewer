@@ -5,6 +5,8 @@ date: 2026-10-13
 
 # Take the Inbox's repositories and clones from the folders the Reviewer opens, and remember them
 
+Amended by [ADR 0021](0021-ask-once-to-trust-the-review-window.md): instead of a warning on every start of an untrusted review window, Dear Reviewer asks once, the first time a Change opens, remembers the answer, and leaves a quiet status-bar hint.
+
 ## Context and Problem Statement
 
 ADRs 0005 and 0006 made two settings the only way into the Inbox. Repositories lists each `owner/name`, and Local Clones maps each one to a path. In the first real run (#18), the Inbox showed empty groups, and opening a pull request failed with an error that asked for a Local Clones entry. The repository was the folder open in that window. The Reviewer expected Dear Reviewer to use the folders already open in VSCodium.

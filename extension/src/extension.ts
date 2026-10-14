@@ -47,6 +47,7 @@ import {
   ViewedFilesBySource,
 } from "./viewedFiles";
 import { messageOf } from "./errors";
+import { ReviewWindowTrust } from "./trust";
 
 export function activate(context: vscode.ExtensionContext) {
   const changes = new ChangeWorkspace(context.globalStorageUri.fsPath);
@@ -149,6 +150,20 @@ export function activate(context: vscode.ExtensionContext) {
       void inbox.refresh();
     }
   );
+  const reviewWindow = new ReviewWindow(context.globalStorageUri.fsPath);
+  const trust = new ReviewWindowTrust(context.globalStorageUri.fsPath, () =>
+    reviewWindow.isThisWindow()
+  );
+
+  /**
+   * Opens the Change the Reviewer asked for, then asks once, from this
+   * window, whether to trust the folder it opens in.
+   */
+  async function openThenAskTrust(request: ChangeRequest): Promise<Change> {
+    const change = await changes.open(request);
+    trust.askOnce();
+    return change;
+  }
   const timelines = new Timelines(github, avatars, (uri) => openLink(uri), {
     standing: (change) => standingOf(change),
     take: (change) => assistants.overviewOf(change),
@@ -541,7 +556,7 @@ export function activate(context: vscode.ExtensionContext) {
               location: vscode.ProgressLocation.Notification,
               title: `Opening ${path.basename(repository)} ${base}..${head}…`,
             },
-            () => changes.open(request)
+            () => openThenAskTrust(request)
           );
         } catch (err) {
           const message = messageOf(err);
@@ -567,7 +582,7 @@ export function activate(context: vscode.ExtensionContext) {
             await inbox.opened(
               { kind: "pullRequest", pullRequest: pr },
               `Opening ${pullRequestName(pr)}…`,
-              async () => changes.open(await fetchPullRequest(clone, pr))
+              async () => openThenAskTrust(await fetchPullRequest(clone, pr))
             );
           } catch (err) {
             const message = messageOf(err);
@@ -597,7 +612,7 @@ export function activate(context: vscode.ExtensionContext) {
         const { branch } = node;
         try {
           await inbox.opened(node, `Opening ${branch.name}…`, () =>
-            changes.open({
+            openThenAskTrust({
               repository: branch.clone,
               base: branch.main,
               head: `refs/heads/${branch.name}`,
@@ -1038,6 +1053,10 @@ export function activate(context: vscode.ExtensionContext) {
         }
       }
     ),
+    trust,
+    vscode.commands.registerCommand("dearReviewer.trustReviewWindow", () =>
+      trust.trust()
+    ),
     vscode.commands.registerCommand("dearReviewer.signIn", () => auth.signIn()),
     vscode.commands.registerCommand("dearReviewer.forgetToken", () =>
       auth.forgetToken(apiUrl())
@@ -1071,9 +1090,6 @@ export function activate(context: vscode.ExtensionContext) {
   void lifecycle.tidy();
   void changes.showPendingDiffs();
   void review.sync();
-  const reviewWindow = new ReviewWindow(context.globalStorageUri.fsPath);
-  if (reviewWindow.isThisWindow() && !vscode.workspace.isTrusted)
-    void askToTrustReviewWindow(context.globalStorageUri.fsPath);
   // After a reload, the review starts quiet again, at the Change opened last.
   const latest = changes.shownHere().at(-1);
   if (latest) void showChange(latest);
@@ -1103,6 +1119,12 @@ export function activate(context: vscode.ExtensionContext) {
           rendered: panel.rendered,
           receive: (message: FromWebview) => panel.receive(message),
         })),
+    },
+    /** Stands in for workspace trust and the Reviewer's answer; tests run with trust off. */
+    trust: {
+      forTests: (stand: Parameters<ReviewWindowTrust["forTests"]>[0]) =>
+        trust.forTests(stand),
+      hint: () => trust.hint(),
     },
     /** Hands the links the Reviewer opens, from any panel, to `open` instead, or back to the browser. */
     openLinksWith: (open?: (url: string) => void) => {
@@ -1202,25 +1224,6 @@ async function askForLocalClone(
       "workbench.action.openSettings",
       "dearReviewer.localClones"
     );
-}
-
-/**
- * The review window's folders, Changes' worktrees, live in the extension's
- * storage, which VS Code doesn't trust until the Reviewer says so. Until then
- * language servers, and with them navigation, stay off (see ADR 0010).
- */
-async function askToTrustReviewWindow(storageDir: string): Promise<void> {
-  const trust = "Manage Workspace Trust";
-  const picked = await vscode.window.showWarningMessage(
-    `The review window is in Restricted Mode, so language servers and code navigation are off in its Changes. To turn them on, trust Dear Reviewer's folder of Changes once: ${storageDir}. Trusting it also lets the reviewed code's workspace settings and tasks apply in this window; Dear Reviewer itself only reads your user settings.`,
-    trust
-  );
-  if (picked !== trust) return;
-  await vscode.env.clipboard.writeText(storageDir);
-  void vscode.window.showInformationMessage(
-    "Copied the folder's path. In Workspace Trust, choose Add Folder and paste it."
-  );
-  await vscode.commands.executeCommand("workbench.trust.manage");
 }
 
 function showNoFinding(): void {

@@ -242,7 +242,7 @@ function html(cspSource: string): string {
   .markdown code { font-family: var(--vscode-editor-font-family); font-size: var(--vscode-editor-font-size); background: var(--vscode-textCodeBlock-background); padding: 0 3px; border-radius: 3px; }
   .markdown pre { background: var(--vscode-textCodeBlock-background); padding: 8px; border-radius: 3px; overflow-x: auto; }
   .markdown pre code { padding: 0; background: none; white-space: pre; }
-  .markdown blockquote { border-left: 3px solid var(--vscode-textBlockQuote-border); padding-left: 8px; }
+  .markdown blockquote { background: var(--vscode-textBlockQuote-background); padding: 4px 8px; border-radius: 3px; }
   .markdown table { border-collapse: collapse; }
   .markdown th, .markdown td { border: 1px solid var(--vscode-panel-border); padding: 2px 6px; }
   .markdown a[data-href] { color: var(--vscode-textLink-foreground); cursor: pointer; }

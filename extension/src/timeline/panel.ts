@@ -4,6 +4,7 @@
 
 import * as crypto from "crypto";
 import * as vscode from "vscode";
+import { renderMarkdown } from "../markdown";
 import type {
   CheckRunStatus,
   CheckStatus,
@@ -57,8 +58,16 @@ export interface TimelineState {
   problemAction?: string;
 }
 
+/**
+ * The timeline as the webview gets it: each description, Comment and review
+ * body also rendered from Markdown and sanitised (ADR 0011).
+ */
+export interface ShownTimeline extends TimelineState {
+  items: (TimelineItem & { html?: string })[];
+}
+
 /** Extension to webview. */
-type ToWebview = { type: "state"; revision: number; state: TimelineState };
+type ToWebview = { type: "state"; revision: number; state: ShownTimeline };
 /** Webview to extension. */
 export type FromWebview =
   | { type: "ready" }
@@ -69,9 +78,11 @@ export type FromWebview =
 
 export class TimelinePanel {
   private readonly panel: vscode.WebviewPanel;
-  private state: TimelineState;
+  private state: ShownTimeline;
   private revision = 0;
-  private renderedState?: TimelineState;
+  private renderedState?: ShownTimeline;
+  /** The web links in the bodies sent. */
+  private links = new Set<string>();
   private readonly disposed = new vscode.EventEmitter<void>();
   private readonly linkClicked = new vscode.EventEmitter<string>();
   private readonly refreshClicked = new vscode.EventEmitter<void>();
@@ -86,7 +97,7 @@ export class TimelinePanel {
 
   /** `avatarDir` holds the cached avatars, the only files the webview may load. */
   constructor(state: TimelineState, avatarDir: vscode.Uri) {
-    this.state = clone(state);
+    this.state = this.shown(state);
     this.panel = vscode.window.createWebviewPanel(
       "dearReviewer.timeline",
       `Timeline: ${state.pullRequest}`,
@@ -118,13 +129,18 @@ export class TimelinePanel {
   }
 
   /** The state last sent to the webview. */
-  get sent(): TimelineState {
+  get sent(): ShownTimeline {
     return clone(this.state);
   }
 
   /** The state the webview last rendered, once it has rendered the latest one. */
-  get rendered(): TimelineState | undefined {
+  get rendered(): ShownTimeline | undefined {
     return this.renderedState && clone(this.renderedState);
+  }
+
+  /** Whether a body the panel was sent links to the URL. */
+  hasLink(url: string): boolean {
+    return this.links.has(url);
   }
 
   /** The URI the webview loads a local file by. */
@@ -144,7 +160,7 @@ export class TimelinePanel {
   }
 
   update(state: TimelineState): void {
-    this.state = clone(state);
+    this.state = this.shown(state);
     void this.post();
   }
 
@@ -154,6 +170,18 @@ export class TimelinePanel {
 
   dispose(): void {
     this.panel.dispose();
+  }
+
+  private shown(state: TimelineState): ShownTimeline {
+    const links = new Set<string>();
+    const items = state.items.map((item) => {
+      if (item.kind === "commit" || !item.body) return item;
+      const rendered = renderMarkdown(item.body);
+      for (const link of rendered.links) links.add(link);
+      return { ...item, html: rendered.html };
+    });
+    this.links = links;
+    return clone({ ...state, items });
   }
 
   private post(): Thenable<boolean> {
@@ -167,8 +195,8 @@ export class TimelinePanel {
 }
 
 /** The state as JSON carries it to the webview, with absent fields left out. */
-function clone(state: TimelineState): TimelineState {
-  return JSON.parse(JSON.stringify(state)) as TimelineState;
+function clone(state: ShownTimeline): ShownTimeline {
+  return JSON.parse(JSON.stringify(state)) as ShownTimeline;
 }
 
 function html(cspSource: string): string {
@@ -203,6 +231,22 @@ function html(cspSource: string): string {
   .item .content { flex: 1; min-width: 0; }
   .item .author { font-weight: 600; }
   .item .body { white-space: pre-wrap; line-height: 1.5; margin-top: 6px; overflow-wrap: anywhere; }
+  .item .body.markdown { white-space: normal; }
+  .markdown > :first-child { margin-top: 0; }
+  .markdown > :last-child { margin-bottom: 0; }
+  .markdown h1, .markdown h2, .markdown h3, .markdown h4 { font-size: 1.05em; margin: 1em 0 0.4em; }
+  .markdown h1 { font-size: 1.2em; }
+  .markdown h2 { font-size: 1.1em; }
+  .markdown p, .markdown ul, .markdown ol, .markdown pre, .markdown blockquote, .markdown table { margin: 0.5em 0; }
+  .markdown ul, .markdown ol { padding-left: 1.6em; list-style: revert; }
+  .markdown code { font-family: var(--vscode-editor-font-family); font-size: var(--vscode-editor-font-size); background: var(--vscode-textCodeBlock-background); padding: 0 3px; border-radius: 3px; }
+  .markdown pre { background: var(--vscode-textCodeBlock-background); padding: 8px; border-radius: 3px; overflow-x: auto; }
+  .markdown pre code { padding: 0; background: none; white-space: pre; }
+  .markdown blockquote { border-left: 3px solid var(--vscode-textBlockQuote-border); padding-left: 8px; }
+  .markdown table { border-collapse: collapse; }
+  .markdown th, .markdown td { border: 1px solid var(--vscode-panel-border); padding: 2px 6px; }
+  .markdown a[data-href] { color: var(--vscode-textLink-foreground); cursor: pointer; }
+  .markdown a[data-href]:hover { text-decoration: underline; }
   .item.commit .sha { font-family: var(--vscode-editor-font-family); }
   .problem { margin: 12px 0; padding: 8px; border: 1px solid var(--vscode-inputValidation-errorBorder); background: var(--vscode-inputValidation-errorBackground); white-space: pre-wrap; }
   .problem button { display: block; margin-top: 8px; padding: 4px 10px; border: none; border-radius: 2px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); cursor: pointer; font: inherit; }
@@ -245,6 +289,16 @@ function html(cspSource: string): string {
     dismissed: "reviewed (dismissed)",
   };
   byId("refresh").addEventListener("click", () => vscode.postMessage({ type: "refresh" }));
+  // Links in bodies open through the extension, which checks them.
+  byId("items").addEventListener("click", (event) => {
+    const link = event.target instanceof Element ? event.target.closest("a[data-href]") : null;
+    if (!link) return;
+    event.preventDefault();
+    vscode.postMessage({ type: "openLink", url: link.dataset.href });
+  });
+  byId("items").addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && event.target instanceof HTMLAnchorElement) event.target.click();
+  });
 
   function item(entry) {
     const row = el("div", "item " + entry.kind);
@@ -266,6 +320,15 @@ function html(cspSource: string): string {
       const commit = el("div", "body");
       commit.append(el("span", "sha", entry.sha), " ", entry.headline);
       content.append(commit);
+    } else if (entry.html !== undefined) {
+      const body = el("div", "body markdown");
+      // Rendered and sanitised by the extension; see renderMarkdown.
+      body.innerHTML = entry.html;
+      for (const a of body.querySelectorAll("a[data-href]")) {
+        a.tabIndex = 0;
+        a.setAttribute("role", "link");
+      }
+      content.append(body);
     } else if (entry.body) {
       content.append(el("div", "body", entry.body));
     } else if (entry.kind === "description") {

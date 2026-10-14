@@ -137,13 +137,14 @@ class ChangeTimeline {
     this.panel?.dispose();
   }
 
-  /** Opens a link the panel showed, and nothing else it might ask for. */
+  /** Opens a link the panel showed, in its header, checks or bodies, and nothing else it might ask for. */
   private async open(url: string): Promise<void> {
     const links = [
       this.state.url,
       ...(this.state.checks?.runs.map((run) => run.url) ?? []),
     ];
-    if (!links.includes(url) || !/^https?:\/\//i.test(url)) return;
+    const sent = links.includes(url) || this.panel?.hasLink(url);
+    if (!sent || !/^https?:\/\//i.test(url)) return;
     await this.openLink(vscode.Uri.parse(url, true));
   }
 

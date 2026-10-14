@@ -67,10 +67,14 @@ export function activate(context: vscode.ExtensionContext) {
   );
   // Only the user's own setting counts: a Change's worktrees, or any other
   // workspace, must not be able to choose the program Dear Reviewer runs.
+  // Links leave VS Code through the extension; the tests catch them instead.
+  const openExternal: LinkOpener = (uri) => vscode.env.openExternal(uri);
+  let openLink = openExternal;
   const assistants = new Assistants(
     () =>
       expandHome(settings().inspect<string>("claudePath")?.globalValue ?? ""),
-    new Conversations(context.globalStorageUri.fsPath)
+    new Conversations(context.globalStorageUri.fsPath),
+    (uri) => openLink(uri)
   );
   // Only the user's own setting counts: a workspace must not be able to
   // choose the repository Dear Reviewer runs git in.
@@ -100,9 +104,6 @@ export function activate(context: vscode.ExtensionContext) {
     () => repositories.inboxClones(),
     avatars
   );
-  // Links leave VS Code through the extension; the tests catch them instead.
-  const openExternal: LinkOpener = (uri) => vscode.env.openExternal(uri);
-  let openLink = openExternal;
   const timelines = new Timelines(github, avatars, (uri) => openLink(uri));
 
   /**
@@ -545,15 +546,15 @@ export function activate(context: vscode.ExtensionContext) {
           rendered: panel.rendered,
           receive: (message: FromWebview) => panel.receive(message),
         })),
-      /** Hands the links the Reviewer opens to `open` instead, or back to the browser. */
-      openLinksWith: (open?: (url: string) => void) => {
-        openLink = open
-          ? async (uri) => {
-              open(uri.toString(true));
-              return true;
-            }
-          : openExternal;
-      },
+    },
+    /** Hands the links the Reviewer opens, from any panel, to `open` instead, or back to the browser. */
+    openLinksWith: (open?: (url: string) => void) => {
+      openLink = open
+        ? async (uri) => {
+            open(uri.toString(true));
+            return true;
+          }
+        : openExternal;
     },
   };
 }

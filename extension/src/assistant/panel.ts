@@ -1,12 +1,17 @@
 // The Assistant panel for one Change: a webview beside the diff that shows
 // the conversation and takes the Reviewer's messages. The extension sends it
 // the whole conversation state; the webview renders it, says which state it
-// rendered, and sends what the Reviewer asks.
+// rendered, and sends what the Reviewer asks. The Assistant's replies are
+// Markdown, which the extension renders and sanitises before sending
+// (ADR 0011); the webview opens no links or files itself, but asks.
 
 import * as crypto from "crypto";
 import * as vscode from "vscode";
+import { renderMarkdown } from "../markdown";
+import type { Step } from "./activity";
 import type { Selection } from "./prompts";
 
+export type { Step } from "./activity";
 export type { Selection } from "./prompts";
 
 export interface Message {
@@ -24,6 +29,8 @@ export interface ConversationState {
   login?: string;
   /** Whether the Assistant is working on a reply. */
   busy: boolean;
+  /** What the Assistant has done so far in the turn it is working on. */
+  steps?: Step[];
   messages: Message[];
   /** Selections waiting to go with the Reviewer's next message. */
   context?: (Selection & { text: string })[];
@@ -33,9 +40,14 @@ export interface ConversationState {
   problemAction?: string;
 }
 
+/** The conversation as the webview gets it, with each reply's Markdown rendered. */
+export interface ShownConversation extends ConversationState {
+  messages: (Message & { html?: string })[];
+}
+
 /** Extension to webview. */
 type ToWebview =
-  | { type: "state"; revision: number; state: ConversationState }
+  | { type: "state"; revision: number; state: ShownConversation }
   | { type: "focus" };
 /** Webview to extension. */
 export type FromWebview =
@@ -43,19 +55,27 @@ export type FromWebview =
   | { type: "rendered"; revision: number }
   | { type: "ask"; text: string }
   | { type: "removeContext"; index: number }
-  | { type: "problemAction" };
+  | { type: "problemAction" }
+  | { type: "openLink"; url: string }
+  | { type: "openReference"; path: string; startLine: number; endLine: number };
 
 /** What the Reviewer does in the panel. */
 export type ReviewerAction = Extract<
   FromWebview,
-  { type: "ask" } | { type: "removeContext" } | { type: "problemAction" }
+  | { type: "ask" }
+  | { type: "removeContext" }
+  | { type: "problemAction" }
+  | { type: "openLink" }
+  | { type: "openReference" }
 >;
 
 export class AssistantPanel {
   private readonly panel: vscode.WebviewPanel;
-  private state: ConversationState;
+  private state: ShownConversation;
   private revision = 0;
-  private renderedState?: ConversationState;
+  private renderedState?: ShownConversation;
+  /** The web links in the replies sent, the only ones the panel may open. */
+  private links = new Set<string>();
   private readonly disposed = new vscode.EventEmitter<void>();
   /** Fires when the Reviewer closes the panel. */
   readonly onDidDispose = this.disposed.event;
@@ -64,7 +84,7 @@ export class AssistantPanel {
     state: ConversationState,
     private readonly onAction: (action: ReviewerAction) => void
   ) {
-    this.state = clone(state);
+    this.state = this.shown(state);
     this.panel = vscode.window.createWebviewPanel(
       "dearReviewer.assistant",
       `Assistant: ${state.title}`,
@@ -86,17 +106,17 @@ export class AssistantPanel {
   }
 
   /** The state last sent to the webview. */
-  get sent(): ConversationState {
+  get sent(): ShownConversation {
     return clone(this.state);
   }
 
   /** The state the webview last rendered, once it has rendered the latest one. */
-  get rendered(): ConversationState | undefined {
+  get rendered(): ShownConversation | undefined {
     return this.renderedState && clone(this.renderedState);
   }
 
   update(state: ConversationState): void {
-    this.state = clone(state);
+    this.state = this.shown(state);
     this.panel.title = `Assistant: ${state.title}`;
     void this.post();
   }
@@ -114,6 +134,17 @@ export class AssistantPanel {
       if (Number.isInteger(message.index)) this.onAction(message);
     } else if (message.type === "problemAction") {
       this.onAction({ type: "problemAction" });
+    } else if (message.type === "openLink") {
+      if (typeof message.url === "string" && this.links.has(message.url))
+        this.onAction({ type: "openLink", url: message.url });
+    } else if (message.type === "openReference") {
+      const { path, startLine, endLine } = message;
+      if (
+        typeof path === "string" &&
+        Number.isInteger(startLine) &&
+        Number.isInteger(endLine)
+      )
+        this.onAction({ type: "openReference", path, startLine, endLine });
     }
   }
 
@@ -130,6 +161,19 @@ export class AssistantPanel {
     this.panel.dispose();
   }
 
+  /** Renders each reply's Markdown, and keeps the links it has. */
+  private shown(state: ConversationState): ShownConversation {
+    const links = new Set<string>();
+    const messages = state.messages.map((message) => {
+      if (message.from !== "assistant") return message;
+      const rendered = renderMarkdown(message.text, { references: true });
+      for (const link of rendered.links) links.add(link);
+      return { ...message, html: rendered.html };
+    });
+    this.links = links;
+    return clone({ ...state, messages });
+  }
+
   private post(): Thenable<boolean> {
     const message: ToWebview = {
       type: "state",
@@ -141,8 +185,8 @@ export class AssistantPanel {
 }
 
 /** The state as JSON carries it to the webview, with absent fields left out. */
-function clone(state: ConversationState): ConversationState {
-  return JSON.parse(JSON.stringify(state)) as ConversationState;
+function clone(state: ShownConversation): ShownConversation {
+  return JSON.parse(JSON.stringify(state)) as ShownConversation;
 }
 
 function html(): string {
@@ -168,7 +212,28 @@ function html(): string {
   .problem { margin: 12px 0; padding: 8px; border: 1px solid var(--vscode-inputValidation-errorBorder); background: var(--vscode-inputValidation-errorBackground); white-space: pre-wrap; }
   .problem button { display: block; margin-top: 8px; padding: 4px 10px; border: none; border-radius: 2px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); cursor: pointer; font: inherit; }
   .problem button:hover { background: var(--vscode-button-hoverBackground); }
-  .busy { color: var(--vscode-descriptionForeground); font-style: italic; }
+  .busy { color: var(--vscode-descriptionForeground); margin: 8px 0; }
+  .busy .now { font-style: italic; }
+  .busy code { font-family: var(--vscode-editor-font-family); font-style: normal; }
+  .busy details { margin-top: 2px; font-size: 0.9em; }
+  .busy summary { cursor: pointer; }
+  .busy ol { margin: 4px 0; padding-left: 20px; }
+  .message.assistant { white-space: normal; }
+  .markdown > :first-child { margin-top: 0; }
+  .markdown > :last-child { margin-bottom: 0; }
+  .markdown h1, .markdown h2, .markdown h3, .markdown h4 { font-size: 1.05em; margin: 1em 0 0.4em; }
+  .markdown h1 { font-size: 1.2em; }
+  .markdown h2 { font-size: 1.1em; }
+  .markdown p, .markdown ul, .markdown ol, .markdown pre, .markdown blockquote, .markdown table { margin: 0.5em 0; }
+  .markdown ul, .markdown ol { padding-left: 1.6em; }
+  .markdown code { font-family: var(--vscode-editor-font-family); font-size: var(--vscode-editor-font-size); background: var(--vscode-textCodeBlock-background); padding: 0 3px; border-radius: 3px; }
+  .markdown pre { background: var(--vscode-textCodeBlock-background); padding: 8px; border-radius: 3px; overflow-x: auto; }
+  .markdown pre code { padding: 0; background: none; white-space: pre; }
+  .markdown blockquote { border-left: 3px solid var(--vscode-textBlockQuote-border); padding-left: 8px; color: var(--vscode-textBlockQuote-foreground, inherit); }
+  .markdown table { border-collapse: collapse; }
+  .markdown th, .markdown td { border: 1px solid var(--vscode-panel-border); padding: 2px 6px; }
+  .markdown a[data-href], .markdown a[data-path] { color: var(--vscode-textLink-foreground); cursor: pointer; text-decoration: none; }
+  .markdown a[data-href]:hover, .markdown a[data-path]:hover { text-decoration: underline; }
   footer { position: sticky; bottom: 0; background: var(--vscode-editor-background); padding: 8px 0 12px; border-top: 1px solid var(--vscode-panel-border); }
   form { display: flex; gap: 6px; align-items: flex-end; }
   textarea { flex: 1; resize: vertical; min-height: 2.6em; font: inherit; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); border-radius: 2px; padding: 4px 6px; }
@@ -181,7 +246,7 @@ function html(): string {
 <body>
 <header><h1 id="title"></h1><div class="login" id="login"></div></header>
 <main id="messages"></main>
-<div class="busy" id="busy" hidden>The Assistant is working…</div>
+<div class="busy" id="busy" hidden><div class="now" id="now"></div><details id="steps" hidden><summary id="stepCount"></summary><ol id="stepList"></ol></details></div>
 <div class="problem" id="problem" hidden></div>
 <footer>
   <div class="context" id="context"></div>
@@ -208,6 +273,32 @@ function html(): string {
     }
     return span;
   };
+  const stepNodes = (step, end) => {
+    const nodes = [step.doing];
+    if (step.subject) {
+      const code = document.createElement("code");
+      code.textContent = step.subject;
+      nodes.push(" ", code);
+    }
+    nodes.push(end);
+    return nodes;
+  };
+  // Links and file references open through the extension, which checks them.
+  byId("messages").addEventListener("click", (event) => {
+    const link = event.target instanceof Element ? event.target.closest("a") : null;
+    if (!link) return;
+    event.preventDefault();
+    if (link.dataset.href) vscode.postMessage({ type: "openLink", url: link.dataset.href });
+    else if (link.dataset.path) vscode.postMessage({
+      type: "openReference",
+      path: link.dataset.path,
+      startLine: Number(link.dataset.start),
+      endLine: Number(link.dataset.end),
+    });
+  });
+  byId("messages").addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && event.target instanceof HTMLAnchorElement) event.target.click();
+  });
   let busy = false;
   const text = byId("text");
   const send = () => {
@@ -236,8 +327,30 @@ function html(): string {
         context.append(...m.context.map((s) => chip(s)));
         div.append(context);
       }
-      div.append(document.createTextNode(m.text));
+      if (m.html !== undefined) {
+        const body = document.createElement("div");
+        body.className = "markdown";
+        // Rendered and sanitised by the extension; see renderMarkdown.
+        body.innerHTML = m.html;
+        for (const a of body.querySelectorAll("a[data-href], a[data-path]")) {
+          a.tabIndex = 0;
+          a.setAttribute("role", "link");
+        }
+        div.append(body);
+      } else {
+        div.append(document.createTextNode(m.text));
+      }
       return div;
+    }));
+    const steps = state.steps || [];
+    const last = steps[steps.length - 1];
+    byId("now").replaceChildren(...(last ? stepNodes(last, "…") : ["The Assistant is working…"]));
+    byId("steps").hidden = steps.length < 2;
+    byId("stepCount").textContent = steps.length + " steps so far";
+    byId("stepList").replaceChildren(...steps.map((step) => {
+      const li = document.createElement("li");
+      li.append(...stepNodes(step, ""));
+      return li;
     }));
     byId("context").replaceChildren(...(state.context || []).map((s, index) =>
       chip(s, () => vscode.postMessage({ type: "removeContext", index }))));

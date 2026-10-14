@@ -14,6 +14,7 @@ export function assistantRole(change: Change): string {
     "You never review, approve or decide anything, and you never publish anything. You can only read files.",
     ...worktrees(change),
     "Give these absolute paths to your tools: your working directory holds no code.",
+    "Reply in Markdown. When you point at code, write its path relative to the repository root with the line or lines, such as `src/app.py:12` or `src/app.py:12-30`, so the Reviewer can click it to open the head side; for the base side, give the absolute path in the base worktree.",
   ].join("\n");
 }
 

@@ -15,6 +15,7 @@ import {
 } from "../assistant";
 import { buildFixtureRepo } from "../fixtures";
 import {
+  activeTabLabel,
   catchLinks,
   closeChange,
   eventually,
@@ -132,8 +133,12 @@ describe("The Assistant's work and replies in its panel", () => {
     ])
       assert.ok(html.includes(expected), `${expected} in ${html}`);
     assert.doesNotMatch(html, /<(script|img)\b/i, html);
-    assert.doesNotMatch(html, /\son\w+=|\bhref=|\bsrc=|data-href="(?!https:)/i, html);
-        assert.doesNotMatch(html, /alert\("/, "a script's text is dropped with it");
+    assert.doesNotMatch(
+      html,
+      /\son\w+=|(?<![\w-])(href|src)=|data-href="(?!https:)/i,
+      html
+    );
+    assert.doesNotMatch(html, /alert\("/, "a script's text is dropped with it");
 
     const opened = await catchLinks();
     try {
@@ -171,13 +176,19 @@ describe("The Assistant's work and replies in its panel", () => {
     ])
       assert.ok(html.includes(expected), `${expected} in ${html}`);
     assert.ok(!html.includes('data-path="10"'), html);
+    // The Reviewer clicks once the diff is showing, so it can't take the editor back.
+    await eventually(() =>
+      assert.ok(activeTabLabel()?.includes(short(repo.commits.restructured)))
+    );
     const editor = () => {
       const active = vscode.window.activeTextEditor;
-      return active && {
-        file: active.document.uri.fsPath,
-        start: active.selection.start.line,
-        end: active.selection.end.line,
-      };
+      return (
+        active && {
+          file: active.document.uri.fsPath,
+          start: active.selection.start.line,
+          end: active.selection.end.line,
+        }
+      );
     };
 
     await clickReference(title, { path: "util.py", startLine: 1, endLine: 2 });

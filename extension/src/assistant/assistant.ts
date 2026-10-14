@@ -4,14 +4,18 @@
 // 0009): a new conversation starts with a summary of what the Change does
 // and where the risk is, and a saved one carries on with `claude --resume`.
 
+import * as fs from "fs";
+import * as path from "path";
 import * as vscode from "vscode";
 import { Change, changeTitle } from "../changeWorkspace";
+import { describeToolUse } from "./activity";
 import {
   ClaudeCli,
   ClaudeConversation,
   ClaudeLogin,
   ClaudeProblem,
   findClaude,
+  ToolUse,
 } from "./claude";
 import { Conversations, SavedConversation } from "./conversations";
 import {
@@ -40,10 +44,14 @@ export class Assistants implements vscode.Disposable {
   private readonly byConversation = new Map<string, ChangeAssistant>();
   private readonly status: vscode.StatusBarItem;
 
-  /** `claudePath` gives the Reviewer's Claude Path setting; empty means find it. */
+  /**
+   * `claudePath` gives the Reviewer's Claude Path setting; empty means find
+   * it. `openLink` opens a web link from a reply outside VS Code.
+   */
   constructor(
     private readonly claudePath: () => string,
-    private readonly conversations: Conversations
+    private readonly conversations: Conversations,
+    private readonly openLink: (uri: vscode.Uri) => Thenable<unknown>
   ) {
     this.status = vscode.window.createStatusBarItem(
       "dearReviewer.claudeLogin",
@@ -67,7 +75,8 @@ export class Assistants implements vscode.Disposable {
     const assistant = new ChangeAssistant(
       change,
       this.conversations,
-      this.conversations.get(change.conversation)
+      this.conversations.get(change.conversation),
+      this.openLink
     );
     this.byConversation.set(change.conversation, assistant);
     assistant.show();
@@ -179,7 +188,8 @@ class ChangeAssistant {
   constructor(
     private change: Change,
     private readonly conversations: Conversations,
-    saved: SavedConversation | undefined
+    saved: SavedConversation | undefined,
+    private readonly openLink: (uri: vscode.Uri) => Thenable<unknown>
   ) {
     this.state = {
       title: changeTitle(change),
@@ -246,6 +256,7 @@ class ChangeAssistant {
       err instanceof ClaudeProblem ? helpWith(err) : undefined;
     this.update({
       busy: false,
+      steps: undefined,
       problem: err instanceof Error ? err.message : String(err),
       problemAction: this.problemAction?.title,
     });
@@ -282,7 +293,68 @@ class ChangeAssistant {
       const context = [...(this.state.context ?? [])];
       context.splice(action.index, 1);
       this.update({ context: context.length ? context : undefined });
+    } else if (action.type === "openLink") {
+      // The panel passes on only links from the replies it was sent.
+      if (/^https?:\/\//i.test(action.url))
+        void this.openLink(vscode.Uri.parse(action.url, true));
+    } else if (action.type === "openReference") {
+      void this.openReference(action.path, action.startLine, action.endLine);
     } else void this.ask(action.text);
+  }
+
+  /**
+   * Opens a file a reply points at, at those lines: a relative path in the
+   * head worktree, an absolute one in either worktree, and nothing outside
+   * them, even through a symbolic link.
+   */
+  private async openReference(
+    reference: string,
+    startLine: number,
+    endLine: number
+  ): Promise<void> {
+    const file = path.resolve(this.change.headDir, reference);
+    let real: string;
+    try {
+      real = fs.realpathSync(file);
+      if (!fs.statSync(real).isFile()) return;
+    } catch {
+      return;
+    }
+    const worktrees = [this.change.headDir, this.change.baseDir].flatMap(
+      (dir) => {
+        try {
+          return [fs.realpathSync(dir)];
+        } catch {
+          return [];
+        }
+      }
+    );
+    if (
+      !worktrees.some((dir) => {
+        const relative = path.relative(dir, real);
+        return (
+          relative && !relative.startsWith("..") && !path.isAbsolute(relative)
+        );
+      })
+    )
+      return;
+    const document = await vscode.workspace.openTextDocument(
+      vscode.Uri.file(file)
+    );
+    const last = document.lineCount - 1;
+    const start = Math.min(Math.max(startLine, 1) - 1, last);
+    const end = Math.min(Math.max(endLine, startLine) - 1, last);
+    const range = new vscode.Range(
+      start,
+      0,
+      end,
+      document.lineAt(end).range.end.character
+    );
+    await vscode.window.showTextDocument(document, {
+      viewColumn: vscode.ViewColumn.One,
+      selection: range,
+      preview: true,
+    });
   }
 
   private async ask(question: string): Promise<void> {
@@ -329,7 +401,12 @@ class ChangeAssistant {
         this.state.problem ?? "The Assistant hasn't started yet."
       );
     this.problemAction = undefined;
-    this.update({ busy: true, problem: undefined, problemAction: undefined });
+    this.update({
+      busy: true,
+      steps: undefined,
+      problem: undefined,
+      problemAction: undefined,
+    });
     const conversation = this.conversationNow(this.cli);
     const index = this.state.messages.length;
     const reply = (text: string) => {
@@ -337,8 +414,12 @@ class ChangeAssistant {
       messages[index] = { from: "assistant", text };
       this.update({ messages });
     };
+    const step = (use: ToolUse) =>
+      this.update({
+        steps: [...(this.state.steps ?? []), describeToolUse(this.change, use)],
+      });
     try {
-      reply(await conversation.ask(prompt, reply));
+      reply(await conversation.ask(prompt, reply, step));
     } catch (err) {
       if (this.disposed) return;
       // The next turn starts `claude` again, resuming the session if it has one.
@@ -363,7 +444,7 @@ class ChangeAssistant {
       return this.turn(prompt);
     }
     if (this.disposed) return;
-    this.update({ busy: false });
+    this.update({ busy: false, steps: undefined });
     this.save(conversation);
   }
 

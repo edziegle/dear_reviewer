@@ -192,6 +192,7 @@ export class ClaudeConversation {
   private readonly child: ChildProcessWithoutNullStreams;
   private turn?: {
     onText: (text: string) => void;
+    onToolUse: (use: ToolUse) => void;
     resolve: (text: string) => void;
     reject: (err: Error) => void;
     done: string;
@@ -260,17 +261,26 @@ export class ClaudeConversation {
 
   /**
    * Sends the prompt as the next user message. `onText` gets the reply so far
-   * as it streams; the promise gives the final reply.
+   * as it streams, and `onToolUse` each tool the Assistant calls on the way;
+   * the promise gives the final reply.
    */
   ask(
     prompt: string,
-    onText: (text: string) => void = () => undefined
+    onText: (text: string) => void = () => undefined,
+    onToolUse: (use: ToolUse) => void = () => undefined
   ): Promise<string> {
     const asked = this.queue.then(
       () =>
         new Promise<string>((resolve, reject) => {
           if (this.ended) return reject(this.ended);
-          this.turn = { onText, resolve, reject, done: "", partial: "" };
+          this.turn = {
+            onText,
+            onToolUse,
+            resolve,
+            reject,
+            done: "",
+            partial: "",
+          };
           this.child.stdin.write(
             JSON.stringify({
               type: "user",
@@ -312,13 +322,24 @@ export class ClaudeConversation {
       turn.partial += event.event.delta.text ?? "";
       turn.onText(joinText(turn.done, turn.partial));
     } else if (event.type === "assistant") {
-      const text = (event.message?.content ?? [])
+      const content = event.message?.content ?? [];
+      const text = content
         .filter((block) => block.type === "text")
         .map((block) => block.text ?? "")
         .join("");
-      turn.done = joinText(turn.done, text);
-      turn.partial = "";
-      turn.onText(turn.done);
+      // A message that only calls tools adds nothing to the reply.
+      if (text) {
+        turn.done = joinText(turn.done, text);
+        turn.partial = "";
+        turn.onText(turn.done);
+      }
+      for (const block of content)
+        if (block.type === "tool_use" && typeof block.name === "string")
+          turn.onToolUse({
+            name: block.name,
+            input:
+              block.input && typeof block.input === "object" ? block.input : {},
+          });
     } else if (event.type === "result") {
       this.turn = undefined;
       this.answered = true;
@@ -361,6 +382,12 @@ function joinText(a: string, b: string): string {
   return a && b ? `${a}\n\n${b}` : a || b;
 }
 
+/** A tool the Assistant called, with the input it gave. */
+export interface ToolUse {
+  name: string;
+  input: Record<string, unknown>;
+}
+
 interface StreamEvent {
   type?: string;
   subtype?: string;
@@ -368,6 +395,13 @@ interface StreamEvent {
   is_error?: boolean;
   result?: string;
   errors?: string[];
-  message?: { content?: { type: string; text?: string }[] };
+  message?: {
+    content?: {
+      type: string;
+      text?: string;
+      name?: string;
+      input?: Record<string, unknown>;
+    }[];
+  };
   event?: { delta?: { type?: string; text?: string } };
 }

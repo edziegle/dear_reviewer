@@ -24,7 +24,7 @@ Chosen option: a panel that opens with the Change, behind the Assistant. The Rev
 - The description comes first, then the items in GitHub's order. The timeline leaves out pending reviews: the Reviewer's own pending review shows as comment threads on the diff (ADR 0007), and GitHub hides other people's.
 - The timeline reloads when the Reviewer presses Refresh in the panel, after they submit a Review, and after sign-in or a change of API URL. It does not poll.
 - Avatars come from the Inbox's avatar cache, and the webview loads them through `asWebviewUri`. Its content security policy lets it load images from that folder only.
-- The panel shows descriptions, Comments and review summaries as plain text, not rendered Markdown, so no HTML from GitHub reaches the webview.
+- The panel shows descriptions, Comments and review summaries as plain text, not rendered Markdown, so no HTML from GitHub reaches the webview. ADR 0011 changes this: the extension renders them from Markdown and sanitises the HTML, and links in them open through the extension.
 - The webview opens no links itself. It asks the extension, and the extension opens a link with `vscode.env.openExternal` only when the link uses `http` or `https` and came from the extension: the pull request's URL or a check's details page.
 - As with the Assistant panel, the extension sends the whole state, and the webview replies `ready`, then `rendered` with the revision it rendered. Tests assert that state.
 

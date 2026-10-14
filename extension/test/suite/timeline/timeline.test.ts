@@ -331,6 +331,7 @@ describe("A pull request's timeline", () => {
       "",
       '<script>alert("description")</script>',
       '<img src="https://evil.example.com/pixel.png" onerror="alert(1)">',
+      "",
       "![screenshot](https://evil.example.com/shot.png)",
       "[sneaky](javascript:alert(2))",
       "",
@@ -341,7 +342,7 @@ describe("A pull request's timeline", () => {
     markdown.timeline![1] = {
       type: "comment",
       author: "bob",
-      body: "- one\n- two <b onclick=\"alert(3)\">bold</b>",
+      body: '- one\n- two <b onclick="alert(3)">bold</b>',
       date: "2026-10-01T10:00:00Z",
     };
     markdown.reviews![0].body = "Please *keep* legacy.py.";
@@ -368,22 +369,28 @@ describe("A pull request's timeline", () => {
         '<a data-href="https://docs.example.com/guide">the docs</a>',
         "<pre><code>print('hi')\n</code></pre>",
       ])
-        assert.ok(description.includes(expected), `${expected} in ${description}`);
+        assert.ok(
+          description.includes(expected),
+          `${expected} in ${description}`
+        );
       for (const html of [description, htmlOf(items[2]), htmlOf(items[4])]) {
         assert.doesNotMatch(html, /<(script|img|b)\b/i, html);
-        assert.doesNotMatch(html, /\son\w+=|\bhref=|\bsrc=|data-href="(?!https:)/i, html);
-        assert.doesNotMatch(html, /alert\("/, "a script's text is dropped with it");
+        assert.doesNotMatch(
+          html,
+          /\son\w+=|(?<![\w-])(href|src)=|data-href="(?!https:)/i,
+          html
+        );
+        assert.doesNotMatch(
+          html,
+          /alert\("/,
+          "a script's text is dropped with it"
+        );
       }
       assert.ok(htmlOf(items[2]).includes("<li>one</li>"), htmlOf(items[2]));
-      assert.ok(
-        htmlOf(items[4]).includes("<em>keep</em>"),
-        htmlOf(items[4])
-      );
+      assert.ok(htmlOf(items[4]).includes("<em>keep</em>"), htmlOf(items[4]));
       // The image is a link to it, not an image the webview would load.
       assert.ok(
-        description.includes(
-          'data-href="https://evil.example.com/shot.png"'
-        ),
+        description.includes('data-href="https://evil.example.com/shot.png"'),
         description
       );
 
@@ -509,8 +516,10 @@ describe("A pull request's timeline", () => {
       const items = (await renderedTimeline(title))?.items ?? [];
       assert.strictEqual(items.length, expectedItems.length + 1);
       const last = items[items.length - 1];
+      assert.strictEqual(htmlOf(last), "<p>Looks good.</p>\n");
+      const { html: _, ...plain } = last as TimelineItem & { html?: string };
       assert.deepStrictEqual(
-        { ...last, author: { login: last.author.login } },
+        { ...plain, author: { login: last.author.login } },
         {
           kind: "review",
           author: { login: "reviewer" },

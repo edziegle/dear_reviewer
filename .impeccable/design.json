@@ -1,0 +1,318 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-14T00:00:00Z",
+  "title": "Design System: Dear Reviewer",
+  "extensions": {
+    "colorMeta": {
+      "editor-background": {
+        "role": "neutral",
+        "displayName": "Editor Ground",
+        "canonical": "var(--vscode-editor-background)",
+        "previewValue": "#1f1f1f"
+      },
+      "foreground": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "var(--vscode-foreground)",
+        "previewValue": "#cccccc"
+      },
+      "muted-foreground": {
+        "role": "neutral",
+        "displayName": "Pencil",
+        "canonical": "var(--vscode-descriptionForeground)",
+        "previewValue": "#9d9d9d"
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "var(--vscode-panel-border)",
+        "previewValue": "#2b2b2b"
+      },
+      "quiet-tint": {
+        "role": "neutral",
+        "displayName": "Quiet Tint",
+        "canonical": "var(--vscode-editor-inactiveSelectionBackground)",
+        "previewValue": "#3a3d41"
+      },
+      "code-block": {
+        "role": "neutral",
+        "displayName": "Code Ground",
+        "canonical": "var(--vscode-textCodeBlock-background)",
+        "previewValue": "#2b2b2b"
+      },
+      "quote-block": {
+        "role": "neutral",
+        "displayName": "Quote Ground",
+        "canonical": "var(--vscode-textBlockQuote-background)",
+        "previewValue": "#2b2b2b"
+      },
+      "badge-background": {
+        "role": "neutral",
+        "displayName": "Badge",
+        "canonical": "var(--vscode-badge-background)",
+        "previewValue": "#616161"
+      },
+      "badge-foreground": {
+        "role": "neutral",
+        "displayName": "Badge Ink",
+        "canonical": "var(--vscode-badge-foreground)",
+        "previewValue": "#f8f8f8"
+      },
+      "input-background": {
+        "role": "neutral",
+        "displayName": "Input Ground",
+        "canonical": "var(--vscode-input-background)",
+        "previewValue": "#313131"
+      },
+      "input-foreground": {
+        "role": "neutral",
+        "displayName": "Input Ink",
+        "canonical": "var(--vscode-input-foreground)",
+        "previewValue": "#cccccc"
+      },
+      "input-border": {
+        "role": "neutral",
+        "displayName": "Input Edge",
+        "canonical": "var(--vscode-input-border, transparent)",
+        "previewValue": "#3c3c3c"
+      },
+      "action-background": {
+        "role": "primary",
+        "displayName": "Theme Action",
+        "canonical": "var(--vscode-button-background)",
+        "previewValue": "#0078d4"
+      },
+      "action-foreground": {
+        "role": "primary",
+        "displayName": "Theme Action Ink",
+        "canonical": "var(--vscode-button-foreground)",
+        "previewValue": "#ffffff"
+      },
+      "action-hover": {
+        "role": "primary",
+        "displayName": "Theme Action Hover",
+        "canonical": "var(--vscode-button-hoverBackground)",
+        "previewValue": "#026ec1"
+      },
+      "link": {
+        "role": "primary",
+        "displayName": "Theme Link",
+        "canonical": "var(--vscode-textLink-foreground)",
+        "previewValue": "#4daafc"
+      },
+      "focus": {
+        "role": "primary",
+        "displayName": "Focus Ring",
+        "canonical": "var(--vscode-focusBorder)",
+        "previewValue": "#0078d4"
+      },
+      "secondary-background": {
+        "role": "secondary",
+        "displayName": "Theme Secondary Action",
+        "canonical": "var(--vscode-button-secondaryBackground)",
+        "previewValue": "#313131"
+      },
+      "secondary-foreground": {
+        "role": "secondary",
+        "displayName": "Theme Secondary Ink",
+        "canonical": "var(--vscode-button-secondaryForeground)",
+        "previewValue": "#cccccc"
+      },
+      "check-passed": {
+        "role": "tertiary",
+        "displayName": "Check Passed",
+        "canonical": "var(--vscode-testing-iconPassed)",
+        "previewValue": "#73c991"
+      },
+      "check-failed": {
+        "role": "tertiary",
+        "displayName": "Check Failed",
+        "canonical": "var(--vscode-testing-iconFailed)",
+        "previewValue": "#f14c4c"
+      },
+      "check-running": {
+        "role": "tertiary",
+        "displayName": "Check Running",
+        "canonical": "var(--vscode-testing-iconQueued)",
+        "previewValue": "#cca700"
+      },
+      "finding": {
+        "role": "tertiary",
+        "displayName": "Finding",
+        "canonical": "var(--vscode-editorWarning-foreground)",
+        "previewValue": "#cca700",
+        "note": "Gutter icons can't take a theme color: extension/media/finding.svg (#cca700, dark) and finding-light.svg (#bf8803, light) carry editorWarning.foreground's defaults."
+      },
+      "problem-background": {
+        "role": "tertiary",
+        "displayName": "Problem Ground",
+        "canonical": "var(--vscode-inputValidation-errorBackground)",
+        "previewValue": "#5a1d1d"
+      },
+      "problem-border": {
+        "role": "tertiary",
+        "displayName": "Problem Edge",
+        "canonical": "var(--vscode-inputValidation-errorBorder)",
+        "previewValue": "#be1100"
+      }
+    },
+    "colorNote": "Every color is a VS Code theme variable, so no tonal ramps exist; the theme supplies all values. previewValue is VS Code's Dark Modern default, for previews outside the editor only.",
+    "typographyMeta": {
+      "title": {
+        "displayName": "Title",
+        "purpose": "Panel heading: the pull request's or Change's title."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Section headings in a panel, such as Checks and Timeline."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Messages, timeline bodies and rendered Markdown."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Muted metadata: dates, the pull-request reference, the Claude login, steps."
+      },
+      "status": {
+        "displayName": "Status",
+        "purpose": "Check status pills and selection chips."
+      },
+      "code": {
+        "displayName": "Code",
+        "purpose": "Editor font for SHAs, paths, step subjects and Markdown code."
+      }
+    },
+    "shadows": [],
+    "motion": [],
+    "breakpoints": []
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one filled action on a surface: Send, or the button that fixes a problem.",
+      "html": "<button class=\"ds-btn-primary\">Send</button>",
+      "css": ".ds-btn-primary { font: inherit; color: var(--vscode-button-foreground, #ffffff); background: var(--vscode-button-background, #0078d4); border: none; border-radius: 2px; padding: 4px 12px; cursor: pointer; } .ds-btn-primary:hover { background: var(--vscode-button-hoverBackground, #026ec1); } .ds-btn-primary:focus-visible { outline: 1px solid var(--vscode-focusBorder, #0078d4); outline-offset: 2px; } .ds-btn-primary:disabled { opacity: 0.5; cursor: default; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Routine, repeatable actions such as Refresh on the timeline.",
+      "html": "<button class=\"ds-btn-secondary\" title=\"Reload the timeline from GitHub\">Refresh</button>",
+      "css": ".ds-btn-secondary { font: inherit; color: var(--vscode-button-secondaryForeground, #cccccc); background: var(--vscode-button-secondaryBackground, #313131); border: none; border-radius: 2px; padding: 2px 8px; cursor: pointer; } .ds-btn-secondary:focus-visible { outline: 1px solid var(--vscode-focusBorder, #0078d4); }"
+    },
+    {
+      "name": "Link Button",
+      "kind": "button",
+      "refersTo": "button-link",
+      "description": "An action that reads as a destination: the pull-request title, Details on a check.",
+      "html": "<button class=\"ds-btn-link\">Details</button>",
+      "css": ".ds-btn-link { font: inherit; background: none; border: none; padding: 0; color: var(--vscode-textLink-foreground, #4daafc); cursor: pointer; } .ds-btn-link:hover { text-decoration: underline; } .ds-btn-link:focus-visible { outline: 1px solid var(--vscode-focusBorder, #0078d4); }"
+    },
+    {
+      "name": "Message Box",
+      "kind": "input",
+      "refersTo": "input-message",
+      "description": "The Assistant's message box, sticky at the bottom of the panel.",
+      "html": "<form class=\"ds-ask\"><textarea class=\"ds-input-message\" rows=\"2\" aria-label=\"Ask the Assistant about this Change\" placeholder=\"Ask about this Change. Enter sends; Shift+Enter starts a new line.\"></textarea><button class=\"ds-btn-primary\" type=\"submit\">Send</button></form>",
+      "css": ".ds-ask { display: flex; gap: 6px; align-items: flex-end; } .ds-input-message { flex: 1; resize: vertical; min-height: 2.6em; font: inherit; color: var(--vscode-input-foreground, #cccccc); background: var(--vscode-input-background, #313131); border: 1px solid var(--vscode-input-border, #3c3c3c); border-radius: 2px; padding: 4px 6px; } .ds-input-message:focus { outline: 1px solid var(--vscode-focusBorder, #0078d4); outline-offset: -1px; } .ds-ask .ds-btn-primary { font: inherit; color: var(--vscode-button-foreground, #ffffff); background: var(--vscode-button-background, #0078d4); border: none; border-radius: 2px; padding: 4px 12px; cursor: pointer; } .ds-ask .ds-btn-primary:hover { background: var(--vscode-button-hoverBackground, #026ec1); }"
+    },
+    {
+      "name": "Selection Chip",
+      "kind": "chip",
+      "refersTo": "chip-selection",
+      "description": "A code selection waiting to go with the Reviewer's next message; the × removes it.",
+      "html": "<span class=\"ds-chip\">src/inbox.ts · head · lines 52–60<button type=\"button\" title=\"Don't send this selection\">×</button></span>",
+      "css": ".ds-chip { font-family: var(--vscode-editor-font-family, ui-monospace, monospace); font-size: 0.85em; padding: 1px 6px; border-radius: 3px; background: var(--vscode-badge-background, #616161); color: var(--vscode-badge-foreground, #f8f8f8); white-space: nowrap; } .ds-chip button { background: none; border: none; color: inherit; cursor: pointer; padding: 0 0 0 4px; font: inherit; } .ds-chip button:focus-visible { outline: 1px solid var(--vscode-focusBorder, #0078d4); }"
+    },
+    {
+      "name": "Check Status",
+      "kind": "chip",
+      "refersTo": "status-pill",
+      "description": "A check run's status as a word in an outline of its own state color.",
+      "html": "<ul class=\"ds-checks\"><li><span class=\"ds-status passed\">passed</span><span class=\"ds-name\">test</span></li><li><span class=\"ds-status failed\">failed</span><span class=\"ds-name\">lint</span></li><li><span class=\"ds-status running\">running</span><span class=\"ds-name\">build</span></li></ul>",
+      "css": ".ds-checks { list-style: none; padding: 0; margin: 0; } .ds-checks li { display: flex; gap: 8px; align-items: baseline; padding: 2px 0; } .ds-checks .ds-name { flex: 1; } .ds-status { font-size: 0.85em; padding: 0 6px; border-radius: 8px; border: 1px solid currentColor; } .ds-status.passed { color: var(--vscode-testing-iconPassed, #73c991); } .ds-status.failed { color: var(--vscode-testing-iconFailed, #f14c4c); } .ds-status.running { color: var(--vscode-testing-iconQueued, #cca700); }"
+    },
+    {
+      "name": "Timeline Row",
+      "kind": "custom",
+      "refersTo": "avatar",
+      "description": "One timeline entry: avatar, author, verb and muted date, then the body; a hairline below.",
+      "html": "<div class=\"ds-item\"><div class=\"ds-avatar\"></div><div class=\"ds-content\"><div><span class=\"ds-author\">octocat</span> approved these changes <span class=\"ds-muted\">Oct 14, 2026, 9:12 AM</span></div><div class=\"ds-body\">Looks good once the retry is bounded.</div></div></div>",
+      "css": ".ds-item { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--vscode-panel-border, #2b2b2b); } .ds-avatar { width: 24px; height: 24px; border-radius: 50%; flex: none; background: var(--vscode-editor-inactiveSelectionBackground, #3a3d41); } .ds-content { flex: 1; min-width: 0; } .ds-author { font-weight: 600; } .ds-muted { color: var(--vscode-descriptionForeground, #9d9d9d); font-size: 0.9em; } .ds-body { line-height: 1.5; margin-top: 6px; overflow-wrap: anywhere; }"
+    },
+    {
+      "name": "Reviewer Message",
+      "kind": "card",
+      "refersTo": "message-reviewer",
+      "description": "The Reviewer's own message: the only filled message in the Assistant panel; replies sit unfilled on the ground.",
+      "html": "<div class=\"ds-message-reviewer\">Why does the retry loop not back off?</div><div class=\"ds-message-assistant\">It retries immediately. See <a href=\"#\">src/github/client.ts:88</a>.</div>",
+      "css": ".ds-message-reviewer { white-space: pre-wrap; line-height: 1.5; margin: 12px 0; padding: 8px; border-radius: 4px; background: var(--vscode-editor-inactiveSelectionBackground, #3a3d41); } .ds-message-assistant { line-height: 1.5; margin: 12px 0; } .ds-message-assistant a { color: var(--vscode-textLink-foreground, #4daafc); text-decoration: none; } .ds-message-assistant a:hover { text-decoration: underline; } .ds-message-assistant a:focus-visible { outline: 1px solid var(--vscode-focusBorder, #0078d4); }"
+    },
+    {
+      "name": "Problem Banner",
+      "kind": "custom",
+      "refersTo": "problem-banner",
+      "description": "What went wrong, in words for the Reviewer, with an optional fix button.",
+      "html": "<div class=\"ds-problem\">GitHub didn't answer. Check your connection and sign-in.<button type=\"button\">Sign in to GitHub</button></div>",
+      "css": ".ds-problem { margin: 12px 0; padding: 8px; border: 1px solid var(--vscode-inputValidation-errorBorder, #be1100); background: var(--vscode-inputValidation-errorBackground, #5a1d1d); white-space: pre-wrap; } .ds-problem button { display: block; margin-top: 8px; padding: 4px 10px; border: none; border-radius: 2px; color: var(--vscode-button-foreground, #ffffff); background: var(--vscode-button-background, #0078d4); cursor: pointer; font: inherit; } .ds-problem button:hover { background: var(--vscode-button-hoverBackground, #026ec1); } .ds-problem button:focus-visible { outline: 1px solid var(--vscode-focusBorder, #0078d4); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Margin Note",
+    "overview": "The Change's code is the page, and the code lives only in the editor. Dear Reviewer writes in the margin beside it: the timeline, the Assistant's replies and the Findings list are notes about the code, never a second copy of it (ADR 0012). A margin note is in the reader's own hand and the book's own ink. Every surface takes its color, type and controls from the active VS Code theme, and must look right in light, dark and high-contrast themes without a single theme-specific rule.\n\nThe system has almost nothing of its own on purpose. Native UI comes first: tree views, comment threads, gutter decorations, codicons, quick picks and the status bar. The two webviews, the pull-request timeline and the Assistant panel, exist only where no native view fits, and they behave like editor panels: compact, text-led, flat, divided by hairlines, readable for a whole working day. Density is the editor's density. A Reviewer who glances from the diff to the margin should notice the content, not the change of world.\n\nRejected on sight: the GitHub Pull Requests extension's webviews, which are slow, custom-styled review pages that look wrong next to VSCodium, and branded AI chat panels with gradients, glows, sparkle motifs or a face for the bot. The Assistant is a plain panel of prose, not a character.",
+    "keyCharacteristics": [
+      "Every color is a `--vscode-*` theme variable; the extension defines no palette.",
+      "Type is the workbench font for prose and the editor font for anything code-shaped.",
+      "Flat surfaces, 1px hairlines and sticky bars on the editor background.",
+      "Controls copy VS Code's own: 2px corners, theme button colors, no flourish.",
+      "Code appears in webviews only as plain quoted text; navigation happens in the editor."
+    ],
+    "rules": [
+      {
+        "name": "The Borrowed Ink Rule",
+        "body": "No literal color values in any surface. If a role has no `--vscode-*` variable, pick the nearest semantic one and give it a fallback inside `var()`; never write a hex value. The one exception is an image the editor draws that can't take a theme color, such as a gutter icon: give it light and dark variants in the theme color's default values.",
+        "section": "colors"
+      },
+      {
+        "name": "The Semantic Hue Rule",
+        "body": "Hue means state, never decoration: green for passed, red for failed or a problem, the warning color for Findings and for a Claude login billed per token. Nothing is colored only to look nice.",
+        "section": "colors"
+      },
+      {
+        "name": "The Two Fonts Rule",
+        "body": "The workbench font for words, the editor font for anything a Reviewer might paste into a terminal or search for in the code. No third family, no web fonts.",
+        "section": "typography"
+      },
+      {
+        "name": "The Relative Size Rule",
+        "body": "Sizes are `em` multiples of the theme size, so a Reviewer's zoom and font settings carry through.",
+        "section": "typography"
+      },
+      {
+        "name": "The Hairline Rule",
+        "body": "Separate with a 1px `hairline` or a theme tint, never a shadow, gradient or blur. If something needs to float, it should be native VS Code UI (a quick pick, hover or notification), not a webview layer.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** take every color from a `--vscode-*` variable, with a fallback inside `var()` when the theme may not define it, like `var(--vscode-input-border, transparent)`.",
+      "**Do** reach for native UI first (tree views, comment threads, decorations, quick picks, status bar) and add a webview only when an ADR says why none fits.",
+      "**Do** put styles both webviews use in `sharedStyles` in `extension/src/markdownPanel.ts`, never a copy in each panel.",
+      "**Do** give every interactive element a visible `:focus-visible` outline in `focus`, and make links in rendered Markdown reachable with Tab and Enter.",
+      "**Do** check every webview change in a light, a dark and a high-contrast theme in VSCodium.",
+      "**Do** size type in `em` from the theme size, and use the editor font for SHAs, paths and code."
+    ],
+    "donts": [
+      "**Don't** show the Change's code as code in a webview: no files, diffs, hunks, line numbers or syntax highlighting (ADR 0012).",
+      "**Don't** write a literal color, except in an editor-drawn image that can't take a theme color, and then only the theme color's default values.",
+      "**Don't** use shadows, gradients, blur or glow.",
+      "**Don't** brand the Assistant: no avatar, mascot, gradient, sparkle motif or accent color for the bot in its panel. The status bar item, with its stock `sparkle` codicon and the Claude login, is the only mark it gets.",
+      "**Don't** build custom-styled review pages in the manner of the GitHub Pull Requests extension's webviews.",
+      "**Don't** load web fonts or set absolute font sizes."
+    ]
+  }
+}

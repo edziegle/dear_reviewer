@@ -50,6 +50,8 @@ The Inbox lists the Repositories setting's repositories, the ones open in this w
 
 When none has a clone, opening a pull request offers Locate Clone… and Open Settings, then opens the pull request in the folder the Reviewer picks. When the fetch fails, the error offers Locate Another Clone…. The Inbox's local branches (ADR 0006) come from the same clones.
 
+Open Change asks for a local Change's repository by offering the window's own folders, then each remembered clone that still exists and isn't one of them, then Browse…. The review window, which holds none of the Reviewer's folders, offers the remembered clones.
+
 ### What a workspace may decide
 
 - A workspace may decide which `owner/name` the Inbox lists: through the Repositories setting at any scope, and through the remotes of the folders it opens.

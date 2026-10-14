@@ -1,3 +1,4 @@
+import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
@@ -23,7 +24,7 @@ import { GitHubClient, PullRequestSummary } from "./github/client";
 import { Avatars, InboxNode, InboxTree, setContext } from "./inbox";
 import { Lifecycle } from "./lifecycle";
 import { LocalPendingReviews } from "./localReviews";
-import { Repositories } from "./repositories";
+import { LocalClone, Repositories } from "./repositories";
 import { ReviewWindow } from "./reviewWindow";
 import { GitHubPendingReviews, PendingReviewsBySource } from "./pendingReview";
 import { ReviewComments, Verdict } from "./reviewComments";
@@ -270,7 +271,10 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand(
       "dearReviewer.openChange",
       async (request?: ChangeRequest) => {
-        request ??= await askForChange(context.globalStorageUri.fsPath);
+        request ??= await askForChange(
+          context.globalStorageUri.fsPath,
+          repositories.remembered()
+        );
         if (!request) return;
         try {
           await changes.open(request);
@@ -748,9 +752,10 @@ export function activate(context: vscode.ExtensionContext) {
 export function deactivate() {}
 
 async function askForChange(
-  storageDir: string
+  storageDir: string,
+  remembered: LocalClone[]
 ): Promise<ChangeRequest | undefined> {
-  const repository = await pickRepository(storageDir);
+  const repository = await pickRepository(storageDir, remembered);
   if (!repository) return;
   const base = await vscode.window.showInputBox({
     title: "Open Change",
@@ -767,19 +772,35 @@ async function askForChange(
   return { repository, base, head };
 }
 
-async function pickRepository(storageDir: string): Promise<string | undefined> {
+/**
+ * Asks for the repository of a local Change: one of the window's own folders,
+ * a clone remembered from the Reviewer's windows, which is all the review
+ * window can offer, or a folder to browse for.
+ */
+async function pickRepository(
+  storageDir: string,
+  remembered: LocalClone[]
+): Promise<string | undefined> {
   const browse = "Browse…";
   // The Reviewer's own folders, not Change worktrees or the review window's home.
   const folders = (vscode.workspace.workspaceFolders ?? []).filter(
     (f) =>
       f.uri.scheme === "file" && !f.uri.fsPath.startsWith(storageDir + path.sep)
   );
-  if (folders.length > 0) {
+  const choices = folders.map((f) => ({
+    label: f.name,
+    description: f.uri.fsPath,
+  }));
+  for (const { repository, clone } of remembered) {
+    const offered = choices.some(
+      (c) => path.resolve(c.description) === path.resolve(clone)
+    );
+    if (!offered && fs.existsSync(clone))
+      choices.push({ label: repository, description: clone });
+  }
+  if (choices.length > 0) {
     const picked = await vscode.window.showQuickPick<vscode.QuickPickItem>(
-      [
-        ...folders.map((f) => ({ label: f.name, description: f.uri.fsPath })),
-        { label: browse },
-      ],
+      [...choices, { label: browse }],
       { title: "Open Change: repository" }
     );
     if (!picked) return;

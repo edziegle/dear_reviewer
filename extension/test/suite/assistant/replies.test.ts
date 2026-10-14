@@ -24,13 +24,24 @@ import {
   releaseLinks,
   short,
   workspaceFolders,
+  type ChangeRequest,
 } from "../reviewer";
 
 describe("The Assistant's work and replies in its panel", () => {
   const repo = buildFixtureRepo("replies");
-  const changeOf = (base: string, head: string) => ({
-    request: { repository: repo.path, base, head },
-    title: `${path.basename(repo.path)} ${short(base)}..${short(head)}`,
+  const changeOf = (base: string, head: string) => {
+    const request = { repository: repo.path, base, head };
+    opened.push(request);
+    return {
+      request,
+      title: `${path.basename(repo.path)} ${short(base)}..${short(head)}`,
+    };
+  };
+  // Closed after each test, even a failing one, so no panel outlives it.
+  const opened: ChangeRequest[] = [];
+  afterEach(async () => {
+    await releaseLinks();
+    for (const request of opened.splice(0)) await closeChange(request);
   });
 
   it("shows what the Assistant is doing while a turn runs, with paths relative to the worktree", async () => {
@@ -95,8 +106,6 @@ describe("The Assistant's work and replies in its panel", () => {
         text: answer,
       });
     });
-
-    await closeChange(request);
   });
 
   it("renders replies as Markdown, without raw HTML, scripts or remote images, and opens links through the extension", async () => {
@@ -150,7 +159,6 @@ describe("The Assistant's work and replies in its panel", () => {
       assert.deepStrictEqual(opened, ["https://docs.example.com/guide"]);
     } finally {
       await releaseLinks();
-      await closeChange(request);
     }
   });
 
@@ -180,22 +188,43 @@ describe("The Assistant's work and replies in its panel", () => {
     await eventually(() =>
       assert.ok(activeTabLabel()?.includes(short(repo.commits.restructured)))
     );
-    const editor = () => {
-      const active = vscode.window.activeTextEditor;
+    // The lines selected in the text editor tab that shows the file, not in
+    // the multi-file diff, whose editors show the file too.
+    const shown = (file: string) => {
+      const tab = vscode.window.tabGroups.all
+        .map((group) => group.activeTab)
+        .find(
+          (tab) =>
+            tab?.input instanceof vscode.TabInputText &&
+            tab.input.uri.fsPath === file
+        );
+      const editor =
+        tab &&
+        vscode.window.visibleTextEditors.find(
+          (e) =>
+            e.document.uri.fsPath === file &&
+            e.viewColumn === tab.group.viewColumn
+        );
       return (
-        active && {
-          file: active.document.uri.fsPath,
-          start: active.selection.start.line,
-          end: active.selection.end.line,
+        editor && {
+          start: editor.selection.start.line,
+          end: editor.selection.end.line,
         }
       );
     };
+    const tabsOf = (files: string[]) =>
+      vscode.window.tabGroups.all
+        .flatMap((group) => group.tabs)
+        .filter(
+          (tab) =>
+            tab.input instanceof vscode.TabInputText &&
+            files.includes(tab.input.uri.fsPath)
+        );
 
     await clickReference(title, { path: "util.py", startLine: 1, endLine: 2 });
 
     await eventually(() =>
-      assert.deepStrictEqual(editor(), {
-        file: path.join(head.path, "util.py"),
+      assert.deepStrictEqual(shown(path.join(head.path, "util.py")), {
         start: 0,
         end: 1,
       })
@@ -208,28 +237,35 @@ describe("The Assistant's work and replies in its panel", () => {
     });
 
     await eventually(() =>
-      assert.deepStrictEqual(editor(), {
-        file: path.join(base.path, "main.py"),
+      assert.deepStrictEqual(shown(path.join(base.path, "main.py")), {
         start: 2,
         end: 2,
       })
     );
 
-    for (const outside of [
+    const outside = [
+      path.resolve(head.path, "../../outside.py"),
+      path.join(repo.path, "util.py"),
+      "/etc/hosts",
+      path.join(head.path, "does-not-exist.py"),
+    ];
+    for (const file of [
       "../../outside.py",
       path.join(repo.path, "util.py"),
       path.relative(head.path, path.join(repo.path, "util.py")),
       "/etc/hosts",
       "does-not-exist.py",
     ])
-      await clickReference(title, { path: outside, startLine: 1, endLine: 1 });
+      await clickReference(title, { path: file, startLine: 1, endLine: 1 });
     await new Promise((resolve) => setTimeout(resolve, 1000));
-    assert.strictEqual(
-      editor()?.file,
-      path.join(base.path, "main.py"),
+    assert.deepStrictEqual(
+      tabsOf(outside).map((tab) => tab.label),
+      [],
       "nothing outside the worktrees opened"
     );
-
-    await closeChange(request);
+    assert.deepStrictEqual(shown(path.join(base.path, "main.py")), {
+      start: 2,
+      end: 2,
+    });
   });
 });

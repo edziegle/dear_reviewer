@@ -247,6 +247,17 @@ describe("Inbox", () => {
     assert.deepStrictEqual(await requestsToGitHub(), []);
   });
 
+  // VS Code only shows the view's welcome message while the tree is empty.
+  it("is empty, and asks nothing of GitHub, until the Reviewer lists repositories", async () => {
+    await serveGitHub({ viewer, pullRequests: [] });
+    await configure({ repositories: [] });
+    await setToken(viewer.token);
+    await refreshInbox();
+
+    assert.deepStrictEqual(await inbox(), []);
+    assert.deepStrictEqual(await requestsToGitHub(), []);
+  });
+
   it("says so when GitHub rejects the token", async () => {
     await serveGitHub({ viewer, pullRequests: [] });
     await configure({ repositories: ["acme/api"] });

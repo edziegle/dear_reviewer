@@ -101,10 +101,15 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
 
   private async load(): Promise<InboxNode[]> {
     const repositories = this.repositories();
+    // VS Code only shows the welcome message while the view is empty.
+    if (repositories.length === 0) {
+      await showWelcome("noRepositories");
+      return [];
+    }
     const localBranches = this.loadLocalBranches();
     try {
       const inbox = await this.github.inbox(repositories);
-      await showWelcome(repositories.length === 0 ? "noRepositories" : "none");
+      await showWelcome("none");
       return [
         pullRequestGroup("Awaiting my review", inbox.awaitingMyReview),
         pullRequestGroup("Authored by me", inbox.authoredByMe),

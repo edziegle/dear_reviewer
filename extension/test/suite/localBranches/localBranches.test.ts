@@ -100,12 +100,15 @@ describe("Local branches in the Inbox", () => {
       );
   });
 
-  async function showInbox(localClones: Record<string, string>) {
+  async function showInbox(
+    localClones: Record<string, string>,
+    repositories = Object.keys(localClones)
+  ) {
     await serveGitHub({ viewer, pullRequests: [] });
     await vscode.workspace
       .getConfiguration("dearReviewer")
       .update("localClones", localClones, vscode.ConfigurationTarget.Global);
-    await configure({ repositories: Object.keys(localClones) });
+    await configure({ repositories });
     await setToken(viewer.token);
     await refreshInbox();
     return inbox();
@@ -205,7 +208,7 @@ describe("Local branches in the Inbox", () => {
   });
 
   it("leaves the group out when no Inbox repository has a local clone", async () => {
-    const groups = await showInbox({});
+    const groups = await showInbox({}, ["acme/tools"]);
 
     assert.deepStrictEqual(
       groups.map((g) => g.label),

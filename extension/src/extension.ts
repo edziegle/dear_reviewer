@@ -151,19 +151,11 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
   const reviewWindow = new ReviewWindow(context.globalStorageUri.fsPath);
-  const trust = new ReviewWindowTrust(context.globalStorageUri.fsPath, () =>
-    reviewWindow.isThisWindow()
+  const trust = new ReviewWindowTrust(
+    context.globalStorageUri.fsPath,
+    () => reviewWindow.isThisWindow(),
+    () => changes.showReviewWindow()
   );
-
-  /**
-   * Opens the Change the Reviewer asked for, then asks once, from this
-   * window, whether to trust the folder it opens in.
-   */
-  async function openThenAskTrust(request: ChangeRequest): Promise<Change> {
-    const change = await changes.open(request);
-    trust.askOnce();
-    return change;
-  }
   const timelines = new Timelines(github, avatars, (uri) => openLink(uri), {
     standing: (change) => standingOf(change),
     take: (change) => assistants.overviewOf(change),
@@ -556,7 +548,7 @@ export function activate(context: vscode.ExtensionContext) {
               location: vscode.ProgressLocation.Notification,
               title: `Opening ${path.basename(repository)} ${base}..${head}…`,
             },
-            () => openThenAskTrust(request)
+            () => changes.open(request)
           );
         } catch (err) {
           const message = messageOf(err);
@@ -582,7 +574,7 @@ export function activate(context: vscode.ExtensionContext) {
             await inbox.opened(
               { kind: "pullRequest", pullRequest: pr },
               `Opening ${pullRequestName(pr)}…`,
-              async () => openThenAskTrust(await fetchPullRequest(clone, pr))
+              async () => changes.open(await fetchPullRequest(clone, pr))
             );
           } catch (err) {
             const message = messageOf(err);
@@ -612,7 +604,7 @@ export function activate(context: vscode.ExtensionContext) {
         const { branch } = node;
         try {
           await inbox.opened(node, `Opening ${branch.name}…`, () =>
-            openThenAskTrust({
+            changes.open({
               repository: branch.clone,
               base: branch.main,
               head: `refs/heads/${branch.name}`,
@@ -1120,7 +1112,7 @@ export function activate(context: vscode.ExtensionContext) {
           receive: (message: FromWebview) => panel.receive(message),
         })),
     },
-    /** Stands in for workspace trust and the Reviewer's answer; tests run with trust off. */
+    /** Stands in for workspace trust and for showing Workspace Trust; tests run with trust off. */
     trust: {
       forTests: (stand: Parameters<ReviewWindowTrust["forTests"]>[0]) =>
         trust.forTests(stand),

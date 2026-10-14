@@ -87,6 +87,14 @@ export class ChangeWorkspace {
     return change;
   }
 
+  /** Opens (or focuses) the review window, with the Changes it holds. */
+  showReviewWindow(): Promise<void> {
+    return this.serially(async () => {
+      this.syncReviewWindow();
+      await this.reviewWindow.open();
+    });
+  }
+
   close(request: ChangeRequest): Promise<Change> {
     return this.serially(async () => {
       const change = await this.resolve(request);

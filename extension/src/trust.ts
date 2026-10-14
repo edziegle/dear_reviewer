@@ -1,64 +1,56 @@
 // Workspace trust for the review window. Its folders, the Changes'
 // worktrees, live in Dear Reviewer's storage, which the editor doesn't
 // trust until the Reviewer says so; until then language servers, and with
-// them navigation, stay off (see ADR 0010, ADR 0021). Trusting the folder is a real
-// trade-off, so Dear Reviewer asks once, the first time a Change opens, and
-// takes Not now, or no answer, for good, remembered in a file in its
-// storage, as its other state is. An untrusted review window shows a
-// quiet hint in the status bar instead, so the choice can still be found.
-// No API grants trust, so Dear Reviewer can only take the Reviewer to
-// Workspace Trust with the folder's path ready to paste.
+// them navigation, stay off (see ADR 0010, ADR 0021). Trusting it is a real
+// trade-off, so VS Code's own prompt asks once, the first time the review
+// window opens. The review window's first folder holds every Change, so its
+// Trust also covers the Changes opened later. No API grants trust, so after
+// that Dear Reviewer only takes the Reviewer to Workspace Trust in the review
+// window, where one click trusts it, and shows a quiet hint there meanwhile.
 
 import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 import { setContext } from "./context";
 
-/** Asks a question with these buttons; gives the one chosen, if any. */
-export type Ask = (
-  message: string,
-  ...buttons: string[]
-) => Thenable<string | undefined>;
-
-const trustButton = "Trust…";
-const notNow = "Not now";
-
 /** What every window, and the next start, needs to know. */
 interface Remembered {
-  /** Whether the Reviewer was asked; Not now, or no answer, is for good. */
-  asked?: boolean;
   /** Whether the review window was trusted when it last said. */
   reviewWindowTrusted?: boolean;
+  /** Whether another window asked the review window to show Workspace Trust. */
+  showWorkspaceTrust?: boolean;
 }
 
 export class ReviewWindowTrust implements vscode.Disposable {
   private isTrusted = () => vscode.workspace.isTrusted;
-  private ask: Ask = (message, ...buttons) =>
-    vscode.window.showWarningMessage(message, ...buttons);
+  private showWorkspaceTrust = () =>
+    vscode.commands.executeCommand("workbench.trust.manage");
   private readonly file: string;
   private hintShown = false;
   private readonly hintItem: vscode.StatusBarItem;
   private readonly subscriptions: vscode.Disposable[] = [];
 
-  /** Keeps the Reviewer's answer in `trust.json` in the storage folder. */
+  /** Keeps what windows tell each other in `trust.json` in the storage folder. */
   constructor(
-    private readonly storageDir: string,
-    private isReviewWindow: () => boolean
+    storageDir: string,
+    private isReviewWindow: () => boolean,
+    private readonly showReviewWindow: () => Promise<void>
   ) {
     this.file = path.join(storageDir, "trust.json");
     this.hintItem = vscode.window.createStatusBarItem(
       "dearReviewer.trustHint",
       vscode.StatusBarAlignment.Left
     );
-    this.hintItem.name = "Dear Reviewer: trust the review window's folder";
+    this.hintItem.name = "Dear Reviewer: trust the review window";
     this.hintItem.text = "$(workspace-untrusted) Navigation off";
     this.hintItem.tooltip =
-      "The review window is in Restricted Mode, so language servers and code navigation are off in its Changes. Click to trust Dear Reviewer's folder of Changes.";
+      "The review window is in Restricted Mode, so language servers and code navigation are off in its Changes. Click to trust the review window.";
     this.hintItem.command = "dearReviewer.trustReviewWindow";
     this.subscriptions.push(
       this.hintItem,
       vscode.workspace.onDidGrantWorkspaceTrust(() => this.refresh()),
-      // The review window may have been trusted while another window had focus.
+      // The review window may have been trusted, or asked to show Workspace
+      // Trust, while another window had focus.
       vscode.window.onDidChangeWindowState((state) => {
         if (state.focused) this.refresh();
       })
@@ -67,33 +59,17 @@ export class ReviewWindowTrust implements vscode.Disposable {
   }
 
   /**
-   * Asks whether to trust the folder, unless the Reviewer was asked before
-   * or the review window is known to be trusted. Asks at once, so the
-   * question shows while the Change opens, and doesn't wait for the answer.
-   */
-  askOnce(): void {
-    if (this.remembered().asked || this.knownTrusted()) return;
-    this.remember({ asked: true });
-    const answer = this.ask(
-      "Dear Reviewer keeps the Changes you review in a folder the editor doesn't trust yet, so they open in Restricted Mode, with language servers and code navigation off. Trusting the folder turns them on. It also lets the reviewed code's workspace settings and tasks apply, including for pull requests from people you don't know.",
-      trustButton,
-      notNow
-    );
-    void Promise.resolve(answer).then((picked) => {
-      if (picked === trustButton) return this.trust();
-    });
-  }
-
-  /**
-   * The Trust… flow: copies the folder's path, says what to do with it, and
-   * opens Workspace Trust.
+   * Shows Workspace Trust in the review window, where its Trust button
+   * trusts the review window and every Change it opens later. From another
+   * window, brings up the review window, which shows it.
    */
   async trust(): Promise<void> {
-    await vscode.env.clipboard.writeText(this.storageDir);
-    void vscode.window.showInformationMessage(
-      "Copied the folder's path. In Workspace Trust, choose Add Folder and paste it."
-    );
-    await vscode.commands.executeCommand("workbench.trust.manage");
+    if (this.isReviewWindow()) {
+      await this.showWorkspaceTrust();
+      return;
+    }
+    this.remember({ showWorkspaceTrust: true });
+    await this.showReviewWindow();
   }
 
   /** The status-bar hint while it shows, for the tests. */
@@ -109,22 +85,21 @@ export class ReviewWindowTrust implements vscode.Disposable {
 
   /**
    * For the tests, which run with workspace trust off: stands in for the
-   * window's trust and for the question, and with `fresh`, forgets the
-   * Reviewer's answer.
+   * window's trust, for whether it is the review window, and for showing
+   * Workspace Trust.
    */
   async forTests(stand: {
     isTrusted: boolean;
     isReviewWindow?: boolean;
-    fresh?: boolean;
-    ask?: Ask;
+    showWorkspaceTrust?: () => void;
   }): Promise<void> {
     this.isTrusted = () => stand.isTrusted;
     if (stand.isReviewWindow !== undefined) {
       const isReviewWindow = stand.isReviewWindow;
       this.isReviewWindow = () => isReviewWindow;
     }
-    if (stand.ask) this.ask = stand.ask;
-    if (stand.fresh) fs.rmSync(this.file, { force: true });
+    const show = stand.showWorkspaceTrust;
+    if (show) this.showWorkspaceTrust = async () => show();
     this.refresh();
   }
 
@@ -134,15 +109,20 @@ export class ReviewWindowTrust implements vscode.Disposable {
 
   /**
    * Shows the hint in an untrusted review window and hides it otherwise,
-   * and lets the setup walkthrough know once the review window is trusted.
+   * lets the setup walkthrough know once the review window is trusted, and
+   * shows Workspace Trust there if another window asked for it.
    */
   private refresh(): void {
-    // The review window tells the other windows whether it is trusted.
-    if (
-      this.isReviewWindow() &&
-      this.remembered().reviewWindowTrusted !== this.isTrusted()
-    )
-      this.remember({ reviewWindowTrusted: this.isTrusted() });
+    if (this.isReviewWindow()) {
+      // The review window tells the other windows whether it is trusted.
+      const remembered = this.remembered();
+      if (remembered.reviewWindowTrusted !== this.isTrusted())
+        this.remember({ reviewWindowTrusted: this.isTrusted() });
+      if (remembered.showWorkspaceTrust) {
+        this.remember({ showWorkspaceTrust: false });
+        if (!this.isTrusted()) void this.showWorkspaceTrust();
+      }
+    }
     this.hintShown = this.isReviewWindow() && !this.isTrusted();
     if (this.hintShown) this.hintItem.show();
     else this.hintItem.hide();
@@ -166,11 +146,11 @@ export class ReviewWindowTrust implements vscode.Disposable {
     }
   }
 
-  private remember(answer: Remembered): void {
+  private remember(update: Remembered): void {
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
     fs.writeFileSync(
       this.file,
-      JSON.stringify({ ...this.remembered(), ...answer }, null, 2)
+      JSON.stringify({ ...this.remembered(), ...update }, null, 2)
     );
   }
 }

@@ -6,6 +6,11 @@
 // multi-root workspace that already has a folder. Any other window sends the
 // Change to the review window: a saved workspace that Dear Reviewer manages,
 // whose first folder is a fixed home folder that never changes.
+//
+// The home folder is the folder of Changes, which holds every Change's
+// worktrees, so trusting the review window once, with VS Code's own Trust,
+// trusts every Change opened in it later (ADR 0021). Its own listing is
+// hidden: the Changes show as folders of their own.
 
 import * as fs from "fs";
 import * as path from "path";
@@ -21,8 +26,12 @@ export class ReviewWindow {
   readonly workspaceFile: string;
 
   constructor(storageDir: string) {
-    this.home = path.join(storageDir, "review-window");
-    this.workspaceFile = path.join(this.home, "Dear Reviewer.code-workspace");
+    this.home = path.join(storageDir, "changes");
+    this.workspaceFile = path.join(
+      storageDir,
+      "review-window",
+      "Dear Reviewer.code-workspace"
+    );
   }
 
   /** Whether this window is the review window. */
@@ -43,7 +52,12 @@ export class ReviewWindow {
    * workspace file. If the review window is open, it picks up the change.
    */
   setFolders(folders: Folder[]): void {
-    fs.mkdirSync(this.home, { recursive: true });
+    fs.mkdirSync(path.join(this.home, ".vscode"), { recursive: true });
+    fs.writeFileSync(
+      path.join(this.home, ".vscode", "settings.json"),
+      JSON.stringify({ "files.exclude": { "*": true, ".*": true } }, null, 2)
+    );
+    fs.mkdirSync(path.dirname(this.workspaceFile), { recursive: true });
     const workspace = {
       folders: [{ path: this.home, name: "Dear Reviewer" }, ...folders],
       // A review starts quiet: no terminal brought back from the last one.

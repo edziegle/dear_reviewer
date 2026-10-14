@@ -5,7 +5,7 @@ date: 2026-10-13
 
 # Take the Inbox's repositories and clones from the folders the Reviewer opens, and remember them
 
-Amended by [ADR 0021](0021-ask-once-to-trust-the-review-window.md): instead of a warning on every start of an untrusted review window, Dear Reviewer asks once, the first time a Change opens, remembers the answer, and leaves a quiet status-bar hint.
+Amended by [ADR 0021](0021-ask-once-to-trust-the-review-window.md): instead of a warning on every start of an untrusted review window, the editor's own prompt asks once, one Trust covers every Change, and Dear Reviewer leaves a quiet status-bar hint.
 
 ## Context and Problem Statement
 

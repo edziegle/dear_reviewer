@@ -83,7 +83,7 @@
       },
       {
         "command": "dearReviewer.trustReviewWindow",
-        "title": "Trust the Review Window's Folder…",
+        "title": "Trust the Review Window…",
         "category": "Dear Reviewer"
       },
       {
@@ -797,8 +797,8 @@
           },
           {
             "id": "trust",
-            "title": "Trust the review window's folder",
-            "description": "Changes open in the review window, from a folder in Dear Reviewer's storage that the editor doesn't trust yet. Until you trust it, the review window is in Restricted Mode, with language servers and code navigation off. Trusting it turns them on, and also lets the reviewed code's workspace settings and tasks apply in that window, including for pull requests from people you don't know. It's your choice; Dear Reviewer asks once and then leaves it here.\n[Trust the Folder…](command:dearReviewer.trustReviewWindow)",
+            "title": "Trust the review window",
+            "description": "Changes open in the review window, from a folder in Dear Reviewer's storage that the editor doesn't trust yet. Until you trust it, the review window is in Restricted Mode, with language servers and code navigation off. Trusting it turns them on, for every Change you open later too, and also lets the reviewed code's workspace settings and tasks apply in that window, including for pull requests from people you don't know. It's your choice: the editor asks once, when the review window first opens, and you can choose here later. The button shows Workspace Trust in the review window; choose Trust there.\n[Trust the Review Window…](command:dearReviewer.trustReviewWindow)",
             "media": {
               "image": "media/dear-reviewer.svg",
               "altText": "The Dear Reviewer icon"
@@ -810,7 +810,7 @@
           {
             "id": "review",
             "title": "Review a pull request",
-            "description": "Click a pull request in the Inbox to open it as a Change, in the review window. It opens with its overview alone: what the Change is, where you stand on it, and the Assistant's short take, with where to start reading. The diff opens when you start, beside the overview. Until you trust Dear Reviewer's folder of Changes, the review window is in Restricted Mode, without language servers and navigation. Comment in the diff's gutter, then submit your Review from the overview or from the Change in Change Files. Ctrl+Alt+R then N opens the next unviewed file, and Ctrl+Alt+R then S finishes the Review.\n[Show the Inbox](command:dearReviewer.inbox.focus)",
+            "description": "Click a pull request in the Inbox to open it as a Change, in the review window. It opens with its overview alone: what the Change is, where you stand on it, and the Assistant's short take, with where to start reading. The diff opens when you start, beside the overview. Until you trust the review window, it is in Restricted Mode, without language servers and navigation. Comment in the diff's gutter, then submit your Review from the overview or from the Change in Change Files. Ctrl+Alt+R then N opens the next unviewed file, and Ctrl+Alt+R then S finishes the Review.\n[Show the Inbox](command:dearReviewer.inbox.focus)",
             "media": {
               "image": "media/dear-reviewer.svg",
               "altText": "The Dear Reviewer icon"

@@ -57,6 +57,12 @@ describe("Open Change from a single-folder window", () => {
       [base, head].map((w) => gitIn(w.path, "rev-parse", "HEAD")),
       [repo.commits.initial, repo.commits.renamed]
     );
+    // Trusting the first folder once trusts every Change opened later.
+    for (const worktree of [base, head])
+      assert.ok(
+        worktree.path.startsWith(report.folders[0].path + path.sep),
+        `${worktree.path} is in the first folder, ${report.folders[0].path}`
+      );
     assert.deepStrictEqual(report.folders.slice(1), [
       { name: `${name} base ${short(repo.commits.initial)}`, path: base.path },
       { name: `${name} head ${short(repo.commits.renamed)}`, path: head.path },

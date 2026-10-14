@@ -2,7 +2,8 @@
 // fixtures through the GraphQL `search` the Inbox uses, serves a pull
 // request's files with their viewed state, marks files viewed and unviewed,
 // keeps reviews (a pending review, its threads and Comments, and submitting
-// it), serves avatars, and records every request it receives.
+// it), serves a pull request's timeline and its latest commit's checks,
+// serves avatars, and records every request it receives.
 //
 // Tests control it over HTTP:
 //   PUT /_fake/state      replaces the fixtures and clears what was recorded
@@ -36,7 +37,52 @@ export interface FakePullRequest {
   files?: FakePullRequestFile[];
   /** Reviews, pending or submitted. Only its author sees a pending review. */
   reviews?: FakeReview[];
+  /** The description. */
+  body?: string;
+  createdAt?: string;
+  /** The latest commit. */
+  headSha?: string;
+  /**
+   * Commits and Comments on the timeline. The timeline also shows the
+   * reviews, and the fake sorts them all by date.
+   */
+  timeline?: FakeTimelineItem[];
+  /** The latest commit's check runs and commit statuses, in order. */
+  checkRuns?: FakeCheck[];
 }
+
+export type FakeTimelineItem =
+  | {
+      type: "commit";
+      sha: string;
+      /** The whole commit message; its first line is the headline. */
+      message: string;
+      /** The author's login, or their git name when `noAccount` is set. */
+      author: string;
+      /** Set when the commit's author has no GitHub account. */
+      noAccount?: boolean;
+      date: string;
+    }
+  | { type: "comment"; author: string; body: string; date: string };
+
+export type FakeCheck =
+  | {
+      type: "checkRun";
+      name: string;
+      status: "QUEUED" | "IN_PROGRESS" | "COMPLETED";
+      conclusion?:
+        | "SUCCESS"
+        | "FAILURE"
+        | "NEUTRAL"
+        | "CANCELLED"
+        | "SKIPPED"
+        | "TIMED_OUT"
+        | "ACTION_REQUIRED"
+        | "STALE"
+        | "STARTUP_FAILURE";
+      detailsUrl?: string;
+    }
+  | { type: "status"; context: string; state: CheckState; targetUrl?: string };
 
 export type ReviewState =
   "PENDING" | "APPROVED" | "CHANGES_REQUESTED" | "COMMENTED";
@@ -50,6 +96,8 @@ export interface FakeReview {
   state: ReviewState;
   /** The summary given when it was submitted. */
   body?: string;
+  /** When it was submitted; the fake sets it when a review is submitted. */
+  submittedAt?: string;
   threads: FakeReviewThread[];
 }
 
@@ -248,6 +296,8 @@ export async function startFakeGitHub(): Promise<{
       : visible;
     return {
       id: fakePullRequestId(pr),
+      ...(/\btimelineItems\(/.test(query) &&
+        timelineFields(pr, visible, vars.after)),
       reviews: {
         nodes: wanted.map((r) => ({
           id: r.id,
@@ -286,6 +336,130 @@ export async function startFakeGitHub(): Promise<{
           path: f.path,
           viewerViewedState: f.viewed ?? "UNVIEWED",
         })),
+      },
+    };
+  }
+
+  function avatarUrl(login: string): string {
+    return `${state.avatarOrigin ?? url}/avatars/${encodeURIComponent(login)}?v=4`;
+  }
+
+  function actor(login: string) {
+    return { login, avatarUrl: avatarUrl(login) };
+  }
+
+  /**
+   * A pull request's description, its latest commit's checks, and its
+   * timeline of commits, Comments and the reviews the viewer can see, sorted
+   * by date, in pages of 100 after the cursor.
+   */
+  function timelineFields(
+    pr: FakePullRequest,
+    reviews: FakeReview[],
+    after: unknown
+  ) {
+    const dated: { date: string; node: unknown }[] = [];
+    for (const item of pr.timeline ?? []) {
+      if (item.type === "commit") {
+        dated.push({
+          date: item.date,
+          node: {
+            __typename: "PullRequestCommit",
+            commit: {
+              oid: item.sha,
+              abbreviatedOid: item.sha.slice(0, 7),
+              messageHeadline: item.message.split("\n")[0],
+              committedDate: item.date,
+              author: {
+                name: item.author,
+                avatarUrl: avatarUrl(item.author),
+                user: item.noAccount ? null : actor(item.author),
+              },
+            },
+          },
+        });
+      } else {
+        dated.push({
+          date: item.date,
+          node: {
+            __typename: "IssueComment",
+            body: item.body,
+            createdAt: item.date,
+            author: actor(item.author),
+          },
+        });
+      }
+    }
+    for (const review of reviews) {
+      // A pending review has no submittedAt; GitHub lists it where it was started.
+      const date = review.submittedAt ?? new Date().toISOString();
+      dated.push({
+        date,
+        node: {
+          __typename: "PullRequestReview",
+          state: review.state,
+          body: review.body ?? "",
+          submittedAt: review.submittedAt ?? null,
+          createdAt: date,
+          author: actor(review.author),
+          comments: {
+            totalCount: review.threads.reduce(
+              (n, t) => n + t.comments.length,
+              0
+            ),
+          },
+        },
+      });
+    }
+    dated.sort((a, b) => a.date.localeCompare(b.date));
+    const start = after ? Number(after) : 0;
+    const page = dated.slice(start, start + 100);
+    const checks = pr.checkRuns ?? [];
+    return {
+      title: pr.title,
+      url: `https://github.com/${pr.repository}/pull/${pr.number}`,
+      body: pr.body ?? "",
+      createdAt: pr.createdAt ?? "2026-10-01T00:00:00Z",
+      author: actor(pr.author),
+      commits: {
+        nodes: [
+          {
+            commit: {
+              oid: pr.headSha ?? "0".repeat(40),
+              statusCheckRollup:
+                pr.checks || checks.length > 0
+                  ? {
+                      state: pr.checks ?? "PENDING",
+                      contexts: {
+                        nodes: checks.map((check) =>
+                          check.type === "checkRun"
+                            ? {
+                                __typename: "CheckRun",
+                                name: check.name,
+                                status: check.status,
+                                conclusion: check.conclusion ?? null,
+                                detailsUrl: check.detailsUrl ?? null,
+                              }
+                            : {
+                                __typename: "StatusContext",
+                                context: check.context,
+                                state: check.state,
+                                targetUrl: check.targetUrl ?? null,
+                              }
+                        ),
+                      },
+                    }
+                  : null,
+            },
+          },
+        ],
+      },
+      timelineItems: {
+        pageInfo: {
+          hasNextPage: start + 100 < dated.length,
+          endCursor: String(start + page.length),
+        },
+        nodes: page.map((d) => d.node),
       },
     };
   }
@@ -459,6 +633,7 @@ export async function startFakeGitHub(): Promise<{
         const submitted = states[String(input.event)];
         if (!submitted) throw new Error(`Unknown event ${String(input.event)}`);
         review.state = submitted;
+        review.submittedAt = new Date().toISOString();
         if (typeof input.body === "string" && input.body)
           review.body = input.body;
         return { pullRequestReview: { id: review.id, state: submitted } };

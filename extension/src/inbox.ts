@@ -190,7 +190,8 @@ function showWelcome(
 export class Avatars {
   constructor(
     private readonly github: GitHubClient,
-    private readonly dir: string
+    /** Where the avatars are kept. */
+    readonly dir: string
   ) {}
 
   async file(url: string): Promise<vscode.Uri | undefined> {

@@ -18,6 +18,8 @@ import { GitHubClient, PullRequestSummary } from "./github/client";
 import { Avatars, InboxNode, InboxTree, LocalClone } from "./inbox";
 import { PendingReviews } from "./pendingReview";
 import { ReviewComments, Verdict } from "./reviewComments";
+import type { FromWebview } from "./timeline/panel";
+import { LinkOpener, Timelines } from "./timeline/timelines";
 import {
   GitHubViewedFiles,
   LocalViewedFiles,
@@ -65,12 +67,20 @@ export function activate(context: vscode.ExtensionContext) {
   // choose the repository Dear Reviewer runs git in.
   const localClones = () =>
     settings().inspect<Record<string, string>>("localClones")?.globalValue;
+  const avatars = new Avatars(
+    github,
+    path.join(context.globalStorageUri.fsPath, "avatars")
+  );
   const inbox = new InboxTree(
     github,
     repositories,
     () => inboxClones(localClones(), repositories()),
-    new Avatars(github, path.join(context.globalStorageUri.fsPath, "avatars"))
+    avatars
   );
+  // Links leave VS Code through the extension; the tests catch them instead.
+  const openExternal: LinkOpener = (uri) => vscode.env.openExternal(uri);
+  let openLink = openExternal;
+  const timelines = new Timelines(github, avatars, (uri) => openLink(uri));
 
   context.subscriptions.push(
     vscode.commands.registerCommand(
@@ -134,11 +144,16 @@ export function activate(context: vscode.ExtensionContext) {
         if (!request) return;
         const closed = await changes.close(request);
         assistants.close(closed);
+        timelines.close(closed);
         review.forget(closed);
         await viewedFiles.forget(closed);
         changeFiles.refresh();
       }
     ),
+    // The timeline opens first, so the Assistant's summary is the side
+    // panel the Reviewer sees, with the timeline a tab away.
+    timelines,
+    changes.onDidShowChange((change) => void timelines.open(change)),
     assistants,
     changes.onDidShowChange((change) => void assistants.open(change)),
     review,
@@ -189,10 +204,12 @@ export function activate(context: vscode.ExtensionContext) {
           ignoreFocusOut: true,
         });
         if (summary === undefined) return;
-        if (await review.submit(change, verdict, summary))
+        if (await review.submit(change, verdict, summary)) {
+          void timelines.refresh(change);
           void vscode.window.showInformationMessage(
             `Submitted your Review of ${repository} #${number}.`
           );
+        }
       }
     ),
     vscode.commands.registerCommand(
@@ -201,6 +218,17 @@ export function activate(context: vscode.ExtensionContext) {
         request ??= await pickOpenChange(changes.list(), "Show Assistant");
         const change = request && (await changes.find(request));
         if (change) await assistants.open(change);
+      }
+    ),
+    vscode.commands.registerCommand(
+      "dearReviewer.showTimeline",
+      async (request?: ChangeRequest) => {
+        request ??= await pickOpenChange(
+          changes.list().filter((c) => c.pullRequest),
+          "Show Timeline"
+        );
+        const change = request && (await changes.find(request));
+        if (change) await timelines.open(change);
       }
     ),
     vscode.commands.registerCommand("dearReviewer.checkClaudeLogin", () =>
@@ -280,11 +308,14 @@ export function activate(context: vscode.ExtensionContext) {
     ),
     auth.onDidChange(() => {
       void review.sync();
+      void timelines.refreshAll();
       return inbox.refresh();
     }),
     vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration("dearReviewer.githubApiUrl"))
+      if (e.affectsConfiguration("dearReviewer.githubApiUrl")) {
         void review.sync();
+        void timelines.refreshAll();
+      }
       if (
         e.affectsConfiguration("dearReviewer.repositories") ||
         e.affectsConfiguration("dearReviewer.githubApiUrl") ||
@@ -307,6 +338,24 @@ export function activate(context: vscode.ExtensionContext) {
     assistant: {
       panels: () => assistants.panels(),
       loginStatus: () => assistants.loginStatus(),
+    },
+    timeline: {
+      panels: () =>
+        timelines.panels().map((panel) => ({
+          title: panel.title,
+          sent: panel.sent,
+          rendered: panel.rendered,
+          receive: (message: FromWebview) => panel.receive(message),
+        })),
+      /** Hands the links the Reviewer opens to `open` instead, or back to the browser. */
+      openLinksWith: (open?: (url: string) => void) => {
+        openLink = open
+          ? async (uri) => {
+              open(uri.toString(true));
+              return true;
+            }
+          : openExternal;
+      },
     },
   };
 }

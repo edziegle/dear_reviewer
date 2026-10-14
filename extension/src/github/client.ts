@@ -59,6 +59,55 @@ export interface PendingReview {
   review?: { id: string; threads: PendingThread[] };
 }
 
+export interface GitHubUser {
+  login: string;
+  avatarUrl: string;
+}
+
+/** Something that happened on a pull request, as its timeline shows it. */
+export type TimelineEvent =
+  | { kind: "description"; author: GitHubUser; date: string; body: string }
+  | {
+      kind: "commit";
+      /** The commit's author: a GitHub user, or their git name and avatar. */
+      author: GitHubUser;
+      date: string;
+      sha: string;
+      headline: string;
+    }
+  | { kind: "comment"; author: GitHubUser; date: string; body: string }
+  | {
+      kind: "review";
+      author: GitHubUser;
+      date: string;
+      verdict: ReviewVerdict;
+      body: string;
+      /** How many Comments on the diff the review holds. */
+      comments: number;
+    };
+
+export type ReviewVerdict =
+  "approved" | "changesRequested" | "commented" | "dismissed";
+
+export type CheckRunStatus =
+  "passed" | "failed" | "running" | "skipped" | "neutral";
+
+export interface CheckRun {
+  name: string;
+  status: CheckRunStatus;
+  /** The check's details page. */
+  url?: string;
+}
+
+export interface PullRequestTimeline {
+  title: string;
+  url: string;
+  /** The description first, then commits, Comments and submitted reviews in GitHub's order. */
+  events: TimelineEvent[];
+  /** The latest commit's checks; undefined when it has none. */
+  checks?: { commit: string; status?: CheckStatus; runs: CheckRun[] };
+}
+
 export class NotSignedInError extends Error {
   constructor() {
     super("Not signed in to GitHub");
@@ -224,6 +273,49 @@ ${paths
         });
       }
     }
+    return found;
+  }
+
+  /**
+   * The pull request's description, commits, Comments and submitted reviews,
+   * in order, and its latest commit's checks. Pending reviews are left out:
+   * the viewer's own is in the gutter, and nobody else's is visible.
+   */
+  async timeline(
+    repository: string,
+    number: number
+  ): Promise<PullRequestTimeline> {
+    const [owner, name] = repository.split("/");
+    let found: PullRequestTimeline | undefined;
+    let after: string | null = null;
+    do {
+      const data: TimelineData = await this.graphql<TimelineData>(
+        PULL_REQUEST_TIMELINE,
+        { owner, name, number, after }
+      );
+      const pullRequest = data.repository?.pullRequest;
+      if (!pullRequest)
+        throw new GitHubError(`No pull request ${repository}#${number}`);
+      found ??= {
+        title: pullRequest.title,
+        url: pullRequest.url,
+        events: [
+          {
+            kind: "description",
+            author: userOf(pullRequest.author),
+            date: pullRequest.createdAt,
+            body: pullRequest.body,
+          },
+        ],
+        checks: checksOf(pullRequest.commits.nodes[0]?.commit),
+      };
+      for (const node of pullRequest.timelineItems.nodes) {
+        const event = timelineEventOf(node);
+        if (event) found.events.push(event);
+      }
+      const page = pullRequest.timelineItems.pageInfo;
+      after = page.hasNextPage ? page.endCursor : null;
+    } while (after);
     return found;
   }
 
@@ -436,6 +528,226 @@ interface PendingReviewData {
       };
     } | null;
   } | null;
+}
+
+const PULL_REQUEST_TIMELINE = `query PullRequestTimeline($owner: String!, $name: String!, $number: Int!, $after: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      title
+      url
+      body
+      createdAt
+      author { login avatarUrl }
+      commits(last: 1) {
+        nodes {
+          commit {
+            oid
+            statusCheckRollup {
+              state
+              contexts(first: 100) {
+                nodes {
+                  __typename
+                  ... on CheckRun { name status conclusion detailsUrl }
+                  ... on StatusContext { context state targetUrl }
+                }
+              }
+            }
+          }
+        }
+      }
+      timelineItems(first: 100, after: $after, itemTypes: [PULL_REQUEST_COMMIT, ISSUE_COMMENT, PULL_REQUEST_REVIEW]) {
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          __typename
+          ... on PullRequestCommit {
+            commit {
+              abbreviatedOid
+              messageHeadline
+              committedDate
+              author { name avatarUrl user { login avatarUrl } }
+            }
+          }
+          ... on IssueComment { body createdAt author { login avatarUrl } }
+          ... on PullRequestReview {
+            state
+            body
+            submittedAt
+            createdAt
+            author { login avatarUrl }
+            comments { totalCount }
+          }
+        }
+      }
+    }
+  }
+}`;
+
+type CheckContextNode =
+  | {
+      __typename: "CheckRun";
+      name: string;
+      status: string;
+      conclusion: string | null;
+      detailsUrl: string | null;
+    }
+  | {
+      __typename: "StatusContext";
+      context: string;
+      state: string;
+      targetUrl: string | null;
+    };
+
+interface LatestCommitNode {
+  oid: string;
+  statusCheckRollup: {
+    state: string;
+    contexts: { nodes: (CheckContextNode | null)[] };
+  } | null;
+}
+
+type TimelineItemNode =
+  | {
+      __typename: "PullRequestCommit";
+      commit: {
+        abbreviatedOid: string;
+        messageHeadline: string;
+        committedDate: string;
+        author: {
+          name: string | null;
+          avatarUrl: string;
+          user: GitHubUser | null;
+        } | null;
+      };
+    }
+  | {
+      __typename: "IssueComment";
+      body: string;
+      createdAt: string;
+      author: GitHubUser | null;
+    }
+  | {
+      __typename: "PullRequestReview";
+      state: string;
+      body: string;
+      submittedAt: string | null;
+      createdAt: string;
+      author: GitHubUser | null;
+      comments: { totalCount: number };
+    }
+  | { __typename: string };
+
+interface TimelineData {
+  repository: {
+    pullRequest: {
+      title: string;
+      url: string;
+      body: string;
+      createdAt: string;
+      author: GitHubUser | null;
+      commits: { nodes: { commit: LatestCommitNode }[] };
+      timelineItems: {
+        pageInfo: { hasNextPage: boolean; endCursor: string | null };
+        nodes: (TimelineItemNode | null)[];
+      };
+    } | null;
+  } | null;
+}
+
+/** A deleted account shows as "ghost" on github.com. */
+function userOf(user: GitHubUser | null): GitHubUser {
+  return user ?? { login: "ghost", avatarUrl: "" };
+}
+
+const verdicts: Record<string, ReviewVerdict> = {
+  APPROVED: "approved",
+  CHANGES_REQUESTED: "changesRequested",
+  COMMENTED: "commented",
+  DISMISSED: "dismissed",
+};
+
+function timelineEventOf(
+  node: TimelineItemNode | null
+): TimelineEvent | undefined {
+  if (!node) return;
+  if (node.__typename === "PullRequestCommit" && "commit" in node) {
+    const { commit } = node;
+    const author = commit.author;
+    return {
+      kind: "commit",
+      author: author?.user ?? {
+        login: author?.name || "unknown",
+        avatarUrl: author?.avatarUrl ?? "",
+      },
+      date: commit.committedDate,
+      sha: commit.abbreviatedOid,
+      headline: commit.messageHeadline,
+    };
+  }
+  if (node.__typename === "IssueComment" && "createdAt" in node)
+    return {
+      kind: "comment",
+      author: userOf(node.author),
+      date: node.createdAt,
+      body: node.body,
+    };
+  if (node.__typename === "PullRequestReview" && "state" in node) {
+    const verdict = verdicts[node.state];
+    if (!verdict) return;
+    return {
+      kind: "review",
+      author: userOf(node.author),
+      date: node.submittedAt ?? node.createdAt,
+      verdict,
+      body: node.body,
+      comments: node.comments.totalCount,
+    };
+  }
+}
+
+function checksOf(
+  commit: LatestCommitNode | undefined
+): PullRequestTimeline["checks"] {
+  const rollup = commit?.statusCheckRollup;
+  if (!commit || !rollup) return;
+  const runs: CheckRun[] = [];
+  for (const node of rollup.contexts.nodes) {
+    if (node?.__typename === "CheckRun")
+      runs.push({
+        name: node.name,
+        status: checkRunStatus(node.status, node.conclusion),
+        ...(node.detailsUrl && { url: node.detailsUrl }),
+      });
+    else if (node?.__typename === "StatusContext")
+      runs.push({
+        name: node.context,
+        status: checkStatus(node.state) ?? "neutral",
+        ...(node.targetUrl && { url: node.targetUrl }),
+      });
+  }
+  return {
+    commit: commit.oid.slice(0, 7),
+    status: checkStatus(rollup.state),
+    runs,
+  };
+}
+
+function checkRunStatus(
+  status: string,
+  conclusion: string | null
+): CheckRunStatus {
+  if (status !== "COMPLETED") return "running";
+  switch (conclusion) {
+    case "SUCCESS":
+      return "passed";
+    case "SKIPPED":
+      return "skipped";
+    case "NEUTRAL":
+    case "STALE":
+    case null:
+      return "neutral";
+    default:
+      return "failed";
+  }
 }
 
 const INBOX_PULL_REQUEST = `fragment InboxPullRequest on PullRequest {

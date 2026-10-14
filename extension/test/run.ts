@@ -170,6 +170,7 @@ async function main() {
     const review = multiRootWorkspace("review", "review");
     await runSuite("review", review);
     await runSuite("review/afterReload", review);
+    await runSuite("timeline", multiRootWorkspace("timeline", "timeline"));
     await runSuite(
       "localBranches",
       multiRootWorkspace("local-branches", "local-branches")

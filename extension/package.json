@@ -102,6 +102,11 @@
         "category": "Dear Reviewer"
       },
       {
+        "command": "dearReviewer.showTimeline",
+        "title": "Show Timeline",
+        "category": "Dear Reviewer"
+      },
+      {
         "command": "dearReviewer.checkClaudeLogin",
         "title": "Check Claude Login",
         "category": "Dear Reviewer"

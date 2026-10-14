@@ -7,8 +7,9 @@ import * as crypto from "crypto";
 import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
-import { branchOfConversation, Change, changeTitle } from "./changeWorkspace";
+import { Change, changeName } from "./changeWorkspace";
 import type { LocalPendingReviews, LocalThread } from "./localReviews";
+import { messageOf } from "./errors";
 
 export class Briefs {
   private readonly dir: string;
@@ -35,7 +36,7 @@ export class Briefs {
    * the editor. Gives the Brief's file, if one was written.
    */
   async write(change: Change): Promise<vscode.Uri | undefined> {
-    const name = nameOf(change);
+    const name = changeName(change);
     const threads = this.local.pendingThreads(change);
     if (threads.length === 0) {
       void vscode.window.showInformationMessage(
@@ -53,7 +54,7 @@ export class Briefs {
         () => this.assistant(change, threads)
       );
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = messageOf(err);
       void vscode.window.showErrorMessage(
         `Couldn't write a Brief for ${name}: ${message}`
       );
@@ -111,9 +112,4 @@ export class Briefs {
   private isBrief(uri: vscode.Uri): boolean {
     return uri.scheme === "file" && uri.fsPath.startsWith(this.dir + path.sep);
   }
-}
-
-/** The local Change as the Reviewer knows it: its branch, or its commits. */
-function nameOf(change: Change): string {
-  return branchOfConversation(change.conversation) ?? changeTitle(change);
 }

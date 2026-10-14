@@ -9,9 +9,11 @@ import {
   NotSignedInError,
   PullRequestSummary,
 } from "./github/client";
-import { branchConversation } from "./changeWorkspace";
+import { setContext } from "./context";
+import { conversationName } from "./conversationName";
 import { branchesAhead, LocalBranch } from "./localBranches";
 import type { LocalClone } from "./repositories";
+import { messageOf } from "./errors";
 
 export type { LocalClone } from "./repositories";
 
@@ -70,7 +72,11 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
       const { branch } = node;
       const ahead = `${branch.commitsAhead} commit${branch.commitsAhead === 1 ? "" : "s"} ahead`;
       const briefed = this.lastBriefed(
-        branchConversation(branch.clone, branch.name)
+        conversationName({
+          kind: "branch",
+          branch: branch.name,
+          repository: branch.clone,
+        })
       );
       const changedSinceReview =
         briefed !== undefined && briefed !== branch.headSha;
@@ -159,7 +165,7 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
         return [];
       }
       await showWelcome("none");
-      const message = err instanceof Error ? err.message : String(err);
+      const message = messageOf(err);
       // GitHub turned the token down: signing in again is the way out.
       const action: vscode.Command = /\b401\b/.test(message)
         ? { title: "Sign In to GitHub", command: "dearReviewer.signIn" }
@@ -191,8 +197,7 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
     );
     for (const result of found) {
       if ("err" in result) {
-        const message =
-          result.err instanceof Error ? result.err.message : String(result.err);
+        const message = messageOf(result.err);
         children.push({
           kind: "problem",
           message: `Couldn't list the branches of ${result.local.repository}: ${message}`,
@@ -236,11 +241,6 @@ function showWelcome(
   welcome: "signedOut" | "noRepositories" | "none"
 ): Thenable<unknown> {
   return setContext("dearReviewer.inboxWelcome", welcome);
-}
-
-/** Context keys drive the welcome messages and the setup walkthrough's checklist. */
-export function setContext(key: string, value: unknown): Thenable<unknown> {
-  return vscode.commands.executeCommand("setContext", key, value);
 }
 
 /** Avatars downloaded once into the extension's storage, for tree icons. */

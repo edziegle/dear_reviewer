@@ -10,9 +10,10 @@ import * as crypto from "crypto";
 import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
-import { branchOfConversation, Change, changeTitle } from "./changeWorkspace";
+import { Change, changeName } from "./changeWorkspace";
 import type { ThreadPlace } from "./github/client";
-import { setContext } from "./inbox";
+import { setContext } from "./context";
+import { messageOf } from "./errors";
 
 /** A spot in a Change the Assistant thinks deserves the Reviewer's attention. */
 export interface Finding {
@@ -93,7 +94,7 @@ export class Findings
    * before. If its reply holds no Findings, the earlier ones stay.
    */
   async find(change: Change): Promise<void> {
-    const name = nameOf(change);
+    const name = changeName(change);
     let reply: string;
     try {
       reply = await vscode.window.withProgress(
@@ -194,7 +195,7 @@ export class Findings
   getTreeItem(node: FindingsNode): vscode.TreeItem {
     if (node.kind === "change") {
       const item = new vscode.TreeItem(
-        nameOf(node.change),
+        changeName(node.change),
         vscode.TreeItemCollapsibleState.Expanded
       );
       item.description = `${node.findings.length} Finding${node.findings.length === 1 ? "" : "s"}`;
@@ -428,15 +429,4 @@ function isLine(n: unknown): n is number {
 
 function isInside(relative: string): boolean {
   return !!relative && !relative.startsWith("..") && !path.isAbsolute(relative);
-}
-
-/** The Change as the Reviewer knows it: its pull request, branch or commits. */
-function nameOf(change: Change): string {
-  return change.pullRequest
-    ? `${change.pullRequest.repository} #${change.pullRequest.number}`
-    : (branchOfConversation(change.conversation) ?? changeTitle(change));
-}
-
-function messageOf(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }

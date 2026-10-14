@@ -6,6 +6,7 @@ import {
   Change,
   ChangeRequest,
   ChangeWorkspace,
+  changeName,
   changeTitle,
   fetchPullRequest,
 } from "./changeWorkspace";
@@ -21,7 +22,8 @@ import { Findings, FindingsNode } from "./findings";
 import { selectionInChange } from "./assistant/selection";
 import { GitHubAuth } from "./github/auth";
 import { GitHubClient, PullRequestSummary } from "./github/client";
-import { Avatars, InboxNode, InboxTree, setContext } from "./inbox";
+import { setContext } from "./context";
+import { Avatars, InboxNode, InboxTree } from "./inbox";
 import { Lifecycle } from "./lifecycle";
 import { LocalPendingReviews } from "./localReviews";
 import { LocalClone, Repositories } from "./repositories";
@@ -41,6 +43,7 @@ import {
   LocalViewedFiles,
   ViewedFilesBySource,
 } from "./viewedFiles";
+import { messageOf } from "./errors";
 
 export function activate(context: vscode.ExtensionContext) {
   const changes = new ChangeWorkspace(context.globalStorageUri.fsPath);
@@ -279,7 +282,7 @@ export function activate(context: vscode.ExtensionContext) {
         try {
           await changes.open(request);
         } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
+          const message = messageOf(err);
           void vscode.window.showErrorMessage(
             `Couldn't open the Change: ${message}`
           );
@@ -301,7 +304,7 @@ export function activate(context: vscode.ExtensionContext) {
           try {
             await changes.open(await fetchPullRequest(clone, pr));
           } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
+            const message = messageOf(err);
             const locate = "Locate Another Clone…";
             const picked = await vscode.window.showErrorMessage(
               `Couldn't open ${pr.repository} #${pr.number} from ${clone}: ${message}`,
@@ -333,7 +336,7 @@ export function activate(context: vscode.ExtensionContext) {
             head: `refs/heads/${branch.name}`,
           });
         } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
+          const message = messageOf(err);
           void vscode.window.showErrorMessage(
             `Couldn't open ${branch.name}: ${message}`
           );
@@ -505,14 +508,12 @@ export function activate(context: vscode.ExtensionContext) {
             );
           return;
         }
-        const name = change.pullRequest
-          ? `${change.pullRequest.repository} #${change.pullRequest.number}`
-          : changeTitle(change);
+        const name = changeName(change);
         let from: string | undefined;
         try {
           from = await reviews.lastReviewed(change);
         } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
+          const message = messageOf(err);
           void vscode.window.showErrorMessage(
             `Couldn't find your last Review of ${name}: ${message}`
           );
@@ -668,9 +669,7 @@ export function activate(context: vscode.ExtensionContext) {
         try {
           await auth.setToken(apiUrl(), token);
         } catch (err) {
-          void vscode.window.showErrorMessage(
-            err instanceof Error ? err.message : String(err)
-          );
+          void vscode.window.showErrorMessage(messageOf(err));
         }
       }
     ),

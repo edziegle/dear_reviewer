@@ -13,6 +13,8 @@ import {
   fileSides,
   FileStatus,
 } from "./changeWorkspace";
+import { setContext } from "./context";
+import { messageOf } from "./errors";
 import { hasFolder } from "./reviewWindow";
 import { ViewedFiles } from "./viewedFiles";
 
@@ -223,7 +225,7 @@ export class ChangeFilesView
     try {
       files = await this.filesOf(change);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = messageOf(err);
       return {
         kind: "problem",
         message: `Couldn't list the files of ${changeTitle(change)}: ${message}`,
@@ -233,7 +235,7 @@ export class ChangeFilesView
     try {
       viewed = await this.viewedFiles.viewed(change);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = messageOf(err);
       return {
         kind: "problem",
         message: `Couldn't load the viewed state of ${changeTitle(change)}: ${message}`,
@@ -259,11 +261,7 @@ export class ChangeFilesView
   }
 
   private showHideViewedContext(): Thenable<unknown> {
-    return vscode.commands.executeCommand(
-      "setContext",
-      "dearReviewer.hideViewedFiles",
-      this.hidesViewed
-    );
+    return setContext("dearReviewer.hideViewedFiles", this.hidesViewed);
   }
 }
 

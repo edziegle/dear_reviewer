@@ -4,12 +4,8 @@
 // the Reviewer had already closed the Change. Any Change is over when its
 // worktrees or its repository were deleted outside Dear Reviewer.
 
-import {
-  Change,
-  ChangeWorkspace,
-  pullRequestOfConversation,
-  PullRequestRef,
-} from "./changeWorkspace";
+import { Change, ChangeWorkspace, PullRequestRef } from "./changeWorkspace";
+import { parseConversationName } from "./conversationName";
 import { Conversations } from "./assistant/conversations";
 import { GitHubClient } from "./github/client";
 
@@ -52,8 +48,8 @@ export class Lifecycle {
       if (change.pullRequest)
         pullRequests.set(change.conversation, change.pullRequest);
     for (const name of this.conversations.names()) {
-      const pullRequest = pullRequestOfConversation(name);
-      if (pullRequest) pullRequests.set(name, pullRequest);
+      const id = parseConversationName(name);
+      if (id?.kind === "pullRequest") pullRequests.set(name, id.pullRequest);
     }
     const finished = new Set<string>();
     await Promise.all(

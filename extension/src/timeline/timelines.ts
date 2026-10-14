@@ -4,7 +4,11 @@
 // it sent.
 
 import * as vscode from "vscode";
-import type { Change, PullRequestRef } from "../changeWorkspace";
+import {
+  pullRequestName,
+  type Change,
+  type PullRequestRef,
+} from "../changeWorkspace";
 import {
   GitHubClient,
   NotSignedInError,
@@ -13,6 +17,7 @@ import {
 } from "../github/client";
 import type { Avatars } from "../inbox";
 import { TimelinePanel, type TimelineState } from "./panel";
+import { messageOf } from "../errors";
 
 const signIn = "Sign In to GitHub";
 
@@ -81,7 +86,7 @@ class ChangeTimeline {
     private readonly avatars: Avatars,
     private readonly openLink: LinkOpener
   ) {
-    const name = `${pullRequest.repository} #${pullRequest.number}`;
+    const name = pullRequestName(pullRequest);
     this.state = { title: name, pullRequest: name, loading: true, items: [] };
   }
 
@@ -123,7 +128,7 @@ class ChangeTimeline {
       const signedOut = err instanceof NotSignedInError;
       const problem = signedOut
         ? "Sign in to GitHub to see the timeline."
-        : `Couldn't load the timeline: ${err instanceof Error ? err.message : String(err)}`;
+        : `Couldn't load the timeline: ${messageOf(err)}`;
       this.update({
         loading: false,
         problem,

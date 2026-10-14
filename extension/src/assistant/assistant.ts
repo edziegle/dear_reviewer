@@ -40,6 +40,7 @@ import {
   sinceLastReviewPrompt,
   summaryPrompt,
 } from "./prompts";
+import { messageOf } from "../errors";
 
 /** Gives the head commit the Reviewer's last Review of the Change covered, if any. */
 export type LastReview = (change: Change) => Promise<string | undefined>;
@@ -173,7 +174,7 @@ export class Assistants implements vscode.Disposable {
     try {
       return await this.showLogin(new ClaudeCli(findClaude(this.claudePath())));
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = messageOf(err);
       this.showStatus("$(error) Claude: not found", message, true);
       void vscode.window.showErrorMessage(message);
     }
@@ -364,7 +365,7 @@ class ChangeAssistant {
     this.update({
       busy: false,
       steps: undefined,
-      problem: err instanceof Error ? err.message : String(err),
+      problem: messageOf(err),
       problemAction: this.problemAction?.title,
     });
   }

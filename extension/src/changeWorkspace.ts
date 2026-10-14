@@ -7,6 +7,7 @@ import * as crypto from "crypto";
 import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
+import { branchOfConversation, conversationName } from "./conversationName";
 import { git } from "./git";
 import { Change, OpenChanges, PullRequestRef } from "./openChanges";
 import {
@@ -203,7 +204,7 @@ export class ChangeWorkspace {
     const dir = path.join(this.storageDir, "changes", id);
     const conversation =
       this.openChanges.get(id)?.conversation ??
-      (await conversationName(repository, request, mergeBase, headSha));
+      (await conversationOf(repository, request, mergeBase, headSha));
     return {
       id,
       repository,
@@ -222,13 +223,17 @@ export class ChangeWorkspace {
  * branch the request named (`HEAD` names the checked-out branch), or else
  * the commit range itself.
  */
-async function conversationName(
+async function conversationOf(
   repository: string,
   request: ChangeRequest,
   mergeBase: string,
   headSha: string
 ): Promise<string> {
-  if (request.pullRequest) return pullRequestConversation(request.pullRequest);
+  if (request.pullRequest)
+    return conversationName({
+      kind: "pullRequest",
+      pullRequest: request.pullRequest,
+    });
   const ref = await git(
     repository,
     "rev-parse",
@@ -236,31 +241,12 @@ async function conversationName(
     request.head
   ).catch(() => "");
   if (ref.startsWith("refs/heads/"))
-    return branchConversation(repository, ref.slice("refs/heads/".length));
-  return `range ${mergeBase}..${headSha} in ${repository}`;
-}
-
-/** The name a local branch's Change keeps its Assistant conversation and Reviews under. */
-export function branchConversation(repository: string, branch: string): string {
-  return `branch ${branch} in ${path.resolve(repository)}`;
-}
-
-/** The local branch a conversation name gives, if it names one. */
-export function branchOfConversation(name: string): string | undefined {
-  return /^branch (.+) in \//.exec(name)?.[1];
-}
-
-/** The name a pull request's Change keeps its Assistant conversation under. */
-export function pullRequestConversation(pullRequest: PullRequestRef): string {
-  return `pull request ${pullRequest.repository.toLowerCase()}#${pullRequest.number}`;
-}
-
-/** The pull request a conversation name gives, if it names one. */
-export function pullRequestOfConversation(
-  name: string
-): PullRequestRef | undefined {
-  const match = /^pull request ([^#\s]+)#(\d+)$/.exec(name);
-  if (match) return { repository: match[1], number: Number(match[2]) };
+    return conversationName({
+      kind: "branch",
+      branch: ref.slice("refs/heads/".length),
+      repository,
+    });
+  return conversationName({ kind: "range", mergeBase, headSha, repository });
 }
 
 /** Whether a worktree, or the repository it belongs to, was deleted outside Dear Reviewer. */
@@ -353,6 +339,20 @@ function changeFolders(change: Change): Folder[] {
 export function changeTitle(change: Change): string {
   const repo = path.basename(change.repository);
   return `${repo} ${change.mergeBase.slice(0, 7)}..${change.headSha.slice(0, 7)}`;
+}
+
+/**
+ * The Change as the Reviewer knows it: its pull request, or else the local
+ * branch it was opened at, or else its commits.
+ */
+export function changeName(change: Change): string {
+  if (change.pullRequest) return pullRequestName(change.pullRequest);
+  return branchOfConversation(change.conversation) ?? changeTitle(change);
+}
+
+/** The pull request as the Reviewer knows it, such as `acme/api #7`. */
+export function pullRequestName(pullRequest: PullRequestRef): string {
+  return `${pullRequest.repository} #${pullRequest.number}`;
 }
 
 export type FileStatus = "added" | "modified" | "deleted";

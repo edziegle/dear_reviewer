@@ -2,12 +2,12 @@
 
 import * as path from "path";
 import {
-  branchOfConversation,
   Change,
   changedFiles,
   changeTitle,
   filesChangedBetween,
 } from "../changeWorkspace";
+import { branchOfConversation } from "../conversationName";
 import { git, gitOutput } from "../git";
 import type { LocalThread } from "../localReviews";
 

@@ -1,5 +1,6 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
+import { messageOf } from "./errors";
 
 const run = promisify(execFile);
 
@@ -29,9 +30,7 @@ export async function gitOutput(
     return stdout;
   } catch (err) {
     // A missing cwd fails the spawn itself, with no stderr.
-    const stderr =
-      (err as { stderr?: string }).stderr ||
-      (err instanceof Error ? err.message : String(err));
+    const stderr = (err as { stderr?: string }).stderr || messageOf(err);
     throw new GitError(args, stderr);
   }
 }

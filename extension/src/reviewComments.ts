@@ -12,7 +12,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
-import { changeTitle, type Change } from "./changeWorkspace";
+import { changeName, type Change } from "./changeWorkspace";
 import { git } from "./git";
 import {
   NotSignedInError,
@@ -24,6 +24,7 @@ import {
 import type { Avatars } from "./inbox";
 import type { PendingReviewsBySource } from "./pendingReview";
 import { hasFolder } from "./reviewWindow";
+import { messageOf } from "./errors";
 
 export type Verdict = "approve" | "requestChanges" | "comment";
 
@@ -158,7 +159,7 @@ export class ReviewComments implements vscode.Disposable {
         } catch (err) {
           if (err instanceof NotSignedInError) continue;
           void vscode.window.showErrorMessage(
-            `Couldn't load the review threads of ${describe(change)}: ${messageOf(err)}`
+            `Couldn't load the review threads of ${changeName(change)}: ${messageOf(err)}`
           );
         }
       }
@@ -645,13 +646,6 @@ async function diffHunks(change: Change, file: string): Promise<Hunks> {
   return hunks;
 }
 
-/** The Change as the Reviewer knows it: its pull request, or its commits. */
-function describe(change: Change): string {
-  return change.pullRequest
-    ? `${change.pullRequest.repository} #${change.pullRequest.number}`
-    : changeTitle(change);
-}
-
 function showSaveFailed(change: Change, err: unknown): void {
   void vscode.window.showErrorMessage(
     change.pullRequest
@@ -667,8 +661,4 @@ function refresh(thread: vscode.CommentThread): void {
 
 function textOf(body: string | vscode.MarkdownString): string {
   return typeof body === "string" ? body : body.value;
-}
-
-function messageOf(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }

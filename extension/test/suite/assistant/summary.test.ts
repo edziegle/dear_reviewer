@@ -131,9 +131,7 @@ describe("The Assistant's summary when a Change opens", () => {
       CLAUDE_CODE_USE_VERTEX: "1",
       CLAUDE_CODE_USE_FOUNDRY: "1",
     };
-    Object.assign(process.env, credentials, {
-      DEAR_REVIEWER_UNRELATED: "kept",
-    });
+    Object.assign(process.env, credentials);
     scriptClaude({});
     const { request, title } = changeOf(
       repo.commits.initial,
@@ -158,7 +156,6 @@ describe("The Assistant's summary when a Change opens", () => {
           [],
           `claude ${call.args.join(" ")} got no credential variables`
         );
-        assert.strictEqual(call.env.DEAR_REVIEWER_UNRELATED, "kept");
       }
       const [run] = assistantRuns();
       assert.strictEqual(flag(run, "--tools"), "Read,Grep,Glob");
@@ -173,11 +170,42 @@ describe("The Assistant's summary when a Change opens", () => {
         []
       );
     } finally {
-      for (const key of [
-        ...Object.keys(credentials),
-        "DEAR_REVIEWER_UNRELATED",
-      ])
-        delete process.env[key];
+      for (const key of Object.keys(credentials)) delete process.env[key];
+      await closeChange(request);
+    }
+  });
+
+  it("gives claude only the variables it needs to find itself, its login and the network", async () => {
+    const variables = {
+      ANTHROPIC_BASE_URL: "https://elsewhere.example",
+      DEAR_REVIEWER_UNRELATED: "dropped",
+      HTTPS_PROXY: "http://proxy.example:3128",
+      no_proxy: "localhost",
+    };
+    Object.assign(process.env, variables);
+    scriptClaude({});
+    const { request, title } = changeOf(
+      repo.commits.renamed,
+      repo.commits.restructured
+    );
+    try {
+      await openChange(request);
+
+      await eventually(async () =>
+        assert.strictEqual((await renderedPanel(title))?.messages.length, 1)
+      );
+      const calls = callsToClaude();
+      assert.ok(calls.length >= 2, "auth status and the Assistant both ran");
+      for (const call of calls) {
+        const what = `claude ${call.args.join(" ")}`;
+        assert.strictEqual(call.env.ANTHROPIC_BASE_URL, undefined, what);
+        assert.strictEqual(call.env.DEAR_REVIEWER_UNRELATED, undefined, what);
+        assert.strictEqual(call.env.HTTPS_PROXY, variables.HTTPS_PROXY, what);
+        assert.strictEqual(call.env.no_proxy, variables.no_proxy, what);
+        assert.strictEqual(call.env.HOME, process.env.HOME, what);
+      }
+    } finally {
+      for (const key of Object.keys(variables)) delete process.env[key];
       await closeChange(request);
     }
   });

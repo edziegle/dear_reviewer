@@ -37,24 +37,50 @@ export interface ClaudeLogin {
 }
 
 /**
- * The environment `claude` runs in: the extension host's, without anything
- * that would make it bill an API key or a cloud provider instead of the login
- * the Reviewer set up in Claude Code.
+ * The variables `claude` gets from the extension host's environment, and why:
+ * only what it needs to find itself, its login and the network. Anything else
+ * stays out, above all `ANTHROPIC_*` and `CLAUDE_CODE_*`, which can make it
+ * bill an API key or a cloud provider, or send its requests elsewhere,
+ * instead of using the login the Reviewer set up in Claude Code.
+ */
+const passedVariables = new Set([
+  // Finds node for an npm install of claude, and git and ripgrep for its tools.
+  "PATH",
+  // Finds ~/.claude and ~/.claude.json, where its settings and login live.
+  "HOME",
+  // Moves ~/.claude elsewhere, for a Reviewer who keeps their login there.
+  "CLAUDE_CONFIG_DIR",
+  // Name the account its login is kept under in the OS keychain.
+  "USER",
+  "LOGNAME",
+  // The shell it runs commands in; it checks for one when it starts.
+  "SHELL",
+  // macOS gives each user a private temporary folder here.
+  "TMPDIR",
+  // How it reads and writes non-ASCII text.
+  "LANG",
+  // Whether it may colour what it writes.
+  "TERM",
+  // Reach claude.ai through the proxy and certificates the network requires.
+  "HTTPS_PROXY",
+  "https_proxy",
+  "HTTP_PROXY",
+  "http_proxy",
+  "NO_PROXY",
+  "no_proxy",
+  "NODE_EXTRA_CA_CERTS",
+]);
+
+/**
+ * The environment `claude` runs in: built from the extension host's, keeping
+ * only the variables in `passedVariables` and the locale's `LC_*`.
  */
 export function claudeEnvironment(
   env: NodeJS.ProcessEnv = process.env
 ): NodeJS.ProcessEnv {
-  const removed = new Set([
-    "ANTHROPIC_API_KEY",
-    "ANTHROPIC_AUTH_TOKEN",
-    "CLAUDE_CODE_OAUTH_TOKEN",
-    // Set when VSCodium was started from a Claude Code session.
-    "CLAUDECODE",
-  ]);
   const result: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(env)) {
-    if (removed.has(key) || key.startsWith("CLAUDE_CODE_USE_")) continue;
-    result[key] = value;
+    if (passedVariables.has(key) || key.startsWith("LC_")) result[key] = value;
   }
   return result;
 }

@@ -16,10 +16,11 @@
   "capabilities": {
     "untrustedWorkspaces": {
       "supported": "limited",
-      "description": "The GitHub API base URL and the path to claude are only read from user settings.",
+      "description": "The GitHub API base URL, the local clones and the path to claude are only read from user settings.",
       "restrictedConfigurations": [
         "dearReviewer.githubApiUrl",
-        "dearReviewer.claudePath"
+        "dearReviewer.claudePath",
+        "dearReviewer.localClones"
       ]
     }
   },
@@ -29,6 +30,12 @@
         "command": "dearReviewer.openChange",
         "title": "Open Change",
         "category": "Dear Reviewer"
+      },
+      {
+        "command": "dearReviewer.openPullRequest",
+        "title": "Open Pull Request",
+        "category": "Dear Reviewer",
+        "icon": "$(git-pull-request)"
       },
       {
         "command": "dearReviewer.closeChange",
@@ -106,6 +113,15 @@
           "default": [],
           "markdownDescription": "The GitHub repositories, as `owner/name`, whose pull requests feed the Inbox."
         },
+        "dearReviewer.localClones": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "markdownDescription": "Where each Inbox repository is cloned on this machine, as `\"owner/name\": \"/path/to/clone\"`. Opening a pull request fetches its head into this clone, from the remote whose URL names the repository (or `origin`), and reviews it in worktrees of the clone.",
+          "scope": "machine"
+        },
         "dearReviewer.githubApiUrl": {
           "type": "string",
           "default": "https://api.github.com",
@@ -161,6 +177,10 @@
       ],
       "commandPalette": [
         {
+          "command": "dearReviewer.openPullRequest",
+          "when": "false"
+        },
+        {
           "command": "dearReviewer.openChangeFile",
           "when": "false"
         },
@@ -182,6 +202,16 @@
         }
       ],
       "view/item/context": [
+        {
+          "command": "dearReviewer.openPullRequest",
+          "when": "view == dearReviewer.inbox && viewItem == pullRequest",
+          "group": "inline"
+        },
+        {
+          "command": "dearReviewer.openPullRequest",
+          "when": "view == dearReviewer.inbox && viewItem == pullRequest",
+          "group": "open@1"
+        },
         {
           "command": "dearReviewer.markViewed",
           "when": "view == dearReviewer.changeFiles && viewItem =~ /^(file\\.unviewed|directory|change)$/",

@@ -25,6 +25,12 @@ export interface InboxPullRequests {
   authoredByMe: PullRequestSummary[];
 }
 
+export interface PullRequestFiles {
+  /** The pull request's node id, which mutations name it by. */
+  id: string;
+  files: { path: string; viewed: boolean }[];
+}
+
 export class NotSignedInError extends Error {
   constructor() {
     super("Not signed in to GitHub");
@@ -76,6 +82,63 @@ ${INBOX_PULL_REQUEST}`;
       awaitingMyReview: collect("awaiting"),
       authoredByMe: collect("authored"),
     };
+  }
+
+  /**
+   * The pull request's changed files and whether I've marked each viewed. A
+   * file viewed before a later commit changed it counts as not viewed, as on
+   * github.com.
+   */
+  async pullRequestFiles(
+    repository: string,
+    number: number
+  ): Promise<PullRequestFiles> {
+    const [owner, name] = repository.split("/");
+    const files: PullRequestFiles["files"] = [];
+    let id = "";
+    let after: string | null = null;
+    do {
+      const data: PullRequestFilesData = await this.graphql<PullRequestFilesData>(
+        PULL_REQUEST_FILES,
+        { owner, name, number, after }
+      );
+      const pullRequest = data.repository?.pullRequest;
+      if (!pullRequest)
+        throw new GitHubError(`No pull request ${repository}#${number}`);
+      id = pullRequest.id;
+      for (const node of pullRequest.files?.nodes ?? [])
+        files.push({
+          path: node.path,
+          viewed: node.viewerViewedState === "VIEWED",
+        });
+      const page = pullRequest.files?.pageInfo;
+      after = page?.hasNextPage ? page.endCursor : null;
+    } while (after);
+    return { id, files };
+  }
+
+  /** Marks these files of the pull request viewed, or not viewed, in one request. */
+  async setFilesViewed(
+    pullRequestId: string,
+    paths: string[],
+    viewed: boolean
+  ): Promise<void> {
+    if (paths.length === 0) return;
+    const mutation = viewed ? "markFileAsViewed" : "unmarkFileAsViewed";
+    const query = `mutation SetFilesViewed($pullRequestId: ID!, ${paths
+      .map((_, i) => `$path${i}: String!`)
+      .join(", ")}) {
+${paths
+  .map(
+    (_, i) =>
+      `  file${i}: ${mutation}(input: {pullRequestId: $pullRequestId, path: $path${i}}) { clientMutationId }`
+  )
+  .join("\n")}
+}`;
+    await this.graphql(query, {
+      pullRequestId,
+      ...Object.fromEntries(paths.map((p, i) => [`path${i}`, p])),
+    });
   }
 
   /**
@@ -131,6 +194,30 @@ function graphqlUrl(apiUrl: string): string {
   return base.endsWith("/api/v3")
     ? `${base.slice(0, -"/v3".length)}/graphql`
     : `${base}/graphql`;
+}
+
+const PULL_REQUEST_FILES = `query PullRequestFiles($owner: String!, $name: String!, $number: Int!, $after: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      id
+      files(first: 100, after: $after) {
+        pageInfo { hasNextPage endCursor }
+        nodes { path viewerViewedState }
+      }
+    }
+  }
+}`;
+
+interface PullRequestFilesData {
+  repository: {
+    pullRequest: {
+      id: string;
+      files: {
+        pageInfo: { hasNextPage: boolean; endCursor: string | null };
+        nodes: { path: string; viewerViewedState: string }[];
+      } | null;
+    } | null;
+  } | null;
 }
 
 const INBOX_PULL_REQUEST = `fragment InboxPullRequest on PullRequest {

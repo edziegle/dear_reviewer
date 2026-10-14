@@ -5,10 +5,12 @@ import * as vscode from "vscode";
 import type {
   FakeGitHubState,
   FakePullRequest,
+  RecordedMutation,
   RecordedRequest,
 } from "../fakeGitHub";
 
-export type { FakePullRequest, RecordedRequest };
+export { fakePullRequestId } from "../fakeGitHub";
+export type { FakePullRequest, RecordedMutation, RecordedRequest };
 
 export function fakeGitHubUrl(): string {
   const url = process.env.DEAR_REVIEWER_FAKE_GITHUB;
@@ -28,6 +30,12 @@ export async function serveGitHub(state: FakeGitHubState): Promise<void> {
 export async function requestsToGitHub(): Promise<RecordedRequest[]> {
   const res = await fetch(`${fakeGitHubUrl()}/_fake/requests`);
   return (await res.json()) as RecordedRequest[];
+}
+
+/** The viewed marks the fake GitHub received, oldest first. */
+export async function viewedMarksOnGitHub(): Promise<RecordedMutation[]> {
+  const res = await fetch(`${fakeGitHubUrl()}/_fake/mutations`);
+  return (await res.json()) as RecordedMutation[];
 }
 
 export async function avatarServedFor(login: string): Promise<Buffer> {
@@ -67,6 +75,24 @@ export interface InboxEntry {
   description?: string;
   /** A file path for an image icon, or `$(id)` for a theme icon. */
   icon?: string;
+  /** The tree element, for passing to the view's commands. */
+  node?: unknown;
+}
+
+/** Opens the pull request from the Inbox entry's context menu. */
+export function openFromInbox(entry: InboxEntry): Thenable<unknown> {
+  return vscode.commands.executeCommand(
+    "dearReviewer.openPullRequest",
+    entry.node
+  );
+}
+
+/** Finds the Inbox entry with this label, in any group. */
+export function inboxEntry(groups: InboxGroup[], label: string): InboxEntry {
+  const entry = groups.flatMap((g) => g.entries).find((e) => e.label === label);
+  if (!entry)
+    throw new Error(`no "${label}" in the Inbox: ${JSON.stringify(groups)}`);
+  return entry;
 }
 
 export interface InboxGroup extends InboxEntry {
@@ -82,9 +108,10 @@ export async function inbox(): Promise<InboxGroup[]> {
     groups.push({
       ...entryOf(await provider.getTreeItem(element)),
       entries: await Promise.all(
-        children.map(async (child) =>
-          entryOf(await provider.getTreeItem(child))
-        )
+        children.map(async (child) => ({
+          ...entryOf(await provider.getTreeItem(child)),
+          node: child,
+        }))
       ),
     });
   }

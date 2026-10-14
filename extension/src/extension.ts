@@ -5,6 +5,7 @@ import {
   ChangeRequest,
   ChangeWorkspace,
   changeTitle,
+  fetchPullRequest,
 } from "./changeWorkspace";
 import {
   ChangeFilesNode,
@@ -13,13 +14,28 @@ import {
 } from "./changeFiles";
 import { Assistants } from "./assistant/assistant";
 import { GitHubAuth } from "./github/auth";
-import { GitHubClient } from "./github/client";
-import { Avatars, InboxTree } from "./inbox";
-import { LocalViewedFiles } from "./viewedFiles";
+import { GitHubClient, PullRequestSummary } from "./github/client";
+import { Avatars, InboxNode, InboxTree } from "./inbox";
+import {
+  GitHubViewedFiles,
+  LocalViewedFiles,
+  ViewedFilesBySource,
+} from "./viewedFiles";
 
 export function activate(context: vscode.ExtensionContext) {
   const changes = new ChangeWorkspace(context.globalStorageUri.fsPath);
-  const viewedFiles = new LocalViewedFiles(context.globalStorageUri.fsPath);
+  const settings = () => vscode.workspace.getConfiguration("dearReviewer");
+  const auth = new GitHubAuth(context.secrets);
+  // Only the user's own setting counts: a workspace must not be able to
+  // send the Reviewer's token somewhere else.
+  const apiUrl = () =>
+    settings().inspect<string>("githubApiUrl")?.globalValue ||
+    "https://api.github.com";
+  const github = new GitHubClient(auth, apiUrl);
+  const viewedFiles = new ViewedFilesBySource(
+    new LocalViewedFiles(context.globalStorageUri.fsPath),
+    new GitHubViewedFiles(github)
+  );
   const changeFiles = new ChangeFilesView(
     () => changes.list(),
     viewedFiles,
@@ -33,14 +49,6 @@ export function activate(context: vscode.ExtensionContext) {
       manageCheckboxStateManually: true,
     }
   );
-  const settings = () => vscode.workspace.getConfiguration("dearReviewer");
-  const auth = new GitHubAuth(context.secrets);
-  // Only the user's own setting counts: a workspace must not be able to
-  // send the Reviewer's token somewhere else.
-  const apiUrl = () =>
-    settings().inspect<string>("githubApiUrl")?.globalValue ||
-    "https://api.github.com";
-  const github = new GitHubClient(auth, apiUrl);
   // Only the user's own setting counts: a Change's worktrees, or any other
   // workspace, must not be able to choose the program Dear Reviewer runs.
   const assistants = new Assistants(
@@ -58,6 +66,38 @@ export function activate(context: vscode.ExtensionContext) {
       async (request?: ChangeRequest) => {
         request ??= await askForChange(context.globalStorageUri.fsPath);
         if (request) await changes.open(request);
+        changeFiles.refresh();
+      }
+    ),
+    vscode.commands.registerCommand(
+      "dearReviewer.openPullRequest",
+      async (target?: InboxNode | PullRequestSummary) => {
+        const pr =
+          target && "kind" in target
+            ? target.kind === "pullRequest"
+              ? target.pullRequest
+              : undefined
+            : target;
+        if (!pr) return;
+        // Only the user's own setting counts: a workspace must not be able to
+        // choose the repository Dear Reviewer runs git in.
+        const clone = localClone(
+          settings().inspect<Record<string, string>>("localClones")
+            ?.globalValue,
+          pr.repository
+        );
+        if (!clone) {
+          void askForLocalClone(pr.repository);
+          return;
+        }
+        try {
+          await changes.open(await fetchPullRequest(clone, pr));
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          void vscode.window.showErrorMessage(
+            `Couldn't open ${pr.repository} #${pr.number}: ${message}`
+          );
+        }
         changeFiles.refresh();
       }
     ),
@@ -226,6 +266,30 @@ async function pickRepository(storageDir: string): Promise<string | undefined> {
   return chosen?.[0]?.fsPath;
 }
 
+/** The configured clone of owner/name; the setting's keys ignore case, as GitHub does. */
+function localClone(
+  clones: Record<string, string> | undefined,
+  repository: string
+): string | undefined {
+  const wanted = repository.toLowerCase();
+  for (const [name, clone] of Object.entries(clones ?? {})) {
+    if (name.toLowerCase() === wanted && clone) return clone;
+  }
+}
+
+async function askForLocalClone(repository: string): Promise<void> {
+  const openSettings = "Open Settings";
+  const picked = await vscode.window.showErrorMessage(
+    `To open pull requests from ${repository}, add its local clone to the Dear Reviewer: Local Clones setting, as "${repository}": "/path/to/clone".`,
+    openSettings
+  );
+  if (picked === openSettings)
+    await vscode.commands.executeCommand(
+      "workbench.action.openSettings",
+      "dearReviewer.localClones"
+    );
+}
+
 async function pickOpenChange(
   open: Change[],
   title: string
@@ -247,5 +311,6 @@ async function pickOpenChange(
     repository: picked.change.repository,
     base: picked.change.mergeBase,
     head: picked.change.headSha,
+    pullRequest: picked.change.pullRequest,
   };
 }

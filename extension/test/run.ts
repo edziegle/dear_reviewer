@@ -163,6 +163,10 @@ async function main() {
     await runSuite("changeFiles", changeFiles);
     await runSuite("changeFiles/afterReload", changeFiles);
     await runSuite("assistant", multiRootWorkspace("assistant", "assistant"));
+    await runSuite(
+      "pullRequest",
+      multiRootWorkspace("pull-request", "pull-request")
+    );
   } finally {
     await fakeGitHub.close();
   }

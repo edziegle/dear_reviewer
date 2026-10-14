@@ -114,10 +114,14 @@ export class ChangeFilesView
       entry.paths.push(...files.map((f) => f.path));
       byChange.set(node.change.id, entry);
     }
-    for (const { change, paths } of byChange.values()) {
-      await this.viewedFiles.setViewed(change, paths, viewed);
+    try {
+      for (const { change, paths } of byChange.values()) {
+        await this.viewedFiles.setViewed(change, paths, viewed);
+      }
+    } finally {
+      // Also puts a checkbox back if its file couldn't be marked.
+      this.refresh();
     }
-    this.refresh();
   }
 
   async openDiff(node: ChangeFilesNode): Promise<void> {
@@ -220,7 +224,16 @@ export class ChangeFilesView
         message: `Couldn't list the files of ${changeTitle(change)}: ${message}`,
       };
     }
-    const viewed = await this.viewedFiles.viewed(change);
+    let viewed: ReadonlySet<string>;
+    try {
+      viewed = await this.viewedFiles.viewed(change);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return {
+        kind: "problem",
+        message: `Couldn't load the viewed state of ${changeTitle(change)}: ${message}`,
+      };
+    }
     return {
       kind: "change",
       change,

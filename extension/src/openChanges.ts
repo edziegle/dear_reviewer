@@ -4,13 +4,22 @@
 import * as fs from "fs";
 import * as path from "path";
 
+/** A GitHub pull request, by its repository (owner/name) and number. */
+export interface PullRequestRef {
+  repository: string;
+  number: number;
+}
+
 export interface Change {
   id: string;
+  /** The local repository the worktrees belong to. */
   repository: string;
   mergeBase: string;
   headSha: string;
   baseDir: string;
   headDir: string;
+  /** The pull request the Change comes from; absent for a local Change. */
+  pullRequest?: PullRequestRef;
 }
 
 export interface OpenChange extends Change {

@@ -1,10 +1,12 @@
 // A fake GitHub API on localhost for the tests. It serves pull requests from
-// fixtures through the GraphQL `search` the Inbox uses, serves avatars, and
-// records every request it receives.
+// fixtures through the GraphQL `search` the Inbox uses, serves a pull
+// request's files with their viewed state, marks files viewed and unviewed,
+// serves avatars, and records every request it receives.
 //
 // Tests control it over HTTP:
-//   PUT /_fake/state     replaces the fixtures and clears the recorded requests
-//   GET /_fake/requests  returns the recorded requests
+//   PUT /_fake/state      replaces the fixtures and clears what was recorded
+//   GET /_fake/requests   returns the recorded requests
+//   GET /_fake/mutations  returns the viewed marks received, oldest first
 
 import * as http from "http";
 import { AddressInfo } from "net";
@@ -28,6 +30,31 @@ export interface FakePullRequest {
   headRefName?: string;
   baseRefName?: string;
   updatedAt?: string;
+  /** The changed files, as GitHub lists them, with the viewer's viewed state. */
+  files?: FakePullRequestFile[];
+}
+
+export type ViewedState = "VIEWED" | "UNVIEWED" | "DISMISSED";
+
+export interface FakePullRequestFile {
+  path: string;
+  /** Defaults to UNVIEWED. */
+  viewed?: ViewedState;
+}
+
+/** A markFileAsViewed or unmarkFileAsViewed the fake received. */
+export interface RecordedMutation {
+  mutation: "markFileAsViewed" | "unmarkFileAsViewed";
+  pullRequestId: string;
+  path: string;
+}
+
+/** The node id the fake gives a pull request. */
+export function fakePullRequestId(pr: {
+  repository: string;
+  number: number;
+}): string {
+  return `PR_${pr.repository}#${pr.number}`;
 }
 
 export interface FakeGitHubState {
@@ -59,6 +86,7 @@ export async function startFakeGitHub(): Promise<{
     pullRequests: [],
   };
   let requests: RecordedRequest[] = [];
+  let mutations: RecordedMutation[] = [];
 
   const server = http.createServer(async (req, res) => {
     const body = await readBody(req);
@@ -71,10 +99,14 @@ export async function startFakeGitHub(): Promise<{
     if (path === "/_fake/state" && req.method === "PUT") {
       state = JSON.parse(body) as FakeGitHubState;
       requests = [];
+      mutations = [];
       return send(204, null);
     }
     if (path === "/_fake/requests" && req.method === "GET") {
       return send(200, requests);
+    }
+    if (path === "/_fake/mutations" && req.method === "GET") {
+      return send(200, mutations);
     }
 
     requests.push({
@@ -97,15 +129,23 @@ export async function startFakeGitHub(): Promise<{
     if (path === "/graphql" && req.method === "POST") {
       const { query, variables } = JSON.parse(body) as {
         query: string;
-        variables: Record<string, string>;
+        variables: Record<string, unknown>;
       };
-      return send(200, { data: graphql(query, variables) });
+      try {
+        return send(200, { data: graphql(query, variables) });
+      } catch (err) {
+        return send(200, { errors: [{ message: (err as Error).message }] });
+      }
     }
     send(404, { message: "Not Found" });
   });
 
-  function graphql(query: string, variables: Record<string, string>) {
+  function graphql(query: string, vars: Record<string, unknown>) {
+    const variables = vars as Record<string, string>;
     const data: Record<string, unknown> = {};
+    if (/^\s*mutation\b/.test(query)) return mutate(query, vars);
+    if (/\bpullRequest\(\s*number:\s*\$number\s*\)/.test(query))
+      data.repository = { pullRequest: pullRequestFiles(vars) };
     if (/\bviewer\s*\{/.test(query))
       data.viewer = { login: state.viewer.login };
     for (const [, alias, variable] of query.matchAll(
@@ -114,6 +154,69 @@ export async function startFakeGitHub(): Promise<{
       data[alias] = {
         nodes: search(variables[variable]).map((pr) => pullRequestNode(pr)),
       };
+    }
+    return data;
+  }
+
+  function findPullRequest(
+    repository: string,
+    number: number
+  ): FakePullRequest | undefined {
+    return state.pullRequests.find(
+      (pr) =>
+        pr.repository.toLowerCase() === repository.toLowerCase() &&
+        pr.number === number
+    );
+  }
+
+  /** A pull request's id and files, in pages of 100 after the cursor. */
+  function pullRequestFiles(vars: Record<string, unknown>) {
+    const pr = findPullRequest(`${vars.owner}/${vars.name}`, Number(vars.number));
+    if (!pr) return null;
+    const files = pr.files ?? [];
+    const start = vars.after ? Number(vars.after) : 0;
+    const page = files.slice(start, start + 100);
+    return {
+      id: fakePullRequestId(pr),
+      files: {
+        pageInfo: {
+          hasNextPage: start + 100 < files.length,
+          endCursor: String(start + page.length),
+        },
+        nodes: page.map((f) => ({
+          path: f.path,
+          viewerViewedState: f.viewed ?? "UNVIEWED",
+        })),
+      },
+    };
+  }
+
+  /** Aliased markFileAsViewed and unmarkFileAsViewed mutations, in order. */
+  function mutate(query: string, vars: Record<string, unknown>) {
+    const data: Record<string, unknown> = {};
+    const fields = [
+      ...query.matchAll(
+        /(\w+)\s*:\s*(markFileAsViewed|unmarkFileAsViewed)\(\s*input:\s*\{\s*pullRequestId:\s*\$(\w+)\s*,\s*path:\s*\$(\w+)\s*\}\s*\)/g
+      ),
+    ];
+    if (fields.length === 0)
+      throw new Error(`The fake GitHub does not know this mutation: ${query}`);
+    for (const [, alias, mutation, idVar, pathVar] of fields) {
+      const pullRequestId = String(vars[idVar]);
+      const path = String(vars[pathVar]);
+      const pr = state.pullRequests.find(
+        (p) => fakePullRequestId(p) === pullRequestId
+      );
+      const file = pr?.files?.find((f) => f.path === path);
+      if (!file)
+        throw new Error(`No file ${path} in pull request ${pullRequestId}`);
+      file.viewed = mutation === "markFileAsViewed" ? "VIEWED" : "UNVIEWED";
+      mutations.push({
+        mutation: mutation as RecordedMutation["mutation"],
+        pullRequestId,
+        path,
+      });
+      data[alias] = { clientMutationId: null };
     }
     return data;
   }

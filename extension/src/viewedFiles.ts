@@ -2,12 +2,13 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import type { Change } from "./openChanges";
+import type { GitHubClient } from "./github/client";
+import type { Change, PullRequestRef } from "./openChanges";
 
 /**
  * Viewed state for a Change's files, by path relative to the repository root.
- * Local Changes keep it in the extension's storage; pull requests can keep it
- * on GitHub behind the same interface.
+ * Local Changes keep it in the extension's storage; pull requests keep it on
+ * GitHub.
  */
 export interface ViewedFiles {
   viewed(change: Change): Promise<ReadonlySet<string>>;
@@ -67,5 +68,63 @@ export class LocalViewedFiles implements ViewedFiles {
   private write(all: Record<string, string[]>): void {
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
     fs.writeFileSync(this.file, JSON.stringify(all, null, 2));
+  }
+}
+
+/**
+ * GitHub's own viewed-file state for a pull request, so it matches github.com
+ * and follows the Reviewer to other machines.
+ */
+export class GitHubViewedFiles implements ViewedFiles {
+  constructor(private readonly github: GitHubClient) {}
+
+  async viewed(change: Change): Promise<ReadonlySet<string>> {
+    const { files } = await this.files(change);
+    return new Set(files.filter((f) => f.viewed).map((f) => f.path));
+  }
+
+  async setViewed(
+    change: Change,
+    paths: string[],
+    viewed: boolean
+  ): Promise<void> {
+    const { id } = await this.files(change);
+    await this.github.setFilesViewed(id, paths, viewed);
+  }
+
+  /** Viewed state stays on GitHub, where it outlives the Change. */
+  async forget(): Promise<void> {}
+
+  private files(change: Change) {
+    const pullRequest: PullRequestRef | undefined = change.pullRequest;
+    if (!pullRequest) throw new Error("Not a pull request's Change");
+    return this.github.pullRequestFiles(
+      pullRequest.repository,
+      pullRequest.number
+    );
+  }
+}
+
+/** Keeps each Change's viewed state where its source does: GitHub for pull requests. */
+export class ViewedFilesBySource implements ViewedFiles {
+  constructor(
+    private readonly local: ViewedFiles,
+    private readonly github: ViewedFiles
+  ) {}
+
+  viewed(change: Change): Promise<ReadonlySet<string>> {
+    return this.of(change).viewed(change);
+  }
+
+  setViewed(change: Change, paths: string[], viewed: boolean): Promise<void> {
+    return this.of(change).setViewed(change, paths, viewed);
+  }
+
+  forget(change: Change): Promise<void> {
+    return this.of(change).forget(change);
+  }
+
+  private of(change: Change): ViewedFiles {
+    return change.pullRequest ? this.github : this.local;
   }
 }

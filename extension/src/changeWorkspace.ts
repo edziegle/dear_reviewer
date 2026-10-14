@@ -8,7 +8,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 import { git } from "./git";
-import { Change, OpenChanges } from "./openChanges";
+import { Change, OpenChanges, PullRequestRef } from "./openChanges";
 import {
   appendFolders,
   Folder,
@@ -17,12 +17,14 @@ import {
   ReviewWindow,
 } from "./reviewWindow";
 
-export type { Change } from "./openChanges";
+export type { Change, PullRequestRef } from "./openChanges";
 
 export interface ChangeRequest {
   repository: string;
   base: string;
   head: string;
+  /** Set when the Change comes from this pull request. */
+  pullRequest?: PullRequestRef;
 }
 
 export class ChangeWorkspace {
@@ -123,9 +125,16 @@ export class ChangeWorkspace {
       "rev-parse",
       `${request.head}^{commit}`
     );
+    const pullRequest = request.pullRequest && {
+      repository: request.pullRequest.repository,
+      number: request.pullRequest.number,
+    };
     const id = crypto
       .createHash("sha256")
       .update(`${repository}\0${mergeBase}\0${headSha}`)
+      .update(
+        pullRequest ? `\0${pullRequest.repository}#${pullRequest.number}` : ""
+      )
       .digest("hex")
       .slice(0, 12);
     const dir = path.join(this.storageDir, "changes", id);
@@ -136,8 +145,59 @@ export class ChangeWorkspace {
       headSha,
       baseDir: path.join(dir, "base"),
       headDir: path.join(dir, "head"),
+      ...(pullRequest && { pullRequest }),
     };
   }
+}
+
+/**
+ * Fetches a pull request's head and its base branch into the local clone of
+ * its repository, and gives the Change to open. It fetches from the clone's
+ * remote for the pull request's repository (see ADR 0005), so a fork in
+ * `origin` doesn't stop it.
+ */
+export async function fetchPullRequest(
+  clone: string,
+  pullRequest: PullRequestRef & { baseRefName: string }
+): Promise<ChangeRequest> {
+  const remote = await remoteFor(clone, pullRequest.repository);
+  const baseRef = `refs/remotes/${remote}/${pullRequest.baseRefName}`;
+  // The pull request's head comes first, so FETCH_HEAD names it.
+  await git(
+    clone,
+    "fetch",
+    "--no-tags",
+    "--",
+    remote,
+    `refs/pull/${pullRequest.number}/head`,
+    `+refs/heads/${pullRequest.baseRefName}:${baseRef}`
+  );
+  const head = await git(clone, "rev-parse", "--verify", "FETCH_HEAD^{commit}");
+  return {
+    repository: clone,
+    base: baseRef,
+    head,
+    pullRequest: {
+      repository: pullRequest.repository,
+      number: pullRequest.number,
+    },
+  };
+}
+
+/** The clone's remote whose URL names the repository, or else `origin`. */
+async function remoteFor(clone: string, repository: string): Promise<string> {
+  const remotes = (await git(clone, "remote")).split("\n").filter(Boolean);
+  const wanted = repository.toLowerCase();
+  for (const remote of remotes) {
+    const url = (await git(clone, "remote", "get-url", remote)).toLowerCase();
+    const named = url.replace(/\/+$/, "").replace(/\.git$/, "");
+    if (named.endsWith(`/${wanted}`) || named.endsWith(`:${wanted}`))
+      return remote;
+  }
+  if (remotes.includes("origin")) return "origin";
+  throw new Error(
+    `No remote of ${clone} points at ${repository}, and it has no origin`
+  );
 }
 
 async function createWorktrees(change: Change): Promise<void> {

@@ -16,6 +16,7 @@ import {
 import { Assistants } from "./assistant/assistant";
 import { Briefs } from "./briefs";
 import { Conversations } from "./assistant/conversations";
+import { Findings, FindingsNode } from "./findings";
 import { selectionInChange } from "./assistant/selection";
 import { GitHubAuth } from "./github/auth";
 import { GitHubClient, PullRequestSummary } from "./github/client";
@@ -134,12 +135,20 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
   const timelines = new Timelines(github, avatars, (uri) => openLink(uri));
+  const findings = new Findings(
+    context.extensionUri,
+    (change) => assistants.findIssues(change),
+    (change, note) => assistants.addNote(change, note),
+    (change, place) => review.onDiff(change, place),
+    (change, place, body) => review.draft(change, place, body)
+  );
 
-  /** Lets go of a Change that was closed: its panels, Comments and viewed files. */
+  /** Lets go of a Change that was closed: its panels, Comments, Findings and viewed files. */
   async function letGo(change: Change): Promise<void> {
     assistants.close(change);
     timelines.close(change);
     review.forget(change);
+    findings.forget(change);
     await viewedFiles.forget(change);
   }
 
@@ -437,6 +446,46 @@ export function activate(context: vscode.ExtensionContext) {
       "dearReviewer.copyBrief",
       (uri?: vscode.Uri) => briefs.copy(uri)
     ),
+    findings,
+    vscode.window.registerTreeDataProvider("dearReviewer.findings", findings),
+    vscode.commands.registerCommand(
+      "dearReviewer.findIssues",
+      async (request?: ChangeRequest) => {
+        request ??= await pickOpenChange(changes.list(), "Find Issues");
+        const change = request && (await changes.find(request));
+        if (!change) {
+          if (request)
+            void vscode.window.showErrorMessage(
+              "The Change isn't open in this window."
+            );
+          return;
+        }
+        await findings.find(change);
+      }
+    ),
+    vscode.commands.registerCommand(
+      "dearReviewer.dismissFinding",
+      (target?: string | FindingsNode) => {
+        const finding = findings.get(target);
+        if (finding) findings.dismiss(finding);
+        else showNoFinding();
+      }
+    ),
+    vscode.commands.registerCommand(
+      "dearReviewer.convertFinding",
+      async (target?: string | FindingsNode) => {
+        const finding = findings.get(target);
+        if (finding) await findings.convert(finding);
+        else showNoFinding();
+      }
+    ),
+    vscode.commands.registerCommand(
+      "dearReviewer.revealFinding",
+      async (target?: string | FindingsNode) => {
+        const finding = findings.get(target);
+        if (finding) await findings.reveal(finding);
+      }
+    ),
     vscode.commands.registerCommand(
       "dearReviewer.showChangesSinceLastReview",
       async (request?: ChangeRequest) => {
@@ -663,6 +712,10 @@ export function activate(context: vscode.ExtensionContext) {
   return {
     inbox,
     changeFiles,
+    findings: {
+      view: findings,
+      decorated: () => findings.decorated(),
+    },
     review: {
       controller: review.controller,
       threads: () => review.threads(),
@@ -780,6 +833,12 @@ async function askToTrustReviewWindow(storageDir: string): Promise<void> {
     "Copied the folder's path. In Workspace Trust, choose Add Folder and paste it."
   );
   await vscode.commands.executeCommand("workbench.trust.manage");
+}
+
+function showNoFinding(): void {
+  void vscode.window.showInformationMessage(
+    "Put the cursor on a Finding's lines, or pick one in the Findings view."
+  );
 }
 
 async function pickVerdict(title: string): Promise<Verdict | undefined> {

@@ -207,6 +207,29 @@
         "command": "dearReviewer.showChangesSinceLastReview",
         "title": "Show Changes Since My Last Review",
         "category": "Dear Reviewer"
+      },
+      {
+        "command": "dearReviewer.findIssues",
+        "title": "Find Issues",
+        "category": "Dear Reviewer",
+        "icon": "$(search)"
+      },
+      {
+        "command": "dearReviewer.convertFinding",
+        "title": "Convert Finding to Comment",
+        "category": "Dear Reviewer",
+        "icon": "$(comment)"
+      },
+      {
+        "command": "dearReviewer.dismissFinding",
+        "title": "Dismiss Finding",
+        "category": "Dear Reviewer",
+        "icon": "$(close)"
+      },
+      {
+        "command": "dearReviewer.revealFinding",
+        "title": "Show Finding",
+        "category": "Dear Reviewer"
       }
     ],
     "configuration": {
@@ -262,6 +285,10 @@
         {
           "id": "dearReviewer.changeFiles",
           "name": "Change Files"
+        },
+        {
+          "id": "dearReviewer.findings",
+          "name": "Findings"
         }
       ]
     },
@@ -300,6 +327,11 @@
         {
           "command": "dearReviewer.showViewedFiles",
           "when": "view == dearReviewer.changeFiles && dearReviewer.hideViewedFiles",
+          "group": "navigation"
+        },
+        {
+          "command": "dearReviewer.findIssues",
+          "when": "view == dearReviewer.findings",
           "group": "navigation"
         }
       ],
@@ -371,6 +403,18 @@
         {
           "command": "dearReviewer.copyBrief",
           "when": "resourcePath =~ /edziegle\\.dear-reviewer\\/briefs\\//"
+        },
+        {
+          "command": "dearReviewer.convertFinding",
+          "when": "dearReviewer.hasFindings"
+        },
+        {
+          "command": "dearReviewer.dismissFinding",
+          "when": "dearReviewer.hasFindings"
+        },
+        {
+          "command": "dearReviewer.revealFinding",
+          "when": "false"
         }
       ],
       "editor/title": [
@@ -417,6 +461,26 @@
           "command": "dearReviewer.unmarkViewed",
           "when": "view == dearReviewer.changeFiles && viewItem =~ /^(file\\.viewed|directory|change)$/",
           "group": "viewed@2"
+        },
+        {
+          "command": "dearReviewer.convertFinding",
+          "when": "view == dearReviewer.findings && viewItem == finding",
+          "group": "inline@1"
+        },
+        {
+          "command": "dearReviewer.dismissFinding",
+          "when": "view == dearReviewer.findings && viewItem == finding",
+          "group": "inline@2"
+        },
+        {
+          "command": "dearReviewer.convertFinding",
+          "when": "view == dearReviewer.findings && viewItem == finding",
+          "group": "finding@1"
+        },
+        {
+          "command": "dearReviewer.dismissFinding",
+          "when": "view == dearReviewer.findings && viewItem == finding",
+          "group": "finding@2"
         }
       ],
       "comments/commentThread/context": [
@@ -459,12 +523,12 @@
         {
           "command": "dearReviewer.cancelEditComment",
           "group": "inline@1",
-          "when": "commentController == dearReviewer.review && comment == pending"
+          "when": "commentController == dearReviewer.review && comment =~ /^(pending|draft)$/"
         },
         {
           "command": "dearReviewer.saveComment",
           "group": "inline@2",
-          "when": "commentController == dearReviewer.review && comment == pending"
+          "when": "commentController == dearReviewer.review && comment =~ /^(pending|draft)$/"
         }
       ]
     },
@@ -483,6 +547,10 @@
         "view": "dearReviewer.inbox",
         "when": "dearReviewer.inboxWelcome == noRepositories && !isWorkspaceTrusted",
         "contents": "This window is in Restricted Mode, so Dear Reviewer doesn't read the repositories of its folders.\n[Manage Workspace Trust](command:workbench.trust.manage)"
+      },
+      {
+        "view": "dearReviewer.findings",
+        "contents": "The Assistant raises Findings only when you ask: spots in a Change it thinks deserve your attention. Each one is marked in the gutter of the diff, where you dismiss it or turn it into a Comment. Nothing is published until you submit your Review.\n[Find Issues](command:dearReviewer.findIssues)"
       },
       {
         "view": "dearReviewer.changeFiles",

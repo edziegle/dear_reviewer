@@ -6,7 +6,8 @@
 // When the Change has new commits since the Reviewer's last Review, the
 // Assistant explains what changed, once for each such pair of commits (ADR
 // 0015). At the end of a local Change's Review, it turns the Reviewer's
-// Comments into a Brief in the same conversation (ADR 0016).
+// Comments into a Brief in the same conversation (ADR 0016), and when the
+// Reviewer asks, it raises Findings there too (ADR 0017).
 
 import * as fs from "fs";
 import * as path from "path";
@@ -33,6 +34,7 @@ import {
   assistantRole,
   briefPrompt,
   chatPrompt,
+  findingsPrompt,
   newHeadNote,
   Selection,
   sinceLastReviewPrompt,
@@ -115,10 +117,7 @@ export class Assistants implements vscode.Disposable {
     change: Change,
     selection: Selection & { text: string }
   ): Promise<void> {
-    // Opening starts the Assistant, or moves it to this head, before it awaits anything.
-    if (this.byConversation.get(change.conversation)?.changeId !== change.id)
-      void this.open(change);
-    this.byConversation.get(change.conversation)?.addSelection(selection);
+    this.started(change).addSelection(selection);
   }
 
   /**
@@ -127,11 +126,28 @@ export class Assistants implements vscode.Disposable {
    * only a note about the Brief, which opens in the editor instead.
    */
   async writeBrief(change: Change, threads: LocalThread[]): Promise<string> {
-    if (this.byConversation.get(change.conversation)?.changeId !== change.id)
-      void this.open(change);
-    const assistant = this.byConversation.get(change.conversation);
-    if (!assistant) throw new Error("The Assistant didn't start.");
-    return assistant.writeBrief(threads);
+    const assistant = this.started(change);
+    const brief = await assistant.aside((current, note) =>
+      briefPrompt(current, threads, note)
+    );
+    const count = threads.reduce((n, t) => n + t.comments.length, 0);
+    assistant.addNote(
+      `Wrote a Brief from your ${count} Comment${count === 1 ? "" : "s"}. It is open in the editor.`
+    );
+    return brief;
+  }
+
+  /**
+   * Asks the Change's Assistant for Findings, starting it if it hasn't
+   * started, and gives its reply, which the panel doesn't show.
+   */
+  findIssues(change: Change): Promise<string> {
+    return this.started(change).aside(findingsPrompt);
+  }
+
+  /** Adds a note to the Change's Assistant panel, if it has one. */
+  addNote(change: Change, text: string): void {
+    this.byConversation.get(change.conversation)?.addNote(text);
   }
 
   /** Stops the Change's Assistant, unless it has moved to a newer head. The conversation stays saved. */
@@ -140,6 +156,16 @@ export class Assistants implements vscode.Disposable {
     if (assistant?.changeId !== change.id) return;
     assistant.dispose();
     this.byConversation.delete(change.conversation);
+  }
+
+  /** The Change's Assistant, started or moved to this head if it wasn't. */
+  private started(change: Change): ChangeAssistant {
+    // Opening starts the Assistant, or moves it to this head, before it awaits anything.
+    if (this.byConversation.get(change.conversation)?.changeId !== change.id)
+      void this.open(change);
+    const assistant = this.byConversation.get(change.conversation);
+    if (!assistant) throw new Error("The Assistant didn't start.");
+    return assistant;
   }
 
   /** Runs `claude auth status` and shows the login in the status bar. */
@@ -293,14 +319,18 @@ class ChangeAssistant {
   }
 
   /**
-   * Writes a Brief from the Comments, after whatever the Assistant is busy
-   * with, and gives it. The panel gets a note rather than the Brief.
+   * Has the Assistant answer a prompt the panel doesn't show, such as for a
+   * Brief or Findings, after whatever it is busy with, and gives the reply.
+   * `promptOf` gets the Change at its current head, and any news for the
+   * Assistant to go first.
    */
-  async writeBrief(threads: LocalThread[]): Promise<string> {
+  async aside(
+    promptOf: (change: Change, note?: string) => Promise<string>
+  ): Promise<string> {
     await this.ready;
-    const brief = this.queue.then(async () => {
+    const reply = this.queue.then(async () => {
       if (this.disposed) throw new Error("The Assistant was closed.");
-      const prompt = await briefPrompt(this.change, threads, this.note);
+      const prompt = await promptOf(this.change, this.note);
       this.note = undefined;
       let text: string | undefined;
       try {
@@ -310,21 +340,20 @@ class ChangeAssistant {
         throw err;
       }
       if (text === undefined) throw new Error("The Assistant was closed.");
-      const count = threads.reduce((n, t) => n + t.comments.length, 0);
-      this.update({
-        messages: [
-          ...this.state.messages,
-          {
-            from: "note",
-            text: `Wrote a Brief from your ${count} Comment${count === 1 ? "" : "s"}. It is open in the editor.`,
-          },
-        ],
-      });
-      this.save();
       return text;
     });
-    this.queue = brief.catch(() => undefined);
-    return brief;
+    this.queue = reply.catch(() => undefined);
+    return reply;
+  }
+
+  /** Adds a note to the panel, kept with the conversation, once no turn is running. */
+  addNote(text: string): void {
+    void this.enqueue(async () => {
+      this.update({
+        messages: [...this.state.messages, { from: "note", text }],
+      });
+      this.save();
+    });
   }
 
   fail(err: unknown): void {

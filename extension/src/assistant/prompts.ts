@@ -97,15 +97,11 @@ export function newHeadNote(change: Change, previousHead: string): string {
 
 export async function summaryPrompt(change: Change): Promise<string> {
   const files = await changedFiles(change);
-  let diff = await git(
+  const { diff, truncated } = await cappedDiff(
     change.repository,
-    "diff",
-    "--no-renames",
     change.mergeBase,
     change.headSha
   );
-  const truncated = diff.length > maxDiffChars;
-  if (truncated) diff = diff.slice(0, maxDiffChars);
   return [
     `The Reviewer has opened the Change ${changeTitle(change)}: from ${change.mergeBase} to ${change.headSha}.`,
     "",
@@ -146,15 +142,11 @@ export async function sinceLastReviewPrompt(
     "--format=- %h %s",
     `${from}..${change.headSha}`
   );
-  let diff = await git(
+  const { diff, truncated } = await cappedDiff(
     change.repository,
-    "diff",
-    "--no-renames",
     from,
     change.headSha
   );
-  const truncated = diff.length > maxDiffChars;
-  if (truncated) diff = diff.slice(0, maxDiffChars);
   return [
     ...(note ? [note, ""] : []),
     `The Reviewer's last Review of this Change covered commit ${from}. The Change is now at ${change.headSha}.`,
@@ -170,6 +162,49 @@ export async function sinceLastReviewPrompt(
     truncated
       ? `The diff from ${from.slice(0, 7)}, cut off after ${maxDiffChars} characters; read the head worktree's files for the rest:`
       : `The diff from ${from.slice(0, 7)}:`,
+    "```diff",
+    diff,
+    "```",
+  ].join("\n");
+}
+
+/** The most Findings Dear Reviewer asks for. */
+export const maxFindings = 20;
+
+/**
+ * Asks the Assistant for Findings in the Change, as a JSON object that
+ * `parseFindings` reads, after `note` if the conversation has news for the
+ * Assistant. Each Finding is on lines of one side's diff, where the
+ * Reviewer can turn it into a Comment.
+ */
+export async function findingsPrompt(
+  change: Change,
+  note?: string
+): Promise<string> {
+  const files = await changedFiles(change);
+  const { diff, truncated } = await cappedDiff(
+    change.repository,
+    change.mergeBase,
+    change.headSha
+  );
+  return [
+    ...(note ? [note, ""] : []),
+    `The Reviewer asks you to look over the Change ${changeTitle(change)}, from ${change.mergeBase} to ${change.headSha}, and raise Findings: spots in it that deserve their attention, such as bugs, missed edge cases, security problems or code that misleads.`,
+    "",
+    `- Raise only what matters, at most ${maxFindings}, most important first. No Findings is a fine answer.`,
+    "- Each Finding sits on lines the diff shows, counting its three lines of context: on the head side for new or changed code, or on the base side for removed code. The Reviewer may turn it into a Comment there, and GitHub takes Comments on no other lines.",
+    "- Give the file's path relative to the repository root, and its lines counted from 1 in that side's file.",
+    "- Say in a sentence or two what deserves attention and why. Address the Reviewer, not the author, and propose no code.",
+    "- Read the worktrees' files if you need more context.",
+    "- Reply with only a JSON object of this shape, with no Markdown fence or prose around it:",
+    '{"findings": [{"path": "src/app.py", "side": "head", "startLine": 12, "endLine": 14, "message": "What deserves attention, and why."}]}',
+    "",
+    `Changed files (${files.length}):`,
+    ...files.map((f) => `- ${f.status}: ${f.path}`),
+    "",
+    truncated
+      ? `The diff, cut off after ${maxDiffChars} characters; read the files for the rest:`
+      : "The diff:",
     "```diff",
     diff,
     "```",
@@ -242,4 +277,15 @@ async function linesAt(
   } catch {
     return undefined;
   }
+}
+
+/** The diff between two commits, cut off after `maxDiffChars`. */
+async function cappedDiff(
+  repository: string,
+  from: string,
+  to: string
+): Promise<{ diff: string; truncated: boolean }> {
+  const diff = await git(repository, "diff", "--no-renames", from, to);
+  const truncated = diff.length > maxDiffChars;
+  return { diff: truncated ? diff.slice(0, maxDiffChars) : diff, truncated };
 }

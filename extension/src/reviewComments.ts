@@ -5,7 +5,9 @@
 // and come back from it after a reload. Everyone's published threads show
 // too, and the Reviewer replies to them and resolves them (see ADR 0014). On
 // a local Change, the Comments are kept in the extension's storage until a
-// Brief ends the Review (see ADR 0016).
+// Brief ends the Review (see ADR 0016). A Finding the Reviewer converts
+// becomes a draft Comment at its place, saved only when they save it (see
+// ADR 0017).
 
 import * as fs from "fs";
 import * as path from "path";
@@ -47,6 +49,23 @@ class PendingComment implements vscode.Comment {
   ) {
     this.savedBody = textOf(body);
   }
+}
+
+/**
+ * A Comment the Reviewer hasn't saved yet, pre-filled from a Finding. It
+ * reaches the Review only when they save it; cancelling drops it.
+ */
+class DraftComment implements vscode.Comment {
+  mode = vscode.CommentMode.Editing;
+  readonly contextValue = "draft";
+  readonly label = "Draft";
+
+  constructor(
+    readonly place: ThreadPlace,
+    public body: string | vscode.MarkdownString,
+    public author: vscode.CommentAuthorInformation,
+    readonly thread: vscode.CommentThread
+  ) {}
 }
 
 /** A published Comment, the Reviewer's or anyone's; GitHub's Markdown, rendered without HTML or commands. */
@@ -181,11 +200,7 @@ export class ReviewComments implements vscode.Disposable {
     try {
       saved = await this.pending.addThread(place.change, where, text);
     } catch (err) {
-      void vscode.window.showErrorMessage(
-        place.change.pullRequest
-          ? `Couldn't save the Comment to your pending review: ${messageOf(err)}`
-          : `Couldn't save the Comment: ${messageOf(err)}`
-      );
+      showSaveFailed(place.change, err);
       return;
     }
     thread.comments = [
@@ -251,6 +266,46 @@ export class ReviewComments implements vscode.Disposable {
     this.style(thread, { ...state, resolved });
   }
 
+  /**
+   * Opens a draft Comment with this text at the place, on the side's file,
+   * for the Reviewer to edit and save into the Review, or cancel.
+   */
+  draft(
+    change: Change,
+    place: ThreadPlace,
+    body: string
+  ): vscode.CommentThread {
+    const dir = place.side === "LEFT" ? change.baseDir : change.headDir;
+    const first = place.startLine ?? place.line;
+    const thread = this.controller.createCommentThread(
+      vscode.Uri.file(path.join(dir, ...place.path.split("/"))),
+      new vscode.Range(first - 1, 0, place.line - 1, 0),
+      []
+    );
+    thread.comments = [new DraftComment(place, body, this.author(), thread)];
+    thread.canReply = false;
+    thread.contextValue = "draft";
+    thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
+    let threads = this.shown.get(change.id);
+    if (!threads) this.shown.set(change.id, (threads = new Set()));
+    threads.add(thread);
+    return thread;
+  }
+
+  /** Whether the lines are on their side's diff, the only lines that take Comments. */
+  async onDiff(change: Change, place: ThreadPlace): Promise<boolean> {
+    let hunks: Hunks;
+    try {
+      hunks = await this.hunksOf(change, place.path);
+    } catch {
+      return false;
+    }
+    const first = place.startLine ?? place.line;
+    return hunks[place.side].some(
+      ([start, end]) => start <= first && place.line <= end
+    );
+  }
+
   editComment(comment: vscode.Comment): void {
     if (!(comment instanceof PendingComment)) return;
     comment.mode = vscode.CommentMode.Editing;
@@ -258,6 +313,7 @@ export class ReviewComments implements vscode.Disposable {
   }
 
   async saveComment(comment: vscode.Comment): Promise<void> {
+    if (comment instanceof DraftComment) return this.saveDraft(comment);
     if (!(comment instanceof PendingComment)) return;
     const place = this.placeOf(comment.thread.uri);
     if (!place) return;
@@ -276,6 +332,7 @@ export class ReviewComments implements vscode.Disposable {
   }
 
   cancelEdit(comment: vscode.Comment): void {
+    if (comment instanceof DraftComment) return this.drop(comment.thread);
     if (!(comment instanceof PendingComment)) return;
     comment.body = comment.savedBody;
     comment.mode = vscode.CommentMode.Preview;
@@ -296,10 +353,36 @@ export class ReviewComments implements vscode.Disposable {
     }
     const thread = comment.thread;
     thread.comments = thread.comments.filter((c) => c !== comment);
-    if (thread.comments.length === 0) {
-      for (const threads of this.shown.values()) threads.delete(thread);
-      thread.dispose();
+    if (thread.comments.length === 0) this.drop(thread);
+  }
+
+  /** Saves a draft Comment into the Review under way, as the first Comment of its thread. */
+  private async saveDraft(comment: DraftComment): Promise<void> {
+    const { thread } = comment;
+    const place = this.placeOf(thread.uri);
+    if (!place) return;
+    const text = textOf(comment.body);
+    let saved: { threadId: string; commentId: string };
+    try {
+      saved = await this.pending.addThread(place.change, comment.place, text);
+    } catch (err) {
+      showSaveFailed(place.change, err);
+      return;
     }
+    thread.comments = [
+      new PendingComment(saved.commentId, text, this.author(), thread),
+    ];
+    this.track(place.change.id, thread, {
+      id: saved.threadId,
+      pending: true,
+      resolved: false,
+      outdated: false,
+    });
+  }
+
+  private drop(thread: vscode.CommentThread): void {
+    for (const threads of this.shown.values()) threads.delete(thread);
+    thread.dispose();
   }
 
   /**
@@ -567,6 +650,14 @@ function describe(change: Change): string {
   return change.pullRequest
     ? `${change.pullRequest.repository} #${change.pullRequest.number}`
     : changeTitle(change);
+}
+
+function showSaveFailed(change: Change, err: unknown): void {
+  void vscode.window.showErrorMessage(
+    change.pullRequest
+      ? `Couldn't save the Comment to your pending review: ${messageOf(err)}`
+      : `Couldn't save the Comment: ${messageOf(err)}`
+  );
 }
 
 function refresh(thread: vscode.CommentThread): void {

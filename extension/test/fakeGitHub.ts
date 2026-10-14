@@ -1,12 +1,14 @@
 // A fake GitHub API on localhost for the tests. It serves pull requests from
 // fixtures through the GraphQL `search` the Inbox uses, serves a pull
 // request's files with their viewed state, marks files viewed and unviewed,
-// serves avatars, and records every request it receives.
+// keeps reviews (a pending review, its threads and Comments, and submitting
+// it), serves avatars, and records every request it receives.
 //
 // Tests control it over HTTP:
 //   PUT /_fake/state      replaces the fixtures and clears what was recorded
 //   GET /_fake/requests   returns the recorded requests
 //   GET /_fake/mutations  returns the viewed marks received, oldest first
+//   GET /_fake/reviews    returns every pull request's reviews as they are now
 
 import * as http from "http";
 import { AddressInfo } from "net";
@@ -32,6 +34,45 @@ export interface FakePullRequest {
   updatedAt?: string;
   /** The changed files, as GitHub lists them, with the viewer's viewed state. */
   files?: FakePullRequestFile[];
+  /** Reviews, pending or submitted. Only its author sees a pending review. */
+  reviews?: FakeReview[];
+}
+
+export type ReviewState =
+  "PENDING" | "APPROVED" | "CHANGES_REQUESTED" | "COMMENTED";
+
+export type DiffSide = "LEFT" | "RIGHT";
+
+export interface FakeReview {
+  id: string;
+  /** The author's login. */
+  author: string;
+  state: ReviewState;
+  /** The summary given when it was submitted. */
+  body?: string;
+  threads: FakeReviewThread[];
+}
+
+/** A thread started in a review, on a line or range of one side of the diff. */
+export interface FakeReviewThread {
+  id: string;
+  path: string;
+  side: DiffSide;
+  /** The last line of the range, counted from 1. */
+  line: number;
+  /** The first line of a multi-line range. */
+  startLine?: number;
+  comments: FakeReviewComment[];
+}
+
+export interface FakeReviewComment {
+  id: string;
+  body: string;
+}
+
+/** A pull request's review, as GET /_fake/reviews reports it. */
+export interface RecordedReview extends FakeReview {
+  pullRequestId: string;
 }
 
 export type ViewedState = "VIEWED" | "UNVIEWED" | "DISMISSED";
@@ -87,6 +128,8 @@ export async function startFakeGitHub(): Promise<{
   };
   let requests: RecordedRequest[] = [];
   let mutations: RecordedMutation[] = [];
+  let lastId = 0;
+  const newId = (prefix: string) => `${prefix}_${++lastId}`;
 
   const server = http.createServer(async (req, res) => {
     const body = await readBody(req);
@@ -107,6 +150,17 @@ export async function startFakeGitHub(): Promise<{
     }
     if (path === "/_fake/mutations" && req.method === "GET") {
       return send(200, mutations);
+    }
+    if (path === "/_fake/reviews" && req.method === "GET") {
+      return send(
+        200,
+        state.pullRequests.flatMap((pr) =>
+          (pr.reviews ?? []).map((review) => ({
+            pullRequestId: fakePullRequestId(pr),
+            ...review,
+          }))
+        )
+      );
     }
 
     requests.push({
@@ -145,9 +199,12 @@ export async function startFakeGitHub(): Promise<{
     const data: Record<string, unknown> = {};
     if (/^\s*mutation\b/.test(query)) return mutate(query, vars);
     if (/\bpullRequest\(\s*number:\s*\$number\s*\)/.test(query))
-      data.repository = { pullRequest: pullRequestFiles(vars) };
+      data.repository = { pullRequest: pullRequest(query, vars) };
     if (/\bviewer\s*\{/.test(query))
-      data.viewer = { login: state.viewer.login };
+      data.viewer = {
+        login: state.viewer.login,
+        avatarUrl: `${state.avatarOrigin ?? url}/avatars/${encodeURIComponent(state.viewer.login)}?v=4`,
+      };
     for (const [, alias, variable] of query.matchAll(
       /(\w+)\s*:\s*search\(\s*query:\s*\$(\w+)/g
     )) {
@@ -169,15 +226,57 @@ export async function startFakeGitHub(): Promise<{
     );
   }
 
-  /** A pull request's id and files, in pages of 100 after the cursor. */
-  function pullRequestFiles(vars: Record<string, unknown>) {
-    const pr = findPullRequest(`${vars.owner}/${vars.name}`, Number(vars.number));
+  /**
+   * A pull request's id, its files in pages of 100 after the cursor, the
+   * viewer's pending review, and the review threads the viewer can see.
+   */
+  function pullRequest(query: string, vars: Record<string, unknown>) {
+    const pr = findPullRequest(
+      `${vars.owner}/${vars.name}`,
+      Number(vars.number)
+    );
     if (!pr) return null;
     const files = pr.files ?? [];
     const start = vars.after ? Number(vars.after) : 0;
     const page = files.slice(start, start + 100);
+    const me = state.viewer.login;
+    const visible = (pr.reviews ?? []).filter(
+      (r) => r.state !== "PENDING" || r.author === me
+    );
+    const wanted = /\breviews\(\s*states:\s*\[PENDING\]/.test(query)
+      ? visible.filter((r) => r.state === "PENDING")
+      : visible;
     return {
       id: fakePullRequestId(pr),
+      reviews: {
+        nodes: wanted.map((r) => ({
+          id: r.id,
+          state: r.state,
+          viewerDidAuthor: r.author === me,
+        })),
+      },
+      reviewThreads: {
+        pageInfo: { hasNextPage: false, endCursor: null },
+        nodes: visible.flatMap((review) =>
+          review.threads.map((thread) => ({
+            id: thread.id,
+            path: thread.path,
+            diffSide: thread.side,
+            line: thread.line,
+            startLine: thread.startLine ?? null,
+            startDiffSide: thread.startLine ? thread.side : null,
+            originalLine: thread.line,
+            originalStartLine: thread.startLine ?? null,
+            comments: {
+              nodes: thread.comments.map((comment) => ({
+                id: comment.id,
+                body: comment.body,
+                pullRequestReview: { id: review.id },
+              })),
+            },
+          }))
+        ),
+      },
       files: {
         pageInfo: {
           hasNextPage: start + 100 < files.length,
@@ -191,8 +290,22 @@ export async function startFakeGitHub(): Promise<{
     };
   }
 
-  /** Aliased markFileAsViewed and unmarkFileAsViewed mutations, in order. */
+  /**
+   * A review mutation taking `input: $input`, or aliased markFileAsViewed and
+   * unmarkFileAsViewed mutations, in order.
+   */
   function mutate(query: string, vars: Record<string, unknown>) {
+    const review =
+      /\b(addPullRequestReview|addPullRequestReviewThread|updatePullRequestReviewComment|deletePullRequestReviewComment|submitPullRequestReview)\(\s*input:\s*\$input\s*\)/.exec(
+        query
+      );
+    if (review)
+      return {
+        [review[1]]: reviewMutation(
+          review[1],
+          vars.input as Record<string, unknown>
+        ),
+      };
     const data: Record<string, unknown> = {};
     const fields = [
       ...query.matchAll(
@@ -219,6 +332,139 @@ export async function startFakeGitHub(): Promise<{
       data[alias] = { clientMutationId: null };
     }
     return data;
+  }
+
+  /** The viewer's pending review with this id, and its pull request. */
+  function myPendingReview(id: unknown) {
+    for (const pr of state.pullRequests) {
+      const review = pr.reviews?.find((r) => r.id === id);
+      if (review) {
+        if (review.author !== state.viewer.login || review.state !== "PENDING")
+          throw new Error(`Review ${id} is not your pending review`);
+        return { pr, review };
+      }
+    }
+    throw new Error(
+      `Could not resolve to a node with the global id of '${id}'`
+    );
+  }
+
+  /** The viewer's pending Comment with this id, and its thread and review. */
+  function myPendingComment(id: unknown) {
+    for (const pr of state.pullRequests) {
+      for (const review of pr.reviews ?? []) {
+        for (const thread of review.threads) {
+          const comment = thread.comments.find((c) => c.id === id);
+          if (!comment) continue;
+          myPendingReview(review.id);
+          return { review, thread, comment };
+        }
+      }
+    }
+    throw new Error(
+      `Could not resolve to a node with the global id of '${id}'`
+    );
+  }
+
+  /** The pending review mutations, checked as strictly as GitHub checks them. */
+  function reviewMutation(mutation: string, input: Record<string, unknown>) {
+    switch (mutation) {
+      case "addPullRequestReview": {
+        const pr = state.pullRequests.find(
+          (p) => fakePullRequestId(p) === input.pullRequestId
+        );
+        if (!pr)
+          throw new Error(`No pull request ${String(input.pullRequestId)}`);
+        if (input.event !== undefined || input.threads !== undefined)
+          throw new Error("The fake only starts empty pending reviews");
+        const me = state.viewer.login;
+        if (
+          (pr.reviews ?? []).some(
+            (r) => r.author === me && r.state === "PENDING"
+          )
+        )
+          throw new Error(
+            "User can only have one pending review per pull request"
+          );
+        const review: FakeReview = {
+          id: newId("PRR"),
+          author: me,
+          state: "PENDING",
+          threads: [],
+        };
+        (pr.reviews ??= []).push(review);
+        return { pullRequestReview: { id: review.id } };
+      }
+      case "addPullRequestReviewThread": {
+        const { pr, review } = myPendingReview(input.pullRequestReviewId);
+        const path = String(input.path);
+        if (!(pr.files ?? []).some((f) => f.path === path))
+          throw new Error(`Path ${path} is not part of the pull request`);
+        const side = input.side;
+        if (side !== "LEFT" && side !== "RIGHT")
+          throw new Error(`Unknown side ${String(side)}`);
+        const line = input.line;
+        if (!Number.isInteger(line) || (line as number) < 1)
+          throw new Error(`Bad line ${String(line)}`);
+        const startLine = input.startLine;
+        if (startLine !== undefined && startLine !== null) {
+          if (
+            !Number.isInteger(startLine) ||
+            (startLine as number) < 1 ||
+            (startLine as number) >= (line as number)
+          )
+            throw new Error("startLine must precede line");
+          if (input.startSide !== side)
+            throw new Error("startSide must match side");
+        }
+        if (typeof input.body !== "string" || input.body === "")
+          throw new Error("Body can't be blank");
+        const thread: FakeReviewThread = {
+          id: newId("PRRT"),
+          path,
+          side,
+          line: line as number,
+          ...(typeof startLine === "number" && { startLine }),
+          comments: [{ id: newId("PRRC"), body: input.body }],
+        };
+        review.threads.push(thread);
+        return {
+          thread: {
+            id: thread.id,
+            comments: { nodes: [{ id: thread.comments[0].id }] },
+          },
+        };
+      }
+      case "updatePullRequestReviewComment": {
+        const { comment } = myPendingComment(input.pullRequestReviewCommentId);
+        if (typeof input.body !== "string" || input.body === "")
+          throw new Error("Body can't be blank");
+        comment.body = input.body;
+        return { pullRequestReviewComment: { id: comment.id } };
+      }
+      case "deletePullRequestReviewComment": {
+        const { review, thread, comment } = myPendingComment(input.id);
+        thread.comments = thread.comments.filter((c) => c !== comment);
+        if (thread.comments.length === 0)
+          review.threads = review.threads.filter((t) => t !== thread);
+        return { pullRequestReview: { id: review.id } };
+      }
+      case "submitPullRequestReview": {
+        const { review } = myPendingReview(input.pullRequestReviewId);
+        const states: Record<string, ReviewState> = {
+          APPROVE: "APPROVED",
+          REQUEST_CHANGES: "CHANGES_REQUESTED",
+          COMMENT: "COMMENTED",
+        };
+        const submitted = states[String(input.event)];
+        if (!submitted) throw new Error(`Unknown event ${String(input.event)}`);
+        review.state = submitted;
+        if (typeof input.body === "string" && input.body)
+          review.body = input.body;
+        return { pullRequestReview: { id: review.id, state: submitted } };
+      }
+    }
+    throw new Error(`The fake GitHub does not know ${mutation}`);
   }
 
   /** GitHub's issue search, for the qualifiers the Inbox uses. */

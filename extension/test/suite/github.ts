@@ -7,10 +7,16 @@ import type {
   FakePullRequest,
   RecordedMutation,
   RecordedRequest,
+  RecordedReview,
 } from "../fakeGitHub";
 
 export { fakePullRequestId } from "../fakeGitHub";
-export type { FakePullRequest, RecordedMutation, RecordedRequest };
+export type {
+  FakePullRequest,
+  RecordedMutation,
+  RecordedRequest,
+  RecordedReview,
+};
 
 export function fakeGitHubUrl(): string {
   const url = process.env.DEAR_REVIEWER_FAKE_GITHUB;
@@ -36,6 +42,12 @@ export async function requestsToGitHub(): Promise<RecordedRequest[]> {
 export async function viewedMarksOnGitHub(): Promise<RecordedMutation[]> {
   const res = await fetch(`${fakeGitHubUrl()}/_fake/mutations`);
   return (await res.json()) as RecordedMutation[];
+}
+
+/** Every pull request's reviews on the fake GitHub, as they are now. */
+export async function reviewsOnGitHub(): Promise<RecordedReview[]> {
+  const res = await fetch(`${fakeGitHubUrl()}/_fake/reviews`);
+  return (await res.json()) as RecordedReview[];
 }
 
 export async function avatarServedFor(login: string): Promise<Buffer> {

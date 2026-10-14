@@ -31,6 +31,34 @@ export interface PullRequestFiles {
   files: { path: string; viewed: boolean }[];
 }
 
+/** GitHub's name for a side of a pull request's diff: LEFT is the base, RIGHT the head. */
+export type DiffSide = "LEFT" | "RIGHT";
+
+export type ReviewEvent = "APPROVE" | "REQUEST_CHANGES" | "COMMENT";
+
+/** Where a review thread sits: a line, or a range of lines, of one side of a file's diff. */
+export interface ThreadPlace {
+  path: string;
+  side: DiffSide;
+  /** The last line, counted from 1. */
+  line: number;
+  /** The first line of a multi-line range. */
+  startLine?: number;
+}
+
+export interface PendingThread extends ThreadPlace {
+  id: string;
+  comments: { id: string; body: string }[];
+}
+
+export interface PendingReview {
+  /** The pull request's node id. */
+  pullRequestId: string;
+  viewer: { login: string; avatarUrl: string };
+  /** The viewer's pending review and the threads started in it, if there is one. */
+  review?: { id: string; threads: PendingThread[] };
+}
+
 export class NotSignedInError extends Error {
   constructor() {
     super("Not signed in to GitHub");
@@ -98,10 +126,13 @@ ${INBOX_PULL_REQUEST}`;
     let id = "";
     let after: string | null = null;
     do {
-      const data: PullRequestFilesData = await this.graphql<PullRequestFilesData>(
-        PULL_REQUEST_FILES,
-        { owner, name, number, after }
-      );
+      const data: PullRequestFilesData =
+        await this.graphql<PullRequestFilesData>(PULL_REQUEST_FILES, {
+          owner,
+          name,
+          number,
+          after,
+        });
       const pullRequest = data.repository?.pullRequest;
       if (!pullRequest)
         throw new GitHubError(`No pull request ${repository}#${number}`);
@@ -139,6 +170,139 @@ ${paths
       pullRequestId,
       ...Object.fromEntries(paths.map((p, i) => [`path${i}`, p])),
     });
+  }
+
+  /**
+   * The viewer's pending review of the pull request, with the threads they
+   * started in it. GitHub allows one pending review per person and pull
+   * request, and only its author can see it.
+   */
+  async pendingReview(
+    repository: string,
+    number: number
+  ): Promise<PendingReview> {
+    const [owner, name] = repository.split("/");
+    let found: PendingReview | undefined;
+    const threads: PendingReviewThreadNode[] = [];
+    let after: string | null = null;
+    do {
+      const data: PendingReviewData = await this.graphql<PendingReviewData>(
+        PENDING_REVIEW,
+        { owner, name, number, after }
+      );
+      const pullRequest = data.repository?.pullRequest;
+      if (!pullRequest)
+        throw new GitHubError(`No pull request ${repository}#${number}`);
+      const review = pullRequest.reviews.nodes.find((r) => r.viewerDidAuthor);
+      found ??= {
+        pullRequestId: pullRequest.id,
+        viewer: data.viewer,
+        ...(review && { review: { id: review.id, threads: [] } }),
+      };
+      threads.push(...pullRequest.reviewThreads.nodes);
+      const page = pullRequest.reviewThreads.pageInfo;
+      after = page.hasNextPage ? page.endCursor : null;
+    } while (after);
+    const review = found.review;
+    if (review) {
+      for (const thread of threads) {
+        const comments = thread.comments.nodes.filter(
+          (c) => c.pullRequestReview?.id === review.id
+        );
+        if (thread.comments.nodes[0]?.pullRequestReview?.id !== review.id)
+          continue;
+        const line = thread.line ?? thread.originalLine;
+        const startLine = thread.startLine ?? thread.originalStartLine;
+        if (line === null) continue;
+        review.threads.push({
+          id: thread.id,
+          path: thread.path,
+          side: thread.diffSide,
+          line,
+          ...(startLine !== null && startLine < line && { startLine }),
+          comments: comments.map((c) => ({ id: c.id, body: c.body })),
+        });
+      }
+    }
+    return found;
+  }
+
+  /** Starts the viewer's pending review of the pull request, giving its id. */
+  async startReview(pullRequestId: string): Promise<string> {
+    const data = await this.graphql<{
+      addPullRequestReview: { pullRequestReview: { id: string } };
+    }>(
+      `mutation StartReview($input: AddPullRequestReviewInput!) {
+  addPullRequestReview(input: $input) { pullRequestReview { id } }
+}`,
+      { input: { pullRequestId } }
+    );
+    return data.addPullRequestReview.pullRequestReview.id;
+  }
+
+  /** Starts a thread in the pending review, with its first Comment. */
+  async addReviewThread(
+    reviewId: string,
+    place: ThreadPlace,
+    body: string
+  ): Promise<{ threadId: string; commentId: string }> {
+    const data = await this.graphql<{
+      addPullRequestReviewThread: {
+        thread: { id: string; comments: { nodes: { id: string }[] } };
+      };
+    }>(
+      `mutation AddReviewThread($input: AddPullRequestReviewThreadInput!) {
+  addPullRequestReviewThread(input: $input) { thread { id comments(first: 1) { nodes { id } } } }
+}`,
+      {
+        input: {
+          pullRequestReviewId: reviewId,
+          path: place.path,
+          body,
+          side: place.side,
+          line: place.line,
+          ...(place.startLine !== undefined && {
+            startLine: place.startLine,
+            startSide: place.side,
+          }),
+        },
+      }
+    );
+    const thread = data.addPullRequestReviewThread.thread;
+    return { threadId: thread.id, commentId: thread.comments.nodes[0].id };
+  }
+
+  async editReviewComment(commentId: string, body: string): Promise<void> {
+    await this.graphql(
+      `mutation EditReviewComment($input: UpdatePullRequestReviewCommentInput!) {
+  updatePullRequestReviewComment(input: $input) { pullRequestReviewComment { id } }
+}`,
+      { input: { pullRequestReviewCommentId: commentId, body } }
+    );
+  }
+
+  /** Deletes a pending Comment; GitHub drops its thread when it was the only one. */
+  async deleteReviewComment(commentId: string): Promise<void> {
+    await this.graphql(
+      `mutation DeleteReviewComment($input: DeletePullRequestReviewCommentInput!) {
+  deletePullRequestReviewComment(input: $input) { pullRequestReview { id } }
+}`,
+      { input: { id: commentId } }
+    );
+  }
+
+  /** Submits the pending review with a verdict and a summary, which publishes its Comments. */
+  async submitReview(
+    reviewId: string,
+    event: ReviewEvent,
+    body: string
+  ): Promise<void> {
+    await this.graphql(
+      `mutation SubmitReview($input: SubmitPullRequestReviewInput!) {
+  submitPullRequestReview(input: $input) { pullRequestReview { id } }
+}`,
+      { input: { pullRequestReviewId: reviewId, event, body } }
+    );
   }
 
   /**
@@ -216,6 +380,60 @@ interface PullRequestFilesData {
         pageInfo: { hasNextPage: boolean; endCursor: string | null };
         nodes: { path: string; viewerViewedState: string }[];
       } | null;
+    } | null;
+  } | null;
+}
+
+const PENDING_REVIEW = `query PendingReview($owner: String!, $name: String!, $number: Int!, $after: String) {
+  viewer { login avatarUrl }
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      id
+      reviews(states: [PENDING], first: 10) { nodes { id viewerDidAuthor } }
+      reviewThreads(first: 100, after: $after) {
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          id
+          path
+          diffSide
+          line
+          startLine
+          originalLine
+          originalStartLine
+          comments(first: 100) { nodes { id body pullRequestReview { id } } }
+        }
+      }
+    }
+  }
+}`;
+
+interface PendingReviewThreadNode {
+  id: string;
+  path: string;
+  diffSide: DiffSide;
+  line: number | null;
+  startLine: number | null;
+  originalLine: number | null;
+  originalStartLine: number | null;
+  comments: {
+    nodes: {
+      id: string;
+      body: string;
+      pullRequestReview: { id: string } | null;
+    }[];
+  };
+}
+
+interface PendingReviewData {
+  viewer: { login: string; avatarUrl: string };
+  repository: {
+    pullRequest: {
+      id: string;
+      reviews: { nodes: { id: string; viewerDidAuthor: boolean }[] };
+      reviewThreads: {
+        pageInfo: { hasNextPage: boolean; endCursor: string | null };
+        nodes: PendingReviewThreadNode[];
+      };
     } | null;
   } | null;
 }

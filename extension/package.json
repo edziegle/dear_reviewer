@@ -105,6 +105,38 @@
         "command": "dearReviewer.checkClaudeLogin",
         "title": "Check Claude Login",
         "category": "Dear Reviewer"
+      },
+      {
+        "command": "dearReviewer.addComment",
+        "title": "Add Comment",
+        "category": "Dear Reviewer"
+      },
+      {
+        "command": "dearReviewer.editComment",
+        "title": "Edit Comment",
+        "category": "Dear Reviewer",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "dearReviewer.saveComment",
+        "title": "Save",
+        "category": "Dear Reviewer"
+      },
+      {
+        "command": "dearReviewer.cancelEditComment",
+        "title": "Cancel",
+        "category": "Dear Reviewer"
+      },
+      {
+        "command": "dearReviewer.deleteComment",
+        "title": "Delete Comment",
+        "category": "Dear Reviewer",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "dearReviewer.submitReview",
+        "title": "Submit Review",
+        "category": "Dear Reviewer"
       }
     ],
     "configuration": {
@@ -209,6 +241,26 @@
         {
           "command": "dearReviewer.showViewedFiles",
           "when": "dearReviewer.hideViewedFiles"
+        },
+        {
+          "command": "dearReviewer.addComment",
+          "when": "false"
+        },
+        {
+          "command": "dearReviewer.editComment",
+          "when": "false"
+        },
+        {
+          "command": "dearReviewer.saveComment",
+          "when": "false"
+        },
+        {
+          "command": "dearReviewer.cancelEditComment",
+          "when": "false"
+        },
+        {
+          "command": "dearReviewer.deleteComment",
+          "when": "false"
         }
       ],
       "view/item/context": [
@@ -241,6 +293,37 @@
           "command": "dearReviewer.unmarkViewed",
           "when": "view == dearReviewer.changeFiles && viewItem =~ /^(file\\.viewed|directory|change)$/",
           "group": "viewed@2"
+        }
+      ],
+      "comments/commentThread/context": [
+        {
+          "command": "dearReviewer.addComment",
+          "group": "inline",
+          "when": "commentController == dearReviewer.review && commentThreadIsEmpty"
+        }
+      ],
+      "comments/comment/title": [
+        {
+          "command": "dearReviewer.editComment",
+          "group": "inline@1",
+          "when": "commentController == dearReviewer.review && comment == pending"
+        },
+        {
+          "command": "dearReviewer.deleteComment",
+          "group": "inline@2",
+          "when": "commentController == dearReviewer.review && comment == pending"
+        }
+      ],
+      "comments/comment/context": [
+        {
+          "command": "dearReviewer.cancelEditComment",
+          "group": "inline@1",
+          "when": "commentController == dearReviewer.review && comment == pending"
+        },
+        {
+          "command": "dearReviewer.saveComment",
+          "group": "inline@2",
+          "when": "commentController == dearReviewer.review && comment == pending"
         }
       ]
     },

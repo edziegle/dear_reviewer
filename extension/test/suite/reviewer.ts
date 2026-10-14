@@ -8,6 +8,8 @@ export interface ChangeRequest {
   repository: string;
   base: string;
   head: string;
+  /** Set when the Change comes from this pull request. */
+  pullRequest?: { repository: string; number: number };
 }
 
 export function openChange(request: ChangeRequest): Thenable<unknown> {

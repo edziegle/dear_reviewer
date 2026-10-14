@@ -16,6 +16,8 @@ import { Assistants } from "./assistant/assistant";
 import { GitHubAuth } from "./github/auth";
 import { GitHubClient, PullRequestSummary } from "./github/client";
 import { Avatars, InboxNode, InboxTree, LocalClone } from "./inbox";
+import { PendingReviews } from "./pendingReview";
+import { ReviewComments, Verdict } from "./reviewComments";
 import {
   GitHubViewedFiles,
   LocalViewedFiles,
@@ -40,6 +42,10 @@ export function activate(context: vscode.ExtensionContext) {
     () => changes.list(),
     viewedFiles,
     path.join(context.globalStorageUri.fsPath, "change-files-view.json")
+  );
+  const review = new ReviewComments(
+    () => changes.list(),
+    new PendingReviews(github)
   );
   const changeFilesTree = vscode.window.createTreeView(
     "dearReviewer.changeFiles",
@@ -128,12 +134,67 @@ export function activate(context: vscode.ExtensionContext) {
         if (!request) return;
         const closed = await changes.close(request);
         assistants.close(closed);
+        review.forget(closed);
         await viewedFiles.forget(closed);
         changeFiles.refresh();
       }
     ),
     assistants,
     changes.onDidShowChange((change) => void assistants.open(change)),
+    review,
+    changes.onDidShowChange(() => void review.sync()),
+    vscode.commands.registerCommand(
+      "dearReviewer.addComment",
+      (reply: vscode.CommentReply) => review.addComment(reply)
+    ),
+    vscode.commands.registerCommand(
+      "dearReviewer.editComment",
+      (comment: vscode.Comment) => review.editComment(comment)
+    ),
+    vscode.commands.registerCommand(
+      "dearReviewer.saveComment",
+      (comment: vscode.Comment) => review.saveComment(comment)
+    ),
+    vscode.commands.registerCommand(
+      "dearReviewer.cancelEditComment",
+      (comment: vscode.Comment) => review.cancelEdit(comment)
+    ),
+    vscode.commands.registerCommand(
+      "dearReviewer.deleteComment",
+      (comment: vscode.Comment) => review.deleteComment(comment)
+    ),
+    vscode.commands.registerCommand(
+      "dearReviewer.submitReview",
+      async (request?: ChangeRequest, verdict?: Verdict, summary?: string) => {
+        request ??= await pickOpenChange(
+          changes.list().filter((c) => c.pullRequest),
+          "Submit Review"
+        );
+        const change = request && (await changes.find(request));
+        if (!change?.pullRequest) {
+          if (request)
+            void vscode.window.showErrorMessage(
+              "Only a pull request's Change is submitted as a Review."
+            );
+          return;
+        }
+        const { repository, number } = change.pullRequest;
+        verdict ??= await pickVerdict(
+          `Submit Review: ${repository} #${number}`
+        );
+        if (!verdict) return;
+        summary ??= await vscode.window.showInputBox({
+          title: `Submit Review: ${repository} #${number}`,
+          prompt: "Summary",
+          ignoreFocusOut: true,
+        });
+        if (summary === undefined) return;
+        if (await review.submit(change, verdict, summary))
+          void vscode.window.showInformationMessage(
+            `Submitted your Review of ${repository} #${number}.`
+          );
+      }
+    ),
     vscode.commands.registerCommand(
       "dearReviewer.showAssistant",
       async (request?: ChangeRequest) => {
@@ -147,6 +208,7 @@ export function activate(context: vscode.ExtensionContext) {
     ),
     vscode.workspace.onDidChangeWorkspaceFolders(() => {
       changeFiles.refresh();
+      void review.sync();
       return changes.showPendingDiffs();
     }),
     changeFilesTree,
@@ -216,8 +278,13 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("dearReviewer.forgetToken", () =>
       auth.forgetToken(apiUrl())
     ),
-    auth.onDidChange(() => inbox.refresh()),
+    auth.onDidChange(() => {
+      void review.sync();
+      return inbox.refresh();
+    }),
     vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration("dearReviewer.githubApiUrl"))
+        void review.sync();
       if (
         e.affectsConfiguration("dearReviewer.repositories") ||
         e.affectsConfiguration("dearReviewer.githubApiUrl") ||
@@ -227,11 +294,16 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
   void changes.showPendingDiffs();
-  // The views are how the Reviewer sees the Inbox, a Change's files and the
-  // Assistant; tests read them the same way.
+  void review.sync();
+  // The views are how the Reviewer sees the Inbox, a Change's files, the
+  // Assistant and their Comments; tests read them the same way.
   return {
     inbox,
     changeFiles,
+    review: {
+      controller: review.controller,
+      threads: () => review.threads(),
+    },
     assistant: {
       panels: () => assistants.panels(),
       loginStatus: () => assistants.loginStatus(),
@@ -323,6 +395,30 @@ async function askForLocalClone(repository: string): Promise<void> {
       "workbench.action.openSettings",
       "dearReviewer.localClones"
     );
+}
+
+async function pickVerdict(title: string): Promise<Verdict | undefined> {
+  const picked = await vscode.window.showQuickPick(
+    [
+      {
+        label: "Comment",
+        detail: "Submit general feedback without explicit approval.",
+        verdict: "comment" as const,
+      },
+      {
+        label: "Approve",
+        detail: "Submit feedback and approve merging these changes.",
+        verdict: "approve" as const,
+      },
+      {
+        label: "Request Changes",
+        detail: "Submit feedback that must be addressed before merging.",
+        verdict: "requestChanges" as const,
+      },
+    ],
+    { title, ignoreFocusOut: true }
+  );
+  return picked?.verdict;
 }
 
 async function pickOpenChange(

@@ -18,6 +18,8 @@ export interface PullRequestSummary {
   baseRefName: string;
   /** The latest commit's combined checks; undefined when it has none. */
   checks?: CheckStatus;
+  /** The head commit my last submitted Review covered; undefined if I haven't reviewed it. */
+  lastReviewedSha?: string;
 }
 
 export interface InboxPullRequests {
@@ -138,6 +140,9 @@ export class NotSignedInError extends Error {
 export class GitHubError extends Error {}
 
 export class GitHubClient {
+  /** The signed-in user's login, by API URL and token, once asked. */
+  private signedIn?: { key: string; login: Promise<string> };
+
   constructor(
     private readonly auth: GitHubAuth,
     private readonly apiUrl: () => string
@@ -157,7 +162,8 @@ export class GitHubClient {
         query: `is:pr is:open archived:false repo:${repository} author:@me`,
       },
     ]);
-    const query = `query Inbox(${searches.map((s) => `$${s.alias}: String!`).join(", ")}) {
+    const reviewer = await this.viewerLogin();
+    const query = `query Inbox($reviewer: String!, ${searches.map((s) => `$${s.alias}: String!`).join(", ")}) {
 ${searches
   .map(
     (s) =>
@@ -168,7 +174,10 @@ ${searches
 ${INBOX_PULL_REQUEST}`;
     const data = await this.graphql<
       Record<string, { nodes: PullRequestNode[] }>
-    >(query, Object.fromEntries(searches.map((s) => [s.alias, s.query])));
+    >(query, {
+      reviewer,
+      ...Object.fromEntries(searches.map((s) => [s.alias, s.query])),
+    });
     const collect = (prefix: string) =>
       searches
         .filter((s) => s.alias.startsWith(prefix))
@@ -216,6 +225,23 @@ ${INBOX_PULL_REQUEST}`;
       after = page?.hasNextPage ? page.endCursor : null;
     } while (after);
     return { id, files };
+  }
+
+  /**
+   * The head commit the signed-in user's last submitted review of the pull
+   * request covered: the commit GitHub records for it. Undefined if they
+   * haven't submitted one.
+   */
+  async lastReviewedCommit(
+    repository: string,
+    number: number
+  ): Promise<string | undefined> {
+    const [owner, name] = repository.split("/");
+    const reviewer = await this.viewerLogin();
+    const data = await this.graphql<{
+      repository: { pullRequest: { reviews: ReviewsNode } | null } | null;
+    }>(LAST_REVIEW, { owner, name, number, reviewer });
+    return lastReviewedSha(data.repository?.pullRequest?.reviews);
   }
 
   /** Whether the pull request is open, merged or closed; undefined if GitHub has no such pull request. */
@@ -359,15 +385,18 @@ ${paths
     return found;
   }
 
-  /** Starts the viewer's pending review of the pull request, giving its id. */
-  async startReview(pullRequestId: string): Promise<string> {
+  /**
+   * Starts the viewer's pending review of the pull request at the commit it
+   * covers, giving its id.
+   */
+  async startReview(pullRequestId: string, commit: string): Promise<string> {
     const data = await this.graphql<{
       addPullRequestReview: { pullRequestReview: { id: string } };
     }>(
       `mutation StartReview($input: AddPullRequestReviewInput!) {
   addPullRequestReview(input: $input) { pullRequestReview { id } }
 }`,
-      { input: { pullRequestId } }
+      { input: { pullRequestId, commitOID: commit } }
     );
     return data.addPullRequestReview.pullRequestReview.id;
   }
@@ -494,6 +523,27 @@ ${paths
     return new Uint8Array(await res.arrayBuffer());
   }
 
+  /** The signed-in user's login, asked once for each API URL and token. */
+  private async viewerLogin(): Promise<string> {
+    const apiUrl = this.apiUrl();
+    trustedOrigin(apiUrl);
+    const token = await this.auth.token(apiUrl);
+    if (!token) throw new NotSignedInError();
+    const key = `${apiUrl}\0${token}`;
+    if (this.signedIn?.key !== key) {
+      const login = this.graphql<{ viewer: { login: string } }>(
+        `query Viewer { viewer { login } }`,
+        {}
+      ).then((data) => data.viewer.login);
+      const asked = { key, login };
+      login.catch(() => {
+        if (this.signedIn === asked) this.signedIn = undefined;
+      });
+      this.signedIn = asked;
+    }
+    return this.signedIn.login;
+  }
+
   private async graphql<T>(
     query: string,
     variables: Record<string, unknown>
@@ -531,6 +581,27 @@ function graphqlUrl(apiUrl: string): string {
   return base.endsWith("/api/v3")
     ? `${base.slice(0, -"/v3".length)}/graphql`
     : `${base}/graphql`;
+}
+
+/** The states of a submitted review: one that ended a Review. */
+const SUBMITTED_REVIEWS = "[APPROVED, CHANGES_REQUESTED, COMMENTED, DISMISSED]";
+
+const LAST_REVIEW = `query LastReview($owner: String!, $name: String!, $number: Int!, $reviewer: String!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      reviews(last: 1, author: $reviewer, states: ${SUBMITTED_REVIEWS}) { nodes { commit { oid } } }
+    }
+  }
+}`;
+
+interface ReviewsNode {
+  nodes: ({ commit: { oid: string } | null } | null)[];
+}
+
+function lastReviewedSha(reviews: ReviewsNode | undefined): string | undefined {
+  const oid = reviews?.nodes.at(-1)?.commit?.oid;
+  // It is handed to git, so it must be a commit id and nothing else.
+  return oid && /^[0-9a-f]{40}([0-9a-f]{24})?$/.test(oid) ? oid : undefined;
 }
 
 const PULL_REQUEST_STATE = `query PullRequestState($owner: String!, $name: String!, $number: Int!) {
@@ -857,6 +928,7 @@ const INBOX_PULL_REQUEST = `fragment InboxPullRequest on PullRequest {
   repository { nameWithOwner }
   author { login avatarUrl }
   commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+  reviews(last: 1, author: $reviewer, states: ${SUBMITTED_REVIEWS}) { nodes { commit { oid } } }
 }`;
 
 interface PullRequestNode {
@@ -873,6 +945,7 @@ interface PullRequestNode {
   commits: {
     nodes: { commit: { statusCheckRollup: { state: string } | null } }[];
   };
+  reviews: ReviewsNode;
 }
 
 function summaryOf(node: PullRequestNode): PullRequestSummary {
@@ -888,6 +961,7 @@ function summaryOf(node: PullRequestNode): PullRequestSummary {
     headSha: node.headRefOid,
     baseRefName: node.baseRefName,
     checks: checkStatus(node.commits.nodes[0]?.commit.statusCheckRollup?.state),
+    lastReviewedSha: lastReviewedSha(node.reviews),
   };
 }
 

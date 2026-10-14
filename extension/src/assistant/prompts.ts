@@ -1,7 +1,12 @@
 // What Dear Reviewer tells the Assistant.
 
 import * as path from "path";
-import { Change, changedFiles, changeTitle } from "../changeWorkspace";
+import {
+  Change,
+  changedFiles,
+  changeTitle,
+  filesChangedBetween,
+} from "../changeWorkspace";
 import { git } from "../git";
 
 /** The most diff text put in a prompt; the Assistant can read the rest itself. */
@@ -112,6 +117,57 @@ export async function summaryPrompt(change: Change): Promise<string> {
     truncated
       ? `The diff, cut off after ${maxDiffChars} characters; read the files for the rest:`
       : "The diff:",
+    "```diff",
+    diff,
+    "```",
+  ].join("\n");
+}
+
+/**
+ * Asks the Assistant to explain what changed since the Reviewer's last
+ * Review, which covered the commit `from`, after `note` if the conversation
+ * has news for the Assistant.
+ */
+export async function sinceLastReviewPrompt(
+  change: Change,
+  from: string,
+  note?: string
+): Promise<string> {
+  const files = await filesChangedBetween(
+    change.repository,
+    from,
+    change.headSha
+  );
+  const commits = await git(
+    change.repository,
+    "log",
+    "--format=- %h %s",
+    `${from}..${change.headSha}`
+  );
+  let diff = await git(
+    change.repository,
+    "diff",
+    "--no-renames",
+    from,
+    change.headSha
+  );
+  const truncated = diff.length > maxDiffChars;
+  if (truncated) diff = diff.slice(0, maxDiffChars);
+  return [
+    ...(note ? [note, ""] : []),
+    `The Reviewer's last Review of this Change covered commit ${from}. The Change is now at ${change.headSha}.`,
+    "",
+    "Explain to them in plain words, briefly, what changed since that Review: what the new commits do, and anything that deserves a fresh look. Leave out what they already reviewed.",
+    "",
+    "Commits since:",
+    commits || "(none: the history was rewritten, so compare the two commits)",
+    "",
+    `Files changed since (${files.length}):`,
+    ...files.map((f) => `- ${f.status}: ${f.path}`),
+    "",
+    truncated
+      ? `The diff from ${from.slice(0, 7)}, cut off after ${maxDiffChars} characters; read the head worktree's files for the rest:`
+      : `The diff from ${from.slice(0, 7)}:`,
     "```diff",
     diff,
     "```",

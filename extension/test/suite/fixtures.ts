@@ -89,6 +89,8 @@ export interface PullRequestFixture {
   head: string;
   /** Where the bare repositories live, as `<owner>/<name>.git`. */
   remotes: string;
+  /** The repository the fixture's commits are made in. */
+  work: string;
 }
 
 /**
@@ -155,7 +157,58 @@ export function buildPullRequestFixture(
     base: repo.commits.renamed,
     head,
     remotes,
+    work: repo.path,
   };
+}
+
+/**
+ * The pull request's author pushes a commit on top of `parent` that writes
+ * these files, or deletes those given as null, to refs/pull/<number>/head on
+ * GitHub. Gives the new commit.
+ */
+export function pushToPullRequest(
+  fixture: PullRequestFixture,
+  parent: string,
+  files: Record<string, string | null>,
+  message: string
+): string {
+  const index = path.join(fixture.work, ".git", "push-index");
+  const env = { ...process.env, GIT_INDEX_FILE: index };
+  const run = (args: string[], input?: string) =>
+    cp
+      .execFileSync("git", args, {
+        cwd: fixture.work,
+        encoding: "utf8",
+        env,
+        input,
+      })
+      .trim();
+  run(["read-tree", parent]);
+  for (const [file, text] of Object.entries(files)) {
+    if (text === null) run(["update-index", "--force-remove", "--", file]);
+    else {
+      const blob = run(["hash-object", "-w", "--stdin"], text);
+      run(["update-index", "--add", "--cacheinfo", `100644,${blob},${file}`]);
+    }
+  }
+  const tree = run(["write-tree"]);
+  fs.rmSync(index, { force: true });
+  const commit = run(["commit-tree", tree, "-p", parent, "-m", message]);
+  const upstream = path.join(
+    fixture.remotes,
+    ...`${fixture.repository}.git`.split("/")
+  );
+  cp.execFileSync(
+    "git",
+    [
+      "fetch",
+      "-q",
+      fixture.work,
+      `+${commit}:refs/pull/${fixture.number}/head`,
+    ],
+    { cwd: upstream }
+  );
+  return commit;
 }
 
 /**

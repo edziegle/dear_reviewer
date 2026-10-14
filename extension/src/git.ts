@@ -13,12 +13,20 @@ export class GitError extends Error {
 }
 
 export async function git(cwd: string, ...args: string[]): Promise<string> {
+  return (await gitOutput(cwd, ...args)).trim();
+}
+
+/** Git's output as it is, such as a file's text with its last newline. */
+export async function gitOutput(
+  cwd: string,
+  ...args: string[]
+): Promise<string> {
   try {
     const { stdout } = await run("git", args, {
       cwd,
       maxBuffer: 64 * 1024 * 1024,
     });
-    return stdout.trim();
+    return stdout;
   } catch (err) {
     // A missing cwd fails the spawn itself, with no stderr.
     const stderr =

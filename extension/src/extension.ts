@@ -24,6 +24,12 @@ import { Repositories } from "./repositories";
 import { ReviewWindow } from "./reviewWindow";
 import { PendingReviews } from "./pendingReview";
 import { ReviewComments, Verdict } from "./reviewComments";
+import {
+  CommitFiles,
+  commitFileScheme,
+  Reviews,
+  showChangesSince,
+} from "./reviews";
 import type { FromWebview } from "./timeline/panel";
 import { LinkOpener, Timelines } from "./timeline/timelines";
 import {
@@ -77,11 +83,13 @@ export function activate(context: vscode.ExtensionContext) {
   const openExternal: LinkOpener = (uri) => vscode.env.openExternal(uri);
   let openLink = openExternal;
   const conversations = new Conversations(context.globalStorageUri.fsPath);
+  const reviews = new Reviews(github);
   const assistants = new Assistants(
     () =>
       expandHome(settings().inspect<string>("claudePath")?.globalValue ?? ""),
     conversations,
-    (uri) => openLink(uri)
+    (uri) => openLink(uri),
+    (change) => reviews.lastReviewed(change)
   );
   // Only the user's own setting counts: a workspace must not be able to
   // choose the repository Dear Reviewer runs git in.
@@ -379,10 +387,53 @@ export function activate(context: vscode.ExtensionContext) {
         if (summary === undefined) return;
         if (await review.submit(change, verdict, summary)) {
           void timelines.refresh(change);
+          // The Inbox shows which pull requests changed since a Review.
+          void inbox.refresh();
           void vscode.window.showInformationMessage(
             `Submitted your Review of ${repository} #${number}.`
           );
         }
+      }
+    ),
+    vscode.commands.registerCommand(
+      "dearReviewer.showChangesSinceLastReview",
+      async (request?: ChangeRequest) => {
+        request ??= await pickOpenChange(
+          changes.list().filter((c) => c.pullRequest),
+          "Show Changes Since My Last Review"
+        );
+        const change = request && (await changes.find(request));
+        if (!change?.pullRequest) {
+          if (request)
+            void vscode.window.showErrorMessage(
+              "Only a pull request's Change has submitted Reviews to compare with."
+            );
+          return;
+        }
+        const { repository, number } = change.pullRequest;
+        let from: string | undefined;
+        try {
+          from = await reviews.lastReviewed(change);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          void vscode.window.showErrorMessage(
+            `Couldn't find your last Review of ${repository} #${number}: ${message}`
+          );
+          return;
+        }
+        if (!from) {
+          void vscode.window.showInformationMessage(
+            `You haven't submitted a Review of ${repository} #${number} yet, so all of it is new to you.`
+          );
+          return;
+        }
+        if (from === change.headSha) {
+          void vscode.window.showInformationMessage(
+            `${repository} #${number} has no new commits since your last Review, at ${from.slice(0, 7)}.`
+          );
+          return;
+        }
+        await showChangesSince(change, from);
       }
     ),
     vscode.commands.registerCommand(
@@ -445,6 +496,10 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.workspace.registerTextDocumentContentProvider(emptyFileScheme, {
       provideTextDocumentContent: () => "",
     }),
+    vscode.workspace.registerTextDocumentContentProvider(
+      commitFileScheme,
+      new CommitFiles(() => changes.list().map((c) => c.repository))
+    ),
     vscode.commands.registerCommand(
       "dearReviewer.openChangeFile",
       (node: ChangeFilesNode) => changeFiles.openDiff(node)

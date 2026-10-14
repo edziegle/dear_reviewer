@@ -3,6 +3,9 @@
 // Change keeps its conversation across new commits and window reloads (ADR
 // 0009): a new conversation starts with a summary of what the Change does
 // and where the risk is, and a saved one carries on with `claude --resume`.
+// When the Change has new commits since the Reviewer's last Review, the
+// Assistant explains what changed, once for each such pair of commits (ADR
+// 0015).
 
 import * as fs from "fs";
 import * as path from "path";
@@ -29,8 +32,12 @@ import {
   chatPrompt,
   newHeadNote,
   Selection,
+  sinceLastReviewPrompt,
   summaryPrompt,
 } from "./prompts";
+
+/** Gives the head commit the Reviewer's last Review of the Change covered, if any. */
+export type LastReview = (change: Change) => Promise<string | undefined>;
 
 interface PanelState {
   title: string;
@@ -51,7 +58,8 @@ export class Assistants implements vscode.Disposable {
   constructor(
     private readonly claudePath: () => string,
     private readonly conversations: Conversations,
-    private readonly openLink: (uri: vscode.Uri) => Thenable<unknown>
+    private readonly openLink: (uri: vscode.Uri) => Thenable<unknown>,
+    private readonly lastReview: LastReview
   ) {
     this.status = vscode.window.createStatusBarItem(
       "dearReviewer.claudeLogin",
@@ -76,7 +84,8 @@ export class Assistants implements vscode.Disposable {
       change,
       this.conversations,
       this.conversations.get(change.conversation),
-      this.openLink
+      this.openLink,
+      this.lastReview
     );
     this.byConversation.set(change.conversation, assistant);
     assistant.show();
@@ -177,6 +186,8 @@ class ChangeAssistant {
   private conversation?: ClaudeConversation;
   /** The Claude session and head the saved conversation has. */
   private session?: { id: string; headSha: string };
+  /** The commits whose changes since the last Review were explained. */
+  private explained?: { from: string; to: string };
   /** News for the Assistant, sent with the Reviewer's next message. */
   private note?: string;
   /** Turns and moves run one after another. */
@@ -189,7 +200,8 @@ class ChangeAssistant {
     private change: Change,
     private readonly conversations: Conversations,
     saved: SavedConversation | undefined,
-    private readonly openLink: (uri: vscode.Uri) => Thenable<unknown>
+    private readonly openLink: (uri: vscode.Uri) => Thenable<unknown>,
+    private readonly lastReview: LastReview
   ) {
     this.state = {
       title: changeTitle(change),
@@ -198,6 +210,7 @@ class ChangeAssistant {
     };
     if (saved) {
       this.session = { id: saved.sessionId, headSha: saved.headSha };
+      this.explained = saved.sinceLastReview;
       this.noteNewHead(saved.headSha);
     }
   }
@@ -222,13 +235,18 @@ class ChangeAssistant {
 
   /**
    * Starts with a summary if the conversation is new; a saved conversation
-   * waits for the Reviewer's next message, which resumes its session.
+   * waits for the Reviewer's next message, which resumes its session. Either
+   * way, the Assistant then explains what changed since the last Review.
    */
   async start(cli: ClaudeCli): Promise<void> {
     if (this.disposed) return;
     this.cli = cli;
-    if (this.session) return this.update({ busy: false });
-    await this.enqueue(async () => this.turn(await summaryPrompt(this.change)));
+    if (this.session) this.update({ busy: false });
+    else
+      await this.enqueue(async () =>
+        this.turn(await summaryPrompt(this.change))
+      );
+    await this.explainSinceLastReview();
   }
 
   /** Carries the conversation on at the Change's new head. */
@@ -243,6 +261,7 @@ class ChangeAssistant {
       this.update({ title: changeTitle(change) });
       this.noteNewHead(previousHead);
     });
+    void this.explainSinceLastReview();
   }
 
   addSelection(selection: Selection & { text: string }): void {
@@ -380,6 +399,38 @@ class ChangeAssistant {
     });
   }
 
+  /**
+   * Explains what changed since the Reviewer's last Review, unless the
+   * Change is at the reviewed commit, or these commits were explained
+   * before. Without a Review it can learn of, it says nothing.
+   */
+  private explainSinceLastReview(): Promise<void> {
+    return this.enqueue(async () => {
+      if (!this.cli) return;
+      const change = this.change;
+      const from = await this.lastReview(change).catch(() => undefined);
+      if (this.disposed || change !== this.change) return;
+      if (!from || from === change.headSha) return;
+      if (this.explained?.from === from && this.explained.to === change.headSha)
+        return;
+      const prompt = await sinceLastReviewPrompt(change, from, this.note);
+      this.note = undefined;
+      this.update({
+        messages: [
+          ...this.state.messages,
+          {
+            from: "note",
+            text: `What changed since your last Review, at ${from.slice(0, 7)}:`,
+          },
+        ],
+      });
+      await this.turn(prompt);
+      if (this.disposed) return;
+      this.explained = { from, to: change.headSha };
+      this.save();
+    });
+  }
+
   private enqueue(task: () => Promise<void>): Promise<void> {
     const run = this.queue.then(async () => {
       if (this.disposed) return;
@@ -476,14 +527,15 @@ class ChangeAssistant {
   }
 
   /** Keeps the conversation for later, once Claude Code has a session for it. */
-  private save(conversation: ClaudeConversation): void {
-    const id = conversation.sessionId ?? this.session?.id;
+  private save(conversation?: ClaudeConversation): void {
+    const id = conversation?.sessionId ?? this.session?.id;
     if (!id) return;
     this.session = { id, headSha: this.change.headSha };
     this.conversations.put(this.change.conversation, {
       sessionId: id,
       headSha: this.change.headSha,
       messages: this.state.messages,
+      ...(this.explained && { sinceLastReview: this.explained }),
     });
   }
 }

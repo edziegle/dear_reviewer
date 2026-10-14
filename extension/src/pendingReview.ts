@@ -1,6 +1,8 @@
 // A pull request Review's Comments, kept in the Reviewer's pending review on
 // GitHub until they submit it (see ADR 0007), and the review threads they
-// sit among, which the Reviewer replies to and resolves (see ADR 0014).
+// sit among, which the Reviewer replies to and resolves (see ADR 0014). A
+// pending review Dear Reviewer starts covers the head of the Change the
+// Reviewer is reading, which GitHub records with the Review (see ADR 0015).
 
 import type {
   GitHubClient,
@@ -37,13 +39,17 @@ export class PendingReviews {
     return found.threads;
   }
 
-  /** Starts a thread with this Comment, starting the pending review first if there is none. */
+  /**
+   * Starts a thread with this Comment, starting the pending review at
+   * `headSha` first if there is none.
+   */
   async addThread(
     pullRequest: PullRequestRef,
+    headSha: string,
     place: ThreadPlace,
     body: string
   ): Promise<{ threadId: string; commentId: string }> {
-    const reviewId = await this.reviewId(pullRequest);
+    const reviewId = await this.reviewId(pullRequest, headSha);
     try {
       return await this.github.addReviewThread(reviewId, place, body);
     } catch (err) {
@@ -100,16 +106,20 @@ export class PendingReviews {
     return this.github.deleteReviewComment(commentId);
   }
 
-  /** Submits the pending review, starting an empty one if there is none, which ends the Review. */
+  /**
+   * Submits the pending review, starting an empty one at `headSha` if there
+   * is none, which ends the Review.
+   */
   async submit(
     pullRequest: PullRequestRef,
+    headSha: string,
     event: ReviewEvent,
     summary: string
   ): Promise<void> {
     const key = keyOf(pullRequest);
     try {
       await this.github.submitReview(
-        await this.reviewId(pullRequest),
+        await this.reviewId(pullRequest, headSha),
         event,
         summary
       );
@@ -118,7 +128,10 @@ export class PendingReviews {
     }
   }
 
-  private reviewId(pullRequest: PullRequestRef): Promise<string> {
+  private reviewId(
+    pullRequest: PullRequestRef,
+    headSha: string
+  ): Promise<string> {
     const key = keyOf(pullRequest);
     let id = this.reviewIds.get(key);
     if (!id) {
@@ -130,7 +143,7 @@ export class PendingReviews {
         this.signedIn = found.viewer;
         return (
           found.pendingReviewId ??
-          (await this.github.startReview(found.pullRequestId))
+          (await this.github.startReview(found.pullRequestId, headSha))
         );
       })();
       const started = id;

@@ -181,6 +181,10 @@ async function main() {
     const lifecycle = multiRootWorkspace("lifecycle", "lifecycle");
     await runSuite("lifecycle", lifecycle);
     await runSuite("lifecycle/afterReload", lifecycle);
+    await runSuite(
+      "sinceLastReview",
+      multiRootWorkspace("since-last-review", "since-last-review")
+    );
     // Last, so the repositories it remembers can't reach other suites; it forgets them when done.
     await runSuite(
       "openFolders",

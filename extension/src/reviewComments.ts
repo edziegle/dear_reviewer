@@ -176,6 +176,7 @@ export class ReviewComments implements vscode.Disposable {
     try {
       saved = await this.pending.addThread(
         place.change.pullRequest,
+        place.change.headSha,
         where,
         text
       );
@@ -300,7 +301,8 @@ export class ReviewComments implements vscode.Disposable {
 
   /**
    * Submits the pending review with the verdict and summary. That ends the
-   * Review: its Comments are published, and stay in the gutter as such.
+   * Review: its Comments are published, and stay in the gutter as such, and
+   * GitHub records the head commit it covered (see ADR 0015).
    */
   async submit(
     change: Change,
@@ -310,7 +312,12 @@ export class ReviewComments implements vscode.Disposable {
     const pullRequest = change.pullRequest;
     if (!pullRequest) return false;
     try {
-      await this.pending.submit(pullRequest, events[verdict], summary);
+      await this.pending.submit(
+        pullRequest,
+        change.headSha,
+        events[verdict],
+        summary
+      );
     } catch (err) {
       void vscode.window.showErrorMessage(
         `Couldn't submit your Review of ${pullRequest.repository} #${pullRequest.number}: ${messageOf(err)}`

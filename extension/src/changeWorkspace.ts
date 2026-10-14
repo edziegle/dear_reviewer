@@ -354,15 +354,28 @@ export interface ChangedFile {
 }
 
 /** The Change's files, sorted by path. */
-export async function changedFiles(change: Change): Promise<ChangedFile[]> {
-  const nameStatus = await git(
+export function changedFiles(change: Change): Promise<ChangedFile[]> {
+  return filesChangedBetween(
     change.repository,
+    change.mergeBase,
+    change.headSha
+  );
+}
+
+/** The files that differ between two commits of the repository, sorted by path. */
+export async function filesChangedBetween(
+  repository: string,
+  from: string,
+  to: string
+): Promise<ChangedFile[]> {
+  const nameStatus = await git(
+    repository,
     "diff",
     "--name-status",
     "--no-renames",
     "-z",
-    change.mergeBase,
-    change.headSha
+    from,
+    to
   );
   const fields = nameStatus.split("\0").filter(Boolean);
   const files: ChangedFile[] = [];

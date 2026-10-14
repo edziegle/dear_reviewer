@@ -86,15 +86,23 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
     }
     const pr = node.pullRequest;
     const item = new vscode.TreeItem(pr.title);
+    const changedSinceReview =
+      pr.lastReviewedSha !== undefined && pr.lastReviewedSha !== pr.headSha;
     item.description = [
       `${pr.repository} #${pr.number}`,
       ...(pr.checks ? [`checks ${pr.checks}`] : []),
+      ...(changedSinceReview ? ["new commits since my Review"] : []),
     ].join(" · ");
     item.tooltip = new vscode.MarkdownString(
       [
         `**${escapeMarkdown(pr.title)}**`,
         `${pr.repository} #${pr.number} by ${pr.author.login}`,
         pr.checks ? `Checks ${pr.checks}` : "No checks",
+        ...(changedSinceReview
+          ? [
+              `New commits since my last Review, at ${pr.lastReviewedSha!.slice(0, 7)}`,
+            ]
+          : []),
       ].join("\n\n")
     );
     item.iconPath =

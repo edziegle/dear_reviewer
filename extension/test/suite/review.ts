@@ -122,6 +122,16 @@ export function submitReview(
   );
 }
 
+/** Runs Show Changes Since My Last Review on the Change. */
+export function showChangesSinceLastReview(
+  change: ChangeRequest
+): Thenable<unknown> {
+  return vscode.commands.executeCommand(
+    "dearReviewer.showChangesSinceLastReview",
+    change
+  );
+}
+
 export interface ShownThread {
   file: string;
   /** First and last line, counted from 0. */

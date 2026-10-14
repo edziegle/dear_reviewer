@@ -4,8 +4,8 @@
 // and unviewed, keeps reviews (a pending review, its threads and Comments,
 // and submitting it), serves every review thread the viewer can see, takes
 // replies to them and resolves and unresolves them, serves a pull request's
-// timeline and its latest commit's checks, serves avatars, and records every
-// request it receives.
+// timeline and its latest commit's checks, serves the commit each review
+// covered, serves avatars, and records every request it receives.
 //
 // Tests control it over HTTP:
 //   PUT /_fake/state        replaces the fixtures and clears what was recorded
@@ -88,7 +88,7 @@ export type FakeCheck =
   | { type: "status"; context: string; state: CheckState; targetUrl?: string };
 
 export type ReviewState =
-  "PENDING" | "APPROVED" | "CHANGES_REQUESTED" | "COMMENTED";
+  "PENDING" | "APPROVED" | "CHANGES_REQUESTED" | "COMMENTED" | "DISMISSED";
 
 export type DiffSide = "LEFT" | "RIGHT";
 
@@ -101,6 +101,11 @@ export interface FakeReview {
   body?: string;
   /** When it was submitted; the fake sets it when a review is submitted. */
   submittedAt?: string;
+  /**
+   * The commit the review covers: the one it was started at, which the fake
+   * takes from `commitOID`, or else the pull request's head.
+   */
+  commit?: string;
   threads: FakeReviewThread[];
 }
 
@@ -280,7 +285,9 @@ export async function startFakeGitHub(): Promise<{
       /(\w+)\s*:\s*search\(\s*query:\s*\$(\w+)/g
     )) {
       data[alias] = {
-        nodes: search(variables[variable]).map((pr) => pullRequestNode(pr)),
+        nodes: search(variables[variable]).map((pr) =>
+          pullRequestNode(pr, query, vars)
+        ),
       };
     }
     return data;
@@ -315,21 +322,12 @@ export async function startFakeGitHub(): Promise<{
     const visible = (pr.reviews ?? []).filter(
       (r) => r.state !== "PENDING" || r.author === me
     );
-    const wanted = /\breviews\(\s*states:\s*\[PENDING\]/.test(query)
-      ? visible.filter((r) => r.state === "PENDING")
-      : visible;
     return {
       id: fakePullRequestId(pr),
       state: pr.state ?? "OPEN",
       ...(/\btimelineItems\(/.test(query) &&
         timelineFields(pr, visible, vars.after)),
-      reviews: {
-        nodes: wanted.map((r) => ({
-          id: r.id,
-          state: r.state,
-          viewerDidAuthor: r.author === me,
-        })),
-      },
+      reviews: reviewsField(pr, query, vars),
       reviewThreads: {
         pageInfo: { hasNextPage: false, endCursor: null },
         nodes: visible.flatMap((review) =>
@@ -375,6 +373,40 @@ export async function startFakeGitHub(): Promise<{
           viewerViewedState: f.viewed ?? "UNVIEWED",
         })),
       },
+    };
+  }
+
+  /**
+   * A pull request's `reviews` that the viewer can see, filtered by the
+   * `states`, `author` and `last` the query gives them.
+   */
+  function reviewsField(
+    pr: FakePullRequest,
+    query: string,
+    vars: Record<string, unknown>
+  ) {
+    const me = state.viewer.login;
+    const args = /\breviews\(([^)]*)\)/.exec(query)?.[1] ?? "";
+    const states = /\bstates:\s*\[([^\]]*)\]/
+      .exec(args)?.[1]
+      .split(/[\s,]+/)
+      .filter(Boolean);
+    const authorVariable = /\bauthor:\s*\$(\w+)/.exec(args)?.[1];
+    const last = /\blast:\s*(\d+)/.exec(args)?.[1];
+    let reviews = (pr.reviews ?? [])
+      .filter((r) => r.state !== "PENDING" || r.author === me)
+      .filter((r) => !states || states.includes(r.state))
+      .filter(
+        (r) => !authorVariable || r.author === String(vars[authorVariable])
+      );
+    if (last) reviews = reviews.slice(-Number(last));
+    return {
+      nodes: reviews.map((r) => ({
+        id: r.id,
+        state: r.state,
+        viewerDidAuthor: r.author === me,
+        commit: r.commit ? { oid: r.commit } : null,
+      })),
     };
   }
 
@@ -619,6 +651,11 @@ export async function startFakeGitHub(): Promise<{
           throw new Error(`No pull request ${String(input.pullRequestId)}`);
         if (input.event !== undefined || input.threads !== undefined)
           throw new Error("The fake only starts empty pending reviews");
+        if (
+          input.commitOID !== undefined &&
+          !/^[0-9a-f]{40}$/.test(String(input.commitOID))
+        )
+          throw new Error(`Bad commitOID ${String(input.commitOID)}`);
         const me = state.viewer.login;
         if (
           (pr.reviews ?? []).some(
@@ -628,10 +665,13 @@ export async function startFakeGitHub(): Promise<{
           throw new Error(
             "User can only have one pending review per pull request"
           );
+        const commit =
+          typeof input.commitOID === "string" ? input.commitOID : pr.headSha;
         const review: FakeReview = {
           id: newId("PRR"),
           author: me,
           state: "PENDING",
+          ...(commit && { commit }),
           threads: [],
         };
         (pr.reviews ??= []).push(review);
@@ -698,6 +738,7 @@ export async function startFakeGitHub(): Promise<{
             author: state.viewer.login,
             state: "COMMENTED",
             submittedAt: new Date().toISOString(),
+            ...(pr.headSha && { commit: pr.headSha }),
             threads: [],
           };
           (pr.reviews ??= []).push(review);
@@ -775,7 +816,11 @@ export async function startFakeGitHub(): Promise<{
     return state.pullRequests.filter((pr) => filters.every((f) => f(pr)));
   }
 
-  function pullRequestNode(pr: FakePullRequest) {
+  function pullRequestNode(
+    pr: FakePullRequest,
+    query: string,
+    vars: Record<string, unknown>
+  ) {
     const [owner, name] = pr.repository.split("/");
     return {
       __typename: "PullRequest",
@@ -785,7 +830,7 @@ export async function startFakeGitHub(): Promise<{
       updatedAt: pr.updatedAt ?? "2026-10-01T00:00:00Z",
       isDraft: false,
       headRefName: pr.headRefName ?? `feature-${pr.number}`,
-      headRefOid: "0".repeat(40),
+      headRefOid: pr.headSha ?? "0".repeat(40),
       baseRefName: pr.baseRefName ?? "main",
       repository: { nameWithOwner: `${owner}/${name}` },
       author: {
@@ -801,6 +846,9 @@ export async function startFakeGitHub(): Promise<{
           },
         ],
       },
+      ...(/\breviews\(/.test(query) && {
+        reviews: reviewsField(pr, query, vars),
+      }),
     };
   }
 

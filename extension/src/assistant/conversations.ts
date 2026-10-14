@@ -14,6 +14,8 @@ export interface SavedConversation {
   /** The head commit the conversation last talked about. */
   headSha: string;
   messages: Message[];
+  /** The commits whose changes since the last Review the Assistant last explained. */
+  sinceLastReview?: { from: string; to: string };
 }
 
 export class Conversations {

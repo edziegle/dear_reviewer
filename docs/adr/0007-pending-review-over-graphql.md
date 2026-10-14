@@ -7,6 +7,8 @@ date: 2026-10-14
 
 Amended by [ADR 0014](0014-review-threads-in-the-gutter.md): the gutter shows every review thread the Reviewer can see, not only those in their pending review, and a submitted Review's threads stay in it as published threads.
 
+Amended by [ADR 0015](0015-what-changed-since-the-last-review.md): a pending review that Dear Reviewer starts covers the Change's head, which it passes as `commitOID`.
+
 ## Context and Problem Statement
 
 The Reviewer writes Comments on lines and ranges of either side of a pull request's diff. The spec asks for them to reach the author in a single notification when the Review is submitted, and to survive reloads, both locally and on GitHub. Where do Comments live before the Review is submitted, and which GitHub API manages them?

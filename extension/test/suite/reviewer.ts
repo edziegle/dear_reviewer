@@ -107,6 +107,33 @@ export function multiDiffFiles(): DiffEntry[] {
   return files;
 }
 
+export interface DiffSide {
+  /** The file's path, for a file on disk. */
+  file?: string;
+  /** The URI's scheme, for a side that isn't a file on disk. */
+  scheme?: string;
+  text: string;
+}
+
+/**
+ * Both sides of each file in the multi-file diff, in the order shown, with
+ * their text, including sides that aren't files on disk. A missing side is
+ * an empty editor that isn't a file.
+ */
+export function multiDiffSides(): { original: DiffSide; modified: DiffSide }[] {
+  const sides = vscode.window.visibleTextEditors.map(({ document }) => ({
+    ...(document.uri.scheme === "file"
+      ? { file: document.uri.fsPath }
+      : { scheme: document.uri.scheme }),
+    text: document.getText(),
+  }));
+  const files: { original: DiffSide; modified: DiffSide }[] = [];
+  for (let i = 0; i + 1 < sides.length; i += 2) {
+    files.push({ original: sides[i], modified: sides[i + 1] });
+  }
+  return files;
+}
+
 export async function eventually(
   check: () => void | Promise<void>,
   timeoutMs = 10_000

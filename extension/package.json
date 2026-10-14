@@ -191,6 +191,11 @@
         "command": "dearReviewer.submitReview",
         "title": "Submit Review",
         "category": "Dear Reviewer"
+      },
+      {
+        "command": "dearReviewer.showChangesSinceLastReview",
+        "title": "Show Changes Since My Last Review",
+        "category": "Dear Reviewer"
       }
     ],
     "configuration": {

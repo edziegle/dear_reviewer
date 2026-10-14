@@ -1,5 +1,5 @@
-// Findings on request (see ADR 0017): only when the Reviewer runs Find
-// Issues does the Assistant look over a Change and reply with Findings as a
+// Findings on request (see ADR 0017): only when the Reviewer runs Ask for
+// Findings does the Assistant look over a Change and reply with Findings as a
 // JSON object. Each one that lands on lines of its side's diff, inside the
 // Change's worktrees, shows as a gutter marker on those lines and in the
 // Findings view, never inline in the diff. The Reviewer dismisses a Finding,
@@ -111,7 +111,7 @@ export class Findings
       );
     } catch (err) {
       void vscode.window.showErrorMessage(
-        `Couldn't find issues in ${name}: ${messageOf(err)}`
+        `Couldn't get Findings for ${name}: ${messageOf(err)}`
       );
       return;
     }
@@ -179,6 +179,42 @@ export class Findings
       selection: rangeOf(finding.place),
       preview: true,
     });
+  }
+
+  /**
+   * Opens the next Finding after the active editor's cursor, or the one
+   * before it, across every Change, by file and line, going round at the
+   * end. Gives the Finding opened, if there is one.
+   */
+  async step(direction: 1 | -1): Promise<Finding | undefined> {
+    const keyOf = (uri: string, line: number) =>
+      `${uri}\0${String(line).padStart(9, "0")}`;
+    const ordered = this.all()
+      .map((finding) => ({
+        finding,
+        key: keyOf(
+          fileOf(finding).toString(),
+          rangeOf(finding.place).start.line
+        ),
+      }))
+      .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+    if (ordered.length === 0) return;
+    const editor = vscode.window.activeTextEditor;
+    const here =
+      editor &&
+      keyOf(editor.document.uri.toString(), editor.selection.active.line);
+    const next =
+      here === undefined
+        ? direction === 1
+          ? ordered[0]
+          : ordered.at(-1)
+        : direction === 1
+          ? (ordered.find((f) => f.key > here) ?? ordered[0])
+          : ([...ordered].reverse().find((f) => f.key < here) ??
+            ordered.at(-1));
+    if (!next) return;
+    await this.reveal(next.finding);
+    return next.finding;
   }
 
   /** Forgets the Findings of a Change that was closed. */

@@ -40,7 +40,7 @@ export function selectionInChange(
  * its worktrees, or a file at the reviewed commit in what changed since its
  * last Review. Nothing else counts.
  */
-function whereInChange(
+export function whereInChange(
   uri: vscode.Uri,
   changes: Change[]
 ):

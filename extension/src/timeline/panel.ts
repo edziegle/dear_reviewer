@@ -1,6 +1,7 @@
 // The timeline panel for one pull request: a webview beside the diff. The
 // extension sends it the whole timeline state; the webview renders it, says
-// which state it rendered, and asks the extension to open links and reload.
+// which state it rendered, and asks the extension to open links, reload and
+// submit the Reviewer's Review.
 
 import * as crypto from "crypto";
 import * as vscode from "vscode";
@@ -76,18 +77,22 @@ export type FromWebview =
   | Handshake
   | { type: "openLink"; url: string }
   | { type: "refresh" }
+  | { type: "submit" }
   | { type: "problemAction" };
 
 export class TimelinePanel {
   private readonly view: MarkdownPanel<TimelineState, ShownTimeline>;
   private readonly linkClicked = new vscode.EventEmitter<string>();
   private readonly refreshClicked = new vscode.EventEmitter<void>();
+  private readonly submitClicked = new vscode.EventEmitter<void>();
   private readonly problemActionClicked = new vscode.EventEmitter<void>();
   /** Fires when the Reviewer closes the panel. */
   readonly onDidDispose: vscode.Event<void>;
   /** Fires with the URL of a link the Reviewer clicked, as the webview gave it. */
   readonly onDidClickLink = this.linkClicked.event;
   readonly onDidClickRefresh = this.refreshClicked.event;
+  /** Fires when the Reviewer clicks Submit Review. */
+  readonly onDidClickSubmit = this.submitClicked.event;
   /** Fires when the Reviewer clicks the button that goes with the problem. */
   readonly onDidClickProblemAction = this.problemActionClicked.event;
 
@@ -106,6 +111,7 @@ export class TimelinePanel {
       for (const emitter of [
         this.linkClicked,
         this.refreshClicked,
+        this.submitClicked,
         this.problemActionClicked,
       ])
         emitter.dispose();
@@ -114,6 +120,11 @@ export class TimelinePanel {
 
   get title(): string {
     return this.view.title;
+  }
+
+  /** Whether the panel is the one the Reviewer is looking at. */
+  get active(): boolean {
+    return this.view.active;
   }
 
   /** The state last sent to the webview. */
@@ -142,6 +153,7 @@ export class TimelinePanel {
     if (message.type === "openLink" && typeof message.url === "string")
       this.linkClicked.fire(message.url);
     else if (message.type === "refresh") this.refreshClicked.fire();
+    else if (message.type === "submit") this.submitClicked.fire();
     else if (message.type === "problemAction") this.problemActionClicked.fire();
   }
 
@@ -183,9 +195,12 @@ function html(cspSource: string): string {
   h1 { font-size: 1.1em; margin: 0 0 4px; }
   h2 { font-size: 1em; margin: 16px 0 8px; }
   .muted { color: var(--vscode-descriptionForeground); font-size: 0.9em; }
-  button.link { background: none; border: none; padding: 0; color: var(--vscode-textLink-foreground); cursor: pointer; font: inherit; }
+  button.link { background: none; border: none; padding: 0; color: var(--vscode-textLink-foreground); cursor: pointer; font: inherit; text-align: start; }
   button.link:hover { text-decoration: underline; }
-  button.refresh { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); border: none; padding: 2px 8px; border-radius: 2px; cursor: pointer; }
+  header .actions { display: flex; gap: 6px; flex: none; }
+  button.refresh { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); border: none; padding: 2px 8px; border-radius: 2px; cursor: pointer; font: inherit; }
+  button.submit { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; padding: 2px 8px; border-radius: 2px; cursor: pointer; font: inherit; }
+  button.submit:hover { background: var(--vscode-button-hoverBackground); }
   ul { list-style: none; padding: 0; margin: 0; }
   .checks li { display: flex; gap: 8px; align-items: baseline; padding: 2px 0; }
   .checks .name { flex: 1; }
@@ -206,11 +221,14 @@ function html(cspSource: string): string {
 <body>
 <header>
   <div class="heading"><h1 id="title"></h1><div class="muted" id="pullRequest"></div></div>
-  <button class="refresh" id="refresh" title="Reload the timeline from GitHub">Refresh</button>
+  <div class="actions">
+    <button class="refresh" id="refresh" title="Reload the timeline from GitHub">Refresh</button>
+    <button class="submit" id="submit" title="Choose a verdict and publish your pending Comments to GitHub">Submit Review…</button>
+  </div>
 </header>
-<div class="problem" id="problem" hidden></div>
+<div class="problem" id="problem" role="alert" hidden></div>
 <section id="checks" hidden><h2 id="checksHeading"></h2><ul class="checks" id="checkRuns"></ul></section>
-<section><h2>Timeline</h2><div class="muted" id="loading" hidden>Loading from GitHub…</div><div id="items"></div></section>
+<section><h2>Timeline</h2><div class="muted" id="loading" role="status" hidden>Loading from GitHub…</div><div id="items"></div></section>
 <script nonce="${nonce}">
   const vscode = acquireVsCodeApi();
   const byId = (id) => document.getElementById(id);
@@ -239,6 +257,7 @@ function html(cspSource: string): string {
     dismissed: "reviewed (dismissed)",
   };
   byId("refresh").addEventListener("click", () => vscode.postMessage({ type: "refresh" }));
+  byId("submit").addEventListener("click", () => vscode.postMessage({ type: "submit" }));
   // Links in bodies open through the extension, which checks them.
   byId("items").addEventListener("click", (event) => {
     const link = event.target instanceof Element ? event.target.closest("a[data-href]") : null;

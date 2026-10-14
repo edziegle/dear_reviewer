@@ -122,6 +122,15 @@ export function submitReview(
   );
 }
 
+/** Runs Discard Pending Review on the Change, confirming it. */
+export function discardReview(change: ChangeRequest): Thenable<unknown> {
+  return vscode.commands.executeCommand(
+    "dearReviewer.discardReview",
+    change,
+    true
+  );
+}
+
 /** Runs Show Changes Since My Last Review on the Change. */
 export function showChangesSinceLastReview(
   change: ChangeRequest
@@ -132,7 +141,7 @@ export function showChangesSinceLastReview(
   );
 }
 
-/** Runs Write Brief on the local Change, which ends its Review with a Brief. */
+/** Runs Write Brief on the local Change, which opens a Brief to read before copying it. */
 export function writeBrief(change: ChangeRequest): Thenable<unknown> {
   return vscode.commands.executeCommand("dearReviewer.writeBrief", change);
 }

@@ -139,6 +139,13 @@ export class NotSignedInError extends Error {
 
 export class GitHubError extends Error {}
 
+/** GitHub turned the token down: signing in again is the way out. */
+export class SignInRejectedError extends GitHubError {
+  constructor() {
+    super("GitHub rejected the sign-in (401 Bad credentials)");
+  }
+}
+
 export class GitHubClient {
   /** The signed-in user's login, by API URL and token, once asked. */
   private signedIn?: { key: string; login: Promise<string> };
@@ -493,6 +500,16 @@ ${paths
     );
   }
 
+  /** Deletes the pending review, with its Comments, unpublished. */
+  async deleteReview(reviewId: string): Promise<void> {
+    await this.graphql(
+      `mutation DeleteReview($input: DeletePullRequestReviewInput!) {
+  deletePullRequestReview(input: $input) { pullRequestReview { id } }
+}`,
+      { input: { pullRequestReviewId: reviewId } }
+    );
+  }
+
   /** Submits the pending review with a verdict and a summary, which publishes its Comments. */
   async submitReview(
     reviewId: string,
@@ -560,10 +577,7 @@ ${paths
       },
       body: JSON.stringify({ query, variables }),
     });
-    if (res.status === 401)
-      throw new GitHubError(
-        "GitHub rejected the sign-in (401 Bad credentials)"
-      );
+    if (res.status === 401) throw new SignInRejectedError();
     if (!res.ok) throw new GitHubError(`GitHub answered ${res.status}`);
     const body = (await res.json()) as {
       data?: T;

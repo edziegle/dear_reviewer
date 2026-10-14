@@ -1,7 +1,7 @@
 // The timeline of each pull request Change shown in this window: one panel
 // per Change, loaded from GitHub when the Change is shown and reloaded on
 // request. Links in the panel open through the extension, and only the ones
-// it sent.
+// it sent. Its Submit Review button finishes the Change's Review.
 
 import * as vscode from "vscode";
 import {
@@ -29,7 +29,9 @@ export class Timelines implements vscode.Disposable {
   constructor(
     private readonly github: GitHubClient,
     private readonly avatars: Avatars,
-    private readonly openLink: LinkOpener
+    private readonly openLink: LinkOpener,
+    /** Submits the Reviewer's Review of the Change, asking for a verdict and summary. */
+    private readonly submit: (change: Change) => void
   ) {}
 
   /** Shows the timeline of a pull request Change and reloads it; a local Change has none. */
@@ -41,7 +43,8 @@ export class Timelines implements vscode.Disposable {
         change.pullRequest,
         this.github,
         this.avatars,
-        this.openLink
+        this.openLink,
+        () => this.submit(change)
       );
       this.byChange.set(change.id, timeline);
     }
@@ -64,6 +67,12 @@ export class Timelines implements vscode.Disposable {
     this.byChange.delete(change.id);
   }
 
+  /** The id of the Change whose timeline the Reviewer is looking at, if any. */
+  activeChangeId(): string | undefined {
+    for (const [id, timeline] of this.byChange)
+      if (timeline.panel?.active) return id;
+  }
+
   /** Each open panel, for the tests. */
   panels(): TimelinePanel[] {
     return [...this.byChange.values()].flatMap((t) => t.panel ?? []);
@@ -84,7 +93,8 @@ class ChangeTimeline {
     private readonly pullRequest: PullRequestRef,
     private readonly github: GitHubClient,
     private readonly avatars: Avatars,
-    private readonly openLink: LinkOpener
+    private readonly openLink: LinkOpener,
+    private readonly submit: () => void
   ) {
     const name = pullRequestName(pullRequest);
     this.state = { title: name, pullRequest: name, loading: true, items: [] };
@@ -101,6 +111,7 @@ class ChangeTimeline {
     });
     panel.onDidClickLink((url) => void this.open(url));
     panel.onDidClickRefresh(() => void this.load());
+    panel.onDidClickSubmit(() => this.submit());
     panel.onDidClickProblemAction(() => {
       if (this.state.problemAction === signIn)
         void vscode.commands.executeCommand("dearReviewer.signIn");

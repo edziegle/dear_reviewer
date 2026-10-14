@@ -277,6 +277,30 @@ describe("Findings on request", () => {
     assert.deepStrictEqual(await commentThreads(), []);
   });
 
+  it("steps from Finding to Finding, and round again, with the review keys", async () => {
+    const at = () => {
+      const editor = vscode.window.activeTextEditor!;
+      return `${editor.document.uri.fsPath}:${editor.selection.start.line}`;
+    };
+    const visited: string[] = [];
+    for (let i = 0; i < 4; i++) {
+      await vscode.commands.executeCommand("dearReviewer.nextFinding");
+      visited.push(at());
+    }
+
+    assert.deepStrictEqual(
+      [...visited.slice(0, 3)].sort(),
+      [
+        `${path.join(base, "pkg/legacy.py")}:0`,
+        `${path.join(head, "pkg/sub/new.py")}:0`,
+        `${path.join(head, "util.py")}:1`,
+      ].sort()
+    );
+    assert.strictEqual(visited[3], visited[0], "goes round");
+    await vscode.commands.executeCommand("dearReviewer.previousFinding");
+    assert.strictEqual(at(), visited[2]);
+  });
+
   it("shows the Assistant's message in the hover as plain text, with only Dismiss and Convert to run", async () => {
     const marker = (await gutterMarkers()).find(
       (m) => m.file === path.join(head, "util.py")

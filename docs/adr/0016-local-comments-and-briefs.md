@@ -5,6 +5,8 @@ date: 2026-10-14
 
 # Keep a local Change's Comments in the extension's storage, and end its Review with a Brief from the Assistant
 
+Amended by [ADR 0018](0018-finish-a-review-from-the-change.md): writing a Brief no longer ends the Review. Copying it does, so the Reviewer reads and edits the Brief while its Comments are still in the gutter. A local Change's kept Comments can also be discarded.
+
 ## Context and Problem Statement
 
 The Reviewer comments on a local Change, such as an agent's branch, as on a pull request (spec #33), but no pull request holds the Comments, and nobody on GitHub reads them. The Review ends when the Assistant turns the Comments into a Brief, which the Reviewer reads, edits and copies to the clipboard for an agent (#35–#37). The next Review then shows what changed since (#38). ADR 0015 left local Changes without a last Review to compare with until Briefs exist. Where are a local Change's Comments kept, what is the Brief, and how does it record the commit it covered?

@@ -1,6 +1,7 @@
 // A local Change's Reviews, kept in the extension's storage since no pull
 // request holds them (see ADR 0016): the Comments of the Review under way,
-// and the head commit the last Brief covered. Kept by the Change's
+// the Brief written for it until the Reviewer copies it (see ADR 0018), and
+// the head commit the last Brief covered. Kept by the Change's
 // conversation name, which new commits don't change (see ADR 0009), so a
 // branch's next Review knows what its last one covered.
 
@@ -24,6 +25,8 @@ interface LocalReview {
   threads: LocalThread[];
   /** The Brief that ended the last Review. */
   briefed?: { commit: string; at: string };
+  /** The Brief written for the Review under way, which ends it once copied. */
+  written?: { file: string; commit: string; threads: string[] };
 }
 
 export class LocalPendingReviews implements PendingReviews {
@@ -117,19 +120,52 @@ export class LocalPendingReviews implements PendingReviews {
   }
 
   /**
-   * Ends the Review with a Brief that covered the Change's head: the
-   * threads that went into it leave the Review, and the head is kept as
-   * the last reviewed commit.
+   * Keeps the Brief written from these threads at the Change's head. The
+   * Review goes on until the Reviewer copies it.
    */
-  endWithBrief(change: Change, briefed: LocalThread[]): void {
-    const ids = new Set(briefed.map((t) => t.id));
+  wroteBrief(change: Change, file: string, briefed: LocalThread[]): void {
     this.update(change, (review) => {
-      review.threads = review.threads.filter((t) => !ids.has(t.id));
-      review.briefed = {
+      review.written = {
+        file,
         commit: change.headSha,
-        at: new Date().toISOString(),
+        threads: briefed.map((t) => t.id),
       };
     });
+  }
+
+  /**
+   * Ends the Review whose Brief is this file, if it is the latest written
+   * and the Review hasn't ended: the threads that went into the Brief leave
+   * the Review, and the head it covered is kept as the last reviewed commit.
+   * Gives the conversation name of the Review it ended.
+   */
+  endWithBrief(file: string): string | undefined {
+    const all = this.all();
+    const conversation = Object.keys(all).find(
+      (name) => all[name].written?.file === file
+    );
+    if (conversation === undefined) return;
+    const review = all[conversation];
+    const ids = new Set(review.written!.threads);
+    review.threads = review.threads.filter((t) => !ids.has(t.id));
+    review.briefed = {
+      commit: review.written!.commit,
+      at: new Date().toISOString(),
+    };
+    delete review.written;
+    this.write(all);
+    return conversation;
+  }
+
+  /** Drops the Comments of the Review under way, unbriefed. */
+  async discard(change: Change): Promise<number> {
+    let count = 0;
+    this.update(change, (review) => {
+      count = review.threads.reduce((n, t) => n + t.comments.length, 0);
+      review.threads = [];
+      delete review.written;
+    });
+    return count;
   }
 
   /** The head commit the last Brief for the conversation covered, if one was written. */

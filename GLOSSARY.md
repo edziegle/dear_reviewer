@@ -9,7 +9,7 @@ The human examining a change and deciding what to say about it. Always a person,
 _Avoid_: User (too broad), AI reviewer
 
 **Review**:
-One pass by a Reviewer over a Change, ending when they submit a verdict or produce a Brief. A Change can have several Reviews as new commits arrive.
+One pass by a Reviewer over a Change, ending when they submit a verdict or copy a Brief for an agent. A Change can have several Reviews as new commits arrive.
 _Avoid_: Code review session, audit, round
 
 **Assistant**:

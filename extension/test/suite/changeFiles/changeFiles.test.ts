@@ -8,6 +8,7 @@ import {
   hideViewedFiles,
   markViewed,
   render,
+  review,
   select,
   showViewedFiles,
   unmarkViewed,
@@ -129,6 +130,39 @@ describe("The Change files view", () => {
       "  obsolete.py [D]",
       "  util.py [M]",
     ]);
+  });
+
+  it("offers a local Change's actions: a Brief, not a submitted Review", async () => {
+    assert.strictEqual(
+      entryAt(await changeFiles(), title).contextValue,
+      "change.local"
+    );
+  });
+
+  it("moves through the files not yet viewed, from the diff shown, marking it viewed on the way", async () => {
+    const shows = async (file: string, side: "base" | "head") =>
+      eventually(() =>
+        assert.strictEqual(
+          (side === "base" ? activeDiff().original : activeDiff().modified)
+            .fsPath,
+          path.join(side === "base" ? base : head, file)
+        )
+      );
+    await select(entryAt(await changeFiles(), title, "main.py"));
+    await shows("main.py", "head");
+
+    await review("nextUnviewedFile");
+    await shows("obsolete.py", "base");
+    await review("previousUnviewedFile");
+    await shows("main.py", "head");
+    await review("previousUnviewedFile");
+    await shows("added.py", "head");
+
+    await review("markViewedAndNext");
+    await shows("main.py", "head");
+    const tree = await changeFiles();
+    assert.strictEqual(entryAt(tree, title, "added.py").viewed, true);
+    await unmarkViewed(entryAt(tree, title, "added.py"));
   });
 
   it("hides viewed files, and directories left empty, until they are shown again", async () => {

@@ -84,6 +84,11 @@ export class AssistantPanel {
     this.onDidDispose = this.view.onDidDispose;
   }
 
+  /** Whether the panel is the one the Reviewer is looking at. */
+  get active(): boolean {
+    return this.view.active;
+  }
+
   /** The state last sent to the webview. */
   get sent(): ShownConversation {
     return this.view.sent;
@@ -169,7 +174,7 @@ function html(): string {
   .message.reviewer { padding: 8px; border-radius: 4px; background: var(--vscode-editor-inactiveSelectionBackground); }
   .message.note { color: var(--vscode-descriptionForeground); font-style: italic; }
   .context { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
-  .chip { font-family: var(--vscode-editor-font-family); font-size: 0.85em; padding: 1px 6px; border-radius: 3px; background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); white-space: nowrap; }
+  .chip { font-family: var(--vscode-editor-font-family); font-size: 0.85em; padding: 1px 6px; border-radius: 3px; background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); max-width: 100%; overflow-wrap: anywhere; }
   .chip button { background: none; border: none; color: inherit; cursor: pointer; padding: 0 0 0 4px; font: inherit; }
   .busy { color: var(--vscode-descriptionForeground); margin: 8px 0; }
   .busy .now { font-style: italic; }
@@ -182,6 +187,7 @@ function html(): string {
   form { display: flex; gap: 6px; align-items: flex-end; }
   textarea { flex: 1; resize: vertical; min-height: 2.6em; font: inherit; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); border-radius: 2px; padding: 4px 6px; }
   textarea:focus { outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
+  textarea::placeholder { color: var(--vscode-input-placeholderForeground); opacity: 1; }
   button.send { font: inherit; color: var(--vscode-button-foreground); background: var(--vscode-button-background); border: none; border-radius: 2px; padding: 4px 12px; cursor: pointer; }
   button.send:hover { background: var(--vscode-button-hoverBackground); }
   button.send:disabled { opacity: 0.5; cursor: default; }
@@ -191,7 +197,8 @@ function html(): string {
 <header><h1 id="title"></h1><div class="login" id="login"></div></header>
 <main id="messages"></main>
 <div class="busy" id="busy" hidden><div class="now" id="now"></div><details id="steps" hidden><summary id="stepCount"></summary><ol id="stepList"></ol></details></div>
-<div class="problem" id="problem" hidden></div>
+<div class="problem" id="problem" role="alert" hidden></div>
+<div class="visually-hidden" id="announce" role="status"></div>
 <footer>
   <div class="context" id="context"></div>
   <form id="ask">
@@ -244,7 +251,7 @@ function html(): string {
   byId("messages").addEventListener("keydown", (event) => {
     if (event.key === "Enter" && event.target instanceof HTMLAnchorElement) event.target.click();
   });
-  let busy = false;
+  let busy;
   const text = byId("text");
   const send = () => {
     const value = text.value.trim();
@@ -299,6 +306,9 @@ function html(): string {
     }));
     byId("context").replaceChildren(...(state.context || []).map((s, index) =>
       chip(s, () => vscode.postMessage({ type: "removeContext", index }))));
+    // Tells a screen reader when a reply starts and ends, not each step.
+    if (busy !== undefined && state.busy !== busy)
+      byId("announce").textContent = state.busy ? "The Assistant is working on a reply." : "The Assistant replied.";
     busy = state.busy;
     byId("send").disabled = busy;
     byId("busy").hidden = !state.busy;

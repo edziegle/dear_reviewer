@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-14T00:00:00Z",
+  "generatedAt": "2026-10-14T16:00:00Z",
   "title": "Design System: Dear Reviewer",
   "extensions": {
     "colorMeta": {
@@ -303,6 +303,8 @@
       "**Do** reach for native UI first (tree views, comment threads, decorations, quick picks, status bar) and add a webview only when an ADR says why none fits.",
       "**Do** put styles both webviews use in `sharedStyles` in `extension/src/markdownPanel.ts`, never a copy in each panel.",
       "**Do** give every interactive element a visible `:focus-visible` outline in `focus`, and make links in rendered Markdown reachable with Tab and Enter.",
+      "**Do** announce status to screen readers: `role=\"status\"` for loading and working lines, `role=\"alert\"` for the problem banner, and a visually hidden status line for changes that are otherwise only visual, such as a reply finishing.",
+      "**Do** color placeholders with `--vscode-input-placeholderForeground`; the browser's default gray fails contrast on dark themes.",
       "**Do** check every webview change in a light, a dark and a high-contrast theme in VSCodium.",
       "**Do** size type in `em` from the theme size, and use the editor font for SHAs, paths and code."
     ],

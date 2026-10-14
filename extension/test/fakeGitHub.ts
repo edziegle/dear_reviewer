@@ -570,7 +570,7 @@ export async function startFakeGitHub(): Promise<{
    */
   function mutate(query: string, vars: Record<string, unknown>) {
     const review =
-      /\b(addPullRequestReview|addPullRequestReviewThread|addPullRequestReviewThreadReply|updatePullRequestReviewComment|deletePullRequestReviewComment|submitPullRequestReview|resolveReviewThread|unresolveReviewThread)\(\s*input:\s*\$input\s*\)/.exec(
+      /\b(addPullRequestReview|addPullRequestReviewThread|addPullRequestReviewThreadReply|updatePullRequestReviewComment|deletePullRequestReviewComment|deletePullRequestReview|submitPullRequestReview|resolveReviewThread|unresolveReviewThread)\(\s*input:\s*\$input\s*\)/.exec(
         query
       );
     if (review)
@@ -773,6 +773,11 @@ export async function startFakeGitHub(): Promise<{
         thread.comments = thread.comments.filter((c) => c !== comment);
         if (thread.comments.length === 0)
           review.threads = review.threads.filter((t) => t !== thread);
+        return { pullRequestReview: { id: review.id } };
+      }
+      case "deletePullRequestReview": {
+        const { pr, review } = myPendingReview(input.pullRequestReviewId);
+        pr.reviews = (pr.reviews ?? []).filter((r) => r !== review);
         return { pullRequestReview: { id: review.id } };
       }
       case "submitPullRequestReview": {

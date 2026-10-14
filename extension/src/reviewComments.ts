@@ -410,6 +410,32 @@ export class ReviewComments implements vscode.Disposable {
     return true;
   }
 
+  /** How many of the Change's Comments are in the Review under way, as last loaded. */
+  pendingCount(change: Change): number {
+    let count = 0;
+    for (const thread of this.shown.get(change.id) ?? [])
+      for (const comment of thread.comments)
+        if (comment instanceof PendingComment) count++;
+    return count;
+  }
+
+  /**
+   * Drops the Review under way with its Comments, unpublished. Gives whether
+   * it was dropped.
+   */
+  async discard(change: Change): Promise<boolean> {
+    try {
+      await this.pending.discard(change);
+    } catch (err) {
+      void vscode.window.showErrorMessage(
+        `Couldn't discard your Review of ${changeName(change)}: ${messageOf(err)}`
+      );
+      return false;
+    }
+    await this.reload(change);
+    return true;
+  }
+
   /** Shows the Change's threads afresh, such as after its Review ended. */
   async reload(change: Change): Promise<void> {
     this.clear(change.id);

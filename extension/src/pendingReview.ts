@@ -14,6 +14,7 @@ import type {
   ReviewThread,
   ThreadPlace,
 } from "./github/client";
+import type { LocalPendingReviews } from "./localReviews";
 import type { PullRequestRef } from "./openChanges";
 
 /** Where a Change's Comments are kept while its Review is under way. */
@@ -46,7 +47,7 @@ export interface PendingReviews {
 /** Keeps each Change's Comments where its source does: GitHub for pull requests. */
 export class PendingReviewsBySource implements PendingReviews {
   constructor(
-    private readonly local: PendingReviews,
+    private readonly local: LocalPendingReviews,
     private readonly github: GitHubPendingReviews
   ) {}
 
@@ -80,6 +81,16 @@ export class PendingReviewsBySource implements PendingReviews {
 
   deleteComment(change: Change, commentId: string): Promise<void> {
     return this.of(change).deleteComment(change, commentId);
+  }
+
+  /**
+   * Drops the Review under way with its Comments, unpublished: a pull
+   * request's pending review, or a local Change's kept Comments.
+   */
+  discard(change: Change): Promise<void> {
+    return change.pullRequest
+      ? this.github.discard(change)
+      : this.local.discard(change).then(() => undefined);
   }
 
   /** Submits a pull request's pending review; see `GitHubPendingReviews.submit`. */
@@ -190,6 +201,23 @@ export class GitHubPendingReviews implements PendingReviews {
 
   deleteComment(_change: Change, commentId: string): Promise<void> {
     return this.github.deleteReviewComment(commentId);
+  }
+
+  /** Deletes the Reviewer's pending review of the pull request, if there is one. */
+  async discard(change: Change): Promise<void> {
+    const pullRequest = pullRequestOf(change);
+    const key = keyOf(pullRequest);
+    try {
+      const found = await this.github.reviewThreads(
+        pullRequest.repository,
+        pullRequest.number
+      );
+      this.signedIn = found.viewer;
+      if (found.pendingReviewId)
+        await this.github.deleteReview(found.pendingReviewId);
+    } finally {
+      this.reviewIds.delete(key);
+    }
   }
 
   /**

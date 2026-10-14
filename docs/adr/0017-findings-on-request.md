@@ -5,6 +5,8 @@ date: 2026-10-14
 
 # Raise Findings only on request, as JSON from the Change's conversation, shown as gutter markers that become draft Comments
 
+Amended by [ADR 0018](0018-finish-a-review-from-the-change.md): Find Issues is now called Ask for Findings, and Next Finding and Previous Finding step through the Findings from the keyboard.
+
 ## Context and Problem Statement
 
 The Reviewer wants the Assistant's attention on a Change only when they ask for it (spec #45), and each Finding must show as a marker beside its lines, where they drop it or turn it into a Comment, so nothing the Assistant says is published without their decision (#46, #48). ADR 0012 puts Findings in the editor as comment threads or decorations, listed in a tree view. The Assistant runs as one long-lived `claude` process per Change, in the Change's conversation (ADRs 0004 and 0009), and reads other people's code, so its output can't be trusted. How does Dear Reviewer ask for Findings, read them, show them and turn them into Comments?

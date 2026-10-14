@@ -1,5 +1,7 @@
 // The Change files view: each open Change in this window, with its files as a
-// directory tree. Files show their status and a viewed checkbox; selecting
+// directory tree. A Change shows how many files are viewed and whether it has
+// new commits since the Reviewer's last Review, and holds the actions that
+// finish its Review. Files show their status and a viewed checkbox; selecting
 // one opens its diff between the base and head worktrees.
 
 import * as fs from "fs";
@@ -15,6 +17,7 @@ import {
 } from "./changeWorkspace";
 import { setContext } from "./context";
 import { messageOf } from "./errors";
+import { SignInRejectedError } from "./github/client";
 import { hasFolder } from "./reviewWindow";
 import { ViewedFiles } from "./viewedFiles";
 
@@ -24,6 +27,8 @@ export type ChangeFilesNode =
       change: Change;
       files: ChangedFile[];
       viewedCount: number;
+      /** Whether the Change has new commits since the last Review, if one ended. */
+      sinceReview?: "newCommits" | "noNewCommits";
       children: ChangeFilesNode[];
     }
   | {
@@ -34,7 +39,12 @@ export type ChangeFilesNode =
       children: ChangeFilesNode[];
     }
   | { kind: "file"; change: Change; file: ChangedFile; viewed: boolean }
-  | { kind: "problem"; message: string };
+  | {
+      kind: "problem";
+      message: string;
+      /** Whether GitHub turned the token down, so signing in again is the way out. */
+      signIn?: boolean;
+    };
 
 /** Gives the empty side of an added or deleted file's diff. */
 export const emptyFileScheme = "dear-reviewer-empty";
@@ -70,18 +80,30 @@ export class ChangeFilesView
   readonly onDidChangeTreeData = this.changed.event;
   // A Change's files never change: its base and head are fixed commits.
   private readonly files = new Map<string, Promise<ChangedFile[]>>();
+  /** The commit each Change's last Review covered, until a Review ends. */
+  private readonly reviewed = new Map<string, Promise<string | undefined>>();
 
   constructor(
     private readonly openChanges: () => Change[],
     private readonly viewedFiles: ViewedFiles,
     /** Keeps the view's settings, so every window and the next session share them. */
-    private readonly settingsFile: string
+    private readonly settingsFile: string,
+    /** The head commit the Reviewer's last Review of a Change covered, if one ended. */
+    private readonly lastReviewed: (
+      change: Change
+    ) => Promise<string | undefined>
   ) {
     void this.showHideViewedContext();
   }
 
   refresh(): void {
     this.changed.fire();
+  }
+
+  /** Shows the Change's state since its last Review afresh, such as after a Review ended. */
+  reviewEnded(change: Change): void {
+    this.reviewed.delete(change.id);
+    this.refresh();
   }
 
   get hidesViewed(): boolean {
@@ -126,6 +148,51 @@ export class ChangeFilesView
     }
   }
 
+  /** Marks these files of the Change viewed or not. */
+  async setFilesViewed(
+    change: Change,
+    paths: string[],
+    viewed: boolean
+  ): Promise<void> {
+    try {
+      await this.viewedFiles.setViewed(change, paths, viewed);
+    } finally {
+      this.refresh();
+    }
+  }
+
+  /**
+   * The Change's next file not yet viewed after this one, or the one before
+   * it, in the view's order, going round at the end. From no file, the first
+   * or last. Gives the file and how many the Change has.
+   */
+  async unviewedFile(
+    change: Change,
+    from: string | undefined,
+    direction: 1 | -1
+  ): Promise<{ file?: ChangedFile; total: number }> {
+    const files = inViewOrder(change, await this.filesOf(change));
+    const viewed = await this.viewedFiles.viewed(change);
+    const start = from ? files.findIndex((f) => f.path === from) : -1;
+    for (let step = 1; step <= files.length; step++) {
+      const i =
+        start === -1
+          ? direction === 1
+            ? step - 1
+            : files.length - step
+          : (start + direction * step + files.length * step) % files.length;
+      const file = files[i];
+      if (file.path !== from && !viewed.has(file.path))
+        return { file, total: files.length };
+    }
+    return { total: files.length };
+  }
+
+  /** Opens the diff of one of the Change's files. */
+  openFile(change: Change, file: ChangedFile): Promise<void> {
+    return this.openDiff({ kind: "file", change, file, viewed: false });
+  }
+
   async openDiff(node: ChangeFilesNode): Promise<void> {
     if (node.kind !== "file") return;
     const { change, file } = node;
@@ -155,8 +222,7 @@ export class ChangeFilesView
       case "problem": {
         const item = new vscode.TreeItem(node.message);
         item.iconPath = new vscode.ThemeIcon("error");
-        // GitHub turned the token down: signing in again is the way out.
-        const signIn = /\b401\b/.test(node.message);
+        const { signIn } = node;
         item.command = signIn
           ? { title: "Sign In to GitHub", command: "dearReviewer.signIn" }
           : { title: "Refresh", command: "dearReviewer.refreshChangeFiles" };
@@ -169,10 +235,22 @@ export class ChangeFilesView
           vscode.TreeItemCollapsibleState.Expanded
         );
         item.id = node.change.id;
-        item.description = `${node.viewedCount} of ${node.files.length} viewed`;
+        const since = {
+          newCommits: "new commits since my Review",
+          noNewCommits: "no new commits since my Review",
+        };
+        item.description = [
+          `${node.viewedCount} of ${node.files.length} viewed`,
+          ...(node.sinceReview ? [since[node.sinceReview]] : []),
+        ].join(" · ");
         item.tooltip = node.change.repository;
         item.iconPath = new vscode.ThemeIcon("git-compare");
-        item.contextValue = "change";
+        // Menus show the actions that fit: submit or a Brief, and what changed since.
+        item.contextValue = [
+          "change",
+          node.change.pullRequest ? "pullRequest" : "local",
+          ...(node.sinceReview === "newCommits" ? ["since"] : []),
+        ].join(".");
         return item;
       }
       case "directory": {
@@ -239,15 +317,34 @@ export class ChangeFilesView
       return {
         kind: "problem",
         message: `Couldn't load the viewed state of ${changeTitle(change)}: ${message}`,
+        signIn: err instanceof SignInRejectedError,
       };
     }
+    const reviewed = await this.reviewedOf(change);
     return {
       kind: "change",
       change,
       files,
       viewedCount: files.filter((f) => viewed.has(f.path)).length,
+      ...(reviewed && {
+        sinceReview:
+          reviewed === change.headSha ? "noNewCommits" : "newCommits",
+      }),
       children: directoryTree(change, files, viewed, this.hidesViewed),
     };
+  }
+
+  /** The commit the Change's last Review covered; unknown counts as none. */
+  private reviewedOf(change: Change): Promise<string | undefined> {
+    let reviewed = this.reviewed.get(change.id);
+    if (!reviewed) {
+      reviewed = this.lastReviewed(change).catch(() => {
+        this.reviewed.delete(change.id);
+        return undefined;
+      });
+      this.reviewed.set(change.id, reviewed);
+    }
+    return reviewed;
   }
 
   private filesOf(change: Change): Promise<ChangedFile[]> {
@@ -263,6 +360,19 @@ export class ChangeFilesView
   private showHideViewedContext(): Thenable<unknown> {
     return setContext("dearReviewer.hideViewedFiles", this.hidesViewed);
   }
+}
+
+/** The Change's files in the order the view lists them. */
+function inViewOrder(change: Change, files: ChangedFile[]): ChangedFile[] {
+  const flat = (nodes: ChangeFilesNode[]): ChangedFile[] =>
+    nodes.flatMap((node) =>
+      node.kind === "file"
+        ? [node.file]
+        : node.kind === "directory"
+          ? flat(node.children)
+          : []
+    );
+  return flat(directoryTree(change, files, new Set(), false));
 }
 
 interface Directory {

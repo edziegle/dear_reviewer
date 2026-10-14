@@ -5,6 +5,7 @@ import { configure, reviewsOnGitHub, setToken } from "../../github";
 import {
   comment,
   commentThreads,
+  discardReview,
   submitReview,
   withoutIds,
 } from "../../review";
@@ -163,5 +164,27 @@ describe("A pull request Review after a reload", () => {
       threads: [],
     });
     assert.strictEqual(reviews.length, 3);
+  });
+
+  it("discards a pending review with its Comments, publishing nothing", async () => {
+    await comment(path.join(head, "util.py"), 0, 0, "Never mind this.");
+    assert.strictEqual(
+      (await reviewsOnGitHub()).filter((r) => r.state === "PENDING").length,
+      1
+    );
+
+    await discardReview(change);
+
+    const reviews = (await reviewsOnGitHub()).map(withoutIds);
+    assert.deepStrictEqual(
+      reviews.map((r) => r.state),
+      ["CHANGES_REQUESTED", "APPROVED", "COMMENTED"]
+    );
+    assert.ok(
+      !(await commentThreads()).some((t) =>
+        t.comments.includes("Never mind this.")
+      ),
+      "the discarded Comment left the gutter"
+    );
   });
 });

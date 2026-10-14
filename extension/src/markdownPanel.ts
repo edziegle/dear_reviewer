@@ -13,6 +13,7 @@ import { renderMarkdown, type RenderOptions } from "./markdown";
  */
 export const sharedStyles = `
   button:focus-visible, .markdown a:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
+  .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .markdown > :first-child { margin-top: 0; }
   .markdown > :last-child { margin-bottom: 0; }
   .markdown h1, .markdown h2, .markdown h3, .markdown h4 { font-size: 1.05em; margin: 1em 0 0.4em; }
@@ -92,6 +93,11 @@ export class MarkdownPanel<State, Shown> {
 
   set title(title: string) {
     this.panel.title = title;
+  }
+
+  /** Whether the panel is the one the Reviewer is looking at. */
+  get active(): boolean {
+    return this.panel.active;
   }
 
   get webview(): vscode.Webview {

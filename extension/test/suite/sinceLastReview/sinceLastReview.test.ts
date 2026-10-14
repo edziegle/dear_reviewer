@@ -1,6 +1,7 @@
 import * as assert from "assert";
 import * as path from "path";
 import * as vscode from "vscode";
+import { changeFiles } from "../changeFiles";
 import {
   askAssistant,
   assistantRuns,
@@ -175,9 +176,17 @@ describe("What changed since my last Review", () => {
     );
     assert.strictEqual(
       (await entry("Restructure pkg")).description,
-      "acme/since #41",
+      "acme/since #41 · open",
       "reviewed at its head"
     );
+    await eventually(async () => {
+      const [change] = await changeFiles();
+      assert.match(
+        change.description ?? "",
+        / viewed · no new commits since my Review$/
+      );
+      assert.strictEqual(change.contextValue, "change.pullRequest");
+    });
   });
 
   it("has no changes to show while the Change is at the reviewed commit", async () => {
@@ -213,7 +222,7 @@ describe("What changed since my last Review", () => {
 
     assert.strictEqual(
       (await entry("Restructure pkg")).description,
-      "acme/since #41 · new commits since my Review"
+      "acme/since #41 · new commits since my Review · open"
     );
   });
 

@@ -1,4 +1,5 @@
-// The Inbox tree view: the Changes waiting for the Reviewer, in groups.
+// The Inbox tree view: the Changes waiting for the Reviewer, in groups, each
+// marked while it opens and once it is open.
 
 import * as crypto from "crypto";
 import * as fs from "fs";
@@ -8,7 +9,9 @@ import {
   GitHubClient,
   NotSignedInError,
   PullRequestSummary,
+  SignInRejectedError,
 } from "./github/client";
+import type { Change } from "./changeWorkspace";
 import { setContext } from "./context";
 import { conversationName } from "./conversationName";
 import { branchesAhead, LocalBranch } from "./localBranches";
@@ -27,6 +30,8 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
   private readonly changed = new vscode.EventEmitter<void>();
   readonly onDidChangeTreeData = this.changed.event;
   private loading: Promise<InboxNode[]> | undefined;
+  /** The pull requests and branches being opened, by their conversation name. */
+  private readonly opening = new Set<string>();
 
   constructor(
     private readonly github: GitHubClient,
@@ -34,8 +39,38 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
     private readonly localClones: () => Promise<LocalClone[]>,
     private readonly avatars: Avatars,
     /** The head commit the last Brief for a local Change's conversation covered. */
-    private readonly lastBriefed: (conversation: string) => string | undefined
+    private readonly lastBriefed: (conversation: string) => string | undefined,
+    /** The Changes open in any window. */
+    private readonly openChanges: () => Change[]
   ) {}
+
+  /**
+   * Opens the pull request or branch of this node, marking it in the
+   * Inbox, and with progress, while `open` runs.
+   */
+  async opened<T>(
+    node: InboxNode,
+    title: string,
+    open: () => Promise<T>
+  ): Promise<T> {
+    const key = keyOf(node);
+    if (key) this.opening.add(key);
+    this.changed.fire();
+    try {
+      return await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title },
+        open
+      );
+    } finally {
+      if (key) this.opening.delete(key);
+      this.changed.fire();
+    }
+  }
+
+  /** Shows afresh which pull requests and branches are open, without reloading. */
+  redraw(): void {
+    this.changed.fire();
+  }
 
   /** Reloads the Inbox from GitHub and the local clones. */
   async refresh(): Promise<void> {
@@ -85,6 +120,7 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
         branch.repository,
         ahead,
         ...(changedSinceReview ? ["new commits since my Review"] : []),
+        ...this.openState(node),
       ].join(" · ");
       item.tooltip = new vscode.MarkdownString(
         [
@@ -115,6 +151,7 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
       `${pr.repository} #${pr.number}`,
       ...(pr.checks ? [`checks ${pr.checks}`] : []),
       ...(changedSinceReview ? ["new commits since my Review"] : []),
+      ...this.openState(node),
     ].join(" · ");
     item.tooltip = new vscode.MarkdownString(
       [
@@ -138,6 +175,16 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
       arguments: [node],
     };
     return item;
+  }
+
+  /** "opening…" while the node's Change opens, "open" once it is. */
+  private openState(node: InboxNode): string[] {
+    const key = keyOf(node);
+    if (!key) return [];
+    if (this.opening.has(key)) return ["opening…"];
+    return this.openChanges().some((change) => change.conversation === key)
+      ? ["open"]
+      : [];
   }
 
   private async load(): Promise<InboxNode[]> {
@@ -166,10 +213,13 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
       }
       await showWelcome("none");
       const message = messageOf(err);
-      // GitHub turned the token down: signing in again is the way out.
-      const action: vscode.Command = /\b401\b/.test(message)
-        ? { title: "Sign In to GitHub", command: "dearReviewer.signIn" }
-        : { title: "Refresh the Inbox", command: "dearReviewer.refreshInbox" };
+      const action: vscode.Command =
+        err instanceof SignInRejectedError
+          ? { title: "Sign In to GitHub", command: "dearReviewer.signIn" }
+          : {
+              title: "Refresh the Inbox",
+              command: "dearReviewer.refreshInbox",
+            };
       return [
         {
           kind: "problem",
@@ -219,6 +269,21 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
     }
     return [{ kind: "group", label: "Local branches", children, count }];
   }
+}
+
+/** The conversation name of the Change a pull request or branch opens as. */
+function keyOf(node: InboxNode): string | undefined {
+  if (node.kind === "pullRequest")
+    return conversationName({
+      kind: "pullRequest",
+      pullRequest: node.pullRequest,
+    });
+  if (node.kind === "localBranch")
+    return conversationName({
+      kind: "branch",
+      branch: node.branch.name,
+      repository: node.branch.clone,
+    });
 }
 
 function pullRequestGroup(

@@ -224,7 +224,7 @@ The feel of every control is quiet and editor-plain. If a control looks custom, 
 ### Buttons
 
 - **Shape:** nearly square (2px), no border.
-- **Primary:** `action-background` on `action-foreground`, 4px 12px padding, inheriting the body font. Used for Send and for a problem's fix.
+- **Primary:** `action-background` on `action-foreground`, 4px 12px padding, inheriting the body font. Used for Send, for a problem's fix, and, at the tighter header size (2px 8px), for Submit Review… in the timeline's header beside Refresh.
 - **Hover / Focus:** hover switches to `action-hover` with no transition. Focus shows a 1px `focus` outline; every button and link needs a visible `:focus-visible` state.
 - **Disabled:** 50% opacity with the default cursor, such as Send while the Assistant works.
 - **Secondary:** `secondary-background` on `secondary-foreground`, tighter (2px 8px), for Refresh.
@@ -232,7 +232,7 @@ The feel of every control is quiet and editor-plain. If a control looks custom, 
 
 ### Chips
 
-- **Style:** selection chips use `badge-background` on `badge-foreground`, the editor font at 0.85em, 3px corners and 1px 6px padding. They read as `path · side · lines`.
+- **Style:** selection chips use `badge-background` on `badge-foreground`, the editor font at 0.85em, 3px corners and 1px 6px padding. They read as `path · side · lines`, and a long path wraps inside the chip rather than running off a narrow panel.
 - **State:** a chip waiting to be sent carries a `×` text button that removes it; chips on a sent message have none.
 - **Status pills:** a check's status as a word in an 8px-round outline of its own state color, with no fill.
 
@@ -253,6 +253,8 @@ The feel of every control is quiet and editor-plain. If a control looks custom, 
 
 Navigation is native: the activity-bar container holds the Inbox, Change Files and Findings tree views, with codicons (`account`, `git-branch`, `git-compare`, `lightbulb`, `error`) and git decoration colors for file status. The status bar item shows `$(sparkle) Claude: <login>`, switching to `$(warning)` on a warning background when the login is missing or billed per token. Webviews never build their own navigation; links and `path:line` references go back to the extension, which opens them in the editor or the browser.
 
+Each Change in Change Files carries its finishing actions as inline codicon buttons (`check-all` Submit Review or `note` Write Brief, `history` Show Timeline, `comment-discussion` Show Assistant), with the rest in its context menu, and says in its description whether there are new commits since the Reviewer's last Review. The Inbox marks a pull request or branch `opening…` and then `open`. Review keys sit under one chord, `Ctrl+Alt+R`, so they don't take over keys the editor already uses.
+
 ### Rendered Markdown
 
 The shared reading style for timeline bodies and Assistant replies: tight margins (0.5em between blocks, no margin at the edges), small headings, `code-block` grounds for code, `quote-block` for quotes, hairline table cells, and links in `link` that open through the extension. Fenced code is plain text in the editor font with no syntax highlighting (ADR 0012).
@@ -265,6 +267,8 @@ The shared reading style for timeline bodies and Assistant replies: tight margin
 - **Do** reach for native UI first (tree views, comment threads, decorations, quick picks, status bar) and add a webview only when an ADR says why none fits.
 - **Do** put styles both webviews use in `sharedStyles` in `extension/src/markdownPanel.ts`, never a copy in each panel.
 - **Do** give every interactive element a visible `:focus-visible` outline in `focus`, and make links in rendered Markdown reachable with Tab and Enter.
+- **Do** announce status to screen readers: `role="status"` for loading and working lines, `role="alert"` for the problem banner, and a visually hidden status line for changes that are otherwise only visual, such as a reply finishing.
+- **Do** color placeholders with `--vscode-input-placeholderForeground`; the browser's default gray fails contrast on dark themes.
 - **Do** check every webview change in a light, a dark and a high-contrast theme in VSCodium.
 - **Do** size type in `em` from the theme size, and use the editor font for SHAs, paths and code.
 

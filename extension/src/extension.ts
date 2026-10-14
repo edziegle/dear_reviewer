@@ -9,6 +9,7 @@ import {
   changeName,
   changeTitle,
   fetchPullRequest,
+  pullRequestName,
 } from "./changeWorkspace";
 import {
   ChangeFilesNode,
@@ -19,7 +20,7 @@ import { Assistants } from "./assistant/assistant";
 import { Briefs } from "./briefs";
 import { Conversations } from "./assistant/conversations";
 import { Findings, FindingsNode } from "./findings";
-import { selectionInChange } from "./assistant/selection";
+import { selectionInChange, whereInChange } from "./assistant/selection";
 import { GitHubAuth } from "./github/auth";
 import { GitHubClient, PullRequestSummary } from "./github/client";
 import { setContext } from "./context";
@@ -65,7 +66,8 @@ export function activate(context: vscode.ExtensionContext) {
   const changeFiles = new ChangeFilesView(
     () => changes.list(),
     viewedFiles,
-    path.join(context.globalStorageUri.fsPath, "change-files-view.json")
+    path.join(context.globalStorageUri.fsPath, "change-files-view.json"),
+    (change) => reviews.lastReviewed(change)
   );
   const avatars = new Avatars(
     github,
@@ -126,19 +128,33 @@ export function activate(context: vscode.ExtensionContext) {
     () => repositories.inboxRepositories(),
     () => repositories.inboxClones(),
     avatars,
-    (conversation) => localReviews.lastBriefed(conversation)
+    (conversation) => localReviews.lastBriefed(conversation),
+    () => changes.list()
   );
   const briefs = new Briefs(
     context.globalStorageUri.fsPath,
     localReviews,
     (change, threads) => assistants.writeBrief(change, threads),
-    async (change) => {
-      await review.reload(change);
+    async (conversation) => {
+      for (const change of changes.list()) {
+        if (change.conversation !== conversation) continue;
+        await review.reload(change);
+        changeFiles.reviewEnded(change);
+      }
       // The Inbox shows which branches changed since a Brief.
       void inbox.refresh();
     }
   );
-  const timelines = new Timelines(github, avatars, (uri) => openLink(uri));
+  const timelines = new Timelines(
+    github,
+    avatars,
+    (uri) => openLink(uri),
+    (change) =>
+      void vscode.commands.executeCommand(
+        "dearReviewer.submitReview",
+        requestOf(change)
+      )
+  );
   const findings = new Findings(
     context.extensionUri,
     (change) => assistants.findIssues(change),
@@ -146,6 +162,13 @@ export function activate(context: vscode.ExtensionContext) {
     (change, place) => review.onDiff(change, place),
     (change, place, body) => review.draft(change, place, body)
   );
+
+  async function stepFinding(direction: 1 | -1): Promise<void> {
+    if (!(await findings.step(direction)))
+      void vscode.window.showInformationMessage(
+        "There are no Findings. Ask for Findings on a Change to have the Assistant raise some."
+      );
+  }
 
   /** Lets go of a Change that was closed: its panels, Comments, Findings and viewed files. */
   async function letGo(change: Change): Promise<void> {
@@ -166,9 +189,110 @@ export function activate(context: vscode.ExtensionContext) {
       )?.repository,
     async (change) => {
       await letGo(change);
-      changeFiles.refresh();
+      showOpenChanges();
     }
   );
+
+  /**
+   * Shows which Changes are open: in Change Files, in the Inbox, and to the
+   * review keybindings, which work while one is open in this window.
+   */
+  function showOpenChanges(): void {
+    changeFiles.refresh();
+    inbox.redraw();
+    void setContext(
+      "dearReviewer.hasOpenChange",
+      changes.shownHere().length > 0
+    );
+  }
+
+  /**
+   * The file of a Change open in this window that the active editor tab
+   * shows, either side of a diff, or at the reviewed commit of what changed
+   * since the last Review.
+   */
+  function activeFile(): ReturnType<typeof whereInChange> {
+    const shown = changes.shownHere();
+    const input = vscode.window.tabGroups.activeTabGroup.activeTab?.input;
+    const uris =
+      input instanceof vscode.TabInputTextDiff
+        ? [input.modified, input.original]
+        : input instanceof vscode.TabInputText
+          ? [input.uri]
+          : [];
+    for (const uri of uris) {
+      const where = whereInChange(uri, shown);
+      if (where) return where;
+    }
+  }
+
+  /** The Change open in this window of the panel or editor the Reviewer is looking at. */
+  function activeChange(): Change | undefined {
+    const panel = assistants.activeChangeId() ?? timelines.activeChangeId();
+    if (panel) return changes.shownHere().find((c) => c.id === panel);
+    return activeFile()?.change;
+  }
+
+  /**
+   * The Change a command acts on: the one given, by a Change Files menu or
+   * a test, or else the one the Reviewer is looking at, or else the only one
+   * open in this window that fits, or else one they pick. `none` says why
+   * there is none.
+   */
+  async function changeFor(
+    target: ChangeTarget | undefined,
+    title: string,
+    fits: (change: Change) => boolean = () => true,
+    none = "No Change is open in this window."
+  ): Promise<Change | undefined> {
+    if (target && "kind" in target)
+      return target.kind === "change" ? target.change : undefined;
+    if (target) {
+      const change = await changes.find(target);
+      if (!change)
+        void vscode.window.showErrorMessage(
+          "The Change isn't open in this window."
+        );
+      return change;
+    }
+    const looking = activeChange();
+    if (looking && fits(looking)) return looking;
+    return pickChange(changes.shownHere().filter(fits), title, none);
+  }
+
+  /** Moves to the next or previous file not yet viewed, first marking the one shown viewed if asked. */
+  async function stepUnviewed(
+    direction: 1 | -1,
+    markShown: boolean
+  ): Promise<void> {
+    const where = activeFile();
+    const here = where?.file.side === "commit" ? undefined : where;
+    if (markShown && !here) {
+      void vscode.window.showInformationMessage(
+        "Open a file's diff from Change Files to mark it viewed."
+      );
+      return;
+    }
+    const change =
+      here?.change ??
+      (await changeFor(
+        undefined,
+        direction === 1 ? "Next Unviewed File" : "Previous Unviewed File"
+      ));
+    if (!change) return;
+    if (here && markShown)
+      await changeFiles.setFilesViewed(change, [here.file.path], true);
+    const { file } = await changeFiles.unviewedFile(
+      change,
+      here?.file.path,
+      direction
+    );
+    if (file) await changeFiles.openFile(change, file);
+    else
+      void vscode.window.showInformationMessage(
+        `Every file of ${changeName(change)} is viewed.`
+      );
+  }
 
   /**
    * Remembers the folder as the repository's clone: the one given (by a
@@ -283,15 +407,22 @@ export function activate(context: vscode.ExtensionContext) {
           repositories.remembered()
         );
         if (!request) return;
+        const { repository, base, head } = request;
         try {
-          await changes.open(request);
+          await vscode.window.withProgress(
+            {
+              location: vscode.ProgressLocation.Notification,
+              title: `Opening ${path.basename(repository)} ${base}..${head}…`,
+            },
+            () => changes.open(request)
+          );
         } catch (err) {
           const message = messageOf(err);
           void vscode.window.showErrorMessage(
             `Couldn't open the Change: ${message}`
           );
         }
-        changeFiles.refresh();
+        showOpenChanges();
       }
     ),
     vscode.commands.registerCommand(
@@ -306,7 +437,11 @@ export function activate(context: vscode.ExtensionContext) {
         if (!pr) return;
         const open = async (clone: string) => {
           try {
-            await changes.open(await fetchPullRequest(clone, pr));
+            await inbox.opened(
+              { kind: "pullRequest", pullRequest: pr },
+              `Opening ${pullRequestName(pr)}…`,
+              async () => changes.open(await fetchPullRequest(clone, pr))
+            );
           } catch (err) {
             const message = messageOf(err);
             const locate = "Locate Another Clone…";
@@ -318,7 +453,7 @@ export function activate(context: vscode.ExtensionContext) {
               picked === locate && (await locateClone(pr.repository));
             if (other) return open(other);
           }
-          changeFiles.refresh();
+          showOpenChanges();
         };
         const clone = await repositories.cloneOf(pr.repository);
         if (clone) return open(clone);
@@ -334,27 +469,44 @@ export function activate(context: vscode.ExtensionContext) {
         if (node?.kind !== "localBranch") return;
         const { branch } = node;
         try {
-          await changes.open({
-            repository: branch.clone,
-            base: branch.main,
-            head: `refs/heads/${branch.name}`,
-          });
+          await inbox.opened(node, `Opening ${branch.name}…`, () =>
+            changes.open({
+              repository: branch.clone,
+              base: branch.main,
+              head: `refs/heads/${branch.name}`,
+            })
+          );
         } catch (err) {
           const message = messageOf(err);
           void vscode.window.showErrorMessage(
             `Couldn't open ${branch.name}: ${message}`
           );
         }
-        changeFiles.refresh();
+        showOpenChanges();
       }
     ),
     vscode.commands.registerCommand(
       "dearReviewer.closeChange",
-      async (request?: ChangeRequest) => {
-        request ??= await pickOpenChange(changes.list(), "Close Change");
+      async (target?: ChangeTarget) => {
+        let request: ChangeRequest | undefined;
+        if (target && "kind" in target)
+          request =
+            target.kind === "change" ? requestOf(target.change) : undefined;
+        else if (target) request = target;
+        else {
+          // A Change open in another window can be closed from here too.
+          const change =
+            activeChange() ??
+            (await pickChange(
+              changes.list(),
+              "Close Change",
+              "No Change is open."
+            ));
+          request = change && requestOf(change);
+        }
         if (!request) return;
         await letGo(await changes.close(request));
-        changeFiles.refresh();
+        showOpenChanges();
       }
     ),
     // The timeline opens first, so the Assistant's summary is the side
@@ -399,58 +551,123 @@ export function activate(context: vscode.ExtensionContext) {
     ),
     vscode.commands.registerCommand(
       "dearReviewer.submitReview",
-      async (request?: ChangeRequest, verdict?: Verdict, summary?: string) => {
-        request ??= await pickOpenChange(
-          changes.list().filter((c) => c.pullRequest),
-          "Submit Review"
+      async (
+        target?: ChangeTarget,
+        given?: unknown,
+        givenSummary?: unknown
+      ) => {
+        const change = await changeFor(
+          target,
+          "Submit Review",
+          (c) => !!c.pullRequest,
+          "No pull request's Change is open in this window. A local Change's Review ends with a Brief."
         );
-        const change = request && (await changes.find(request));
-        if (!change?.pullRequest) {
-          if (request)
-            void vscode.window.showErrorMessage(
-              "Only a pull request's Change is submitted as a Review."
-            );
+        if (!change) return;
+        if (!change.pullRequest) {
+          void vscode.window.showErrorMessage(
+            "Only a pull request's Change is submitted as a Review. A local Change's Review ends with a Brief."
+          );
           return;
         }
-        const { repository, number } = change.pullRequest;
-        verdict ??= await pickVerdict(
-          `Submit Review: ${repository} #${number}`
-        );
+        // Menus of a tree that selects many pass the selection after the node.
+        let verdict = isVerdict(given) ? given : undefined;
+        let summary =
+          typeof givenSummary === "string" ? givenSummary : undefined;
+        await review.sync();
+        const name = changeName(change);
+        const comments = countOf(review.pendingCount(change), "Comment");
+        verdict ??= await pickVerdict(name, comments);
         if (!verdict) return;
+        const chosen = verdict;
         summary ??= await vscode.window.showInputBox({
-          title: `Submit Review: ${repository} #${number}`,
-          prompt: "Summary",
+          title: `Submit Review: ${name} · ${verdicts[chosen].label}`,
+          prompt: `The summary GitHub shows with your verdict, published with ${comments}.`,
+          placeHolder: "Summary for the author",
           ignoreFocusOut: true,
         });
         if (summary === undefined) return;
-        if (await review.submit(change, verdict, summary)) {
-          void timelines.refresh(change);
-          // The Inbox shows which pull requests changed since a Review.
-          void inbox.refresh();
+        const text = summary;
+        const submitted = await vscode.window.withProgress(
+          {
+            location: vscode.ProgressLocation.Notification,
+            title: `Submitting your Review of ${name}…`,
+          },
+          () => review.submit(change, chosen, text)
+        );
+        if (!submitted) return;
+        void timelines.refresh(change);
+        changeFiles.reviewEnded(change);
+        // The Inbox shows which pull requests changed since a Review.
+        void inbox.refresh();
+        void vscode.window.showInformationMessage(
+          comments === "no Comments"
+            ? `${verdicts[chosen].done} ${name}.`
+            : `${verdicts[chosen].done} ${name} and published ${comments}.`
+        );
+      }
+    ),
+    vscode.commands.registerCommand(
+      "dearReviewer.discardReview",
+      async (target?: ChangeTarget, confirmed?: unknown) => {
+        const change = await changeFor(target, "Discard Pending Review");
+        if (!change) return;
+        await review.sync();
+        const name = changeName(change);
+        const count = review.pendingCount(change);
+        if (count === 0) {
           void vscode.window.showInformationMessage(
-            `Submitted your Review of ${repository} #${number}.`
+            `Your Review of ${name} has no pending Comments to discard.`
+          );
+          return;
+        }
+        const comments = countOf(count, "Comment");
+        const discard = "Discard Review";
+        if (confirmed !== true) {
+          const picked = await vscode.window.showWarningMessage(
+            `Discard your Review of ${name}? Its ${comments} will be deleted without being published. This can't be undone.`,
+            { modal: true },
+            discard
+          );
+          if (picked !== discard) return;
+        }
+        if (await review.discard(change)) {
+          changeFiles.refresh();
+          void vscode.window.showInformationMessage(
+            `Discarded your Review of ${name} and its ${comments}.`
           );
         }
       }
     ),
     vscode.commands.registerCommand(
       "dearReviewer.writeBrief",
-      async (request?: ChangeRequest) => {
-        request ??= await pickOpenChange(
-          changes.list().filter((c) => !c.pullRequest),
-          "Write Brief"
+      async (target?: ChangeTarget) => {
+        const change = await changeFor(
+          target,
+          "Write Brief",
+          (c) => !c.pullRequest,
+          "No local Change is open in this window. A pull request's Review ends when you submit it."
         );
-        const change = request && (await changes.find(request));
-        if (!change || change.pullRequest) {
-          if (request)
-            void vscode.window.showErrorMessage(
-              change
-                ? "A pull request's Review ends when you submit it; a Brief ends a local Change's Review."
-                : "The Change isn't open in this window."
-            );
+        if (!change) return;
+        if (change.pullRequest) {
+          void vscode.window.showErrorMessage(
+            "A pull request's Review ends when you submit it; a Brief ends a local Change's Review."
+          );
           return;
         }
         await briefs.write(change);
+      }
+    ),
+    vscode.commands.registerCommand(
+      "dearReviewer.finishReview",
+      async (target?: ChangeTarget) => {
+        const change = await changeFor(target, "Finish Review");
+        if (!change) return;
+        await vscode.commands.executeCommand(
+          change.pullRequest
+            ? "dearReviewer.submitReview"
+            : "dearReviewer.writeBrief",
+          requestOf(change)
+        );
       }
     ),
     vscode.commands.registerCommand(
@@ -461,17 +678,9 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.window.registerTreeDataProvider("dearReviewer.findings", findings),
     vscode.commands.registerCommand(
       "dearReviewer.findIssues",
-      async (request?: ChangeRequest) => {
-        request ??= await pickOpenChange(changes.list(), "Find Issues");
-        const change = request && (await changes.find(request));
-        if (!change) {
-          if (request)
-            void vscode.window.showErrorMessage(
-              "The Change isn't open in this window."
-            );
-          return;
-        }
-        await findings.find(change);
+      async (target?: ChangeTarget) => {
+        const change = await changeFor(target, "Ask for Findings");
+        if (change) await findings.find(change);
       }
     ),
     vscode.commands.registerCommand(
@@ -490,6 +699,21 @@ export function activate(context: vscode.ExtensionContext) {
         else showNoFinding();
       }
     ),
+    vscode.commands.registerCommand("dearReviewer.nextFinding", () =>
+      stepFinding(1)
+    ),
+    vscode.commands.registerCommand("dearReviewer.previousFinding", () =>
+      stepFinding(-1)
+    ),
+    vscode.commands.registerCommand("dearReviewer.nextUnviewedFile", () =>
+      stepUnviewed(1, false)
+    ),
+    vscode.commands.registerCommand("dearReviewer.previousUnviewedFile", () =>
+      stepUnviewed(-1, false)
+    ),
+    vscode.commands.registerCommand("dearReviewer.markViewedAndNext", () =>
+      stepUnviewed(1, true)
+    ),
     vscode.commands.registerCommand(
       "dearReviewer.revealFinding",
       async (target?: string | FindingsNode) => {
@@ -499,19 +723,12 @@ export function activate(context: vscode.ExtensionContext) {
     ),
     vscode.commands.registerCommand(
       "dearReviewer.showChangesSinceLastReview",
-      async (request?: ChangeRequest) => {
-        request ??= await pickOpenChange(
-          changes.list(),
+      async (target?: ChangeTarget) => {
+        const change = await changeFor(
+          target,
           "Show Changes Since My Last Review"
         );
-        const change = request && (await changes.find(request));
-        if (!change) {
-          if (request)
-            void vscode.window.showErrorMessage(
-              "The Change isn't open in this window."
-            );
-          return;
-        }
+        if (!change) return;
         const name = changeName(change);
         let from: string | undefined;
         try {
@@ -542,21 +759,28 @@ export function activate(context: vscode.ExtensionContext) {
     ),
     vscode.commands.registerCommand(
       "dearReviewer.showAssistant",
-      async (request?: ChangeRequest) => {
-        request ??= await pickOpenChange(changes.list(), "Show Assistant");
-        const change = request && (await changes.find(request));
+      async (target?: ChangeTarget) => {
+        const change = await changeFor(target, "Show Assistant");
         if (change) await assistants.open(change);
       }
     ),
     vscode.commands.registerCommand(
       "dearReviewer.showTimeline",
-      async (request?: ChangeRequest) => {
-        request ??= await pickOpenChange(
-          changes.list().filter((c) => c.pullRequest),
-          "Show Timeline"
+      async (target?: ChangeTarget) => {
+        const change = await changeFor(
+          target,
+          "Show Timeline",
+          (c) => !!c.pullRequest,
+          "No pull request's Change is open in this window. A local Change has no timeline."
         );
-        const change = request && (await changes.find(request));
-        if (change) await timelines.open(change);
+        if (!change) return;
+        if (!change.pullRequest) {
+          void vscode.window.showErrorMessage(
+            "A local Change has no timeline."
+          );
+          return;
+        }
+        await timelines.open(change);
       }
     ),
     vscode.commands.registerCommand(
@@ -583,7 +807,7 @@ export function activate(context: vscode.ExtensionContext) {
     ),
     vscode.workspace.onDidChangeWorkspaceFolders(() => {
       void repositories.scanWindow();
-      changeFiles.refresh();
+      showOpenChanges();
       void review.sync();
       return changes.showPendingDiffs();
     }),
@@ -706,6 +930,7 @@ export function activate(context: vscode.ExtensionContext) {
   );
   void repositories.scanWindow();
   void showSignedIn();
+  showOpenChanges();
   void lifecycle.tidy();
   void changes.showPendingDiffs();
   void review.sync();
@@ -824,7 +1049,7 @@ async function askForLocalClone(
   const locate = "Locate Clone\u2026";
   const openSettings = "Open Settings";
   const picked = await vscode.window.showWarningMessage(
-    `Dear Reviewer doesn't know where ${repository} is cloned on this machine. Locate its clone, or open it in a VSCodium window, and Dear Reviewer will remember it.`,
+    `Dear Reviewer doesn't know where ${repository} is cloned on this machine. Locate its clone, or open it as a folder in a window, and Dear Reviewer will remember it.`,
     locate,
     openSettings
   );
@@ -865,53 +1090,92 @@ function showNoFinding(): void {
   );
 }
 
-async function pickVerdict(title: string): Promise<Verdict | undefined> {
+/** A Change a command is given: by a test or another command, or by a Change Files menu. */
+type ChangeTarget = ChangeRequest | ChangeFilesNode;
+
+/** The request that opens this Change. */
+function requestOf(change: Change): ChangeRequest {
+  return {
+    repository: change.repository,
+    base: change.mergeBase,
+    head: change.headSha,
+    pullRequest: change.pullRequest,
+  };
+}
+
+/** Such as "no Comments", "1 Comment" or "3 Comments". */
+function countOf(count: number, noun: string): string {
+  if (count === 0) return `no ${noun}s`;
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
+const verdicts: Record<
+  Verdict,
+  { label: string; detail: string; done: string }
+> = {
+  comment: {
+    label: "Feedback Only",
+    detail:
+      "Publish your summary and Comments without approving or requesting changes.",
+    done: "Sent feedback on",
+  },
+  approve: {
+    label: "Approve",
+    detail:
+      "Publish your summary and Comments, and approve merging these changes.",
+    done: "Approved",
+  },
+  requestChanges: {
+    label: "Request Changes",
+    detail:
+      "Publish your summary and Comments as changes to make before merging.",
+    done: "Requested changes on",
+  },
+};
+
+function isVerdict(value: unknown): value is Verdict {
+  return typeof value === "string" && value in verdicts;
+}
+
+async function pickVerdict(
+  name: string,
+  comments: string
+): Promise<Verdict | undefined> {
   const picked = await vscode.window.showQuickPick(
-    [
-      {
-        label: "Comment",
-        detail: "Submit general feedback without explicit approval.",
-        verdict: "comment" as const,
-      },
-      {
-        label: "Approve",
-        detail: "Submit feedback and approve merging these changes.",
-        verdict: "approve" as const,
-      },
-      {
-        label: "Request Changes",
-        detail: "Submit feedback that must be addressed before merging.",
-        verdict: "requestChanges" as const,
-      },
-    ],
-    { title, ignoreFocusOut: true }
+    (Object.keys(verdicts) as Verdict[]).map((verdict) => ({
+      label: verdicts[verdict].label,
+      detail: verdicts[verdict].detail,
+      verdict,
+    })),
+    {
+      title: `Submit Review: ${name}`,
+      placeHolder: `Your verdict, published to GitHub with a summary and ${comments}`,
+      ignoreFocusOut: true,
+    }
   );
   return picked?.verdict;
 }
 
-async function pickOpenChange(
+/** The only Change of these, or one the Reviewer picks; `none` says why there is none. */
+async function pickChange(
   open: Change[],
-  title: string
-): Promise<ChangeRequest | undefined> {
+  title: string,
+  none: string
+): Promise<Change | undefined> {
   if (open.length === 0) {
-    void vscode.window.showInformationMessage("No Change is open.");
+    void vscode.window.showInformationMessage(none);
     return;
   }
+  if (open.length === 1) return open[0];
   const picked = await vscode.window.showQuickPick(
     open.map((change) => ({
-      label: changeTitle(change),
-      description: change.repository,
+      label: changeName(change),
+      description: changeTitle(change),
       change,
     })),
     { title }
   );
-  if (!picked) return;
-  return {
-    repository: picked.change.repository,
-    base: picked.change.mergeBase,
-    head: picked.change.headSha,
-    pullRequest: picked.change.pullRequest,
-  };
+  return picked?.change;
 }
 
 /** Settings are typed by hand, so accept `~/dev/repo` as well as absolute paths. */

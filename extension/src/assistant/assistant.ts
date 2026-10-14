@@ -180,6 +180,12 @@ export class Assistants implements vscode.Disposable {
     }
   }
 
+  /** The id of the Change whose Assistant the Reviewer is looking at, if any. */
+  activeChangeId(): string | undefined {
+    for (const assistant of this.byConversation.values())
+      if (assistant.active) return assistant.changeId;
+  }
+
   /** Each panel's conversation, for the tests. */
   panels(): PanelState[] {
     return [...this.byConversation.values()].flatMap((a) => a.panelStates());
@@ -264,6 +270,11 @@ class ChangeAssistant {
 
   get changeId(): string {
     return this.change.id;
+  }
+
+  /** Whether its panel is the one the Reviewer is looking at. */
+  get active(): boolean {
+    return this.panel?.active ?? false;
   }
 
   show(): void {

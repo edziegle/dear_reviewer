@@ -165,6 +165,10 @@ describe("Ending a local Review with a Brief", () => {
     });
   });
 
+  it("keeps the Review going, with its Comments in the gutter, until the Brief is copied", async () => {
+    assert.strictEqual((await commentThreads()).length, 2);
+  });
+
   it("copies the Brief, with the Reviewer's edits, to the clipboard", async () => {
     const editor = vscode.window.activeTextEditor!;
     const end = editor.document.lineAt(editor.document.lineCount - 1).range.end;
@@ -216,7 +220,7 @@ describe("Ending a local Review with a Brief", () => {
     const entry = inboxEntry(await inbox(), "agent/docs");
     assert.strictEqual(
       entry.description,
-      "acme/local · 3 commits ahead · new commits since my Review"
+      "acme/local · 3 commits ahead · new commits since my Review · open"
     );
   });
 

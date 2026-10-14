@@ -15,6 +15,8 @@ export interface FileEntry {
   viewed?: boolean;
   children: FileEntry[];
   command?: vscode.Command;
+  /** What picks the element's menus, such as a Change's finishing actions. */
+  contextValue?: string;
   /** The tree element, for passing to the view's commands. */
   node: unknown;
 }
@@ -50,6 +52,7 @@ export async function changeFiles(): Promise<FileEntry[]> {
           entry.viewed = state === vscode.TreeItemCheckboxState.Checked;
         }
         if (item.command) entry.command = item.command;
+        if (item.contextValue) entry.contextValue = item.contextValue;
         return entry;
       })
     );
@@ -112,6 +115,13 @@ export function unmarkViewed(...entries: FileEntry[]): Thenable<unknown> {
     nodes[0],
     nodes
   );
+}
+
+/** Runs a review keybinding's command, such as `nextUnviewedFile`. */
+export function review(
+  command: "nextUnviewedFile" | "previousUnviewedFile" | "markViewedAndNext"
+): Thenable<unknown> {
+  return vscode.commands.executeCommand(`dearReviewer.${command}`);
 }
 
 export function hideViewedFiles(): Thenable<unknown> {

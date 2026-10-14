@@ -19,6 +19,8 @@ The Assistant runs on the Reviewer's own installed `claude` CLI, so it uses whic
 
 Chosen option: one long-lived process per Change, because every later feature is another turn in the same conversation, and the process gives each turn's reply as it streams.
 
+The Agent SDK lost even though it runs on a subscription login too. It starts its own bundled copy of `claude` over the same stream-json transport, so it saves plumbing but adds nothing the CLI can't do. Its docs say that, unless Anthropic approves it, third-party products built on the SDK must not offer claude.ai login and should use API keys instead. Anthropic's legal page allows a user signing in to their own unmodified `claude`, which is what Dear Reviewer runs. If Dear Reviewer adds an API key mode, the SDK is worth looking at again. See `docs/research/claude-subscription-auth-macos.md`, sections 1 and 2.
+
 - The process starts when the Change's diff is shown in a window and stops when the Change is closed. Its working directory is the head worktree, and the base worktree is added with `--add-dir`. ADR 0009 changes this: `claude` runs in a folder of the conversation's own, with both worktrees added, and starts with the conversation's first turn.
 - Tools are limited to `Read`, `Grep` and `Glob` (`--tools` and `--allowedTools`), with `--permission-mode dontAsk`, so the Assistant never prompts, never runs commands and never edits files.
 - `--setting-sources user` and `--strict-mcp-config` keep a worktree's own Claude settings, hooks and MCP servers from loading.

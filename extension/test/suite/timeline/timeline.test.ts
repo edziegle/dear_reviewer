@@ -38,16 +38,20 @@ import { webviewTabs } from "../assistant";
 const viewer = { login: "reviewer", token: "test-token" };
 const settingKeys = ["githubApiUrl", "repositories", "localClones"];
 
-/** The timeline without avatar URIs, which the tests check separately. */
+/** The timeline without avatar URIs or rendered Markdown, which the tests check separately. */
 function withoutAvatars(timeline: Timeline | undefined) {
   if (!timeline) return timeline;
   return {
     ...timeline,
-    items: timeline.items.map((item) => ({
-      ...item,
-      author: { login: item.author.login },
-    })),
+    items: timeline.items.map((item) => {
+      const { html: _, ...plain } = item as TimelineItem & { html?: string };
+      return { ...plain, author: { login: item.author.login } };
+    }),
   };
+}
+
+function htmlOf(item: TimelineItem | undefined): string {
+  return item && "html" in item ? (item.html ?? "") : "";
 }
 
 function timelineTab(title: string): vscode.Tab | undefined {
@@ -314,6 +318,92 @@ describe("A pull request's timeline", () => {
       assert.ok(
         avatarBytes(avatar).equals(await avatarServedFor(login)),
         `${login}'s avatar is the one GitHub serves`
+      );
+    }
+  });
+
+  it("renders descriptions, Comments and reviews as Markdown, without raw HTML, scripts or remote images", async () => {
+    const markdown = structuredClone(fakePullRequest);
+    markdown.body = [
+      "## Why",
+      "",
+      "**Bold** and `code`, see [the docs](https://docs.example.com/guide).",
+      "",
+      '<script>alert("description")</script>',
+      '<img src="https://evil.example.com/pixel.png" onerror="alert(1)">',
+      "![screenshot](https://evil.example.com/shot.png)",
+      "[sneaky](javascript:alert(2))",
+      "",
+      "```python",
+      "print('hi')",
+      "```",
+    ].join("\n");
+    markdown.timeline![1] = {
+      type: "comment",
+      author: "bob",
+      body: "- one\n- two <b onclick=\"alert(3)\">bold</b>",
+      date: "2026-10-01T10:00:00Z",
+    };
+    markdown.reviews![0].body = "Please *keep* legacy.py.";
+    await serveGitHub({ viewer, pullRequests: [markdown] });
+    const opened = await catchLinks();
+    try {
+      await clickRefresh(title);
+
+      await eventually(async () => {
+        const items = (await renderedTimeline(title))?.items ?? [];
+        assert.strictEqual(items[0]?.kind, "description");
+        assert.strictEqual(
+          (items[0] as { body: string }).body,
+          markdown.body,
+          "the body stays as GitHub has it"
+        );
+      });
+      const items = (await renderedTimeline(title))!.items;
+      const description = htmlOf(items[0]);
+      for (const expected of [
+        "<h2>Why</h2>",
+        "<strong>Bold</strong>",
+        "<code>code</code>",
+        '<a data-href="https://docs.example.com/guide">the docs</a>',
+        "<pre><code>print('hi')\n</code></pre>",
+      ])
+        assert.ok(description.includes(expected), `${expected} in ${description}`);
+      for (const html of [description, htmlOf(items[2]), htmlOf(items[4])]) {
+        assert.doesNotMatch(html, /<(script|img|b)\b/i, html);
+        assert.doesNotMatch(html, /\son\w+=|\bhref=|\bsrc=|data-href="(?!https:)/i, html);
+        assert.doesNotMatch(html, /alert\("/, "a script's text is dropped with it");
+      }
+      assert.ok(htmlOf(items[2]).includes("<li>one</li>"), htmlOf(items[2]));
+      assert.ok(
+        htmlOf(items[4]).includes("<em>keep</em>"),
+        htmlOf(items[4])
+      );
+      // The image is a link to it, not an image the webview would load.
+      assert.ok(
+        description.includes(
+          'data-href="https://evil.example.com/shot.png"'
+        ),
+        description
+      );
+
+      await clickLink(title, "https://docs.example.com/guide");
+      await clickLink(title, "javascript:alert(2)");
+      await clickLink(title, "https://other.example.com/");
+
+      assert.deepStrictEqual(opened, ["https://docs.example.com/guide"]);
+    } finally {
+      await releaseLinks();
+      await serveGitHub({
+        viewer,
+        pullRequests: [structuredClone(fakePullRequest)],
+      });
+      await clickRefresh(title);
+      await eventually(async () =>
+        assert.deepStrictEqual(
+          withoutAvatars(await renderedTimeline(title)),
+          withoutAvatars(expected)
+        )
       );
     }
   });

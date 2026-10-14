@@ -61,18 +61,18 @@
       },
       {
         "command": "dearReviewer.addRepository",
-        "title": "Add Repository\u2026",
+        "title": "Add Repository…",
         "category": "Dear Reviewer",
         "icon": "$(add)"
       },
       {
         "command": "dearReviewer.locateClone",
-        "title": "Locate Clone\u2026",
+        "title": "Locate Clone…",
         "category": "Dear Reviewer"
       },
       {
         "command": "dearReviewer.forgetRepository",
-        "title": "Forget Repository\u2026",
+        "title": "Forget Repository…",
         "category": "Dear Reviewer"
       },
       {
@@ -82,7 +82,7 @@
       },
       {
         "command": "dearReviewer.setToken",
-        "title": "Use a GitHub Personal Access Token\u2026",
+        "title": "Use a GitHub Personal Access Token…",
         "category": "Dear Reviewer"
       },
       {
@@ -481,11 +481,16 @@
   "devDependencies": {
     "@types/mocha": "^10.0.10",
     "@types/node": "^22.20.5",
+    "@types/sanitize-html": "^2.16.2",
     "@types/vscode": "~1.100.0",
     "@vscode/test-electron": "^3.1.0",
     "@vscode/vsce": "^4.0.0",
     "esbuild": "^0.28.2",
     "mocha": "^12.0.3",
     "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "markdown-it": "^15.0.2",
+    "sanitize-html": "^2.18.0"
   }
 }

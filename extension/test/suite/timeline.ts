@@ -6,6 +6,8 @@ import * as fs from "fs";
 import * as vscode from "vscode";
 import type { ChangeRequest } from "./reviewer";
 
+export { catchLinks, releaseLinks } from "./reviewer";
+
 export interface TimelineAuthor {
   login: string;
   /** The cached avatar, as a webview resource URI. */
@@ -13,7 +15,14 @@ export interface TimelineAuthor {
 }
 
 export type TimelineItem =
-  | { kind: "description"; author: TimelineAuthor; date: string; body: string }
+  | {
+      kind: "description";
+      author: TimelineAuthor;
+      date: string;
+      body: string;
+      /** The body's Markdown, rendered and sanitised. */
+      html?: string;
+    }
   | {
       kind: "commit";
       author: TimelineAuthor;
@@ -21,13 +30,20 @@ export type TimelineItem =
       sha: string;
       headline: string;
     }
-  | { kind: "comment"; author: TimelineAuthor; date: string; body: string }
+  | {
+      kind: "comment";
+      author: TimelineAuthor;
+      date: string;
+      body: string;
+      html?: string;
+    }
   | {
       kind: "review";
       author: TimelineAuthor;
       date: string;
       verdict: "approved" | "changesRequested" | "commented" | "dismissed";
       body: string;
+      html?: string;
       /** How many Comments on the diff the review holds. */
       comments: number;
     };
@@ -60,7 +76,6 @@ interface TimelineApi {
     rendered?: Timeline;
     receive(message: unknown): void;
   }[];
-  openLinksWith(open?: (url: string) => void): void;
 }
 
 async function timelineApi(): Promise<TimelineApi> {
@@ -102,20 +117,6 @@ export async function clickRefresh(title: string): Promise<void> {
 /** Clicks the button that goes with the problem the timeline shows. */
 export async function clickProblemAction(title: string): Promise<void> {
   (await panel(title)).receive({ type: "problemAction" });
-}
-
-/**
- * Catches the links Dear Reviewer opens instead of handing them to the
- * browser, until `releaseLinks`.
- */
-export async function catchLinks(): Promise<string[]> {
-  const opened: string[] = [];
-  (await timelineApi()).openLinksWith((url) => opened.push(url));
-  return opened;
-}
-
-export async function releaseLinks(): Promise<void> {
-  (await timelineApi()).openLinksWith(undefined);
 }
 
 export function showTimeline(change?: ChangeRequest): Thenable<unknown> {

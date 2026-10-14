@@ -5,10 +5,10 @@ import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 import type { FakeClaudeScript, RecordedClaudeCall } from "../fakeClaude";
-import { waitFor } from "../fakeClaude";
+import { toolUse, waitFor } from "../fakeClaude";
 
 export type { FakeClaudeScript, RecordedClaudeCall };
-export { waitFor };
+export { toolUse, waitFor };
 
 export function fakeClaudePath(): string {
   const file = process.env.DEAR_REVIEWER_FAKE_CLAUDE;
@@ -101,6 +101,14 @@ export interface Selection {
   endLine: number;
 }
 
+/** Something the Assistant did while working on a reply, such as reading a file. */
+export interface Step {
+  /** Such as "Reading". */
+  doing: string;
+  /** Such as a path relative to the worktree, or a search pattern. */
+  subject?: string;
+}
+
 export interface Conversation {
   /** The Change's title, as the panel names it. */
   title: string;
@@ -108,11 +116,15 @@ export interface Conversation {
   login?: string;
   /** Whether the Assistant is still working. */
   busy: boolean;
+  /** What the Assistant has done so far in the turn it is working on. */
+  steps?: Step[];
   messages: {
     from: "assistant" | "reviewer" | "note";
     text: string;
     /** The selections the Reviewer sent with the message. */
     context?: Selection[];
+    /** An Assistant reply's Markdown, rendered and sanitised. */
+    html?: string;
   }[];
   /** Selections waiting to go with the Reviewer's next message. */
   context?: (Selection & { text: string })[];
@@ -145,8 +157,23 @@ async function assistantApi(): Promise<AssistantApi> {
   return (await extension.activate()).assistant;
 }
 
-/** What the Change's Assistant panel has rendered, if it has one. */
+/**
+ * What the Change's Assistant panel has rendered, if it has one, leaving out
+ * the replies' rendered Markdown, which `renderedPanelWithHtml` gives.
+ */
 export async function renderedPanel(
+  title: string
+): Promise<Conversation | undefined> {
+  const rendered = await renderedPanelWithHtml(title);
+  if (!rendered) return rendered;
+  return {
+    ...rendered,
+    messages: rendered.messages.map(({ html: _, ...message }) => message),
+  };
+}
+
+/** What the Change's Assistant panel has rendered, with each reply's HTML. */
+export async function renderedPanelWithHtml(
   title: string
 ): Promise<Conversation | undefined> {
   return (await assistantApi()).panels().find((p) => p.title === title)
@@ -162,6 +189,19 @@ async function sendToPanel(title: string, message: unknown): Promise<void> {
 /** Types the message into the Change's Assistant panel and sends it. */
 export function askAssistant(title: string, text: string): Promise<void> {
   return sendToPanel(title, { type: "ask", text });
+}
+
+/** Clicks a link in a reply. */
+export function clickReplyLink(title: string, url: string): Promise<void> {
+  return sendToPanel(title, { type: "openLink", url });
+}
+
+/** Clicks a `path:line` or `path:start-end` reference in a reply. */
+export function clickReference(
+  title: string,
+  reference: { path: string; startLine: number; endLine: number }
+): Promise<void> {
+  return sendToPanel(title, { type: "openReference", ...reference });
 }
 
 /** Clicks the remove button of a selection waiting in the panel, counted from 0. */

@@ -15,6 +15,10 @@
 //   calls/        one JSON file (RecordedClaudeCall) per run, kept up to date
 //   sessions/     each session's working directory and user messages
 //   <name>        a file a turn waits for (see waitFor), written by the test
+//
+// In the scripted events, the strings {head} and {base} stand for the first
+// and second `--add-dir` the run was given, the Change's worktrees, so a
+// tool-use event (see toolUse) can name files the way Claude Code does.
 
 import * as crypto from "crypto";
 import * as fs from "fs";
@@ -38,6 +42,37 @@ export interface FakeClaudeScript {
 /** An event that holds the rest of the turn back until the test writes the file. */
 export function waitFor(name: string): Record<string, unknown> {
   return { type: "fakeClaude.waitFor", file: name };
+}
+
+/**
+ * The event in which the Assistant calls a tool, as Claude Code prints it
+ * before running the tool, followed by the tool's result.
+ */
+export function toolUse(
+  name: string,
+  input: Record<string, unknown>
+): Record<string, unknown>[] {
+  const id = `toolu_${crypto.randomUUID().replace(/-/g, "").slice(0, 24)}`;
+  return [
+    {
+      type: "assistant",
+      session_id: fakeSessionId,
+      message: {
+        role: "assistant",
+        content: [{ type: "tool_use", id, name, input }],
+      },
+    },
+    {
+      type: "user",
+      session_id: fakeSessionId,
+      message: {
+        role: "user",
+        content: [
+          { type: "tool_result", tool_use_id: id, content: "(fake result)" },
+        ],
+      },
+    },
+  ];
 }
 
 export interface RecordedClaudeCall {
@@ -168,14 +203,20 @@ function main(): void {
     const taken = Number(readText(turnCounter) ?? "0");
     fs.writeFileSync(turnCounter, String(taken + 1));
     const events = turns[Math.min(taken, turns.length - 1)];
-    replying = replying.then(() => reply(stateDir, events, sessionId));
+    const worktrees = args.flatMap((arg, i) =>
+      args[i - 1] === "--add-dir" ? [arg] : []
+    );
+    replying = replying.then(() =>
+      reply(stateDir, events, sessionId, worktrees)
+    );
   });
 }
 
 async function reply(
   stateDir: string,
   events: Record<string, unknown>[],
-  sessionId: string
+  sessionId: string,
+  [head = "", base = ""]: string[]
 ): Promise<void> {
   for (const event of events) {
     if (event.type === "fakeClaude.waitFor") {
@@ -186,7 +227,10 @@ async function reply(
     }
     const out =
       "session_id" in event ? { ...event, session_id: sessionId } : event;
-    process.stdout.write(JSON.stringify(out) + "\n");
+    const line = JSON.stringify(out)
+      .replaceAll("{head}", JSON.stringify(head).slice(1, -1))
+      .replaceAll("{base}", JSON.stringify(base).slice(1, -1));
+    process.stdout.write(line + "\n");
   }
 }
 

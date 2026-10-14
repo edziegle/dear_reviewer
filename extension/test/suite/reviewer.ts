@@ -16,6 +16,32 @@ export function openChange(request: ChangeRequest): Thenable<unknown> {
   return vscode.commands.executeCommand("dearReviewer.openChange", request);
 }
 
+interface LinkApi {
+  openLinksWith(open?: (url: string) => void): void;
+}
+
+async function linkApi(): Promise<LinkApi> {
+  const extension = vscode.extensions.getExtension<LinkApi>(
+    "edziegle.dear-reviewer"
+  );
+  if (!extension) throw new Error("Dear Reviewer is not installed");
+  return extension.activate();
+}
+
+/**
+ * Catches the links Dear Reviewer opens, from any of its panels, instead of
+ * handing them to the browser, until `releaseLinks`.
+ */
+export async function catchLinks(): Promise<string[]> {
+  const opened: string[] = [];
+  (await linkApi()).openLinksWith((url) => opened.push(url));
+  return opened;
+}
+
+export async function releaseLinks(): Promise<void> {
+  (await linkApi()).openLinksWith(undefined);
+}
+
 export function closeChange(request: ChangeRequest): Thenable<unknown> {
   return vscode.commands.executeCommand("dearReviewer.closeChange", request);
 }

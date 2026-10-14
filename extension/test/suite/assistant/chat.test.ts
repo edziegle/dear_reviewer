@@ -174,13 +174,12 @@ describe("Chatting with the Assistant about a Change", () => {
     const second = changeOf(repo.commits.renamed, repo.commits.restructured);
     try {
       await openChange(first.request);
-      await showAssistant(first.request);
+      // Opening the second Change closes the first's chat; its conversation goes on.
       await openChange(second.request);
       await showAssistant(second.request);
-      for (const { title } of [first, second])
-        await eventually(async () =>
-          assert.strictEqual((await renderedPanel(title))?.busy, false)
-        );
+      await eventually(async () =>
+        assert.strictEqual((await renderedPanel(second.title))?.busy, false)
+      );
 
       await askAssistant(second.title, "Only for the second?");
 
@@ -192,9 +191,12 @@ describe("Chatting with the Assistant about a Change", () => {
           [summaryNote.text, "Only for the second?", "An answer."]
         );
       });
-      assert.deepStrictEqual(
-        (await renderedPanel(first.title))?.messages.map((m) => m.text),
-        [summaryNote.text]
+      await showAssistant(first.request);
+      await eventually(async () =>
+        assert.deepStrictEqual(
+          (await renderedPanel(first.title))?.messages.map((m) => m.text),
+          [summaryNote.text]
+        )
       );
     } finally {
       await closeChange(first.request);
@@ -285,7 +287,7 @@ describe("Chatting with the Assistant about a Change", () => {
     await closeChange(request);
   });
 
-  it("keeps a pull request's conversation at its new head, even while the old head is open", async () => {
+  it("keeps a pull request's conversation at its new head, which takes the old head's place", async () => {
     scriptClaude({
       turns: [
         replyTurn("A summary."),
@@ -331,8 +333,12 @@ describe("Chatting with the Assistant about a Change", () => {
     assert.strictEqual(flag(runs[1], "--resume"), runs[0].sessionId);
     assert.ok(runs[1].resumed?.includes("First question?"));
 
-    await closeChange(olderRequest);
-    assert.deepStrictEqual(assistantTabs(), [`Assistant: ${newer.title}`]);
+    assert.ok(
+      !workspaceFolders().some((f) =>
+        f.name.endsWith(`head ${short(repo.commits.renamed)}`)
+      ),
+      "the old head's Change closed when the new head opened"
+    );
     await closeChange(newerRequest);
     await eventually(() => assert.deepStrictEqual(assistantTabs(), []));
   });

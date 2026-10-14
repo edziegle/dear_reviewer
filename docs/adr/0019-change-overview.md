@@ -5,6 +5,8 @@ date: 2026-10-14
 
 # Open every Change with an overview that orients the Reviewer, holding a short summary, and keep the Assistant's panel closed until asked
 
+Amended by [ADR 0020](0020-open-a-change-quietly.md): the overview opens alone, full width, with the focus, and the diff opens only when the Reviewer starts, in the column beside the overview.
+
 ## Context and Problem Statement
 
 Opening a Change opened its diff, a timeline tab for a pull request, and the Assistant's panel in front of it, which wrote a long summary of what the Change does and where its risk is. The Reviewer was thrown in: two tabs to sort out, a summary that retold the diff they were about to read, and nothing saying how big the Change is, where they stand on it or where to start. A local Change, such as an agent's branch, got the Assistant's summary but no history. What should a Reviewer see first, beside the diff, and how long should the Assistant's summary be?

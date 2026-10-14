@@ -82,7 +82,9 @@ export class Assistants implements vscode.Disposable {
     private readonly claudePath: () => string,
     private readonly conversations: Conversations,
     private readonly openLink: (uri: vscode.Uri) => Thenable<unknown>,
-    private readonly lastReview: LastReview
+    private readonly lastReview: LastReview,
+    /** The column a Change's code opens in, beside its overview. */
+    private readonly codeColumn: (change: Change) => vscode.ViewColumn
   ) {
     this.status = vscode.window.createStatusBarItem(
       "dearReviewer.claudeLogin",
@@ -110,7 +112,8 @@ export class Assistants implements vscode.Disposable {
       this.conversations.get(change.conversation),
       this.openLink,
       this.lastReview,
-      () => this.overviewChanged.fire(change.conversation)
+      () => this.overviewChanged.fire(change.conversation),
+      (current) => this.codeColumn(current)
     );
     this.byConversation.set(change.conversation, assistant);
     // Its overview may already be open, showing nothing from it yet.
@@ -126,6 +129,12 @@ export class Assistants implements vscode.Disposable {
     const started = this.start(change);
     this.byConversation.get(change.conversation)?.show(focus);
     await started;
+  }
+
+  /** Closes the chat panels of every Change but this one; their conversations go on. */
+  closePanelsExcept(change: Change): void {
+    for (const assistant of this.byConversation.values())
+      if (assistant.changeId !== change.id) assistant.closePanel();
   }
 
   /** What the Change's overview shows from its Assistant, once it has started. */
@@ -313,7 +322,9 @@ class ChangeAssistant {
     private readonly openLink: (uri: vscode.Uri) => Thenable<unknown>,
     private readonly lastReview: LastReview,
     /** Tells the Change's overview that what it shows from the Assistant changed. */
-    private readonly overviewChanged: () => void
+    private readonly overviewChanged: () => void,
+    /** The column the Change's code opens in. */
+    private readonly codeColumn: (change: Change) => vscode.ViewColumn
   ) {
     this.state = {
       title: changeTitle(change),
@@ -373,6 +384,10 @@ class ChangeAssistant {
   /** Whether its panel is the one the Reviewer is looking at. */
   get active(): boolean {
     return this.panel?.active ?? false;
+  }
+
+  closePanel(): void {
+    this.panel?.dispose();
   }
 
   /** Shows the panel; with `focus`, puts the cursor in its message box. */
@@ -545,7 +560,8 @@ class ChangeAssistant {
         this.change,
         action.path,
         action.startLine,
-        action.endLine
+        action.endLine,
+        this.codeColumn(this.change)
       );
     } else void this.ask(action.text);
   }

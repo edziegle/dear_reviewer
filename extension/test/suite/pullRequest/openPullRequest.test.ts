@@ -144,11 +144,18 @@ describe("Opening a pull request from the Inbox", () => {
     }
   });
 
-  it("shows its diff and files as for a local Change", async () => {
-    const label = activeTabLabel();
-    assert.ok(
-      label?.includes(`${short(pr.base)}..${short(pr.head)}`),
-      `diff title "${label}" names the Change`
+  it("opens with its overview, and shows its diff and files as for a local Change once asked", async () => {
+    const overview = `${pr.repository} #${pr.number}`;
+    await eventually(() => assert.strictEqual(activeTabLabel(), overview));
+
+    // Run from the overview, the command acts on its Change.
+    await vscode.commands.executeCommand("dearReviewer.openAllChanges");
+
+    await eventually(() =>
+      assert.ok(
+        activeTabLabel()?.startsWith(`${overview} · all changes`),
+        activeTabLabel()
+      )
     );
     await eventually(() =>
       assert.deepStrictEqual(multiDiffFiles(), [
@@ -195,8 +202,16 @@ describe("Opening a pull request from the Inbox", () => {
 
     const id = fakePullRequestId(pr);
     assert.deepStrictEqual(await viewedMarksOnGitHub(), [
-      { mutation: "markFileAsViewed", pullRequestId: id, path: "pkg/sub/new.py" },
-      { mutation: "unmarkFileAsViewed", pullRequestId: id, path: "pkg/core.py" },
+      {
+        mutation: "markFileAsViewed",
+        pullRequestId: id,
+        path: "pkg/sub/new.py",
+      },
+      {
+        mutation: "unmarkFileAsViewed",
+        pullRequestId: id,
+        path: "pkg/core.py",
+      },
       { mutation: "markFileAsViewed", pullRequestId: id, path: "util.py" },
     ]);
     assert.deepStrictEqual(render(await changeFiles()), [

@@ -299,8 +299,13 @@
       },
       {
         "name": "The One Paragraph Rule",
-        "body": "The Assistant's take is at most three sentences and ends by naming where to start. If it needs more, the Reviewer asks for it in the chat.",
+        "body": "The Assistant's take is at most three sentences and ends by naming where to start. The overview enforces it: anything longer waits behind Show all.",
         "section": "components"
+      },
+      {
+        "name": "The Breathing Room Rule",
+        "body": "Opening a Change shows one thing. Nothing opens beside the overview, below it or behind it until the Reviewer asks.",
+        "section": "layout"
       }
     ],
     "dos": [

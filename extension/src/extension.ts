@@ -10,6 +10,7 @@ import {
   changeTitle,
   fetchPullRequest,
   pullRequestName,
+  showAllChanges,
 } from "./changeWorkspace";
 import {
   ChangeFilesNode,
@@ -34,6 +35,7 @@ import { ReviewComments, Verdict } from "./reviewComments";
 import {
   CommitFiles,
   commitFileScheme,
+  parseCommitFileUri,
   Reviews,
   showChangesSince,
 } from "./reviews";
@@ -67,7 +69,8 @@ export function activate(context: vscode.ExtensionContext) {
     () => changes.list(),
     viewedFiles,
     path.join(context.globalStorageUri.fsPath, "change-files-view.json"),
-    (change) => reviews.lastReviewed(change)
+    (change) => reviews.lastReviewed(change),
+    (change) => codeColumnOf(change)
   );
   const avatars = new Avatars(
     github,
@@ -103,7 +106,8 @@ export function activate(context: vscode.ExtensionContext) {
       expandHome(settings().inspect<string>("claudePath")?.globalValue ?? ""),
     conversations,
     (uri) => openLink(uri),
-    (change) => reviews.lastReviewed(change)
+    (change) => reviews.lastReviewed(change),
+    (change) => timelines.codeColumn(change)
   );
   // Only the user's own setting counts: a workspace must not be able to
   // choose the repository Dear Reviewer runs git in.
@@ -218,6 +222,95 @@ export function activate(context: vscode.ExtensionContext) {
       showOpenChanges();
     }
   );
+
+  /**
+   * Shows a Change the way a review starts (ADR 0020): its overview alone in
+   * the main column, with the focus, Change Files in the side bar, and
+   * nothing of other Changes or of the last session: no bottom panel, and no
+   * other Change's editors, overview or Assistant chat.
+   */
+  function showChange(change: Change): Promise<void> {
+    // A failed showing doesn't hold up the next.
+    showingChange = showingChange
+      .catch(() => undefined)
+      .then(async () => {
+        await vscode.commands.executeCommand("workbench.action.closePanel");
+        await closeOtherChangesEditors(change);
+        timelines.closeOthers(change);
+        assistants.closePanelsExcept(change);
+        await vscode.commands.executeCommand("dearReviewer.changeFiles.focus");
+        void assistants.start(change);
+        await timelines.open(change, true);
+      });
+    return showingChange;
+  }
+  /** Settles once the Change being shown is in front, so a diff can open after it. */
+  let showingChange = Promise.resolve();
+
+  /** The column the Change's code opens in, beside its overview, once that has opened. */
+  async function codeColumnOf(change: Change): Promise<vscode.ViewColumn> {
+    await showingChange.catch(() => undefined);
+    return timelines.codeColumn(change);
+  }
+
+  /** Focuses the Change's code column, where a multi-file diff, which takes no column, then opens. */
+  async function focusCodeColumn(change: Change): Promise<void> {
+    await vscode.commands.executeCommand(
+      (await codeColumnOf(change)) === vscode.ViewColumn.Two
+        ? "workbench.action.focusSecondEditorGroup"
+        : "workbench.action.focusFirstEditorGroup"
+    );
+  }
+
+  /**
+   * Closes the editor tabs of files in other Changes' worktrees, including
+   * those a past session left behind, and of what changed since their last
+   * Review.
+   */
+  async function closeOtherChangesEditors(change: Change): Promise<void> {
+    const changesDir = path.join(context.globalStorageUri.fsPath, "changes");
+    const isOthers = (uri: vscode.Uri) => {
+      if (uri.scheme === commitFileScheme)
+        return parseCommitFileUri(uri).changeId !== change.id;
+      if (uri.scheme !== "file") return false;
+      const inside = (dir: string) =>
+        uri.fsPath === dir || uri.fsPath.startsWith(dir + path.sep);
+      return (
+        inside(changesDir) && !inside(change.baseDir) && !inside(change.headDir)
+      );
+    };
+    // A multi-file diff's tab has no typed input, so its title tells: this
+    // Change's is named after it and its head, an older one after commits.
+    // VS Code adds the file count, as in "acme/api #7 · all changes (4 files)".
+    const isOthersMultiDiff = (label: string) => {
+      const all = / · all changes(?: \(\d+ files?\))?$/.exec(label);
+      if (all) return label.slice(0, all.index) !== changeName(change);
+      return (
+        /\b[0-9a-f]{7}\.\.[0-9a-f]{7}\b/.test(label) &&
+        !label.includes(change.headSha.slice(0, 7))
+      );
+    };
+    const tabs = vscode.window.tabGroups.all
+      .flatMap((group) => group.tabs)
+      .filter((tab) => {
+        const input = tab.input;
+        if (input instanceof vscode.TabInputText) return isOthers(input.uri);
+        if (input instanceof vscode.TabInputTextDiff)
+          return isOthers(input.original) || isOthers(input.modified);
+        // VS Code may give no input at all for a tab it has no API type for.
+        if (input === undefined) return isOthersMultiDiff(tab.label);
+        if (typeof input !== "object") return false;
+        return (
+          !(input instanceof vscode.TabInputWebview) &&
+          !(input instanceof vscode.TabInputCustom) &&
+          !(input instanceof vscode.TabInputNotebook) &&
+          !(input instanceof vscode.TabInputNotebookDiff) &&
+          !(input instanceof vscode.TabInputTerminal) &&
+          isOthersMultiDiff(tab.label)
+        );
+      });
+    if (tabs.length > 0) await vscode.window.tabGroups.close(tabs, true);
+  }
 
   /**
    * Shows which Changes are open: in Change Files, in the Inbox, and to the
@@ -543,13 +636,16 @@ export function activate(context: vscode.ExtensionContext) {
         showOpenChanges();
       }
     ),
-    // The overview is the one panel a Change opens beside its diff; the
-    // Assistant starts behind it, writing the overview's summary, and its
-    // panel opens when the Reviewer asks (ADR 0019).
+    // A Change opens with its overview alone; the Assistant starts behind
+    // it, writing the overview's summary, and its panel opens when the
+    // Reviewer asks (ADR 0019, ADR 0020).
     timelines,
-    changes.onDidShowChange((change) => void timelines.open(change)),
+    changes.onDidShowChange((change) => void showChange(change)),
     assistants,
-    changes.onDidShowChange((change) => void assistants.start(change)),
+    changes.onDidReplaceChange(async (older) => {
+      await letGo(older);
+      showOpenChanges();
+    }),
     assistants.onDidChangeOverview((conversation) =>
       timelines.refreshTake(conversation)
     ),
@@ -795,6 +891,7 @@ export function activate(context: vscode.ExtensionContext) {
           );
           return;
         }
+        await focusCodeColumn(change);
         await showChangesSince(change, from);
       }
     ),
@@ -809,7 +906,18 @@ export function activate(context: vscode.ExtensionContext) {
       "dearReviewer.showTimeline",
       async (target?: ChangeTarget) => {
         const change = await changeFor(target, "Show Overview");
-        if (change) await timelines.open(change);
+        if (!change) return;
+        void assistants.start(change);
+        await timelines.open(change, true);
+      }
+    ),
+    vscode.commands.registerCommand(
+      "dearReviewer.openAllChanges",
+      async (target?: ChangeTarget) => {
+        const change = await changeFor(target, "Open All Changes");
+        if (!change) return;
+        await focusCodeColumn(change);
+        await showAllChanges(change);
       }
     ),
     vscode.commands.registerCommand(
@@ -966,11 +1074,9 @@ export function activate(context: vscode.ExtensionContext) {
   const reviewWindow = new ReviewWindow(context.globalStorageUri.fsPath);
   if (reviewWindow.isThisWindow() && !vscode.workspace.isTrusted)
     void askToTrustReviewWindow(context.globalStorageUri.fsPath);
-  // After a reload, the Changes still in this window get their overview and Assistant back.
-  for (const change of changes.shownHere()) {
-    void timelines.open(change);
-    void assistants.start(change);
-  }
+  // After a reload, the review starts quiet again, at the Change opened last.
+  const latest = changes.shownHere().at(-1);
+  if (latest) void showChange(latest);
   // The views are how the Reviewer sees the Inbox, a Change's files, the
   // Assistant and their Comments; tests read them the same way.
   return {

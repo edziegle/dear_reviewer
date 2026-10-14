@@ -36,15 +36,17 @@ describe("Open Change from a single-folder window", () => {
 
     await openChange(request);
 
+    const overview = `${name} ${short(repo.commits.initial)}..${short(repo.commits.renamed)}`;
     let report: {
       folders: { name: string; path: string }[];
       tab?: string;
+      tabs: string[];
       files: { original?: string; modified?: string }[];
-    } = { folders: [], files: [] };
-    // The probe rewrites its report as the diff's editors open one by one.
+    } = { folders: [], tabs: [], files: [] };
+    // The probe rewrites its report as the review window settles.
     await eventually(() => {
       report = JSON.parse(fs.readFileSync(reviewWindowReportFile(), "utf8"));
-      assert.strictEqual(report.files.length, 4);
+      assert.strictEqual(report.tab, overview);
     }, 90_000);
 
     assert.strictEqual(global.dearReviewerHostState, hostState);
@@ -59,11 +61,15 @@ describe("Open Change from a single-folder window", () => {
       { name: `${name} base ${short(repo.commits.initial)}`, path: base.path },
       { name: `${name} head ${short(repo.commits.renamed)}`, path: head.path },
     ]);
-    assert.ok(
-      report.tab?.includes(
-        `${short(repo.commits.initial)}..${short(repo.commits.renamed)}`
-      ),
-      `review window shows the Change's diff, not "${report.tab}"`
+    assert.deepStrictEqual(
+      report.tabs,
+      [overview],
+      "the review window shows the Change's overview and nothing else"
+    );
+    assert.deepStrictEqual(
+      report.files,
+      [],
+      "no diff until the Reviewer starts"
     );
 
     await closeChange(request);

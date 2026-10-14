@@ -55,7 +55,7 @@ export interface FileReference {
 }
 
 /** The references in the text, with where each starts and ends. */
-function findReferences(
+export function findReferences(
   text: string
 ): (FileReference & { index: number; length: number })[] {
   const found = [];

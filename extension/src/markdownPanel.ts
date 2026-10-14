@@ -21,7 +21,7 @@ export const sharedStyles = `
   .markdown h2 { font-size: 1.1em; }
   .markdown p, .markdown ul, .markdown ol, .markdown pre, .markdown blockquote, .markdown table { margin: 0.5em 0; }
   .markdown ul, .markdown ol { padding-left: 1.6em; list-style: revert; }
-  .markdown code { font-family: var(--vscode-editor-font-family); font-size: var(--vscode-editor-font-size); background: var(--vscode-textCodeBlock-background); padding: 0 3px; border-radius: 3px; }
+  .markdown code { font-family: var(--vscode-editor-font-family); font-size: var(--vscode-editor-font-size); background: var(--vscode-textCodeBlock-background); padding: 0 3px; border-radius: 3px; overflow-wrap: anywhere; }
   .markdown pre { background: var(--vscode-textCodeBlock-background); padding: 8px; border-radius: 3px; overflow-x: auto; }
   .markdown pre code { padding: 0; background: none; white-space: pre; }
   .markdown blockquote { background: var(--vscode-textBlockQuote-background); padding: 4px 8px; border-radius: 3px; color: var(--vscode-textBlockQuote-foreground, inherit); }
@@ -45,6 +45,8 @@ export interface MarkdownPanelOptions<State, Shown> {
   title: string;
   /** The only local files the webview may load. */
   localResourceRoots: vscode.Uri[];
+  /** Where it opens, and whether it takes focus: beside the editor and without, unless given. */
+  placement?: { viewColumn: vscode.ViewColumn; preserveFocus: boolean };
   html: (webview: vscode.Webview) => string;
   /** The state as the webview gets it, with its Markdown rendered by `render`. */
   show: (state: State, render: RenderInto) => Shown;
@@ -70,7 +72,10 @@ export class MarkdownPanel<State, Shown> {
     this.panel = vscode.window.createWebviewPanel(
       options.viewType,
       options.title,
-      { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
+      options.placement ?? {
+        viewColumn: vscode.ViewColumn.Beside,
+        preserveFocus: true,
+      },
       {
         enableScripts: true,
         retainContextWhenHidden: true,
@@ -141,8 +146,14 @@ export class MarkdownPanel<State, Shown> {
     void this.post();
   }
 
-  reveal(preserveFocus = true): void {
-    this.panel.reveal(undefined, preserveFocus);
+  /** The editor column the panel is in, while it is shown. */
+  get viewColumn(): vscode.ViewColumn | undefined {
+    return this.panel.viewColumn;
+  }
+
+  /** Shows the panel, in another column if given. */
+  reveal(preserveFocus = true, viewColumn?: vscode.ViewColumn): void {
+    this.panel.reveal(viewColumn, preserveFocus);
   }
 
   dispose(): void {

@@ -24,8 +24,8 @@ export function reviewWindowReportFile(): string {
 
 /**
  * Writes what the review window shows now, and again whenever its editors,
- * tabs or folders change: the multi-file diff opens its editors one at a
- * time, so an early report can hold only some of its files.
+ * tabs or folders change, until the Change's overview has opened: its
+ * folders, the active tab, every tab, and any diff's files.
  */
 export async function observeReviewWindow(): Promise<never> {
   const file = reviewWindowReportFile();
@@ -34,6 +34,9 @@ export async function observeReviewWindow(): Promise<never> {
     const report = {
       folders: workspaceFolders(),
       tab: activeTabLabel(),
+      tabs: vscode.window.tabGroups.all.flatMap((group) =>
+        group.tabs.map((tab) => tab.label)
+      ),
       files: multiDiffFiles(),
     };
     // Renamed into place, so the test never reads a half-written report.
@@ -44,7 +47,10 @@ export async function observeReviewWindow(): Promise<never> {
   vscode.window.tabGroups.onDidChangeTabs(write);
   vscode.workspace.onDidChangeWorkspaceFolders(write);
   await eventually(() => {
-    if (multiDiffFiles().length === 0) throw new Error("no diff yet");
+    const overview = vscode.window.tabGroups.all
+      .flatMap((group) => group.tabs)
+      .some((tab) => tab.input instanceof vscode.TabInputWebview);
+    if (!overview) throw new Error("no overview yet");
   }, 60_000).catch(() => undefined);
   write();
   return new Promise<never>(() => {});

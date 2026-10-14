@@ -5,6 +5,8 @@ date: 2026-10-13
 
 # End a Change when its pull request or branch is merged or closed, or when its worktrees are gone
 
+Amended by [ADR 0020](0020-open-a-change-quietly.md): opening a newer head of a pull request or branch also ends the older head's Change in this window.
+
 ## Context and Problem Statement
 
 A Change's worktrees live until the Change is merged or closed, or until the Reviewer closes it (spec #1, #15). Until now only Close Change removed them, so each merged pull request left two worktrees in the extension's storage, two entries in `git worktree list` of the Reviewer's clone, and, under ADR 0009, a saved Assistant conversation that nothing ever removed. A Reviewer can also delete worktrees outside Dear Reviewer, such as by clearing its storage to reclaim space. The window then holds folders that point at nothing, and git keeps records of worktrees that no longer exist. A local branch, such as an agent's, is over in the same way once it is merged into main or deleted, and leaves its conversation, local Review and Briefs (ADR 0016) behind. When does Dear Reviewer learn that a pull request or branch is over, what does it remove, and what happens to a Change whose worktrees were deleted?

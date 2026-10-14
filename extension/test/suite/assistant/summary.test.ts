@@ -45,7 +45,7 @@ describe("The Assistant's summary when a Change opens", () => {
     title: `${path.basename(repo.path)} ${short(base)}..${short(head)}`,
   });
 
-  it("shows the Assistant's short summary in the overview beside the diff, and opens no Assistant panel", async () => {
+  it("shows the Assistant's short summary in the overview, which opens alone, and opens no Assistant panel", async () => {
     const summary =
       "Renames old_helper to new_helper and deletes obsolete.py. Start with util.py:1, where the rename happens, not README.md:1.";
     scriptClaude({ turns: [replyTurn(summary)] });
@@ -63,12 +63,10 @@ describe("The Assistant's summary when a Change opens", () => {
         label: "Assistant",
         reading: false,
         text: summary,
+        start: { path: "util.py", startLine: 1, endLine: 1 },
       })
     );
-    assert.ok(
-      activeTabLabel()?.includes(title.split(" ").pop()!),
-      `the diff stays the active editor, not "${activeTabLabel()}"`
-    );
+    assert.strictEqual(activeTabLabel(), title, "the overview is in front");
     assert.deepStrictEqual(webviewTabs(), [title]);
 
     const [run] = assistantRuns();

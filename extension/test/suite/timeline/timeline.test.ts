@@ -290,7 +290,7 @@ describe("A pull request's timeline", () => {
       );
   });
 
-  it("opens with the pull request beside the diff, listing the description, commits, Comments and reviews in order", async () => {
+  it("opens with the pull request's overview alone, in front, listing the description, commits, Comments and reviews in order", async () => {
     await openFromInbox(inboxEntry(await inbox(), "Restructure pkg"));
 
     await eventually(async () =>
@@ -299,16 +299,11 @@ describe("A pull request's timeline", () => {
         withoutAvatars(expected)
       )
     );
-    assert.ok(
-      activeTabLabel()?.includes(short(pr.head)),
-      `the diff stays the active editor, not "${activeTabLabel()}"`
-    );
-    const tab = timelineTab(title);
-    assert.ok(tab, `a "${title}" tab among ${webviewTabs().join(", ")}`);
-    assert.notStrictEqual(
-      tab.group,
-      vscode.window.tabGroups.activeTabGroup,
-      "the timeline is beside the diff, not over it"
+    assert.strictEqual(activeTabLabel(), title, "the overview is in front");
+    assert.deepStrictEqual(
+      vscode.window.tabGroups.all.flatMap((g) => g.tabs.map((t) => t.label)),
+      [title],
+      "nothing else opens: no diff, no other tab"
     );
     assert.deepStrictEqual(
       webviewTabs().filter((label) => label.startsWith("Assistant: ")),
@@ -553,10 +548,7 @@ describe("A pull request's timeline", () => {
       assert.strictEqual(timeline?.loading, false);
       assert.strictEqual(timeline?.title, "Restructure pkg");
     });
-    assert.ok(
-      activeTabLabel()?.includes(short(pr.head)),
-      `the diff stays the active editor, not "${activeTabLabel()}"`
-    );
+    assert.strictEqual(activeTabLabel(), title, "it comes back in front");
   });
 
   it("closes with the Change", async () => {

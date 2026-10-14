@@ -11,6 +11,7 @@ import {
   Change,
   ChangedFile,
   changedFiles,
+  changeName,
   changeTitle,
   fileSides,
   FileStatus,
@@ -91,7 +92,9 @@ export class ChangeFilesView
     /** The head commit the Reviewer's last Review of a Change covered, if one ended. */
     private readonly lastReviewed: (
       change: Change
-    ) => Promise<string | undefined>
+    ) => Promise<string | undefined>,
+    /** The column a diff of the Change opens in: beside its overview. */
+    private readonly codeColumn: (change: Change) => Promise<vscode.ViewColumn>
   ) {
     void this.showHideViewedContext();
   }
@@ -222,11 +225,13 @@ export class ChangeFilesView
       scheme: emptyFileScheme,
       path: `/${file.path}`,
     });
+    const viewColumn = await this.codeColumn(change);
     await vscode.commands.executeCommand(
       "vscode.diff",
       original ?? empty,
       modified ?? empty,
-      `${path.basename(file.path)} (${changeTitle(change)})`
+      `${path.basename(file.path)} · ${changeName(change)}`,
+      { viewColumn }
     );
   }
 

@@ -1,6 +1,7 @@
 // The overview of each Change shown in this window (ADR 0019): one panel per
-// Change, opened beside the diff when the Change is shown, which orients the
-// Reviewer before they read. It shows what the Change is, its size, where
+// Change, opened alone in the main column when the Change opens, which
+// orients the Reviewer before they read; their code then opens beside it
+// (ADR 0020). It shows what the Change is, its size, where
 // the Reviewer stands on it and the Assistant's short take, then its
 // history: a pull request's timeline, loaded from GitHub, or a local
 // Change's commits, from git. Links in the panel open through the
@@ -61,8 +62,8 @@ export class Timelines implements vscode.Disposable {
     private readonly sources: OverviewSources
   ) {}
 
-  /** Shows the Change's overview and reloads it. */
-  async open(change: Change): Promise<void> {
+  /** Shows the Change's overview and reloads it; with `focus`, gives it the focus. */
+  async open(change: Change, focus = false): Promise<void> {
     let timeline = this.byChange.get(change.id);
     if (!timeline) {
       timeline = new ChangeTimeline(
@@ -74,8 +75,22 @@ export class Timelines implements vscode.Disposable {
       );
       this.byChange.set(change.id, timeline);
     }
-    timeline.show();
+    timeline.show(focus);
     await timeline.load();
+  }
+
+  /**
+   * The column the Change's code opens in: beside its overview while the
+   * overview holds the first column, or else the first.
+   */
+  codeColumn(change: Change): vscode.ViewColumn {
+    return this.byChange.get(change.id)?.codeColumn() ?? vscode.ViewColumn.One;
+  }
+
+  /** Closes the overviews of every Change but this one; Show Overview brings them back. */
+  closeOthers(change: Change): void {
+    for (const [id, timeline] of this.byChange)
+      if (id !== change.id) timeline.panel?.dispose();
   }
 
   /** Reloads the Change's overview, if it has one. */
@@ -147,8 +162,8 @@ class ChangeTimeline {
     };
   }
 
-  show(): void {
-    if (this.panel) return this.panel.reveal();
+  show(focus = false): void {
+    if (this.panel) return this.panel.reveal(focus);
     const panel = new TimelinePanel(
       this.state,
       changeName(this.change),
@@ -203,6 +218,13 @@ class ChangeTimeline {
     this.update({ standing });
   }
 
+  /** Beside the overview while it holds the first column, or else the first. */
+  codeColumn(): vscode.ViewColumn {
+    return this.panel?.viewColumn === vscode.ViewColumn.One
+      ? vscode.ViewColumn.Two
+      : vscode.ViewColumn.One;
+  }
+
   showTake(): void {
     this.update({ take: this.take() });
   }
@@ -224,13 +246,14 @@ class ChangeTimeline {
         return void this.open(action.url);
       case "openReference":
         // Only the Change's files, as the take showed them.
-        if (this.files.has(action.path))
-          void openReference(
-            this.change,
-            action.path,
-            action.startLine,
-            action.endLine
-          );
+        if (!this.files.has(action.path)) return;
+        void openReference(
+          this.change,
+          action.path,
+          action.startLine,
+          action.endLine,
+          this.codeColumn()
+        );
         return;
       case "refresh":
         return void this.load();

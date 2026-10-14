@@ -153,7 +153,11 @@ export async function overviewTake(
 ): Promise<Omit<Take, "html"> | undefined> {
   const found = (await timelineApi()).panels().find((p) => p.title === title);
   if (!found) return;
-  const { html: _, ...take } = found.sent.take;
+  const {
+    html: _html,
+    fullHtml: _fullHtml,
+    ...take
+  } = found.sent.take as Take & { fullHtml?: string };
   return take;
 }
 

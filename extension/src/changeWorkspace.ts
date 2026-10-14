@@ -1,7 +1,9 @@
 // Owns each open Change's pair of worktrees: creates detached base and head
 // worktrees in the extension's storage, puts them in a window as workspace
-// folders, opens the multi-file diff between them, and cleans up when the
-// Change is closed or is over (see ADR 0013).
+// folders, and cleans up when the Change is closed, is over (see ADR 0013),
+// or gives way to a newer head of the same pull request or branch (see ADR
+// 0020). Opening a Change shows its overview, not its diff; the multi-file
+// diff between the worktrees opens when the Reviewer asks.
 
 import * as crypto from "crypto";
 import * as fs from "fs";
@@ -32,8 +34,11 @@ export class ChangeWorkspace {
   private readonly openChanges: OpenChanges;
   private readonly reviewWindow: ReviewWindow;
   private readonly shown = new vscode.EventEmitter<Change>();
-  /** Fires when this window shows a Change's diff. */
+  /** Fires when a Change opens in this window, for its overview to show. */
   readonly onDidShowChange = this.shown.event;
+  private readonly replaced = new vscode.EventEmitter<Change>();
+  /** Fires with an older head's Change that a newer head of the same pull request or branch closed. */
+  readonly onDidReplaceChange = this.replaced.event;
   /** Opening, closing and tidying run one after another. */
   private queue: Promise<unknown> = Promise.resolve();
 
@@ -53,13 +58,22 @@ export class ChangeWorkspace {
         `${request.head} has no commits that ${request.base} doesn't have, so there is nothing to review.`
       );
     await createWorktrees(change);
+    // A newer head of the same pull request or branch takes the older one's place.
+    const older = this.openChanges
+      .all()
+      .filter(
+        (c) => c.conversation === change.conversation && c.id !== change.id
+      );
+    for (const old of older) {
+      await this.remove(old);
+      this.replaced.fire(old);
+    }
     if (ReviewWindow.canAddFoldersHere()) {
       this.openChanges.put({
         ...change,
         inReviewWindow: this.reviewWindow.isThisWindow(),
       });
       await appendFolders(changeFolders(change));
-      await showDiff(change);
       this.shown.fire(change);
     } else {
       this.openChanges.put({
@@ -130,8 +144,8 @@ export class ChangeWorkspace {
   }
 
   /**
-   * In the review window, shows the diff of each Change sent here from
-   * another window, once its folders have arrived.
+   * In the review window, shows each Change sent here from another window,
+   * once its folders have arrived.
    */
   async showPendingDiffs(): Promise<void> {
     if (!this.reviewWindow.isThisWindow()) return;
@@ -139,7 +153,6 @@ export class ChangeWorkspace {
       if (!change.diffPending) continue;
       if (!hasFolder(change.baseDir) || !hasFolder(change.headDir)) continue;
       this.openChanges.put({ ...change, diffPending: false });
-      await showDiff(change);
       this.shown.fire(change);
     }
   }
@@ -417,7 +430,8 @@ export function fileSides(
   };
 }
 
-async function showDiff(change: Change): Promise<void> {
+/** Opens the multi-file diff of all the Change's files, in the main column. */
+export async function showAllChanges(change: Change): Promise<void> {
   // Each resource is [label, original (absent if added), modified (absent if deleted)].
   const resources = (await changedFiles(change)).map((file) => {
     const { original, modified } = fileSides(change, file);
@@ -425,7 +439,7 @@ async function showDiff(change: Change): Promise<void> {
   });
   await vscode.commands.executeCommand(
     "vscode.changes",
-    changeTitle(change),
+    `${changeName(change)} · all changes`,
     resources
   );
 }

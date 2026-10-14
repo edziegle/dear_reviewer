@@ -1,5 +1,6 @@
 import * as assert from "assert";
 import * as path from "path";
+import * as vscode from "vscode";
 import { buildFixtureRepo } from "../fixtures";
 import {
   activeTabLabel,
@@ -13,7 +14,7 @@ import {
 } from "../reviewer";
 
 describe("The Change's multi-file diff", () => {
-  it("shows added, modified and deleted files, with the missing side absent", async () => {
+  it("opens with the Change's overview alone, and the diff only when asked, with the overview beside it", async () => {
     const repo = buildFixtureRepo("diff");
     const request = {
       repository: repo.path,
@@ -25,12 +26,25 @@ describe("The Change's multi-file diff", () => {
     await openChange(request);
 
     const [base, head] = foldersAddedSince(before);
-    const label = activeTabLabel();
-    assert.ok(
-      label?.includes(
-        `${short(repo.commits.initial)}..${short(repo.commits.renamed)}`
-      ),
-      `diff title "${label}" names the Change`
+    const title = `${path.basename(repo.path)} ${short(repo.commits.initial)}..${short(repo.commits.renamed)}`;
+    await eventually(() => assert.strictEqual(activeTabLabel(), title));
+    assert.deepStrictEqual(multiDiffFiles(), [], "no diff until asked");
+
+    await vscode.commands.executeCommand(
+      "dearReviewer.openAllChanges",
+      request
+    );
+
+    await eventually(() =>
+      assert.match(activeTabLabel() ?? "", /· all changes \(4 files\)$/)
+    );
+    const overviewGroup = vscode.window.tabGroups.all.find((group) =>
+      group.tabs.some((tab) => tab.label === title)
+    );
+    assert.notStrictEqual(
+      overviewGroup,
+      vscode.window.tabGroups.activeTabGroup,
+      "the overview moved beside the diff"
     );
     await eventually(() =>
       assert.deepStrictEqual(multiDiffFiles(), [

@@ -197,7 +197,7 @@ The palette is borrowed whole from the active theme; Dear Reviewer chooses roles
 
 ## Layout
 
-Each webview is a single column beside the diff (`ViewColumn.Beside`) with 16px side gutters and no maximum width: it is as wide as the Reviewer makes the editor group. The header sticks to the top with 12px above and 8px below a hairline. The Assistant's message box sticks to the bottom the same way, so the conversation scrolls between two fixed rails.
+The Assistant panel is a single column beside the editor (`ViewColumn.Beside`) with 16px side gutters, as wide as the Reviewer makes its group. The overview opens alone in the main column, so its content is a centred column capped at 64em with 24px gutters, and the Assistant's paragraph at 40em; with code open beside it, it narrows to whatever its group gives it. The header sticks to the top with 12px above and 8px below a hairline. The Assistant's message box sticks to the bottom the same way, so the conversation scrolls between two fixed rails.
 
 Spacing steps are small and editor-scaled: 2, 4, 6, 8, 12 and 16px. Timeline rows have 10px of padding, a 10px gap between the 24px avatar and the content, and a hairline below. Messages sit 12px apart. Rows lay out with flex: a growing text column (`min-width: 0`, `overflow-wrap: anywhere`) beside fixed elements such as avatars, status pills and buttons, so long titles, logins and paths wrap instead of pushing controls off the edge.
 
@@ -257,16 +257,18 @@ Each Change in Change Files carries its finishing actions as inline codicon butt
 
 ### Change Overview (signature)
 
-The first thing beside the diff when a Change opens, and the only panel that opens by itself (ADR 0019). It reads top to bottom as four answers, each one line or one paragraph, then the history:
+The only thing that opens when a Change opens: alone in the main column, with the focus, while the bottom panel closes and other Changes' editors go (ADR 0019, ADR 0020). Once the Reviewer starts, code opens in the column beside it, and the overview stays put. It reads top to bottom as four answers, each one line or one paragraph, then the history:
 
 - **What is this:** the title (a link button to the pull request) and a muted byline, `acme/api #482 · octocat → main`.
 - **How big, and is it healthy:** `12 files · +340 −58 · checks failed`, with tabular numerals, additions and deletions in the git decoration colors.
 - **Where am I:** a muted line, `New commits since your Review · 2 pending Comments · 3 of 12 viewed`.
 - **The Assistant's take:** a small "Assistant" heading (or "Since your Review at `3f9c2a1`") over one paragraph of rendered Markdown, capped at 72ch. While it is written, a muted italic line that screen readers hear; when `claude` can't run, a muted line with a link button that helps. Never a red banner: the overview works without the Assistant.
 
-Under the take, two secondary buttons: Next unviewed file and Ask the Assistant. A hairline closes the overview, and the history follows: the pull request's timeline, or a local Change's commits.
+The take shows at most three sentences, with a Show all link for the rest, then its first reference to a changed file as its own line, `Start at path:line`, in the editor font, wrapping anywhere. Under it, two secondary buttons: Next unviewed file and Ask the Assistant. Refresh is an icon button (the codicon refresh glyph as inline SVG) beside the finishing button. A hairline closes the overview, and the history follows: the pull request's timeline, or a local Change's commits.
 
-**The One Paragraph Rule.** The Assistant's take is at most three sentences and ends by naming where to start. If it needs more, the Reviewer asks for it in the chat.
+**The One Paragraph Rule.** The Assistant's take is at most three sentences and ends by naming where to start. The overview enforces it: anything longer waits behind Show all.
+
+**The Breathing Room Rule.** Opening a Change shows one thing. Nothing opens beside the overview, below it or behind it until the Reviewer asks.
 
 ### Rendered Markdown
 

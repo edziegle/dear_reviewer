@@ -1,5 +1,6 @@
-// The overview panel for one Change: a webview beside the diff that orients
-// the Reviewer (ADR 0019). It shows what the Change is, how big it is, where
+// The overview panel for one Change: the webview a Change opens with, alone
+// in the main column, that orients the Reviewer (ADR 0019, ADR 0020). Code
+// opens in the column beside it once the Reviewer starts reading. It shows what the Change is, how big it is, where
 // the Reviewer stands on it and the Assistant's short take, then its history:
 // a pull request's timeline from GitHub, or a local Change's commits. The
 // extension sends it the whole state; the webview renders it, says which
@@ -7,6 +8,7 @@
 
 import * as crypto from "crypto";
 import * as vscode from "vscode";
+import { findReferences, type FileReference } from "../markdown";
 import {
   Handshake,
   MarkdownPanel,
@@ -95,7 +97,14 @@ export interface TimelineState {
  * sanitised (ADR 0011).
  */
 export interface ShownTimeline extends TimelineState {
-  take: OverviewTake & { html?: string };
+  take: OverviewTake & {
+    /** At most the first three sentences, rendered. */
+    html?: string;
+    /** All of it, rendered, when it runs longer than three sentences. */
+    fullHtml?: string;
+    /** The first reference to a changed file, where the Assistant says to start. */
+    start?: FileReference;
+  };
   items: (TimelineItem & { html?: string })[];
 }
 
@@ -135,6 +144,8 @@ export class TimelinePanel {
       viewType: "dearReviewer.timeline",
       title,
       localResourceRoots: [avatarDir],
+      // The Change opens with its overview alone, in front, with the focus.
+      placement: { viewColumn: vscode.ViewColumn.One, preserveFocus: false },
       html: (webview) => html(webview.cspSource),
       show: (shownState, render) => shown(shownState, render, isChangedFile),
       receive: (message) => this.receive(message as FromWebview),
@@ -201,8 +212,14 @@ export class TimelinePanel {
     this.view.update(state);
   }
 
-  reveal(): void {
-    this.view.reveal();
+  /** Brings the panel forward; with `focus`, gives it the focus. */
+  reveal(focus = false): void {
+    this.view.reveal(!focus);
+  }
+
+  /** The editor column the panel is in, while it is shown. */
+  get viewColumn(): vscode.ViewColumn | undefined {
+    return this.view.viewColumn;
   }
 
   dispose(): void {
@@ -224,13 +241,41 @@ function shown(
       ? item
       : { ...item, html: render(item.body) }
   );
-  const take = state.take.text
-    ? {
-        ...state.take,
-        html: render(state.take.text, { references: isChangedFile }),
-      }
-    : state.take;
+  const text = state.take.text;
+  if (!text) return { ...state, take: state.take, items };
+  const sentences = sentencesOf(text);
+  const short = sentences.slice(0, maxSentences).join(" ");
+  const start = findReferences(text).find((ref) => isChangedFile(ref.path));
+  const take = {
+    ...state.take,
+    html: render(short, { references: isChangedFile }),
+    ...(sentences.length > maxSentences && {
+      fullHtml: render(text, { references: isChangedFile }),
+    }),
+    ...(start && {
+      start: {
+        path: start.path,
+        startLine: start.startLine,
+        endLine: start.endLine,
+      },
+    }),
+  };
   return { ...state, take, items };
+}
+
+/** The most sentences of the Assistant's take the overview shows before Show all. */
+const maxSentences = 3;
+
+/**
+ * The sentences of a short paragraph: a split after `.`, `!` or `?` and a
+ * space, before what starts a sentence. A path such as `util.py` has no
+ * space after its dot, so it stays whole.
+ */
+function sentencesOf(text: string): string[] {
+  return text
+    .trim()
+    .split(/(?<=[.!?])\s+(?=[A-Z`*_(\[])/)
+    .filter(Boolean);
 }
 
 function html(cspSource: string): string {
@@ -242,12 +287,16 @@ function html(cspSource: string): string {
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${cspSource}; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}';">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style nonce="${nonce}">${sharedStyles}
-  body { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); padding: 0 16px 16px; }
+  body { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); padding: 0 24px 24px; max-width: 64em; margin: 0 auto; }
   header { position: sticky; top: 0; z-index: 1; background: var(--vscode-editor-background); padding: 12px 0 8px; border-bottom: 1px solid var(--vscode-panel-border); display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
   header .heading { flex: 1 1 16em; min-width: 0; }
   h1 { font-size: 1.1em; margin: 0 0 4px; overflow-wrap: anywhere; }
   h2 { font-size: 1em; margin: 16px 0 8px; }
   .muted { color: var(--vscode-descriptionForeground); font-size: 0.9em; }
+  #byline span { display: inline-block; max-width: 100%; overflow-wrap: anywhere; }
+  button.icon { background: none; border: none; padding: 3px; border-radius: 4px; color: var(--vscode-icon-foreground, var(--vscode-foreground)); cursor: pointer; display: inline-flex; }
+  button.icon:hover { background: var(--vscode-toolbar-hoverBackground); }
+  button.icon svg { width: 16px; height: 16px; }
   button.link { background: none; border: none; padding: 0; color: var(--vscode-textLink-foreground); cursor: pointer; font: inherit; text-align: start; }
   button.link:hover { text-decoration: underline; }
   .actions { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -262,7 +311,10 @@ function html(cspSource: string): string {
   .facts .added { color: var(--vscode-gitDecoration-addedResourceForeground); }
   .facts .deleted { color: var(--vscode-gitDecoration-deletedResourceForeground); }
   .take h2 { margin-top: 14px; margin-bottom: 4px; }
-  .take .markdown { line-height: 1.5; max-width: 72ch; }
+  .take .markdown { line-height: 1.5; max-width: 40em; }
+  .take .start { margin-top: 8px; }
+  .take .start button.link { font-family: var(--vscode-editor-font-family); font-size: var(--vscode-editor-font-size); overflow-wrap: anywhere; }
+  .take .more { margin-top: 4px; font-size: 0.9em; }
   .take .reading { font-style: italic; }
   .take .problem-line button.link { margin-left: 4px; }
   .overview .actions { margin-top: 12px; }
@@ -287,7 +339,7 @@ function html(cspSource: string): string {
 <header>
   <div class="heading"><h1 id="title"></h1><div class="muted" id="byline"></div></div>
   <div class="actions">
-    <button class="secondary" id="refresh" title="Load the history again">Refresh</button>
+    <button class="icon" id="refresh" title="Load the overview again" aria-label="Refresh"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" clip-rule="evenodd" d="M4.681 3H2V2h3.5l.5.5V6H5V4a5 5 0 1 0 4.53-.761l.302-.954A6 6 0 1 1 4.681 3z"/></svg></button>
     <button class="primary" id="finish"></button>
   </div>
 </header>
@@ -298,6 +350,8 @@ function html(cspSource: string): string {
   <div class="take">
     <h2 id="takeLabel"></h2>
     <div class="markdown" id="take"></div>
+    <button class="link more" id="more" type="button" hidden>Show all</button>
+    <div class="start" id="start" hidden></div>
     <div class="muted reading" id="reading" role="status"></div>
     <div class="muted problem-line" id="takeProblem" hidden></div>
   </div>
@@ -414,15 +468,36 @@ function html(cspSource: string): string {
     parts.forEach((part, i) => node.append(...(i ? [" · ", part] : [part])));
   }
 
+  let showAll = false;
+  let lastTake;
+  byId("more").addEventListener("click", () => {
+    showAll = !showAll;
+    take(lastTake);
+  });
   function take(state) {
+    lastTake = state;
     const t = state.take;
     byId("takeLabel").textContent = t.label;
     const body = byId("take");
-    if (t.html !== undefined) {
+    const html = showAll && t.fullHtml !== undefined ? t.fullHtml : t.html;
+    if (html !== undefined) {
       // Rendered and sanitised by the extension; see renderMarkdown.
-      body.innerHTML = t.html;
+      body.innerHTML = html;
       focusable(body);
     } else body.replaceChildren();
+    const more = byId("more");
+    more.hidden = t.fullHtml === undefined;
+    more.textContent = showAll ? "Show less" : "Show all";
+    const start = byId("start");
+    start.hidden = !t.start;
+    start.replaceChildren();
+    if (t.start) {
+      const where = t.start.path + ":" + t.start.startLine + (t.start.endLine > t.start.startLine ? "-" + t.start.endLine : "");
+      const button = el("button", "link", where);
+      button.type = "button";
+      button.addEventListener("click", () => vscode.postMessage({ type: "openReference", ...t.start }));
+      start.append("Start at ", button);
+    }
     byId("reading").textContent = t.reading
       ? (t.text ? "" : "The Assistant is reading the Change…")
       : (!t.text && !t.problem ? "The Assistant hasn't summarised this Change." : "");
@@ -445,7 +520,8 @@ function html(cspSource: string): string {
     if (message.type !== "state") return;
     const state = message.state;
     byId("title").replaceChildren(state.url ? link(state.title, state.url) : state.title);
-    byId("byline").textContent = state.byline;
+    // Parts wrap between each other before inside one.
+    byId("byline").replaceChildren(...state.byline.split(" · ").flatMap((part, i) => (i ? [" · ", el("span", "", part)] : [el("span", "", part)])));
     byId("finish").textContent = state.finish;
     facts(state);
     byId("standing").hidden = state.standing.length === 0;

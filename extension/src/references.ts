@@ -16,7 +16,9 @@ export async function openReference(
   change: Change,
   reference: string,
   startLine: number,
-  endLine: number
+  endLine: number,
+  /** Where it opens: the first column unless given. */
+  viewColumn = vscode.ViewColumn.One
 ): Promise<void> {
   const file = path.resolve(change.headDir, reference);
   let real: string;
@@ -55,7 +57,7 @@ export async function openReference(
     document.lineAt(end).range.end.character
   );
   await vscode.window.showTextDocument(document, {
-    viewColumn: vscode.ViewColumn.One,
+    viewColumn,
     selection: range,
     preview: true,
   });

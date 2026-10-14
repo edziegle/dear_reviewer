@@ -46,6 +46,11 @@ export class ReviewWindow {
     fs.mkdirSync(this.home, { recursive: true });
     const workspace = {
       folders: [{ path: this.home, name: "Dear Reviewer" }, ...folders],
+      // A review starts quiet: no terminal brought back from the last one.
+      settings: {
+        "terminal.integrated.enablePersistentSessions": false,
+        "terminal.integrated.hideOnStartup": "always",
+      },
     };
     fs.writeFileSync(this.workspaceFile, JSON.stringify(workspace, null, 2));
   }

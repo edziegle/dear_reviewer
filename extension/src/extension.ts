@@ -15,7 +15,7 @@ import {
 import { Assistants } from "./assistant/assistant";
 import { GitHubAuth } from "./github/auth";
 import { GitHubClient, PullRequestSummary } from "./github/client";
-import { Avatars, InboxNode, InboxTree } from "./inbox";
+import { Avatars, InboxNode, InboxTree, LocalClone } from "./inbox";
 import {
   GitHubViewedFiles,
   LocalViewedFiles,
@@ -54,9 +54,15 @@ export function activate(context: vscode.ExtensionContext) {
   const assistants = new Assistants(
     () => settings().inspect<string>("claudePath")?.globalValue ?? ""
   );
+  const repositories = () => settings().get<string[]>("repositories") ?? [];
+  // Only the user's own setting counts: a workspace must not be able to
+  // choose the repository Dear Reviewer runs git in.
+  const localClones = () =>
+    settings().inspect<Record<string, string>>("localClones")?.globalValue;
   const inbox = new InboxTree(
     github,
-    () => settings().get<string[]>("repositories") ?? [],
+    repositories,
+    () => inboxClones(localClones(), repositories()),
     new Avatars(github, path.join(context.globalStorageUri.fsPath, "avatars"))
   );
 
@@ -79,13 +85,7 @@ export function activate(context: vscode.ExtensionContext) {
               : undefined
             : target;
         if (!pr) return;
-        // Only the user's own setting counts: a workspace must not be able to
-        // choose the repository Dear Reviewer runs git in.
-        const clone = localClone(
-          settings().inspect<Record<string, string>>("localClones")
-            ?.globalValue,
-          pr.repository
-        );
+        const clone = localClone(localClones(), pr.repository);
         if (!clone) {
           void askForLocalClone(pr.repository);
           return;
@@ -96,6 +96,26 @@ export function activate(context: vscode.ExtensionContext) {
           const message = err instanceof Error ? err.message : String(err);
           void vscode.window.showErrorMessage(
             `Couldn't open ${pr.repository} #${pr.number}: ${message}`
+          );
+        }
+        changeFiles.refresh();
+      }
+    ),
+    vscode.commands.registerCommand(
+      "dearReviewer.openLocalBranch",
+      async (node?: InboxNode) => {
+        if (node?.kind !== "localBranch") return;
+        const { branch } = node;
+        try {
+          await changes.open({
+            repository: branch.clone,
+            base: branch.main,
+            head: `refs/heads/${branch.name}`,
+          });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          void vscode.window.showErrorMessage(
+            `Couldn't open ${branch.name}: ${message}`
           );
         }
         changeFiles.refresh();
@@ -200,7 +220,8 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (
         e.affectsConfiguration("dearReviewer.repositories") ||
-        e.affectsConfiguration("dearReviewer.githubApiUrl")
+        e.affectsConfiguration("dearReviewer.githubApiUrl") ||
+        e.affectsConfiguration("dearReviewer.localClones")
       )
         void inbox.refresh();
     })
@@ -275,6 +296,20 @@ function localClone(
   for (const [name, clone] of Object.entries(clones ?? {})) {
     if (name.toLowerCase() === wanted && clone) return clone;
   }
+}
+
+/** The local clones of the Inbox's repositories, one entry per clone. */
+function inboxClones(
+  clones: Record<string, string> | undefined,
+  repositories: string[]
+): LocalClone[] {
+  const found = new Map<string, LocalClone>();
+  for (const repository of repositories) {
+    const clone = localClone(clones, repository);
+    if (clone && !found.has(path.resolve(clone)))
+      found.set(path.resolve(clone), { repository, clone });
+  }
+  return [...found.values()];
 }
 
 async function askForLocalClone(repository: string): Promise<void> {

@@ -87,6 +87,14 @@ export function openFromInbox(entry: InboxEntry): Thenable<unknown> {
   );
 }
 
+/** Opens the local branch from the Inbox entry's context menu. */
+export function openBranchFromInbox(entry: InboxEntry): Thenable<unknown> {
+  return vscode.commands.executeCommand(
+    "dearReviewer.openLocalBranch",
+    entry.node
+  );
+}
+
 /** Finds the Inbox entry with this label, in any group. */
 export function inboxEntry(groups: InboxGroup[], label: string): InboxEntry {
   const entry = groups.flatMap((g) => g.entries).find((e) => e.label === label);

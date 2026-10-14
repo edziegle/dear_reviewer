@@ -185,7 +185,10 @@ export async function fetchPullRequest(
 }
 
 /** The clone's remote whose URL names the repository, or else `origin`. */
-async function remoteFor(clone: string, repository: string): Promise<string> {
+export async function remoteFor(
+  clone: string,
+  repository: string
+): Promise<string> {
   const remotes = (await git(clone, "remote")).split("\n").filter(Boolean);
   const wanted = repository.toLowerCase();
   for (const remote of remotes) {

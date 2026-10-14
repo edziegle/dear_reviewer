@@ -167,6 +167,10 @@ async function main() {
       "pullRequest",
       multiRootWorkspace("pull-request", "pull-request")
     );
+    await runSuite(
+      "localBranches",
+      multiRootWorkspace("local-branches", "local-branches")
+    );
   } finally {
     await fakeGitHub.close();
   }

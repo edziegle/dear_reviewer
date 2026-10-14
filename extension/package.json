@@ -38,6 +38,12 @@
         "icon": "$(git-pull-request)"
       },
       {
+        "command": "dearReviewer.openLocalBranch",
+        "title": "Open Branch",
+        "category": "Dear Reviewer",
+        "icon": "$(git-branch)"
+      },
+      {
         "command": "dearReviewer.closeChange",
         "title": "Close Change",
         "category": "Dear Reviewer"
@@ -119,7 +125,7 @@
             "type": "string"
           },
           "default": {},
-          "markdownDescription": "Where each Inbox repository is cloned on this machine, as `\"owner/name\": \"/path/to/clone\"`. Opening a pull request fetches its head into this clone, from the remote whose URL names the repository (or `origin`), and reviews it in worktrees of the clone.",
+          "markdownDescription": "Where each Inbox repository is cloned on this machine, as `\"owner/name\": \"/path/to/clone\"`. Opening a pull request fetches its head into this clone, from the remote whose URL names the repository (or `origin`), and reviews it in worktrees of the clone. The Inbox also lists the clone's local branches that are ahead of its main branch.",
           "scope": "machine"
         },
         "dearReviewer.githubApiUrl": {
@@ -181,6 +187,10 @@
           "when": "false"
         },
         {
+          "command": "dearReviewer.openLocalBranch",
+          "when": "false"
+        },
+        {
           "command": "dearReviewer.openChangeFile",
           "when": "false"
         },
@@ -210,6 +220,16 @@
         {
           "command": "dearReviewer.openPullRequest",
           "when": "view == dearReviewer.inbox && viewItem == pullRequest",
+          "group": "open@1"
+        },
+        {
+          "command": "dearReviewer.openLocalBranch",
+          "when": "view == dearReviewer.inbox && viewItem == localBranch",
+          "group": "inline"
+        },
+        {
+          "command": "dearReviewer.openLocalBranch",
+          "when": "view == dearReviewer.inbox && viewItem == localBranch",
           "group": "open@1"
         },
         {

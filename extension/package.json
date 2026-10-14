@@ -616,9 +616,6 @@
       }
     ]
   },
-  "scripts": {
-    "build": "node esbuild.mjs"
-  },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
     "@types/node": "^22.20.5",

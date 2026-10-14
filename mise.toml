@@ -11,11 +11,11 @@ description = "Type-check the extension"
 dir = "extension"
 run = "npx tsc --noEmit"
 
-# Bundling stays an npm script so the vscode:prepublish script vsce needs for packaging can call it.
+# No vscode:prepublish script: the package task builds first, so vsce has nothing to run.
 [tasks.build]
 description = "Bundle the extension"
 dir = "extension"
-run = "npm run build"
+run = "node esbuild.mjs"
 sources = ["src/**/*.ts", "esbuild.mjs", "package.json", "package-lock.json"]
 outputs = ["dist/extension.js"]
 

@@ -86,6 +86,27 @@ export function deleteComment(target: vscode.Comment): Thenable<unknown> {
   return vscode.commands.executeCommand("dearReviewer.deleteComment", target);
 }
 
+/** Replies to a thread, typing in its reply box and pressing Reply. */
+export async function reply(
+  thread: vscode.CommentThread,
+  text: string
+): Promise<void> {
+  await vscode.commands.executeCommand("dearReviewer.replyToThread", {
+    thread,
+    text,
+  });
+}
+
+export function resolveThread(thread: vscode.CommentThread): Thenable<unknown> {
+  return vscode.commands.executeCommand("dearReviewer.resolveThread", thread);
+}
+
+export function unresolveThread(
+  thread: vscode.CommentThread
+): Thenable<unknown> {
+  return vscode.commands.executeCommand("dearReviewer.unresolveThread", thread);
+}
+
 export type Verdict = "approve" | "requestChanges" | "comment";
 
 export function submitReview(
@@ -122,6 +143,48 @@ export async function commentThreads(): Promise<ShownThread[]> {
       ],
       comments: thread.comments.map((c) => bodyText(c)),
       editable: thread.comments.map((c) => c.contextValue === "pending"),
+    }))
+    .sort((a, b) => a.file.localeCompare(b.file) || a.lines[0] - b.lines[0]);
+}
+
+export interface ShownReviewThread {
+  file: string;
+  /** First and last line, counted from 0. */
+  lines: [number, number];
+  /** Each Comment's author, text and whether it is in the pending review. */
+  comments: { author: string; body: string; pending: boolean }[];
+  /** Such as "Outdated". */
+  label?: string;
+  resolved: boolean;
+  canReply: boolean;
+  /** Whether the thread offers Resolve, Unresolve or neither, from its context value. */
+  offers?: "resolve" | "unresolve";
+}
+
+/** Every thread Dear Reviewer shows, with who wrote what, sorted by file and line. */
+export async function reviewThreads(): Promise<ShownReviewThread[]> {
+  return (await reviewApi())
+    .threads()
+    .map((thread) => ({
+      file: thread.uri.fsPath,
+      lines: [thread.range?.start.line ?? -1, thread.range?.end.line ?? -1] as [
+        number,
+        number,
+      ],
+      comments: thread.comments.map((c) => ({
+        author: c.author.name,
+        body: bodyText(c),
+        pending: c.contextValue === "pending",
+      })),
+      ...(thread.label !== undefined && { label: thread.label }),
+      resolved: thread.state === vscode.CommentThreadState.Resolved,
+      canReply: thread.canReply !== false,
+      ...(thread.contextValue === "unresolved" && {
+        offers: "resolve" as const,
+      }),
+      ...(thread.contextValue === "resolved" && {
+        offers: "unresolve" as const,
+      }),
     }))
     .sort((a, b) => a.file.localeCompare(b.file) || a.lines[0] - b.lines[0]);
 }

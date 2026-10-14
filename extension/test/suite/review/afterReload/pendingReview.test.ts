@@ -91,8 +91,21 @@ describe("A pull request Review after a reload", () => {
     ]);
   });
 
-  it("ends the Review: no pending review or pending Comments are left", async () => {
-    assert.deepStrictEqual(await commentThreads(), []);
+  it("ends the Review: its Comments stay on the diff, published, and no pending review is left", async () => {
+    assert.deepStrictEqual(await commentThreads(), [
+      {
+        file: path.join(base, "util.py"),
+        lines: [0, 1],
+        comments: ["The old helper."],
+        editable: [false],
+      },
+      {
+        file: path.join(head, "util.py"),
+        lines: [0, 2],
+        comments: ["Why a docstring here?"],
+        editable: [false],
+      },
+    ]);
     assert.ok(
       (await reviewsOnGitHub()).every((r) => r.state !== "PENDING"),
       "no pending review on GitHub"
@@ -129,7 +142,14 @@ describe("A pull request Review after a reload", () => {
         ["APPROVED", "Looks good.", 1],
       ]
     );
-    assert.deepStrictEqual(await commentThreads(), []);
+    assert.deepStrictEqual(
+      (await commentThreads()).map((t) => [t.comments, t.editable]),
+      [
+        [["The old helper."], [false]],
+        [["Is NEW used?"], [false]],
+        [["Why a docstring here?"], [false]],
+      ]
+    );
   });
 
   it("submits a Review with no Comments, as a plain comment", async () => {

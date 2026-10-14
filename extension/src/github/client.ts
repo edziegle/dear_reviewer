@@ -48,17 +48,36 @@ export interface ThreadPlace {
   startLine?: number;
 }
 
-export interface PendingThread extends ThreadPlace {
+export interface ReviewThreadComment {
   id: string;
-  comments: { id: string; body: string }[];
+  body: string;
+  author: GitHubUser;
+  createdAt: string;
+  /** Written in the viewer's pending review, so only they can see it yet. */
+  pending: boolean;
 }
 
-export interface PendingReview {
+/**
+ * A review thread on the pull request's diff. An outdated thread's lines are
+ * gone from the head, and its place is where it was written.
+ */
+export interface ReviewThread extends ThreadPlace {
+  id: string;
+  /** Started in the viewer's pending review. */
+  pending: boolean;
+  resolved: boolean;
+  outdated: boolean;
+  comments: ReviewThreadComment[];
+}
+
+export interface PullRequestReviewThreads {
   /** The pull request's node id. */
   pullRequestId: string;
-  viewer: { login: string; avatarUrl: string };
-  /** The viewer's pending review and the threads started in it, if there is one. */
-  review?: { id: string; threads: PendingThread[] };
+  viewer: GitHubUser;
+  /** The viewer's pending review, if there is one. */
+  pendingReviewId?: string;
+  /** Every thread the viewer can see: published ones, and those in their pending review. */
+  threads: ReviewThread[];
 }
 
 export interface GitHubUser {
@@ -236,21 +255,21 @@ ${paths
   }
 
   /**
-   * The viewer's pending review of the pull request, with the threads they
-   * started in it. GitHub allows one pending review per person and pull
-   * request, and only its author can see it.
+   * The pull request's review threads, and the viewer's pending review, if
+   * any. GitHub allows one pending review per person and pull request, and
+   * only its author can see it or the Comments in it.
    */
-  async pendingReview(
+  async reviewThreads(
     repository: string,
     number: number
-  ): Promise<PendingReview> {
+  ): Promise<PullRequestReviewThreads> {
     const [owner, name] = repository.split("/");
-    let found: PendingReview | undefined;
-    const threads: PendingReviewThreadNode[] = [];
+    let found: PullRequestReviewThreads | undefined;
+    const threads: ReviewThreadNode[] = [];
     let after: string | null = null;
     do {
-      const data: PendingReviewData = await this.graphql<PendingReviewData>(
-        PENDING_REVIEW,
+      const data: ReviewThreadsData = await this.graphql<ReviewThreadsData>(
+        REVIEW_THREADS,
         { owner, name, number, after }
       );
       const pullRequest = data.repository?.pullRequest;
@@ -260,32 +279,39 @@ ${paths
       found ??= {
         pullRequestId: pullRequest.id,
         viewer: data.viewer,
-        ...(review && { review: { id: review.id, threads: [] } }),
+        ...(review && { pendingReviewId: review.id }),
+        threads: [],
       };
       threads.push(...pullRequest.reviewThreads.nodes);
       const page = pullRequest.reviewThreads.pageInfo;
       after = page.hasNextPage ? page.endCursor : null;
     } while (after);
-    const review = found.review;
-    if (review) {
-      for (const thread of threads) {
-        const comments = thread.comments.nodes.filter(
-          (c) => c.pullRequestReview?.id === review.id
-        );
-        if (thread.comments.nodes[0]?.pullRequestReview?.id !== review.id)
-          continue;
-        const line = thread.line ?? thread.originalLine;
-        const startLine = thread.startLine ?? thread.originalStartLine;
-        if (line === null) continue;
-        review.threads.push({
-          id: thread.id,
-          path: thread.path,
-          side: thread.diffSide,
-          line,
-          ...(startLine !== null && startLine < line && { startLine }),
-          comments: comments.map((c) => ({ id: c.id, body: c.body })),
-        });
-      }
+    const pendingId = found.pendingReviewId;
+    for (const thread of threads) {
+      // A thread on a whole file has no line.
+      const line = thread.line ?? thread.originalLine;
+      if (line === null) continue;
+      const startLine =
+        thread.line === null ? thread.originalStartLine : thread.startLine;
+      const comments = thread.comments.nodes.map((c) => ({
+        id: c.id,
+        body: c.body,
+        author: userOf(c.author),
+        createdAt: c.createdAt,
+        pending:
+          pendingId !== undefined && c.pullRequestReview?.id === pendingId,
+      }));
+      found.threads.push({
+        id: thread.id,
+        path: thread.path,
+        side: thread.diffSide,
+        line,
+        ...(startLine !== null && startLine < line && { startLine }),
+        pending: comments[0]?.pending ?? false,
+        resolved: thread.isResolved,
+        outdated: thread.isOutdated || thread.line === null,
+        comments,
+      });
     }
     return found;
   }
@@ -376,6 +402,47 @@ ${paths
     );
     const thread = data.addPullRequestReviewThread.thread;
     return { threadId: thread.id, commentId: thread.comments.nodes[0].id };
+  }
+
+  /**
+   * Replies to a review thread: in the pending review, if one is given, or
+   * else published at once.
+   */
+  async replyToThread(
+    threadId: string,
+    body: string,
+    pendingReviewId?: string
+  ): Promise<string> {
+    const data = await this.graphql<{
+      addPullRequestReviewThreadReply: { comment: { id: string } };
+    }>(
+      `mutation ReplyToThread($input: AddPullRequestReviewThreadReplyInput!) {
+  addPullRequestReviewThreadReply(input: $input) { comment { id } }
+}`,
+      {
+        input: {
+          pullRequestReviewThreadId: threadId,
+          body,
+          ...(pendingReviewId !== undefined && {
+            pullRequestReviewId: pendingReviewId,
+          }),
+        },
+      }
+    );
+    return data.addPullRequestReviewThreadReply.comment.id;
+  }
+
+  async setThreadResolved(threadId: string, resolved: boolean): Promise<void> {
+    const mutation = resolved ? "resolveReviewThread" : "unresolveReviewThread";
+    const input = resolved
+      ? "ResolveReviewThreadInput"
+      : "UnresolveReviewThreadInput";
+    await this.graphql(
+      `mutation SetThreadResolved($input: ${input}!) {
+  ${mutation}(input: $input) { thread { id isResolved } }
+}`,
+      { input: { threadId } }
+    );
   }
 
   async editReviewComment(commentId: string, body: string): Promise<void> {
@@ -496,7 +563,7 @@ interface PullRequestFilesData {
   } | null;
 }
 
-const PENDING_REVIEW = `query PendingReview($owner: String!, $name: String!, $number: Int!, $after: String) {
+const REVIEW_THREADS = `query ReviewThreads($owner: String!, $name: String!, $number: Int!, $after: String) {
   viewer { login avatarUrl }
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
@@ -512,14 +579,18 @@ const PENDING_REVIEW = `query PendingReview($owner: String!, $name: String!, $nu
           startLine
           originalLine
           originalStartLine
-          comments(first: 100) { nodes { id body pullRequestReview { id } } }
+          isOutdated
+          isResolved
+          comments(first: 100) {
+            nodes { id body createdAt author { login avatarUrl } pullRequestReview { id } }
+          }
         }
       }
     }
   }
 }`;
 
-interface PendingReviewThreadNode {
+interface ReviewThreadNode {
   id: string;
   path: string;
   diffSide: DiffSide;
@@ -527,16 +598,20 @@ interface PendingReviewThreadNode {
   startLine: number | null;
   originalLine: number | null;
   originalStartLine: number | null;
+  isOutdated: boolean;
+  isResolved: boolean;
   comments: {
     nodes: {
       id: string;
       body: string;
+      createdAt: string;
+      author: GitHubUser | null;
       pullRequestReview: { id: string } | null;
     }[];
   };
 }
 
-interface PendingReviewData {
+interface ReviewThreadsData {
   viewer: { login: string; avatarUrl: string };
   repository: {
     pullRequest: {
@@ -544,7 +619,7 @@ interface PendingReviewData {
       reviews: { nodes: { id: string; viewerDidAuthor: boolean }[] };
       reviewThreads: {
         pageInfo: { hasNextPage: boolean; endCursor: string | null };
-        nodes: PendingReviewThreadNode[];
+        nodes: ReviewThreadNode[];
       };
     } | null;
   } | null;

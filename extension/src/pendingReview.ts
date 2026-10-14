@@ -1,10 +1,12 @@
 // A pull request Review's Comments, kept in the Reviewer's pending review on
-// GitHub until they submit it (see ADR 0007).
+// GitHub until they submit it (see ADR 0007), and the review threads they
+// sit among, which the Reviewer replies to and resolves (see ADR 0014).
 
 import type {
   GitHubClient,
-  PendingThread,
+  GitHubUser,
   ReviewEvent,
+  ReviewThread,
   ThreadPlace,
 } from "./github/client";
 import type { PullRequestRef } from "./openChanges";
@@ -12,26 +14,27 @@ import type { PullRequestRef } from "./openChanges";
 export class PendingReviews {
   /** Each pull request's pending review id, once known or being created. */
   private readonly reviewIds = new Map<string, Promise<string>>();
-  private viewerLogin?: string;
+  private signedIn?: GitHubUser;
 
   constructor(private readonly github: GitHubClient) {}
 
-  /** The signed-in Reviewer's login, once GitHub has been asked. */
-  get viewer(): string | undefined {
-    return this.viewerLogin;
+  /** The signed-in Reviewer, once GitHub has been asked. */
+  get viewer(): GitHubUser | undefined {
+    return this.signedIn;
   }
 
-  /** The threads in the Reviewer's pending review of the pull request. */
-  async threads(pullRequest: PullRequestRef): Promise<PendingThread[]> {
-    const found = await this.github.pendingReview(
+  /** The pull request's review threads, including those in the Reviewer's pending review. */
+  async threads(pullRequest: PullRequestRef): Promise<ReviewThread[]> {
+    const found = await this.github.reviewThreads(
       pullRequest.repository,
       pullRequest.number
     );
-    this.viewerLogin = found.viewer.login;
+    this.signedIn = found.viewer;
     const key = keyOf(pullRequest);
-    if (found.review) this.reviewIds.set(key, Promise.resolve(found.review.id));
+    if (found.pendingReviewId)
+      this.reviewIds.set(key, Promise.resolve(found.pendingReviewId));
     else this.reviewIds.delete(key);
-    return found.review?.threads ?? [];
+    return found.threads;
   }
 
   /** Starts a thread with this Comment, starting the pending review first if there is none. */
@@ -48,6 +51,45 @@ export class PendingReviews {
       this.reviewIds.delete(keyOf(pullRequest));
       throw err;
     }
+  }
+
+  /**
+   * Replies to a thread: into the pending review if one is open, or else
+   * published at once. Gives the reply's id and whether it is pending.
+   */
+  async reply(
+    pullRequest: PullRequestRef,
+    threadId: string,
+    body: string
+  ): Promise<{ commentId: string; pending: boolean }> {
+    const key = keyOf(pullRequest);
+    let reviewId = await this.reviewIds.get(key);
+    if (reviewId === undefined) {
+      // One may have been started on github.com since.
+      const found = await this.github.reviewThreads(
+        pullRequest.repository,
+        pullRequest.number
+      );
+      this.signedIn = found.viewer;
+      reviewId = found.pendingReviewId;
+      if (reviewId) this.reviewIds.set(key, Promise.resolve(reviewId));
+    }
+    try {
+      const commentId = await this.github.replyToThread(
+        threadId,
+        body,
+        reviewId
+      );
+      return { commentId, pending: reviewId !== undefined };
+    } catch (err) {
+      // The review may have been submitted or deleted on github.com.
+      this.reviewIds.delete(key);
+      throw err;
+    }
+  }
+
+  setResolved(threadId: string, resolved: boolean): Promise<void> {
+    return this.github.setThreadResolved(threadId, resolved);
   }
 
   editComment(commentId: string, body: string): Promise<void> {
@@ -81,13 +123,13 @@ export class PendingReviews {
     let id = this.reviewIds.get(key);
     if (!id) {
       id = (async () => {
-        const found = await this.github.pendingReview(
+        const found = await this.github.reviewThreads(
           pullRequest.repository,
           pullRequest.number
         );
-        this.viewerLogin = found.viewer.login;
+        this.signedIn = found.viewer;
         return (
-          found.review?.id ??
+          found.pendingReviewId ??
           (await this.github.startReview(found.pullRequestId))
         );
       })();

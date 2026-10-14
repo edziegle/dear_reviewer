@@ -149,6 +149,23 @@
         "category": "Dear Reviewer"
       },
       {
+        "command": "dearReviewer.replyToThread",
+        "title": "Reply",
+        "category": "Dear Reviewer"
+      },
+      {
+        "command": "dearReviewer.resolveThread",
+        "title": "Resolve",
+        "category": "Dear Reviewer",
+        "icon": "$(check)"
+      },
+      {
+        "command": "dearReviewer.unresolveThread",
+        "title": "Unresolve",
+        "category": "Dear Reviewer",
+        "icon": "$(issue-reopened)"
+      },
+      {
         "command": "dearReviewer.editComment",
         "title": "Edit Comment",
         "category": "Dear Reviewer",
@@ -304,6 +321,18 @@
           "when": "false"
         },
         {
+          "command": "dearReviewer.replyToThread",
+          "when": "false"
+        },
+        {
+          "command": "dearReviewer.resolveThread",
+          "when": "false"
+        },
+        {
+          "command": "dearReviewer.unresolveThread",
+          "when": "false"
+        },
+        {
           "command": "dearReviewer.editComment",
           "when": "false"
         },
@@ -368,6 +397,23 @@
           "command": "dearReviewer.addComment",
           "group": "inline",
           "when": "commentController == dearReviewer.review && commentThreadIsEmpty"
+        },
+        {
+          "command": "dearReviewer.replyToThread",
+          "group": "inline",
+          "when": "commentController == dearReviewer.review && !commentThreadIsEmpty"
+        }
+      ],
+      "comments/commentThread/title": [
+        {
+          "command": "dearReviewer.resolveThread",
+          "group": "inline@1",
+          "when": "commentController == dearReviewer.review && commentThread == unresolved"
+        },
+        {
+          "command": "dearReviewer.unresolveThread",
+          "group": "inline@1",
+          "when": "commentController == dearReviewer.review && commentThread == resolved"
         }
       ],
       "comments/comment/title": [

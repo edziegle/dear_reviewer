@@ -173,6 +173,7 @@ async function main() {
     await runSuite("review", review);
     await runSuite("review/afterReload", review);
     await runSuite("timeline", multiRootWorkspace("timeline", "timeline"));
+    await runSuite("threads", multiRootWorkspace("threads", "threads"));
     await runSuite(
       "localBranches",
       multiRootWorkspace("local-branches", "local-branches")

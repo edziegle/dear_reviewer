@@ -8,6 +8,7 @@ import type {
   FakePullRequest,
   RecordedMutation,
   RecordedRequest,
+  RecordedResolution,
   RecordedReview,
 } from "../fakeGitHub";
 
@@ -16,6 +17,7 @@ export type {
   FakePullRequest,
   RecordedMutation,
   RecordedRequest,
+  RecordedResolution,
   RecordedReview,
 };
 
@@ -43,6 +45,12 @@ export async function requestsToGitHub(): Promise<RecordedRequest[]> {
 export async function viewedMarksOnGitHub(): Promise<RecordedMutation[]> {
   const res = await fetch(`${fakeGitHubUrl()}/_fake/mutations`);
   return (await res.json()) as RecordedMutation[];
+}
+
+/** The threads the fake GitHub was asked to resolve or unresolve, oldest first. */
+export async function resolutionsOnGitHub(): Promise<RecordedResolution[]> {
+  const res = await fetch(`${fakeGitHubUrl()}/_fake/resolutions`);
+  return (await res.json()) as RecordedResolution[];
 }
 
 /** Every pull request's reviews on the fake GitHub, as they are now. */

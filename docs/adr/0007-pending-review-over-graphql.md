@@ -5,6 +5,8 @@ date: 2026-10-14
 
 # Keep a pull request Review's Comments in GitHub's pending review, over GraphQL
 
+Amended by [ADR 0014](0014-review-threads-in-the-gutter.md): the gutter shows every review thread the Reviewer can see, not only those in their pending review, and a submitted Review's threads stay in it as published threads.
+
 ## Context and Problem Statement
 
 The Reviewer writes Comments on lines and ranges of either side of a pull request's diff. The spec asks for them to reach the author in a single notification when the Review is submitted, and to survive reloads, both locally and on GitHub. Where do Comments live before the Review is submitted, and which GitHub API manages them?

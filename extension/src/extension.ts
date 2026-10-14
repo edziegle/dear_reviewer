@@ -54,9 +54,14 @@ export function activate(context: vscode.ExtensionContext) {
     viewedFiles,
     path.join(context.globalStorageUri.fsPath, "change-files-view.json")
   );
+  const avatars = new Avatars(
+    github,
+    path.join(context.globalStorageUri.fsPath, "avatars")
+  );
   const review = new ReviewComments(
     () => changes.list(),
-    new PendingReviews(github)
+    new PendingReviews(github),
+    avatars
   );
   const changeFilesTree = vscode.window.createTreeView(
     "dearReviewer.changeFiles",
@@ -95,10 +100,6 @@ export function activate(context: vscode.ExtensionContext) {
     context.globalStorageUri.fsPath,
     () => settings().get<string[]>("repositories") ?? [],
     { apiUrl, localClones }
-  );
-  const avatars = new Avatars(
-    github,
-    path.join(context.globalStorageUri.fsPath, "avatars")
   );
   const inbox = new InboxTree(
     github,
@@ -321,6 +322,18 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand(
       "dearReviewer.addComment",
       (reply: vscode.CommentReply) => review.addComment(reply)
+    ),
+    vscode.commands.registerCommand(
+      "dearReviewer.replyToThread",
+      (reply: vscode.CommentReply) => review.reply(reply)
+    ),
+    vscode.commands.registerCommand(
+      "dearReviewer.resolveThread",
+      (thread: vscode.CommentThread) => review.setResolved(thread, true)
+    ),
+    vscode.commands.registerCommand(
+      "dearReviewer.unresolveThread",
+      (thread: vscode.CommentThread) => review.setResolved(thread, false)
     ),
     vscode.commands.registerCommand(
       "dearReviewer.editComment",

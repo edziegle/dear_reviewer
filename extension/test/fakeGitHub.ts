@@ -2,14 +2,17 @@
 // fixtures through the GraphQL `search` the Inbox uses, serves a pull
 // request's state and its files with their viewed state, marks files viewed
 // and unviewed, keeps reviews (a pending review, its threads and Comments,
-// and submitting it), serves a pull request's timeline and its latest
-// commit's checks, serves avatars, and records every request it receives.
+// and submitting it), serves every review thread the viewer can see, takes
+// replies to them and resolves and unresolves them, serves a pull request's
+// timeline and its latest commit's checks, serves avatars, and records every
+// request it receives.
 //
 // Tests control it over HTTP:
-//   PUT /_fake/state      replaces the fixtures and clears what was recorded
-//   GET /_fake/requests   returns the recorded requests
-//   GET /_fake/mutations  returns the viewed marks received, oldest first
-//   GET /_fake/reviews    returns every pull request's reviews as they are now
+//   PUT /_fake/state        replaces the fixtures and clears what was recorded
+//   GET /_fake/requests     returns the recorded requests
+//   GET /_fake/mutations    returns the viewed marks received, oldest first
+//   GET /_fake/resolutions  returns the resolves and unresolves received, oldest first
+//   GET /_fake/reviews      returns every pull request's reviews as they are now
 
 import * as http from "http";
 import { AddressInfo } from "net";
@@ -110,12 +113,21 @@ export interface FakeReviewThread {
   line: number;
   /** The first line of a multi-line range. */
   startLine?: number;
+  /**
+   * Set when the lines are gone from the head: GitHub then has no `line`,
+   * and `line` and `startLine` are where the thread was written.
+   */
+  outdated?: boolean;
+  resolved?: boolean;
   comments: FakeReviewComment[];
 }
 
 export interface FakeReviewComment {
   id: string;
   body: string;
+  /** The review the Comment was written in, when it isn't the thread's, as for a reply. */
+  reviewId?: string;
+  createdAt?: string;
 }
 
 /** A pull request's review, as GET /_fake/reviews reports it. */
@@ -136,6 +148,12 @@ export interface RecordedMutation {
   mutation: "markFileAsViewed" | "unmarkFileAsViewed";
   pullRequestId: string;
   path: string;
+}
+
+/** A resolveReviewThread or unresolveReviewThread the fake received. */
+export interface RecordedResolution {
+  mutation: "resolveReviewThread" | "unresolveReviewThread";
+  threadId: string;
 }
 
 /** The node id the fake gives a pull request. */
@@ -176,6 +194,7 @@ export async function startFakeGitHub(): Promise<{
   };
   let requests: RecordedRequest[] = [];
   let mutations: RecordedMutation[] = [];
+  let resolutions: RecordedResolution[] = [];
   let lastId = 0;
   const newId = (prefix: string) => `${prefix}_${++lastId}`;
 
@@ -191,6 +210,7 @@ export async function startFakeGitHub(): Promise<{
       state = JSON.parse(body) as FakeGitHubState;
       requests = [];
       mutations = [];
+      resolutions = [];
       return send(204, null);
     }
     if (path === "/_fake/requests" && req.method === "GET") {
@@ -198,6 +218,9 @@ export async function startFakeGitHub(): Promise<{
     }
     if (path === "/_fake/mutations" && req.method === "GET") {
       return send(200, mutations);
+    }
+    if (path === "/_fake/resolutions" && req.method === "GET") {
+      return send(200, resolutions);
     }
     if (path === "/_fake/reviews" && req.method === "GET") {
       return send(
@@ -314,17 +337,30 @@ export async function startFakeGitHub(): Promise<{
             id: thread.id,
             path: thread.path,
             diffSide: thread.side,
-            line: thread.line,
-            startLine: thread.startLine ?? null,
+            line: thread.outdated ? null : thread.line,
+            startLine: thread.outdated ? null : (thread.startLine ?? null),
             startDiffSide: thread.startLine ? thread.side : null,
             originalLine: thread.line,
             originalStartLine: thread.startLine ?? null,
+            isOutdated: thread.outdated ?? false,
+            isResolved: thread.resolved ?? false,
             comments: {
-              nodes: thread.comments.map((comment) => ({
-                id: comment.id,
-                body: comment.body,
-                pullRequestReview: { id: review.id },
-              })),
+              nodes: thread.comments
+                .map((comment) => ({
+                  comment,
+                  written: reviewOf(pr, comment.reviewId) ?? review,
+                }))
+                .filter(({ written }) => visible.includes(written))
+                .map(({ comment, written }) => ({
+                  id: comment.id,
+                  body: comment.body,
+                  createdAt:
+                    comment.createdAt ??
+                    written.submittedAt ??
+                    "2026-10-01T00:00:00Z",
+                  author: actor(written.author),
+                  pullRequestReview: { id: written.id },
+                })),
             },
           }))
         ),
@@ -340,6 +376,33 @@ export async function startFakeGitHub(): Promise<{
         })),
       },
     };
+  }
+
+  function reviewOfThread(
+    pr: FakePullRequest,
+    thread: FakeReviewThread
+  ): FakeReview | undefined {
+    return pr.reviews?.find((review) => review.threads.includes(thread));
+  }
+
+  function reviewOf(
+    pr: FakePullRequest,
+    id: string | undefined
+  ): FakeReview | undefined {
+    return id === undefined
+      ? undefined
+      : pr.reviews?.find((review) => review.id === id);
+  }
+
+  /** The review thread with this id, and its pull request. */
+  function findThread(id: unknown) {
+    for (const pr of state.pullRequests)
+      for (const review of pr.reviews ?? [])
+        for (const thread of review.threads)
+          if (thread.id === id) return { pr, thread };
+    throw new Error(
+      `Could not resolve to a node with the global id of '${id}'`
+    );
   }
 
   function avatarUrl(login: string): string {
@@ -405,10 +468,13 @@ export async function startFakeGitHub(): Promise<{
           createdAt: date,
           author: actor(review.author),
           comments: {
-            totalCount: review.threads.reduce(
-              (n, t) => n + t.comments.length,
-              0
-            ),
+            totalCount: reviews
+              .flatMap((r) => r.threads)
+              .flatMap((t) =>
+                t.comments.filter(
+                  (c) => (c.reviewId ?? reviewOfThread(pr, t)?.id) === review.id
+                )
+              ).length,
           },
         },
       });
@@ -472,7 +538,7 @@ export async function startFakeGitHub(): Promise<{
    */
   function mutate(query: string, vars: Record<string, unknown>) {
     const review =
-      /\b(addPullRequestReview|addPullRequestReviewThread|updatePullRequestReviewComment|deletePullRequestReviewComment|submitPullRequestReview)\(\s*input:\s*\$input\s*\)/.exec(
+      /\b(addPullRequestReview|addPullRequestReviewThread|addPullRequestReviewThreadReply|updatePullRequestReviewComment|deletePullRequestReviewComment|submitPullRequestReview|resolveReviewThread|unresolveReviewThread)\(\s*input:\s*\$input\s*\)/.exec(
         query
       );
     if (review)
@@ -532,7 +598,7 @@ export async function startFakeGitHub(): Promise<{
         for (const thread of review.threads) {
           const comment = thread.comments.find((c) => c.id === id);
           if (!comment) continue;
-          myPendingReview(review.id);
+          myPendingReview(comment.reviewId ?? review.id);
           return { review, thread, comment };
         }
       }
@@ -610,6 +676,49 @@ export async function startFakeGitHub(): Promise<{
             comments: { nodes: [{ id: thread.comments[0].id }] },
           },
         };
+      }
+      case "addPullRequestReviewThreadReply": {
+        const { pr, thread } = findThread(input.pullRequestReviewThreadId);
+        if (typeof input.body !== "string" || input.body === "")
+          throw new Error("Body can't be blank");
+        let review: FakeReview;
+        if (
+          input.pullRequestReviewId !== undefined &&
+          input.pullRequestReviewId !== null
+        ) {
+          const pending = myPendingReview(input.pullRequestReviewId);
+          if (pending.pr !== pr)
+            throw new Error("The review is on another pull request");
+          review = pending.review;
+        } else {
+          // Without a pending review, the reply is published at once, in a
+          // review of its own.
+          review = {
+            id: newId("PRR"),
+            author: state.viewer.login,
+            state: "COMMENTED",
+            submittedAt: new Date().toISOString(),
+            threads: [],
+          };
+          (pr.reviews ??= []).push(review);
+        }
+        const comment: FakeReviewComment = {
+          id: newId("PRRC"),
+          body: input.body,
+          reviewId: review.id,
+        };
+        thread.comments.push(comment);
+        return { comment: { id: comment.id } };
+      }
+      case "resolveReviewThread":
+      case "unresolveReviewThread": {
+        const { thread } = findThread(input.threadId);
+        thread.resolved = mutation === "resolveReviewThread";
+        resolutions.push({
+          mutation: mutation as RecordedResolution["mutation"],
+          threadId: thread.id,
+        });
+        return { thread: { id: thread.id, isResolved: thread.resolved } };
       }
       case "updatePullRequestReviewComment": {
         const { comment } = myPendingComment(input.pullRequestReviewCommentId);

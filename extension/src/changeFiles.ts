@@ -226,12 +226,14 @@ export class ChangeFilesView
       path: `/${file.path}`,
     });
     const viewColumn = await this.codeColumn(change);
+    // Pinned, so going to a definition opens a new tab instead of replacing
+    // the diff, and Go Back returns to it.
     await vscode.commands.executeCommand(
       "vscode.diff",
       original ?? empty,
       modified ?? empty,
       `${path.basename(file.path)} · ${changeName(change)}`,
-      { viewColumn }
+      { viewColumn, preview: false }
     );
   }
 

@@ -65,6 +65,11 @@ describe("The Change files view", () => {
       assert.strictEqual(diff.original.fsPath, path.join(base, "pkg/core.py"));
       assert.strictEqual(diff.modified.fsPath, path.join(head, "pkg/core.py"));
     });
+    assert.strictEqual(
+      vscode.window.tabGroups.activeTabGroup.activeTab?.isPreview,
+      false,
+      "pinned, so going to a definition doesn't replace it"
+    );
 
     await select(entryAt(tree, title, "pkg", "sub", "new.py"));
     await eventually(() =>

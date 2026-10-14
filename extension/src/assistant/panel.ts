@@ -262,7 +262,8 @@ function html(): string {
   const chip = (s, onRemove) => {
     const span = document.createElement("span");
     span.className = "chip";
-    span.textContent = s.path + " · " + s.side + " · " + lines(s);
+    const side = s.side === "commit" ? "commit " + s.commit.slice(0, 7) : s.side;
+    span.textContent = s.path + " · " + side + " · " + lines(s);
     if (onRemove) {
       const button = document.createElement("button");
       button.type = "button";

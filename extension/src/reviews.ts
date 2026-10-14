@@ -81,7 +81,7 @@ export async function showChangesSince(
     const original =
       file.status === "added"
         ? undefined
-        : commitFileUri(change.repository, from, file.path);
+        : commitFileUri(change, from, file.path);
     const modified =
       file.status === "deleted"
         ? undefined
@@ -95,16 +95,35 @@ export async function showChangesSince(
   );
 }
 
+/** A file at a commit, in what changed since the last Review of the Change. */
 function commitFileUri(
-  repository: string,
+  change: Change,
   commit: string,
   file: string
 ): vscode.Uri {
   return vscode.Uri.from({
     scheme: commitFileScheme,
     path: `/${file}`,
-    query: new URLSearchParams({ repository, commit }).toString(),
+    query: new URLSearchParams({
+      repository: change.repository,
+      commit,
+      change: change.id,
+    }).toString(),
   });
+}
+
+/** The commit, file and Change a `commitFileScheme` URI names. */
+export function parseCommitFileUri(uri: vscode.Uri): {
+  commit: string;
+  path: string;
+  changeId: string;
+} {
+  const query = new URLSearchParams(uri.query);
+  return {
+    commit: query.get("commit") ?? "",
+    path: uri.path.slice(1),
+    changeId: query.get("change") ?? "",
+  };
 }
 
 /** A file's text at a commit, read with `git show`, for files of open Changes' repositories only. */

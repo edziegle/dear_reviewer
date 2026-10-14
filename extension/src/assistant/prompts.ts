@@ -36,7 +36,13 @@ function worktrees(change: Change): string[] {
 export interface Selection {
   /** Relative to the repository root, with forward slashes. */
   path: string;
-  side: "base" | "head";
+  /**
+   * The worktree the lines are in, or `commit` for lines of the reviewed
+   * commit's side of what changed since the last Review, which no worktree has.
+   */
+  side: "base" | "head" | "commit";
+  /** The commit a `commit` side's lines are from. */
+  commit?: string;
   startLine: number;
   endLine: number;
 }
@@ -59,16 +65,12 @@ export function chatPrompt(
   if (context.length > 0) {
     parts.push("The Reviewer selected this code to ask about:", "");
     for (const selection of context) {
-      const file = path.join(
-        selection.side === "base" ? change.baseDir : change.headDir,
-        ...selection.path.split("/")
-      );
       const text =
         selection.text.length > maxSelectionChars
           ? `${selection.text.slice(0, maxSelectionChars)}\n[cut off; read the file for the rest]`
           : selection.text;
       parts.push(
-        `${describeLines(selection)} of ${selection.path} on the ${selection.side} side (${file}):`,
+        `${describeLines(selection)} of ${selection.path} ${whereSelected(change, selection)}:`,
         "```",
         text,
         "```",
@@ -78,6 +80,16 @@ export function chatPrompt(
   }
   parts.push(question);
   return parts.join("\n");
+}
+
+function whereSelected(change: Change, selection: Selection): string {
+  if (selection.side === "commit")
+    return `at commit ${selection.commit}, which neither worktree has`;
+  const file = path.join(
+    selection.side === "base" ? change.baseDir : change.headDir,
+    ...selection.path.split("/")
+  );
+  return `on the ${selection.side} side (${file})`;
 }
 
 export function describeLines(selection: Selection): string {

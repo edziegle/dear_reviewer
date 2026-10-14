@@ -557,7 +557,7 @@ export function activate(context: vscode.ExtensionContext) {
         const found = editor && selectionInChange(editor, changes.shownHere());
         if (!found) {
           void vscode.window.showInformationMessage(
-            "Select code in the base or head of a Change open in this window to send it to the Assistant."
+            "Select code in the base or head of a Change open in this window, or in what changed since your last Review, to send it to the Assistant."
           );
           return;
         }

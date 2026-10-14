@@ -398,7 +398,7 @@
         },
         {
           "command": "dearReviewer.sendSelectionToAssistant",
-          "when": "editorIsOpen && resourcePath =~ /edziegle\\.dear-reviewer\\/changes\\//"
+          "when": "editorIsOpen && (resourcePath =~ /edziegle\\.dear-reviewer\\/changes\\// || resourceScheme == dear-reviewer-commit)"
         },
         {
           "command": "dearReviewer.copyBrief",
@@ -427,7 +427,7 @@
       "editor/context": [
         {
           "command": "dearReviewer.sendSelectionToAssistant",
-          "when": "resourcePath =~ /edziegle\\.dear-reviewer\\/changes\\//",
+          "when": "resourcePath =~ /edziegle\\.dear-reviewer\\/changes\\// || resourceScheme == dear-reviewer-commit",
           "group": "1_dearReviewer@1"
         }
       ],

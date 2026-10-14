@@ -2,11 +2,13 @@ import * as assert from "assert";
 import * as path from "path";
 import * as vscode from "vscode";
 import {
+  askAssistant,
   assistantRuns,
   flag,
   renderedPanel,
   replyTurn,
   scriptClaude,
+  sendSelection,
   userMessages,
 } from "../assistant";
 import { buildPullRequestFixture, pushToPullRequest } from "../fixtures";
@@ -308,5 +310,48 @@ describe("What changed since my last Review", () => {
         ]
       );
     });
+  });
+
+  it("sends lines of the reviewed commit's side to the Assistant, as lines at that commit", async () => {
+    const title = titleAt(newHead);
+    const reviewed = vscode.window.visibleTextEditors.find(
+      (editor) => editor.document.uri.scheme === "dear-reviewer-commit"
+    )?.document.uri;
+    assert.ok(reviewed, "the diff since the last Review is still open");
+    scriptClaude({ turns: [replyTurn("It returned 2.")] });
+    // The last test closed every editor, the Assistant panel included.
+    await vscode.commands.executeCommand(
+      "dearReviewer.showAssistant",
+      requestAt(newHead)
+    );
+
+    await sendSelection(reviewed, 0, 2);
+
+    await eventually(async () =>
+      assert.deepStrictEqual((await renderedPanel(title))?.context, [
+        {
+          path: "util.py",
+          side: "commit",
+          commit: pr.head,
+          startLine: 1,
+          endLine: 3,
+          text: 'def new_helper():\n    """Two."""\n    return 2',
+        },
+      ])
+    );
+
+    await askAssistant(title, "What did it return?");
+
+    await eventually(async () =>
+      assert.deepStrictEqual((await renderedPanel(title))?.messages.at(-1), {
+        from: "assistant",
+        text: "It returned 2.",
+      })
+    );
+    const [prompt] = userMessages(assistantRuns()[0]);
+    assert.ok(
+      prompt.includes(`lines 1–3 of util.py at commit ${pr.head}`),
+      prompt
+    );
   });
 });

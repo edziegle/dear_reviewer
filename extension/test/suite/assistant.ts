@@ -210,15 +210,17 @@ export function removeSelection(title: string, index: number): Promise<void> {
 }
 
 /**
- * Selects lines of the file, counted from 0, in an editor, and runs Send
- * Selection to Assistant on them.
+ * Selects lines of the file or document, counted from 0, in an editor, and
+ * runs Send Selection to Assistant on them.
  */
 export async function sendSelection(
-  file: string,
+  file: string | vscode.Uri,
   startLine: number,
   endLine: number
 ): Promise<void> {
-  const document = await vscode.workspace.openTextDocument(file);
+  const document = await vscode.workspace.openTextDocument(
+    typeof file === "string" ? vscode.Uri.file(file) : file
+  );
   const end = document.lineAt(endLine).range.end;
   await vscode.window.showTextDocument(document, {
     selection: new vscode.Range(startLine, 0, end.line, end.character),

@@ -25,14 +25,15 @@ Chosen option: the extension's storage, keyed by the conversation name, because 
 - The Brief is written to a Markdown file in the extension's storage, under `briefs/`, and opens in the editor (ADR 0012). Copy Brief, in the editor's title bar, copies the document's text, with any edits not yet saved, to the clipboard.
 - Writing the Brief ends the Review: its Comments leave the storage and the gutter, and the Change's head is kept as the last reviewed commit. If the Assistant fails, the Review goes on and its Comments stay.
 - The last reviewed commit of a local Change is the one its last Brief covered, while the repository still has that commit. With it, the Inbox marks a local branch with new commits since, Show Changes Since My Last Review works on local Changes, and the Assistant explains what changed since, as ADR 0015 has them for pull requests.
-- Closing a local Change keeps its Comments and its last Brief, as it keeps its conversation, because the Reviewer might reopen the branch.
+- Closing a local Change keeps its Comments and its last Brief, as it keeps its conversation, because the Reviewer might reopen the branch. When the branch is merged into main or deleted, ADR 0013 forgets them, with its Brief files and its conversation.
 
 ### Consequences
 
 - Good, because the Reviewer comments on a pull request and a local Change the same way, with one set of commands and one comment controller.
 - Good, because the agent's next commits on a branch keep the record of the last Brief, so the next Review starts from what changed since.
 - Good, because the Brief is an ordinary file in an editor, which the Reviewer can read, edit, save and reopen.
-- Bad, because local Comments and Briefs stay on the machine that wrote them, and Briefs and local Reviews stay in the extension's storage until the Reviewer clears it, since a local Change never ends on its own (ADR 0013).
+- Bad, because local Comments and Briefs stay on the machine that wrote them.
+- Bad, because the Briefs and local Review of a range that isn't a branch stay in the extension's storage until the Reviewer clears it, since such a Change never ends on its own (ADR 0013).
 - Bad, because a Brief uses a Claude turn in the Change's conversation, and a long conversation makes that turn larger.
 - Bad, because a Brief's Comments leave the gutter, so the next Review shows what the Reviewer said only in the Brief file.
 - Bad, because a range that isn't a branch has a conversation name made of its commits, so its next Review at a new head is a new Change with no last Brief.

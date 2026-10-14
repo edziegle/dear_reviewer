@@ -61,12 +61,7 @@ export class Briefs {
       return;
     }
     const file = path.join(
-      this.dir,
-      crypto
-        .createHash("sha256")
-        .update(change.conversation)
-        .digest("hex")
-        .slice(0, 16),
+      this.dirOf(change.conversation),
       `Brief ${name.replace(/[^\w.-]+/g, "-")} ${change.headSha.slice(0, 7)}.md`
     );
     fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -106,6 +101,23 @@ export class Briefs {
     await vscode.env.clipboard.writeText(text);
     void vscode.window.showInformationMessage(
       "Copied the Brief. Paste it into the agent session that should act on it."
+    );
+  }
+
+  /** Deletes the Briefs of a Change that is over. */
+  forget(conversation: string): void {
+    fs.rmSync(this.dirOf(conversation), { recursive: true, force: true });
+  }
+
+  /** Where the Briefs of a Change are kept, by its conversation name. */
+  private dirOf(conversation: string): string {
+    return path.join(
+      this.dir,
+      crypto
+        .createHash("sha256")
+        .update(conversation)
+        .digest("hex")
+        .slice(0, 16)
     );
   }
 

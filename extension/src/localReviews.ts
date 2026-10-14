@@ -137,6 +137,19 @@ export class LocalPendingReviews implements PendingReviews {
     return this.all()[conversation]?.briefed?.commit;
   }
 
+  /** The conversation names of the local Reviews kept. */
+  names(): string[] {
+    return Object.keys(this.all());
+  }
+
+  /** Forgets the Review under way and the last Brief of a Change that is over. */
+  forget(conversation: string): void {
+    const all = this.all();
+    if (!(conversation in all)) return;
+    delete all[conversation];
+    this.write(all);
+  }
+
   private update(change: Change, edit: (review: LocalReview) => void): void {
     const all = this.all();
     const review = all[change.conversation] ?? { threads: [] };

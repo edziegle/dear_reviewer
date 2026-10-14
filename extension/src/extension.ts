@@ -159,7 +159,11 @@ export function activate(context: vscode.ExtensionContext) {
   const lifecycle = new Lifecycle(
     changes,
     github,
-    conversations,
+    { conversations, localReviews, briefs },
+    async (clone) =>
+      (await repositories.inboxClones()).find(
+        (c) => path.resolve(c.clone) === path.resolve(clone)
+      )?.repository,
     async (change) => {
       await letGo(change);
       changeFiles.refresh();

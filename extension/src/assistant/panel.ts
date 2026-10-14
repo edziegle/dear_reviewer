@@ -7,7 +7,7 @@
 
 import * as crypto from "crypto";
 import * as vscode from "vscode";
-import { renderMarkdown } from "../markdown";
+import { Handshake, MarkdownPanel, RenderInto } from "../markdownPanel";
 import type { Step } from "./activity";
 import type { Selection } from "./prompts";
 
@@ -45,14 +45,11 @@ export interface ShownConversation extends ConversationState {
   messages: (Message & { html?: string })[];
 }
 
-/** Extension to webview. */
-type ToWebview =
-  | { type: "state"; revision: number; state: ShownConversation }
-  | { type: "focus" };
+/** Extension to webview, besides the state. */
+type ToWebview = { type: "focus" };
 /** Webview to extension. */
 export type FromWebview =
-  | { type: "ready" }
-  | { type: "rendered"; revision: number }
+  | Handshake
   | { type: "ask"; text: string }
   | { type: "removeContext"; index: number }
   | { type: "problemAction" }
@@ -60,74 +57,47 @@ export type FromWebview =
   | { type: "openReference"; path: string; startLine: number; endLine: number };
 
 /** What the Reviewer does in the panel. */
-export type ReviewerAction = Extract<
-  FromWebview,
-  | { type: "ask" }
-  | { type: "removeContext" }
-  | { type: "problemAction" }
-  | { type: "openLink" }
-  | { type: "openReference" }
->;
+export type ReviewerAction = Exclude<FromWebview, Handshake>;
 
 export class AssistantPanel {
-  private readonly panel: vscode.WebviewPanel;
-  private state: ShownConversation;
-  private revision = 0;
-  private renderedState?: ShownConversation;
-  /** The web links in the replies sent, the only ones the panel may open. */
-  private links = new Set<string>();
-  private readonly disposed = new vscode.EventEmitter<void>();
+  private readonly view: MarkdownPanel<ConversationState, ShownConversation>;
   /** Fires when the Reviewer closes the panel. */
-  readonly onDidDispose = this.disposed.event;
+  readonly onDidDispose: vscode.Event<void>;
 
   constructor(
     state: ConversationState,
     private readonly onAction: (action: ReviewerAction) => void
   ) {
-    this.state = this.shown(state);
-    this.panel = vscode.window.createWebviewPanel(
-      "dearReviewer.assistant",
-      `Assistant: ${state.title}`,
-      { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
-      {
-        enableScripts: true,
-        retainContextWhenHidden: true,
-        localResourceRoots: [],
-      }
-    );
-    this.panel.webview.html = html();
-    this.panel.webview.onDidReceiveMessage((message: FromWebview) =>
-      this.receive(message)
-    );
-    this.panel.onDidDispose(() => {
-      this.disposed.fire();
-      this.disposed.dispose();
+    this.view = new MarkdownPanel(state, {
+      viewType: "dearReviewer.assistant",
+      title: `Assistant: ${state.title}`,
+      localResourceRoots: [],
+      html,
+      show: shown,
+      receive: (message) => this.receive(message as FromWebview),
     });
+    this.onDidDispose = this.view.onDidDispose;
   }
 
   /** The state last sent to the webview. */
   get sent(): ShownConversation {
-    return clone(this.state);
+    return this.view.sent;
   }
 
   /** The state the webview last rendered, once it has rendered the latest one. */
   get rendered(): ShownConversation | undefined {
-    return this.renderedState && clone(this.renderedState);
+    return this.view.rendered;
   }
 
   update(state: ConversationState): void {
-    this.state = this.shown(state);
-    this.panel.title = `Assistant: ${state.title}`;
-    void this.post();
+    this.view.title = `Assistant: ${state.title}`;
+    this.view.update(state);
   }
 
   /** Handles a message from the webview; the tests send them here too. */
   receive(message: FromWebview): void {
-    if (message.type === "ready") void this.post();
-    else if (message.type === "rendered") {
-      if (message.revision === this.revision)
-        this.renderedState = clone(this.state);
-    } else if (message.type === "ask") {
+    if (this.view.handshake(message)) return;
+    if (message.type === "ask") {
       if (typeof message.text === "string" && message.text.trim())
         this.onAction({ type: "ask", text: message.text.trim() });
     } else if (message.type === "removeContext") {
@@ -135,7 +105,8 @@ export class AssistantPanel {
     } else if (message.type === "problemAction") {
       this.onAction({ type: "problemAction" });
     } else if (message.type === "openLink") {
-      if (typeof message.url === "string" && this.links.has(message.url))
+      // Only links in the replies sent, the only ones the panel may open.
+      if (typeof message.url === "string" && this.view.hasLink(message.url))
         this.onAction({ type: "openLink", url: message.url });
     } else if (message.type === "openReference") {
       const { path, startLine, endLine } = message;
@@ -150,43 +121,29 @@ export class AssistantPanel {
 
   /** Brings the panel forward; with `focus`, puts the cursor in its message box. */
   reveal(focus = false): void {
-    this.panel.reveal(undefined, !focus);
+    this.view.reveal(!focus);
     if (focus)
-      void this.panel.webview.postMessage({
+      void this.view.webview.postMessage({
         type: "focus",
       } satisfies ToWebview);
   }
 
   dispose(): void {
-    this.panel.dispose();
-  }
-
-  /** Renders each reply's Markdown, and keeps the links it has. */
-  private shown(state: ConversationState): ShownConversation {
-    const links = new Set<string>();
-    const messages = state.messages.map((message) => {
-      if (message.from !== "assistant") return message;
-      const rendered = renderMarkdown(message.text, { references: true });
-      for (const link of rendered.links) links.add(link);
-      return { ...message, html: rendered.html };
-    });
-    this.links = links;
-    return clone({ ...state, messages });
-  }
-
-  private post(): Thenable<boolean> {
-    const message: ToWebview = {
-      type: "state",
-      revision: ++this.revision,
-      state: this.state,
-    };
-    return this.panel.webview.postMessage(message);
+    this.view.dispose();
   }
 }
 
-/** The state as JSON carries it to the webview, with absent fields left out. */
-function clone(state: ShownConversation): ShownConversation {
-  return JSON.parse(JSON.stringify(state)) as ShownConversation;
+/** Renders each reply's Markdown, with `path:line` references. */
+function shown(
+  state: ConversationState,
+  render: RenderInto
+): ShownConversation {
+  const messages = state.messages.map((message) =>
+    message.from === "assistant"
+      ? { ...message, html: render(message.text, { references: true }) }
+      : message
+  );
+  return { ...state, messages };
 }
 
 function html(): string {

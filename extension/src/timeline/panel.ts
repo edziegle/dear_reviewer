@@ -4,7 +4,7 @@
 
 import * as crypto from "crypto";
 import * as vscode from "vscode";
-import { renderMarkdown } from "../markdown";
+import { Handshake, MarkdownPanel, RenderInto } from "../markdownPanel";
 import type {
   CheckRunStatus,
   CheckStatus,
@@ -66,29 +66,20 @@ export interface ShownTimeline extends TimelineState {
   items: (TimelineItem & { html?: string })[];
 }
 
-/** Extension to webview. */
-type ToWebview = { type: "state"; revision: number; state: ShownTimeline };
 /** Webview to extension. */
 export type FromWebview =
-  | { type: "ready" }
-  | { type: "rendered"; revision: number }
+  | Handshake
   | { type: "openLink"; url: string }
   | { type: "refresh" }
   | { type: "problemAction" };
 
 export class TimelinePanel {
-  private readonly panel: vscode.WebviewPanel;
-  private state: ShownTimeline;
-  private revision = 0;
-  private renderedState?: ShownTimeline;
-  /** The web links in the bodies sent. */
-  private links = new Set<string>();
-  private readonly disposed = new vscode.EventEmitter<void>();
+  private readonly view: MarkdownPanel<TimelineState, ShownTimeline>;
   private readonly linkClicked = new vscode.EventEmitter<string>();
   private readonly refreshClicked = new vscode.EventEmitter<void>();
   private readonly problemActionClicked = new vscode.EventEmitter<void>();
   /** Fires when the Reviewer closes the panel. */
-  readonly onDidDispose = this.disposed.event;
+  readonly onDidDispose: vscode.Event<void>;
   /** Fires with the URL of a link the Reviewer clicked, as the webview gave it. */
   readonly onDidClickLink = this.linkClicked.event;
   readonly onDidClickRefresh = this.refreshClicked.event;
@@ -97,25 +88,17 @@ export class TimelinePanel {
 
   /** `avatarDir` holds the cached avatars, the only files the webview may load. */
   constructor(state: TimelineState, avatarDir: vscode.Uri) {
-    this.state = this.shown(state);
-    this.panel = vscode.window.createWebviewPanel(
-      "dearReviewer.timeline",
-      `Timeline: ${state.pullRequest}`,
-      { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
-      {
-        enableScripts: true,
-        retainContextWhenHidden: true,
-        localResourceRoots: [avatarDir],
-      }
-    );
-    this.panel.webview.html = html(this.panel.webview.cspSource);
-    this.panel.webview.onDidReceiveMessage((message: FromWebview) =>
-      this.receive(message)
-    );
-    this.panel.onDidDispose(() => {
-      this.disposed.fire();
+    this.view = new MarkdownPanel(state, {
+      viewType: "dearReviewer.timeline",
+      title: `Timeline: ${state.pullRequest}`,
+      localResourceRoots: [avatarDir],
+      html: (webview) => html(webview.cspSource),
+      show: shown,
+      receive: (message) => this.receive(message as FromWebview),
+    });
+    this.onDidDispose = this.view.onDidDispose;
+    this.view.onDidDispose(() => {
       for (const emitter of [
-        this.disposed,
         this.linkClicked,
         this.refreshClicked,
         this.problemActionClicked,
@@ -125,78 +108,59 @@ export class TimelinePanel {
   }
 
   get title(): string {
-    return this.panel.title;
+    return this.view.title;
   }
 
   /** The state last sent to the webview. */
   get sent(): ShownTimeline {
-    return clone(this.state);
+    return this.view.sent;
   }
 
   /** The state the webview last rendered, once it has rendered the latest one. */
   get rendered(): ShownTimeline | undefined {
-    return this.renderedState && clone(this.renderedState);
+    return this.view.rendered;
   }
 
   /** Whether a body the panel was sent links to the URL. */
   hasLink(url: string): boolean {
-    return this.links.has(url);
+    return this.view.hasLink(url);
   }
 
   /** The URI the webview loads a local file by. */
   webviewUri(file: vscode.Uri): string {
-    return this.panel.webview.asWebviewUri(file).toString();
+    return this.view.webview.asWebviewUri(file).toString();
   }
 
   /** Handles a message from the webview; the tests send clicks through here too. */
   receive(message: FromWebview): void {
-    if (message.type === "ready") void this.post();
-    else if (message.type === "rendered" && message.revision === this.revision)
-      this.renderedState = clone(this.state);
-    else if (message.type === "openLink" && typeof message.url === "string")
+    if (this.view.handshake(message)) return;
+    if (message.type === "openLink" && typeof message.url === "string")
       this.linkClicked.fire(message.url);
     else if (message.type === "refresh") this.refreshClicked.fire();
     else if (message.type === "problemAction") this.problemActionClicked.fire();
   }
 
   update(state: TimelineState): void {
-    this.state = this.shown(state);
-    void this.post();
+    this.view.update(state);
   }
 
   reveal(): void {
-    this.panel.reveal(undefined, true);
+    this.view.reveal();
   }
 
   dispose(): void {
-    this.panel.dispose();
-  }
-
-  private shown(state: TimelineState): ShownTimeline {
-    const links = new Set<string>();
-    const items = state.items.map((item) => {
-      if (item.kind === "commit" || !item.body) return item;
-      const rendered = renderMarkdown(item.body);
-      for (const link of rendered.links) links.add(link);
-      return { ...item, html: rendered.html };
-    });
-    this.links = links;
-    return clone({ ...state, items });
-  }
-
-  private post(): Thenable<boolean> {
-    const message: ToWebview = {
-      type: "state",
-      revision: ++this.revision,
-      state: this.state,
-    };
-    return this.panel.webview.postMessage(message);
+    this.view.dispose();
   }
 }
 
-/** The state as JSON carries it to the webview, with absent fields left out. */
-function clone(state: ShownTimeline): ShownTimeline {
-  return JSON.parse(JSON.stringify(state)) as ShownTimeline;
+/** Renders each description, Comment and review body. */
+function shown(state: TimelineState, render: RenderInto): ShownTimeline {
+  const items = state.items.map((item) =>
+    item.kind === "commit" || !item.body
+      ? item
+      : { ...item, html: render(item.body) }
+  );
+  return { ...state, items };
 }
 
 function html(cspSource: string): string {

@@ -153,7 +153,12 @@ export class ChangeFilesView
       case "problem": {
         const item = new vscode.TreeItem(node.message);
         item.iconPath = new vscode.ThemeIcon("error");
-        item.tooltip = node.message;
+        // GitHub turned the token down: signing in again is the way out.
+        const signIn = /\b401\b/.test(node.message);
+        item.command = signIn
+          ? { title: "Sign In to GitHub", command: "dearReviewer.signIn" }
+          : { title: "Refresh", command: "dearReviewer.refreshChangeFiles" };
+        item.tooltip = `${node.message}\n\nClick to ${signIn ? "sign in to GitHub" : "try again"}.`;
         return item;
       }
       case "change": {

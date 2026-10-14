@@ -5,6 +5,8 @@ date: 2026-10-13
 
 # Review pull requests in a configured local clone of their repository
 
+Amended by [ADR 0010](0010-repositories-from-open-folders.md): a repository's clone also comes from a folder open in the Reviewer's windows, or one they picked, and Dear Reviewer remembers it. `dearReviewer.localClones` is optional and takes precedence. A missing clone offers a folder picker instead of only pointing at the setting.
+
 ## Context and Problem Statement
 
 Opening a pull request from the Inbox makes it a Change, which needs a base and a head worktree. Worktrees belong to a local repository, and the pull request's head commit has to be fetched into that repository first. The Inbox only knows repositories as `owner/name` on GitHub (the Repositories setting), and the spec doesn't say how `owner/name` maps to a clone on disk. The work monorepo is large, and the Reviewer already has it cloned on each machine. Where does Dear Reviewer fetch a pull request, and from which remote?

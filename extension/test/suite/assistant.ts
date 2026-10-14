@@ -118,6 +118,8 @@ export interface Conversation {
   context?: (Selection & { text: string })[];
   /** What went wrong, in words for the Reviewer. */
   problem?: string;
+  /** The button that goes with the problem, by its label. */
+  problemAction?: string;
 }
 
 interface AssistantApi {

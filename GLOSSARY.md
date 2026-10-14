@@ -29,7 +29,7 @@ The code under review: the difference between two points in a repository's histo
 _Avoid_: Diff (that's the rendering), Change Set, Review Target, PR (only one source)
 
 **Inbox**:
-The list of Changes waiting for the Reviewer: pull requests across configured repositories that await their review or that they authored, plus local branches ahead of main.
+The list of Changes waiting for the Reviewer: pull requests that await their review or that they authored, across the repositories they have open in VSCodium, have opened before, or listed, plus local branches ahead of main.
 _Avoid_: Queue, dashboard
 
 **Brief**:

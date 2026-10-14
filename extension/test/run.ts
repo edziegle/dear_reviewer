@@ -177,6 +177,15 @@ async function main() {
       "localBranches",
       multiRootWorkspace("local-branches", "local-branches")
     );
+    // Last, so the repositories it remembers can't reach other suites; it forgets them when done.
+    await runSuite(
+      "openFolders",
+      multiRootWorkspace("open-folders", "open-folders")
+    );
+    await runSuite(
+      "openFolders/elsewhere",
+      multiRootWorkspace("elsewhere", "elsewhere")
+    );
   } finally {
     await fakeGitHub.close();
   }

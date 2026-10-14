@@ -1,6 +1,7 @@
 // Sets up the fake GitHub server, signs the Reviewer in, and reads the Inbox
 // the way the Reviewer sees it.
 
+import { strict as assert } from "assert";
 import * as vscode from "vscode";
 import type {
   FakeGitHubState,
@@ -89,6 +90,17 @@ export interface InboxEntry {
   icon?: string;
   /** The tree element, for passing to the view's commands. */
   node?: unknown;
+  /** What clicking the entry runs. */
+  command?: vscode.Command;
+}
+
+/** Clicks the Inbox entry, as the Reviewer does in the tree. */
+export async function click(entry: InboxEntry): Promise<unknown> {
+  assert(entry.command, `clicking "${entry.label}" does nothing`);
+  return vscode.commands.executeCommand(
+    entry.command.command,
+    ...(entry.command.arguments ?? [])
+  );
 }
 
 /** Opens the pull request from the Inbox entry's context menu. */
@@ -153,7 +165,47 @@ function entryOf(item: vscode.TreeItem): InboxEntry {
   if (item.description !== undefined && item.description !== false)
     entry.description = String(item.description);
   const icon = item.iconPath;
+  if (item.command) entry.command = item.command;
   if (icon instanceof vscode.Uri) entry.icon = icon.fsPath;
   else if (icon instanceof vscode.ThemeIcon) entry.icon = `$(${icon.id})`;
   return entry;
+}
+
+/** The repositories the Inbox searched GitHub for, in the requests it sent. */
+export async function searchedRepositories(): Promise<string[]> {
+  const found = new Set<string>();
+  for (const request of await requestsToGitHub()) {
+    const variables = (request.body as { variables?: Record<string, unknown> })
+      ?.variables;
+    for (const value of Object.values(variables ?? {})) {
+      if (typeof value !== "string") continue;
+      for (const match of value.matchAll(/\brepo:(\S+)/g)) found.add(match[1]);
+    }
+  }
+  return [...found].sort();
+}
+
+/** Adds the folder's GitHub repository to the Inbox, as if picked in the folder picker. */
+export function addRepository(folder: string): Thenable<string | undefined> {
+  return vscode.commands.executeCommand("dearReviewer.addRepository", folder);
+}
+
+/** Tells Dear Reviewer where the repository is cloned, as if picked in the folder picker. */
+export function locateClone(
+  repository: string,
+  folder: string
+): Thenable<string | undefined> {
+  return vscode.commands.executeCommand(
+    "dearReviewer.locateClone",
+    repository,
+    folder
+  );
+}
+
+/** Forgets a repository Dear Reviewer remembered from a window or a picker. */
+export function forgetRepository(repository: string): Thenable<unknown> {
+  return vscode.commands.executeCommand(
+    "dearReviewer.forgetRepository",
+    repository
+  );
 }

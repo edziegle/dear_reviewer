@@ -41,6 +41,10 @@ export class ChangeWorkspace {
 
   async open(request: ChangeRequest): Promise<Change> {
     const change = await this.resolve(request);
+    if (change.mergeBase === change.headSha)
+      throw new Error(
+        `${request.head} has no commits that ${request.base} doesn't have, so there is nothing to review.`
+      );
     await createWorktrees(change);
     if (ReviewWindow.canAddFoldersHere()) {
       this.openChanges.put({

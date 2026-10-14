@@ -53,6 +53,8 @@ export interface TimelineState {
   };
   /** What went wrong, in words for the Reviewer. */
   problem?: string;
+  /** The label of the button that helps with the problem. */
+  problemAction?: string;
 }
 
 /** Extension to webview. */
@@ -62,7 +64,8 @@ export type FromWebview =
   | { type: "ready" }
   | { type: "rendered"; revision: number }
   | { type: "openLink"; url: string }
-  | { type: "refresh" };
+  | { type: "refresh" }
+  | { type: "problemAction" };
 
 export class TimelinePanel {
   private readonly panel: vscode.WebviewPanel;
@@ -72,11 +75,14 @@ export class TimelinePanel {
   private readonly disposed = new vscode.EventEmitter<void>();
   private readonly linkClicked = new vscode.EventEmitter<string>();
   private readonly refreshClicked = new vscode.EventEmitter<void>();
+  private readonly problemActionClicked = new vscode.EventEmitter<void>();
   /** Fires when the Reviewer closes the panel. */
   readonly onDidDispose = this.disposed.event;
   /** Fires with the URL of a link the Reviewer clicked, as the webview gave it. */
   readonly onDidClickLink = this.linkClicked.event;
   readonly onDidClickRefresh = this.refreshClicked.event;
+  /** Fires when the Reviewer clicks the button that goes with the problem. */
+  readonly onDidClickProblemAction = this.problemActionClicked.event;
 
   /** `avatarDir` holds the cached avatars, the only files the webview may load. */
   constructor(state: TimelineState, avatarDir: vscode.Uri) {
@@ -101,6 +107,7 @@ export class TimelinePanel {
         this.disposed,
         this.linkClicked,
         this.refreshClicked,
+        this.problemActionClicked,
       ])
         emitter.dispose();
     });
@@ -133,6 +140,7 @@ export class TimelinePanel {
     else if (message.type === "openLink" && typeof message.url === "string")
       this.linkClicked.fire(message.url);
     else if (message.type === "refresh") this.refreshClicked.fire();
+    else if (message.type === "problemAction") this.problemActionClicked.fire();
   }
 
   update(state: TimelineState): void {
@@ -197,6 +205,8 @@ function html(cspSource: string): string {
   .item .body { white-space: pre-wrap; line-height: 1.5; margin-top: 6px; overflow-wrap: anywhere; }
   .item.commit .sha { font-family: var(--vscode-editor-font-family); }
   .problem { margin: 12px 0; padding: 8px; border: 1px solid var(--vscode-inputValidation-errorBorder); background: var(--vscode-inputValidation-errorBackground); white-space: pre-wrap; }
+  .problem button { display: block; margin-top: 8px; padding: 4px 10px; border: none; border-radius: 2px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); cursor: pointer; font: inherit; }
+  .problem button:hover { background: var(--vscode-button-hoverBackground); }
 </style>
 </head>
 <body>
@@ -277,6 +287,13 @@ function html(cspSource: string): string {
     byId("loading").hidden = !state.loading;
     byId("problem").hidden = !state.problem;
     byId("problem").textContent = state.problem || "";
+    if (state.problem && state.problemAction) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = state.problemAction;
+      button.addEventListener("click", () => vscode.postMessage({ type: "problemAction" }));
+      byId("problem").append(button);
+    }
     const checks = state.checks;
     byId("checks").hidden = !checks;
     if (checks) {

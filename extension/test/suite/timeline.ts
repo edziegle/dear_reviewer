@@ -49,6 +49,8 @@ export interface Timeline {
     }[];
   };
   problem?: string;
+  /** The button that goes with the problem, by its label. */
+  problemAction?: string;
 }
 
 interface TimelineApi {
@@ -95,6 +97,11 @@ export async function clickLink(title: string, url: string): Promise<void> {
 /** Clicks the panel's refresh button. */
 export async function clickRefresh(title: string): Promise<void> {
   (await panel(title)).receive({ type: "refresh" });
+}
+
+/** Clicks the button that goes with the problem the timeline shows. */
+export async function clickProblemAction(title: string): Promise<void> {
+  (await panel(title)).receive({ type: "problemAction" });
 }
 
 /**

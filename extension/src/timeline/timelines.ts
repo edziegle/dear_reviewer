@@ -14,6 +14,8 @@ import {
 import type { Avatars } from "../inbox";
 import { TimelinePanel, type TimelineState } from "./panel";
 
+const signIn = "Sign In to GitHub";
+
 export type LinkOpener = (uri: vscode.Uri) => Thenable<unknown>;
 
 export class Timelines implements vscode.Disposable {
@@ -94,6 +96,11 @@ class ChangeTimeline {
     });
     panel.onDidClickLink((url) => void this.open(url));
     panel.onDidClickRefresh(() => void this.load());
+    panel.onDidClickProblemAction(() => {
+      if (this.state.problemAction === signIn)
+        void vscode.commands.executeCommand("dearReviewer.signIn");
+      else void this.load();
+    });
     this.panel = panel;
   }
 
@@ -113,11 +120,15 @@ class ChangeTimeline {
       if (load === this.loads) this.update(state, true);
     } catch (err) {
       if (load !== this.loads) return;
-      const problem =
-        err instanceof NotSignedInError
-          ? "Sign in to GitHub to see the timeline."
-          : `Couldn't load the timeline: ${err instanceof Error ? err.message : String(err)}`;
-      this.update({ loading: false, problem });
+      const signedOut = err instanceof NotSignedInError;
+      const problem = signedOut
+        ? "Sign in to GitHub to see the timeline."
+        : `Couldn't load the timeline: ${err instanceof Error ? err.message : String(err)}`;
+      this.update({
+        loading: false,
+        problem,
+        problemAction: signedOut ? signIn : "Retry",
+      });
     }
   }
 
@@ -166,7 +177,10 @@ class ChangeTimeline {
     this.state = replace
       ? (changes as TimelineState)
       : { ...this.state, ...changes };
-    if (replace || changes.loading) delete this.state.problem;
+    if (replace || changes.loading) {
+      delete this.state.problem;
+      delete this.state.problemAction;
+    }
     this.panel?.update(this.state);
   }
 }

@@ -48,6 +48,7 @@ describe("Setting up the Assistant", () => {
         assert.ok(panel?.problem, "the panel shows a problem");
         assert.ok(panel.problem.includes(missing), panel.problem);
         assert.match(panel.problem, /Claude Path/);
+        assert.strictEqual(panel.problemAction, "Set Claude Path");
         assert.strictEqual(panel.busy, false);
         assert.deepStrictEqual(panel.messages, []);
       });
@@ -78,6 +79,7 @@ describe("Setting up the Assistant", () => {
       const panel = await renderedPanel(title);
       assert.match(panel?.problem ?? "", /isn't signed in/);
       assert.match(panel?.problem ?? "", /run `claude` in a terminal/i);
+      assert.strictEqual(panel?.problemAction, "Open a Terminal");
       assert.strictEqual(panel?.busy, false);
     });
     assert.match((await loginStatus())?.text ?? "", /Claude: not signed in/);

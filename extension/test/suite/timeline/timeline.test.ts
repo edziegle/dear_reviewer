@@ -24,6 +24,7 @@ import {
   avatarBytes,
   catchLinks,
   clickLink,
+  clickProblemAction,
   clickRefresh,
   releaseLinks,
   renderedTimeline,
@@ -395,13 +396,14 @@ describe("A pull request's timeline", () => {
         /^Couldn't load the timeline: No pull request acme\/api#21/
       );
       assert.strictEqual(timeline?.loading, false);
+      assert.strictEqual(timeline?.problemAction, "Retry");
     });
 
     await serveGitHub({
       viewer,
       pullRequests: [structuredClone(fakePullRequest)],
     });
-    await clickRefresh(title);
+    await clickProblemAction(title);
     await eventually(async () =>
       assert.deepStrictEqual(
         withoutAvatars(await renderedTimeline(title)),

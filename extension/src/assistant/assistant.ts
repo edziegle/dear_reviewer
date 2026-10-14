@@ -173,6 +173,8 @@ class ChangeAssistant {
   /** Turns and moves run one after another. */
   private queue: Promise<unknown> = Promise.resolve();
   private disposed = false;
+  /** What the problem's button runs. */
+  private problemAction?: vscode.Command;
 
   constructor(
     private change: Change,
@@ -240,9 +242,12 @@ class ChangeAssistant {
 
   fail(err: unknown): void {
     if (this.disposed) return;
+    this.problemAction =
+      err instanceof ClaudeProblem ? helpWith(err) : undefined;
     this.update({
       busy: false,
       problem: err instanceof Error ? err.message : String(err),
+      problemAction: this.problemAction?.title,
     });
   }
 
@@ -266,7 +271,14 @@ class ChangeAssistant {
   }
 
   private act(action: ReviewerAction): void {
-    if (action.type === "removeContext") {
+    if (action.type === "problemAction") {
+      const help = this.problemAction;
+      if (help)
+        void vscode.commands.executeCommand(
+          help.command,
+          ...(help.arguments ?? [])
+        );
+    } else if (action.type === "removeContext") {
       const context = [...(this.state.context ?? [])];
       context.splice(action.index, 1);
       this.update({ context: context.length ? context : undefined });
@@ -316,7 +328,8 @@ class ChangeAssistant {
         "failed",
         this.state.problem ?? "The Assistant hasn't started yet."
       );
-    this.update({ busy: true, problem: undefined });
+    this.problemAction = undefined;
+    this.update({ busy: true, problem: undefined, problemAction: undefined });
     const conversation = this.conversationNow(this.cli);
     const index = this.state.messages.length;
     const reply = (text: string) => {
@@ -392,4 +405,19 @@ class ChangeAssistant {
       messages: this.state.messages,
     });
   }
+}
+
+/** The button that helps with a problem with `claude`, if one can. */
+function helpWith(problem: ClaudeProblem): vscode.Command | undefined {
+  if (problem.kind === "notFound")
+    return {
+      title: "Set Claude Path",
+      command: "workbench.action.openSettings",
+      arguments: ["dearReviewer.claudePath"],
+    };
+  if (problem.kind === "notSignedIn")
+    return {
+      title: "Open a Terminal",
+      command: "workbench.action.terminal.new",
+    };
 }

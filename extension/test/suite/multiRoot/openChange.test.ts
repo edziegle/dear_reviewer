@@ -1,5 +1,6 @@
 import * as assert from "assert";
 import * as path from "path";
+import { changeFiles, render } from "../changeFiles";
 import { buildFixtureRepo } from "../fixtures";
 import {
   closeChange,
@@ -56,5 +57,24 @@ describe("Open Change on a local Change", () => {
     }
 
     await closeChange(request);
+  });
+
+  it("refuses a Change with nothing in it, and leaves nothing behind", async () => {
+    const repo = buildFixtureRepo("empty");
+    const before = workspaceFolders();
+
+    await openChange({ repository: repo.path, base: "main", head: "main" });
+
+    assert.deepStrictEqual(workspaceFolders(), before);
+    assert.deepStrictEqual(
+      worktreesOf(repo.path).map((w) => w.path),
+      [repo.path]
+    );
+    const name = path.basename(repo.path);
+    assert.deepStrictEqual(
+      render(await changeFiles()).filter((line) => line.includes(name)),
+      [],
+      "no Change is left open"
+    );
   });
 });

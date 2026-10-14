@@ -16,7 +16,7 @@
   "capabilities": {
     "untrustedWorkspaces": {
       "supported": "limited",
-      "description": "The GitHub API base URL, the local clones and the path to claude are only read from user settings.",
+      "description": "The GitHub API base URL, the local clones and the path to claude are only read from user settings, and the repositories of a window's folders are only read once the window is trusted.",
       "restrictedConfigurations": [
         "dearReviewer.githubApiUrl",
         "dearReviewer.claudePath",
@@ -60,8 +60,29 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "dearReviewer.addRepository",
+        "title": "Add Repository\u2026",
+        "category": "Dear Reviewer",
+        "icon": "$(add)"
+      },
+      {
+        "command": "dearReviewer.locateClone",
+        "title": "Locate Clone\u2026",
+        "category": "Dear Reviewer"
+      },
+      {
+        "command": "dearReviewer.forgetRepository",
+        "title": "Forget Repository\u2026",
+        "category": "Dear Reviewer"
+      },
+      {
+        "command": "dearReviewer.openSetup",
+        "title": "Set Up Dear Reviewer",
+        "category": "Dear Reviewer"
+      },
+      {
         "command": "dearReviewer.setToken",
-        "title": "Use a GitHub Personal Access Token…",
+        "title": "Use a GitHub Personal Access Token\u2026",
         "category": "Dear Reviewer"
       },
       {
@@ -83,6 +104,12 @@
         "command": "dearReviewer.unmarkViewed",
         "title": "Unmark Viewed",
         "category": "Dear Reviewer"
+      },
+      {
+        "command": "dearReviewer.refreshChangeFiles",
+        "title": "Refresh Change Files",
+        "category": "Dear Reviewer",
+        "icon": "$(refresh)"
       },
       {
         "command": "dearReviewer.hideViewedFiles",
@@ -156,10 +183,10 @@
           "type": "array",
           "items": {
             "type": "string",
-            "pattern": "^[^/\\s]+/[^/\\s]+$"
+            "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
           },
           "default": [],
-          "markdownDescription": "The GitHub repositories, as `owner/name`, whose pull requests feed the Inbox."
+          "markdownDescription": "More GitHub repositories, as `owner/name`, whose pull requests feed the Inbox. You rarely need this: every folder open in VSCodium that is a clone of a GitHub repository adds that repository by itself, and Dear Reviewer remembers it for the review window."
         },
         "dearReviewer.localClones": {
           "type": "object",
@@ -167,7 +194,7 @@
             "type": "string"
           },
           "default": {},
-          "markdownDescription": "Where each Inbox repository is cloned on this machine, as `\"owner/name\": \"/path/to/clone\"`. Opening a pull request fetches its head into this clone, from the remote whose URL names the repository (or `origin`), and reviews it in worktrees of the clone. The Inbox also lists the clone's local branches that are ahead of its main branch.",
+          "markdownDescription": "Where a repository is cloned on this machine, as `\"owner/name\": \"/path/to/clone\"`, when it isn't a folder you open in VSCodium. Takes precedence over clones Dear Reviewer found or remembered. Opening a pull request fetches its head into the clone, from the remote whose URL names the repository (or `origin`), and reviews it in worktrees of the clone. The Inbox also lists the clone's local branches that are ahead of its main branch.",
           "scope": "machine"
         },
         "dearReviewer.githubApiUrl": {
@@ -210,7 +237,27 @@
         {
           "command": "dearReviewer.refreshInbox",
           "when": "view == dearReviewer.inbox",
-          "group": "navigation"
+          "group": "navigation@2"
+        },
+        {
+          "command": "dearReviewer.addRepository",
+          "when": "view == dearReviewer.inbox",
+          "group": "navigation@1"
+        },
+        {
+          "command": "dearReviewer.forgetRepository",
+          "when": "view == dearReviewer.inbox",
+          "group": "repositories@1"
+        },
+        {
+          "command": "dearReviewer.openSetup",
+          "when": "view == dearReviewer.inbox",
+          "group": "setup@1"
+        },
+        {
+          "command": "dearReviewer.refreshChangeFiles",
+          "when": "view == dearReviewer.changeFiles",
+          "group": "navigation@9"
         },
         {
           "command": "dearReviewer.hideViewedFiles",
@@ -352,16 +399,79 @@
       {
         "view": "dearReviewer.inbox",
         "when": "dearReviewer.inboxWelcome == signedOut",
-        "contents": "Sign in to GitHub to see the pull requests awaiting your review and the ones you authored.\n[Sign In to GitHub](command:dearReviewer.signIn)\nIf VS Code's GitHub sign-in isn't available, use a personal access token instead.\n[Use a Personal Access Token](command:dearReviewer.setToken)"
+        "contents": "Sign in to GitHub to see the pull requests awaiting your review and the ones you authored.\n[Sign In to GitHub](command:dearReviewer.signIn)\nIf VS Code's GitHub sign-in isn't available, use a personal access token instead.\n[Use a Personal Access Token](command:dearReviewer.setToken)\n[Set up Dear Reviewer](command:dearReviewer.openSetup) step by step."
       },
       {
         "view": "dearReviewer.inbox",
         "when": "dearReviewer.inboxWelcome == noRepositories",
-        "contents": "List the repositories that feed the Inbox, as owner/name, in the Dear Reviewer: Repositories setting.\n[Open Settings](command:workbench.action.openSettings?%22dearReviewer.repositories%22)"
+        "contents": "The Inbox lists pull requests from the GitHub repositories you have open in VSCodium. Open a folder that is a clone of a GitHub repository, or add a clone from elsewhere on this machine.\n[Add Repository](command:dearReviewer.addRepository)\n[Open Folder](command:vscode.openFolder)\nYou can also list repositories in the [Repositories setting](command:workbench.action.openSettings?%22dearReviewer.repositories%22), or [Set up Dear Reviewer](command:dearReviewer.openSetup) step by step."
+      },
+      {
+        "view": "dearReviewer.inbox",
+        "when": "dearReviewer.inboxWelcome == noRepositories && !isWorkspaceTrusted",
+        "contents": "This window is in Restricted Mode, so Dear Reviewer doesn't read the repositories of its folders.\n[Manage Workspace Trust](command:workbench.trust.manage)"
       },
       {
         "view": "dearReviewer.changeFiles",
-        "contents": "No Change is open in this window.\n[Open Change](command:dearReviewer.openChange)"
+        "contents": "No Change is open in this window. Open a pull request or a local branch from the Inbox with a click, or open any commit range of a repository as a Change.\n[Open Change](command:dearReviewer.openChange)"
+      }
+    ],
+    "walkthroughs": [
+      {
+        "id": "setup",
+        "title": "Set Up Dear Reviewer",
+        "description": "From installing Dear Reviewer to submitting your first Review, without editing settings.",
+        "steps": [
+          {
+            "id": "signIn",
+            "title": "Sign in to GitHub",
+            "description": "Dear Reviewer uses VS Code's GitHub sign-in to list your pull requests, comment and submit Reviews.\n[Sign In to GitHub](command:dearReviewer.signIn)\nWhere that sign-in isn't available, [use a personal access token](command:dearReviewer.setToken) instead; it is kept in the OS keychain.",
+            "media": {
+              "image": "media/dear-reviewer.svg",
+              "altText": "The Dear Reviewer icon"
+            },
+            "completionEvents": [
+              "onContext:dearReviewer.signedIn"
+            ]
+          },
+          {
+            "id": "repositories",
+            "title": "Open your repositories",
+            "description": "Every folder open in VSCodium that is a clone of a GitHub repository adds that repository to the Inbox, with the folder as its clone. Dear Reviewer remembers it, so the review window's Inbox lists it too. Add a clone you don't have open, or forget one, from the Inbox's toolbar.\n[Add Repository](command:dearReviewer.addRepository)",
+            "media": {
+              "image": "media/dear-reviewer.svg",
+              "altText": "The Dear Reviewer icon"
+            },
+            "completionEvents": [
+              "onContext:dearReviewer.hasRepositories"
+            ]
+          },
+          {
+            "id": "claude",
+            "title": "Check the Assistant's Claude login",
+            "description": "The Assistant runs the claude CLI you already have, with its own login: install Claude Code and sign in by running claude in a terminal. Point the Claude Path setting at it if it isn't on the PATH.\n[Check Claude Login](command:dearReviewer.checkClaudeLogin)",
+            "media": {
+              "image": "media/dear-reviewer.svg",
+              "altText": "The Dear Reviewer icon"
+            },
+            "completionEvents": [
+              "onContext:dearReviewer.claudeSignedIn"
+            ]
+          },
+          {
+            "id": "review",
+            "title": "Review a pull request",
+            "description": "Click a pull request in the Inbox to open it as a Change, in the review window. The first time, the review window opens in Restricted Mode: trust Dear Reviewer's folder of Changes once to turn on language servers and navigation. Comment in the diff's gutter, then submit your Review.\n[Show the Inbox](command:dearReviewer.inbox.focus)",
+            "media": {
+              "image": "media/dear-reviewer.svg",
+              "altText": "The Dear Reviewer icon"
+            },
+            "completionEvents": [
+              "onCommand:dearReviewer.openPullRequest",
+              "onCommand:dearReviewer.openChange"
+            ]
+          }
+        ]
       }
     ]
   },

@@ -87,6 +87,8 @@ export interface PullRequestFixture {
   base: string;
   /** The pull request's head, only on GitHub as refs/pull/<number>/head. */
   head: string;
+  /** Where the bare repositories live, as `<owner>/<name>.git`. */
+  remotes: string;
 }
 
 /**
@@ -102,9 +104,17 @@ export function buildPullRequestFixture(
   number: number
 ): PullRequestFixture {
   const repo = buildFixtureRepo(name);
-  const remotes = path.join(repo.path, "..", `${path.basename(repo.path)}-remotes`);
+  const remotes = path.join(
+    repo.path,
+    "..",
+    `${path.basename(repo.path)}-remotes`
+  );
   const upstream = path.join(remotes, ...`${repository}.git`.split("/"));
-  const fork = path.join(remotes, "reviewer", `${repository.split("/")[1]}.git`);
+  const fork = path.join(
+    remotes,
+    "reviewer",
+    `${repository.split("/")[1]}.git`
+  );
   const clone = `${repo.path}-clone`;
   const run = (cwd: string, ...args: string[]) =>
     cp.execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
@@ -144,5 +154,25 @@ export function buildPullRequestFixture(
     number,
     base: repo.commits.renamed,
     head,
+    remotes,
   };
+}
+
+/**
+ * Points the fixture clone's remotes at `https://<host>/<owner>/<name>.git`,
+ * as a clone of a GitHub repository has them, while git still reaches the
+ * bare repositories on disk through `url.<base>.insteadOf`.
+ */
+export function remotesOnHost(fixture: PullRequestFixture, host: string): void {
+  const run = (...args: string[]) =>
+    cp.execFileSync("git", args, { cwd: fixture.clone, encoding: "utf8" });
+  const name = fixture.repository.split("/")[1];
+  run(
+    "remote",
+    "set-url",
+    "upstream",
+    `https://${host}/${fixture.repository}.git`
+  );
+  run("remote", "set-url", "origin", `https://${host}/reviewer/${name}.git`);
+  run("config", `url.${fixture.remotes}/.insteadOf`, `https://${host}/`);
 }

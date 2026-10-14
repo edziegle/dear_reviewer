@@ -10,16 +10,13 @@ import {
   PullRequestSummary,
 } from "./github/client";
 import { branchesAhead, LocalBranch } from "./localBranches";
+import type { LocalClone } from "./repositories";
 
-/** An Inbox repository and its local clone on this machine. */
-export interface LocalClone {
-  repository: string;
-  clone: string;
-}
+export type { LocalClone } from "./repositories";
 
 export type InboxNode =
   | { kind: "group"; label: string; children: InboxNode[]; count: number }
-  | { kind: "problem"; message: string }
+  | { kind: "problem"; message: string; action?: vscode.Command }
   | { kind: "pullRequest"; pullRequest: PullRequestSummary }
   | { kind: "localBranch"; branch: LocalBranch & LocalClone };
 
@@ -30,8 +27,8 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
 
   constructor(
     private readonly github: GitHubClient,
-    private readonly repositories: () => string[],
-    private readonly localClones: () => LocalClone[],
+    private readonly repositories: () => Promise<string[]>,
+    private readonly localClones: () => Promise<LocalClone[]>,
     private readonly avatars: Avatars
   ) {}
 
@@ -52,7 +49,10 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
     if (node.kind === "problem") {
       const item = new vscode.TreeItem(node.message);
       item.iconPath = new vscode.ThemeIcon("error");
-      item.tooltip = node.message;
+      item.tooltip = node.action
+        ? `${node.message}\n\nClick to ${node.action.title.toLowerCase()}.`
+        : node.message;
+      item.command = node.action;
       return item;
     }
     if (node.kind === "group") {
@@ -77,6 +77,11 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
       );
       item.iconPath = new vscode.ThemeIcon("git-branch");
       item.contextValue = "localBranch";
+      item.command = {
+        title: "Open Branch",
+        command: "dearReviewer.openLocalBranch",
+        arguments: [node],
+      };
       return item;
     }
     const pr = node.pullRequest;
@@ -96,11 +101,17 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
       (await this.avatars.file(pr.author.avatarUrl)) ??
       new vscode.ThemeIcon("account");
     item.contextValue = "pullRequest";
+    item.command = {
+      title: "Open Pull Request",
+      command: "dearReviewer.openPullRequest",
+      arguments: [node],
+    };
     return item;
   }
 
   private async load(): Promise<InboxNode[]> {
-    const repositories = this.repositories();
+    const repositories = await this.repositories();
+    await setContext("dearReviewer.hasRepositories", repositories.length > 0);
     // VS Code only shows the welcome message while the view is empty.
     if (repositories.length === 0) {
       await showWelcome("noRepositories");
@@ -109,6 +120,7 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
     const localBranches = this.loadLocalBranches();
     try {
       const inbox = await this.github.inbox(repositories);
+      await setContext("dearReviewer.signedIn", true);
       await showWelcome("none");
       return [
         pullRequestGroup("Awaiting my review", inbox.awaitingMyReview),
@@ -117,13 +129,22 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
       ];
     } catch (err) {
       if (err instanceof NotSignedInError) {
+        await setContext("dearReviewer.signedIn", false);
         await showWelcome("signedOut");
         return [];
       }
       await showWelcome("none");
       const message = err instanceof Error ? err.message : String(err);
+      // GitHub turned the token down: signing in again is the way out.
+      const action: vscode.Command = /\b401\b/.test(message)
+        ? { title: "Sign In to GitHub", command: "dearReviewer.signIn" }
+        : { title: "Refresh the Inbox", command: "dearReviewer.refreshInbox" };
       return [
-        { kind: "problem", message: `Couldn't load the Inbox: ${message}` },
+        {
+          kind: "problem",
+          message: `Couldn't load the Inbox: ${message}`,
+          action,
+        },
         ...(await localBranches),
       ];
     }
@@ -131,7 +152,7 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
 
   /** The "Local branches" group, if any Inbox repository has a local clone. */
   private async loadLocalBranches(): Promise<InboxNode[]> {
-    const clones = this.localClones();
+    const clones = await this.localClones();
     if (clones.length === 0) return [];
     const children: InboxNode[] = [];
     let count = 0;
@@ -150,6 +171,11 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
         children.push({
           kind: "problem",
           message: `Couldn't list the branches of ${result.local.repository}: ${message}`,
+          action: {
+            title: "Locate the clone",
+            command: "dearReviewer.locateClone",
+            arguments: [result.local.repository],
+          },
         });
         continue;
       }
@@ -184,11 +210,12 @@ function pullRequestGroup(
 function showWelcome(
   welcome: "signedOut" | "noRepositories" | "none"
 ): Thenable<unknown> {
-  return vscode.commands.executeCommand(
-    "setContext",
-    "dearReviewer.inboxWelcome",
-    welcome
-  );
+  return setContext("dearReviewer.inboxWelcome", welcome);
+}
+
+/** Context keys drive the welcome messages and the setup walkthrough's checklist. */
+export function setContext(key: string, value: unknown): Thenable<unknown> {
+  return vscode.commands.executeCommand("setContext", key, value);
 }
 
 /** Avatars downloaded once into the extension's storage, for tree icons. */

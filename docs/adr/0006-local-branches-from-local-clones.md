@@ -5,6 +5,8 @@ date: 2026-10-13
 
 # List local branches from the configured local clones, ahead of the remote's default branch
 
+Amended by [ADR 0010](0010-repositories-from-open-folders.md): the clones scanned are those of every Inbox repository, wherever ADR 0010 finds them: Local Clones, a folder open in this window, or a remembered clone. A repository no longer needs an entry in both settings.
+
 ## Context and Problem Statement
 
 The Inbox lists local branches that are ahead of main, such as an agent's branch, so the Reviewer can open one as a local Change (#6). Dear Reviewer has to know which repositories on disk to look in, and what "main" is in each one. Repositories are named by the Repositories setting as `owner/name`, and ADR 0005 maps each one to a local clone in `dearReviewer.localClones`. Which repositories does the Inbox scan, and which ref counts as main?

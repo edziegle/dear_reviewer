@@ -18,7 +18,9 @@ import { Conversations } from "./assistant/conversations";
 import { selectionInChange } from "./assistant/selection";
 import { GitHubAuth } from "./github/auth";
 import { GitHubClient, PullRequestSummary } from "./github/client";
-import { Avatars, InboxNode, InboxTree, LocalClone } from "./inbox";
+import { Avatars, InboxNode, InboxTree, setContext } from "./inbox";
+import { Repositories } from "./repositories";
+import { ReviewWindow } from "./reviewWindow";
 import { PendingReviews } from "./pendingReview";
 import { ReviewComments, Verdict } from "./reviewComments";
 import type { FromWebview } from "./timeline/panel";
@@ -39,6 +41,9 @@ export function activate(context: vscode.ExtensionContext) {
     settings().inspect<string>("githubApiUrl")?.globalValue ||
     "https://api.github.com";
   const github = new GitHubClient(auth, apiUrl);
+  // For the setup walkthrough's checklist.
+  const showSignedIn = async () =>
+    setContext("dearReviewer.signedIn", !!(await auth.token(apiUrl())));
   const viewedFiles = new ViewedFilesBySource(
     new LocalViewedFiles(context.globalStorageUri.fsPath),
     new GitHubViewedFiles(github)
@@ -67,27 +72,32 @@ export function activate(context: vscode.ExtensionContext) {
       expandHome(settings().inspect<string>("claudePath")?.globalValue ?? ""),
     new Conversations(context.globalStorageUri.fsPath)
   );
-  const repositories = () => settings().get<string[]>("repositories") ?? [];
   // Only the user's own setting counts: a workspace must not be able to
   // choose the repository Dear Reviewer runs git in.
   const localClones = () => {
     const clones =
       settings().inspect<Record<string, string>>("localClones")?.globalValue;
-    return (
-      clones &&
-      Object.fromEntries(
-        Object.entries(clones).map(([repo, clone]) => [repo, expandHome(clone)])
-      )
+    return Object.fromEntries(
+      Object.entries(clones ?? {}).map(([repo, clone]) => [
+        repo,
+        expandHome(clone),
+      ])
     );
   };
+  // A workspace may choose which repositories are listed, never where git runs.
+  const repositories = new Repositories(
+    context.globalStorageUri.fsPath,
+    () => settings().get<string[]>("repositories") ?? [],
+    { apiUrl, localClones }
+  );
   const avatars = new Avatars(
     github,
     path.join(context.globalStorageUri.fsPath, "avatars")
   );
   const inbox = new InboxTree(
     github,
-    repositories,
-    () => inboxClones(localClones(), repositories()),
+    () => repositories.inboxRepositories(),
+    () => repositories.inboxClones(),
     avatars
   );
   // Links leave VS Code through the extension; the tests catch them instead.
@@ -95,12 +105,124 @@ export function activate(context: vscode.ExtensionContext) {
   let openLink = openExternal;
   const timelines = new Timelines(github, avatars, (uri) => openLink(uri));
 
+  /**
+   * Remembers the folder as the repository's clone: the one given (by a
+   * test), or one the Reviewer picks. Gives the clone, if one was taken.
+   */
+  async function locateClone(
+    repository?: string,
+    folder?: string
+  ): Promise<string | undefined> {
+    repository ??= await vscode.window.showInputBox({
+      title: "Locate Clone",
+      prompt: "The GitHub repository, as owner/name",
+      ignoreFocusOut: true,
+    });
+    if (!repository) return;
+    const chosen =
+      folder ??
+      (
+        await vscode.window.showOpenDialog({
+          title: `Locate the clone of ${repository}`,
+          canSelectFolders: true,
+          canSelectFiles: false,
+          openLabel: "Use This Clone",
+        })
+      )?.[0]?.fsPath;
+    if (!chosen) return;
+    const result = await repositories.rememberClone(repository, chosen);
+    if ("clone" in result) return result.clone;
+    const again = "Choose Another Folder…";
+    const answer = vscode.window.showErrorMessage(result.problem, again);
+    // A folder given by the caller gets no second try.
+    if (folder !== undefined) return;
+    return (await answer) === again ? locateClone(repository) : undefined;
+  }
+
+  /** Adds the GitHub repository of a folder to the Inbox, remembering the folder as its clone. */
+  async function addRepository(folder?: string): Promise<string | undefined> {
+    const chosen = folder ?? (await pickRepositoryFolder());
+    if (!chosen) return;
+    const result = await repositories.rememberFolder(chosen);
+    if ("repository" in result) {
+      void vscode.window.showInformationMessage(
+        `Added ${result.repository} to the Inbox, with its clone at ${chosen}.`
+      );
+      return result.repository;
+    }
+    const again = "Choose Another Folder…";
+    const answer = vscode.window.showErrorMessage(result.problem, again);
+    if (folder !== undefined) return;
+    return (await answer) === again ? addRepository() : undefined;
+  }
+
+  async function pickRepositoryFolder(): Promise<string | undefined> {
+    const browse = "Browse…";
+    const folders = (vscode.workspace.workspaceFolders ?? []).filter(
+      (f) =>
+        f.uri.scheme === "file" &&
+        !f.uri.fsPath.startsWith(context.globalStorageUri.fsPath + path.sep)
+    );
+    if (folders.length > 0) {
+      const picked = await vscode.window.showQuickPick<vscode.QuickPickItem>(
+        [
+          ...folders.map((f) => ({ label: f.name, description: f.uri.fsPath })),
+          { label: browse },
+        ],
+        { title: "Add Repository: a clone of a GitHub repository" }
+      );
+      if (!picked) return;
+      if (picked.label !== browse) return picked.description;
+    }
+    return (
+      await vscode.window.showOpenDialog({
+        title: "Add Repository: a clone of a GitHub repository",
+        canSelectFolders: true,
+        canSelectFiles: false,
+        openLabel: "Add to Inbox",
+      })
+    )?.[0]?.fsPath;
+  }
+
+  async function forgetRepository(repository?: string): Promise<void> {
+    if (!repository) {
+      const remembered = repositories.remembered();
+      if (remembered.length === 0) {
+        void vscode.window.showInformationMessage(
+          "Dear Reviewer hasn't remembered any repositories. Those in the Repositories setting are removed there."
+        );
+        return;
+      }
+      const picked = await vscode.window.showQuickPick(
+        remembered.map((r) => ({
+          label: r.repository,
+          description: r.clone,
+          detail: repositories.isOpenHere(r.repository)
+            ? "Open in this window, so it is remembered again when the window's folders change."
+            : undefined,
+        })),
+        { title: "Forget Repository" }
+      );
+      repository = picked?.label;
+      if (!repository) return;
+    }
+    repositories.forget(repository);
+  }
+
   context.subscriptions.push(
     vscode.commands.registerCommand(
       "dearReviewer.openChange",
       async (request?: ChangeRequest) => {
         request ??= await askForChange(context.globalStorageUri.fsPath);
-        if (request) await changes.open(request);
+        if (!request) return;
+        try {
+          await changes.open(request);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          void vscode.window.showErrorMessage(
+            `Couldn't open the Change: ${message}`
+          );
+        }
         changeFiles.refresh();
       }
     ),
@@ -114,20 +236,28 @@ export function activate(context: vscode.ExtensionContext) {
               : undefined
             : target;
         if (!pr) return;
-        const clone = localClone(localClones(), pr.repository);
-        if (!clone) {
-          void askForLocalClone(pr.repository);
-          return;
-        }
-        try {
-          await changes.open(await fetchPullRequest(clone, pr));
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          void vscode.window.showErrorMessage(
-            `Couldn't open ${pr.repository} #${pr.number}: ${message}`
-          );
-        }
-        changeFiles.refresh();
+        const open = async (clone: string) => {
+          try {
+            await changes.open(await fetchPullRequest(clone, pr));
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            const locate = "Locate Another Clone…";
+            const picked = await vscode.window.showErrorMessage(
+              `Couldn't open ${pr.repository} #${pr.number} from ${clone}: ${message}`,
+              locate
+            );
+            const other =
+              picked === locate && (await locateClone(pr.repository));
+            if (other) return open(other);
+          }
+          changeFiles.refresh();
+        };
+        const clone = await repositories.cloneOf(pr.repository);
+        if (clone) return open(clone);
+        // Asking waits on the Reviewer, so the command doesn't.
+        void askForLocalClone(pr.repository).then(async (picked) => {
+          if (picked) await open(picked);
+        });
       }
     ),
     vscode.commands.registerCommand(
@@ -258,10 +388,16 @@ export function activate(context: vscode.ExtensionContext) {
         await assistants.addSelection(found.change, found.selection);
       }
     ),
-    vscode.commands.registerCommand("dearReviewer.checkClaudeLogin", () =>
-      assistants.checkLogin()
+    vscode.commands.registerCommand(
+      "dearReviewer.checkClaudeLogin",
+      async () => {
+        const login = await assistants.checkLogin();
+        await setContext("dearReviewer.claudeSignedIn", !!login?.signedIn);
+        return login;
+      }
     ),
     vscode.workspace.onDidChangeWorkspaceFolders(() => {
+      void repositories.scanWindow();
       changeFiles.refresh();
       void review.sync();
       return changes.showPendingDiffs();
@@ -299,6 +435,9 @@ export function activate(context: vscode.ExtensionContext) {
           false
         )
     ),
+    vscode.commands.registerCommand("dearReviewer.refreshChangeFiles", () =>
+      changeFiles.refresh()
+    ),
     vscode.commands.registerCommand("dearReviewer.hideViewedFiles", () =>
       changeFiles.setHideViewed(true)
     ),
@@ -306,6 +445,27 @@ export function activate(context: vscode.ExtensionContext) {
       changeFiles.setHideViewed(false)
     ),
     vscode.window.registerTreeDataProvider("dearReviewer.inbox", inbox),
+    vscode.commands.registerCommand(
+      "dearReviewer.addRepository",
+      (folder?: string) => addRepository(folder)
+    ),
+    vscode.commands.registerCommand(
+      "dearReviewer.locateClone",
+      (repository?: string, folder?: string) => locateClone(repository, folder)
+    ),
+    vscode.commands.registerCommand(
+      "dearReviewer.forgetRepository",
+      (repository?: string) => forgetRepository(repository)
+    ),
+    vscode.commands.registerCommand("dearReviewer.openSetup", () =>
+      vscode.commands.executeCommand(
+        "workbench.action.openWalkthrough",
+        `${context.extension.id}#setup`,
+        false
+      )
+    ),
+    repositories.onDidChange(() => inbox.refresh()),
+    vscode.workspace.onDidGrantWorkspaceTrust(() => repositories.scanWindow()),
     vscode.commands.registerCommand("dearReviewer.refreshInbox", () =>
       inbox.refresh()
     ),
@@ -334,12 +494,16 @@ export function activate(context: vscode.ExtensionContext) {
       auth.forgetToken(apiUrl())
     ),
     auth.onDidChange(() => {
+      void showSignedIn();
       void review.sync();
       void timelines.refreshAll();
       return inbox.refresh();
     }),
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration("dearReviewer.githubApiUrl")) {
+        // Which remotes are on GitHub depends on the API's host.
+        void repositories.scanWindow();
+        void showSignedIn();
         void review.sync();
         void timelines.refreshAll();
       }
@@ -351,8 +515,13 @@ export function activate(context: vscode.ExtensionContext) {
         void inbox.refresh();
     })
   );
+  void repositories.scanWindow();
+  void showSignedIn();
   void changes.showPendingDiffs();
   void review.sync();
+  const reviewWindow = new ReviewWindow(context.globalStorageUri.fsPath);
+  if (reviewWindow.isThisWindow() && !vscode.workspace.isTrusted)
+    void askToTrustReviewWindow(context.globalStorageUri.fsPath);
   // After a reload, the Changes still in this window get their Assistant back.
   for (const change of changes.shownHere()) void assistants.open(change);
   // The views are how the Reviewer sees the Inbox, a Change's files, the
@@ -437,42 +606,46 @@ async function pickRepository(storageDir: string): Promise<string | undefined> {
   return chosen?.[0]?.fsPath;
 }
 
-/** The configured clone of owner/name; the setting's keys ignore case, as GitHub does. */
-function localClone(
-  clones: Record<string, string> | undefined,
+/** Offers to find the repository's clone, and gives the clone the Reviewer picked. */
+async function askForLocalClone(
   repository: string
-): string | undefined {
-  const wanted = repository.toLowerCase();
-  for (const [name, clone] of Object.entries(clones ?? {})) {
-    if (name.toLowerCase() === wanted && clone) return clone;
-  }
-}
-
-/** The local clones of the Inbox's repositories, one entry per clone. */
-function inboxClones(
-  clones: Record<string, string> | undefined,
-  repositories: string[]
-): LocalClone[] {
-  const found = new Map<string, LocalClone>();
-  for (const repository of repositories) {
-    const clone = localClone(clones, repository);
-    if (clone && !found.has(path.resolve(clone)))
-      found.set(path.resolve(clone), { repository, clone });
-  }
-  return [...found.values()];
-}
-
-async function askForLocalClone(repository: string): Promise<void> {
+): Promise<string | undefined> {
+  const locate = "Locate Clone\u2026";
   const openSettings = "Open Settings";
-  const picked = await vscode.window.showErrorMessage(
-    `To open pull requests from ${repository}, add its local clone to the Dear Reviewer: Local Clones setting, as "${repository}": "/path/to/clone".`,
+  const picked = await vscode.window.showWarningMessage(
+    `Dear Reviewer doesn't know where ${repository} is cloned on this machine. Locate its clone, or open it in a VSCodium window, and Dear Reviewer will remember it.`,
+    locate,
     openSettings
   );
+  if (picked === locate)
+    return vscode.commands.executeCommand<string | undefined>(
+      "dearReviewer.locateClone",
+      repository
+    );
   if (picked === openSettings)
     await vscode.commands.executeCommand(
       "workbench.action.openSettings",
       "dearReviewer.localClones"
     );
+}
+
+/**
+ * The review window's folders, Changes' worktrees, live in the extension's
+ * storage, which VS Code doesn't trust until the Reviewer says so. Until then
+ * language servers, and with them navigation, stay off (see ADR 0010).
+ */
+async function askToTrustReviewWindow(storageDir: string): Promise<void> {
+  const trust = "Manage Workspace Trust";
+  const picked = await vscode.window.showWarningMessage(
+    `The review window is in Restricted Mode, so language servers and code navigation are off in its Changes. To turn them on, trust Dear Reviewer's folder of Changes once: ${storageDir}. Trusting it also lets the reviewed code's workspace settings and tasks apply in this window; Dear Reviewer itself only reads your user settings.`,
+    trust
+  );
+  if (picked !== trust) return;
+  await vscode.env.clipboard.writeText(storageDir);
+  void vscode.window.showInformationMessage(
+    "Copied the folder's path. In Workspace Trust, choose Add Folder and paste it."
+  );
+  await vscode.commands.executeCommand("workbench.trust.manage");
 }
 
 async function pickVerdict(title: string): Promise<Verdict | undefined> {

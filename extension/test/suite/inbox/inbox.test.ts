@@ -269,6 +269,11 @@ describe("Inbox", () => {
     assert.strictEqual(groups.length, 1, JSON.stringify(groups));
     assert.match(groups[0].label, /401/);
     assert.strictEqual(groups[0].icon, "$(error)");
+    assert.strictEqual(
+      groups[0].command?.command,
+      "dearReviewer.signIn",
+      "a click offers to sign in again"
+    );
   });
 });
 

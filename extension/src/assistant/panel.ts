@@ -29,6 +29,8 @@ export interface ConversationState {
   context?: (Selection & { text: string })[];
   /** What went wrong, in words for the Reviewer. */
   problem?: string;
+  /** The label of the button that helps with the problem, if one does. */
+  problemAction?: string;
 }
 
 /** Extension to webview. */
@@ -40,12 +42,13 @@ export type FromWebview =
   | { type: "ready" }
   | { type: "rendered"; revision: number }
   | { type: "ask"; text: string }
-  | { type: "removeContext"; index: number };
+  | { type: "removeContext"; index: number }
+  | { type: "problemAction" };
 
 /** What the Reviewer does in the panel. */
 export type ReviewerAction = Extract<
   FromWebview,
-  { type: "ask" } | { type: "removeContext" }
+  { type: "ask" } | { type: "removeContext" } | { type: "problemAction" }
 >;
 
 export class AssistantPanel {
@@ -109,6 +112,8 @@ export class AssistantPanel {
         this.onAction({ type: "ask", text: message.text.trim() });
     } else if (message.type === "removeContext") {
       if (Number.isInteger(message.index)) this.onAction(message);
+    } else if (message.type === "problemAction") {
+      this.onAction({ type: "problemAction" });
     }
   }
 
@@ -161,6 +166,8 @@ function html(): string {
   .chip { font-family: var(--vscode-editor-font-family); font-size: 0.85em; padding: 1px 6px; border-radius: 3px; background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); white-space: nowrap; }
   .chip button { background: none; border: none; color: inherit; cursor: pointer; padding: 0 0 0 4px; font: inherit; }
   .problem { margin: 12px 0; padding: 8px; border: 1px solid var(--vscode-inputValidation-errorBorder); background: var(--vscode-inputValidation-errorBackground); white-space: pre-wrap; }
+  .problem button { display: block; margin-top: 8px; padding: 4px 10px; border: none; border-radius: 2px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); cursor: pointer; font: inherit; }
+  .problem button:hover { background: var(--vscode-button-hoverBackground); }
   .busy { color: var(--vscode-descriptionForeground); font-style: italic; }
   footer { position: sticky; bottom: 0; background: var(--vscode-editor-background); padding: 8px 0 12px; border-top: 1px solid var(--vscode-panel-border); }
   form { display: flex; gap: 6px; align-items: flex-end; }
@@ -239,6 +246,13 @@ function html(): string {
     byId("busy").hidden = !state.busy;
     byId("problem").hidden = !state.problem;
     byId("problem").textContent = state.problem || "";
+    if (state.problem && state.problemAction) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = state.problemAction;
+      button.addEventListener("click", () => vscode.postMessage({ type: "problemAction" }));
+      byId("problem").append(button);
+    }
     vscode.postMessage({ type: "rendered", revision: message.revision });
   });
   vscode.postMessage({ type: "ready" });

@@ -9,6 +9,7 @@ import {
   NotSignedInError,
   PullRequestSummary,
 } from "./github/client";
+import { branchConversation } from "./changeWorkspace";
 import { branchesAhead, LocalBranch } from "./localBranches";
 import type { LocalClone } from "./repositories";
 
@@ -29,7 +30,9 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
     private readonly github: GitHubClient,
     private readonly repositories: () => Promise<string[]>,
     private readonly localClones: () => Promise<LocalClone[]>,
-    private readonly avatars: Avatars
+    private readonly avatars: Avatars,
+    /** The head commit the last Brief for a local Change's conversation covered. */
+    private readonly lastBriefed: (conversation: string) => string | undefined
   ) {}
 
   /** Reloads the Inbox from GitHub and the local clones. */
@@ -66,13 +69,27 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
     if (node.kind === "localBranch") {
       const { branch } = node;
       const ahead = `${branch.commitsAhead} commit${branch.commitsAhead === 1 ? "" : "s"} ahead`;
+      const briefed = this.lastBriefed(
+        branchConversation(branch.clone, branch.name)
+      );
+      const changedSinceReview =
+        briefed !== undefined && briefed !== branch.headSha;
       const item = new vscode.TreeItem(branch.name);
-      item.description = `${branch.repository} · ${ahead}`;
+      item.description = [
+        branch.repository,
+        ahead,
+        ...(changedSinceReview ? ["new commits since my Review"] : []),
+      ].join(" · ");
       item.tooltip = new vscode.MarkdownString(
         [
           `**${escapeMarkdown(branch.name)}**`,
           `${branch.repository}, ${ahead} of ${escapeMarkdown(branch.main)}`,
           escapeMarkdown(branch.clone),
+          ...(changedSinceReview
+            ? [
+                `New commits since my last Review, whose Brief covered ${briefed.slice(0, 7)}`,
+              ]
+            : []),
         ].join("\n\n")
       );
       item.iconPath = new vscode.ThemeIcon("git-branch");

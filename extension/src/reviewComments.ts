@@ -1,14 +1,16 @@
-// A pull request's review threads on its diff, through VS Code's comments
-// API. A thread sits on a line or range of either side: the base worktree's
-// file is GitHub's LEFT side, the head worktree's file its RIGHT side. The
-// Reviewer's Comments go into their pending review on GitHub and come back
-// from it after a reload. Everyone's published threads show too, and the
-// Reviewer replies to them and resolves them (see ADR 0014).
+// A Change's review threads on its diff, through VS Code's comments API. A
+// thread sits on a line or range of either side: the base worktree's file is
+// GitHub's LEFT side, the head worktree's file its RIGHT side. On a pull
+// request, the Reviewer's Comments go into their pending review on GitHub
+// and come back from it after a reload. Everyone's published threads show
+// too, and the Reviewer replies to them and resolves them (see ADR 0014). On
+// a local Change, the Comments are kept in the extension's storage until a
+// Brief ends the Review (see ADR 0016).
 
 import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
-import type { Change } from "./changeWorkspace";
+import { changeTitle, type Change } from "./changeWorkspace";
 import { git } from "./git";
 import {
   NotSignedInError,
@@ -18,7 +20,7 @@ import {
   type ThreadPlace,
 } from "./github/client";
 import type { Avatars } from "./inbox";
-import type { PendingReviews } from "./pendingReview";
+import type { PendingReviewsBySource } from "./pendingReview";
 import { hasFolder } from "./reviewWindow";
 
 export type Verdict = "approve" | "requestChanges" | "comment";
@@ -29,7 +31,7 @@ const events: Record<Verdict, ReviewEvent> = {
   comment: "COMMENT",
 };
 
-/** A Comment in the pending review; its context value enables edit and delete. */
+/** A Comment in the Review under way; its context value enables edit and delete. */
 class PendingComment implements vscode.Comment {
   mode = vscode.CommentMode.Preview;
   readonly contextValue = "pending";
@@ -37,7 +39,7 @@ class PendingComment implements vscode.Comment {
   savedBody: string;
 
   constructor(
-    /** GitHub's node id for the Comment. */
+    /** GitHub's node id for the Comment, or the local Comment's id. */
     readonly id: string,
     public body: string | vscode.MarkdownString,
     public author: vscode.CommentAuthorInformation,
@@ -65,9 +67,9 @@ class PublishedComment implements vscode.Comment {
   }
 }
 
-/** What GitHub says about a thread shown in the gutter. */
+/** What GitHub, or the extension's storage, says about a thread shown in the gutter. */
 interface ThreadState {
-  /** GitHub's node id for the thread. */
+  /** GitHub's node id for the thread, or the local thread's id. */
   id: string;
   pending: boolean;
   resolved: boolean;
@@ -75,7 +77,7 @@ interface ThreadState {
 }
 
 interface Place {
-  change: Change & { pullRequest: NonNullable<Change["pullRequest"]> };
+  change: Change;
   side: DiffSide;
   /** Relative to the repository root, with forward slashes. */
   path: string;
@@ -99,7 +101,7 @@ export class ReviewComments implements vscode.Disposable {
 
   constructor(
     private readonly openChanges: () => Change[],
-    private readonly pending: PendingReviews,
+    private readonly pending: PendingReviewsBySource,
     private readonly avatars: Avatars
   ) {
     this.controller = vscode.comments.createCommentController(
@@ -123,13 +125,13 @@ export class ReviewComments implements vscode.Disposable {
   }
 
   /**
-   * Shows the review threads of each pull request Change open in this window
-   * that aren't shown yet. Those that can't be loaded, such as before
+   * Shows the review threads of each Change open in this window that aren't
+   * shown yet. Those that can't be loaded, such as a pull request's before
    * sign-in, are tried again on the next call.
    */
   sync(): Promise<void> {
     this.loading = this.loading.then(async () => {
-      for (const change of this.pullRequestChanges()) {
+      for (const change of this.shownChanges()) {
         if (this.loaded.has(change.id)) continue;
         try {
           await this.load(change);
@@ -137,7 +139,7 @@ export class ReviewComments implements vscode.Disposable {
         } catch (err) {
           if (err instanceof NotSignedInError) continue;
           void vscode.window.showErrorMessage(
-            `Couldn't load the review threads of ${change.pullRequest.repository} #${change.pullRequest.number}: ${messageOf(err)}`
+            `Couldn't load the review threads of ${describe(change)}: ${messageOf(err)}`
           );
         }
       }
@@ -145,7 +147,10 @@ export class ReviewComments implements vscode.Disposable {
     return this.loading;
   }
 
-  /** Stops showing a closed Change's threads; its pending review stays on GitHub. */
+  /**
+   * Stops showing a closed Change's threads. A pull request's pending
+   * review stays on GitHub, and a local Change's Comments stay in storage.
+   */
   forget(change: Change): void {
     this.clear(change.id);
     this.loaded.delete(change.id);
@@ -160,7 +165,7 @@ export class ReviewComments implements vscode.Disposable {
     const range = thread.range;
     if (!place || !range) {
       void vscode.window.showErrorMessage(
-        "Comments go on the diff of a pull request's Change."
+        "Comments go on the diff of a Change open in this window."
       );
       return;
     }
@@ -174,15 +179,12 @@ export class ReviewComments implements vscode.Disposable {
     };
     let saved: { threadId: string; commentId: string };
     try {
-      saved = await this.pending.addThread(
-        place.change.pullRequest,
-        place.change.headSha,
-        where,
-        text
-      );
+      saved = await this.pending.addThread(place.change, where, text);
     } catch (err) {
       void vscode.window.showErrorMessage(
-        `Couldn't save the Comment to your pending review: ${messageOf(err)}`
+        place.change.pullRequest
+          ? `Couldn't save the Comment to your pending review: ${messageOf(err)}`
+          : `Couldn't save the Comment: ${messageOf(err)}`
       );
       return;
     }
@@ -210,11 +212,7 @@ export class ReviewComments implements vscode.Disposable {
     }
     let saved: { commentId: string; pending: boolean };
     try {
-      saved = await this.pending.reply(
-        place.change.pullRequest,
-        state.id,
-        text
-      );
+      saved = await this.pending.reply(place.change, state.id, text);
     } catch (err) {
       void vscode.window.showErrorMessage(
         `Couldn't save the reply: ${messageOf(err)}`
@@ -240,9 +238,10 @@ export class ReviewComments implements vscode.Disposable {
     resolved: boolean
   ): Promise<void> {
     const state = this.states.get(thread);
-    if (!state || state.pending) return;
+    const place = this.placeOf(thread.uri);
+    if (!state || state.pending || !place) return;
     try {
-      await this.pending.setResolved(state.id, resolved);
+      await this.pending.setResolved(place.change, state.id, resolved);
     } catch (err) {
       void vscode.window.showErrorMessage(
         `Couldn't ${resolved ? "resolve" : "unresolve"} the thread: ${messageOf(err)}`
@@ -260,9 +259,11 @@ export class ReviewComments implements vscode.Disposable {
 
   async saveComment(comment: vscode.Comment): Promise<void> {
     if (!(comment instanceof PendingComment)) return;
+    const place = this.placeOf(comment.thread.uri);
+    if (!place) return;
     const text = textOf(comment.body);
     try {
-      await this.pending.editComment(comment.id, text);
+      await this.pending.editComment(place.change, comment.id, text);
     } catch (err) {
       void vscode.window.showErrorMessage(
         `Couldn't save the Comment: ${messageOf(err)}`
@@ -283,8 +284,10 @@ export class ReviewComments implements vscode.Disposable {
 
   async deleteComment(comment: vscode.Comment): Promise<void> {
     if (!(comment instanceof PendingComment)) return;
+    const place = this.placeOf(comment.thread.uri);
+    if (!place) return;
     try {
-      await this.pending.deleteComment(comment.id);
+      await this.pending.deleteComment(place.change, comment.id);
     } catch (err) {
       void vscode.window.showErrorMessage(
         `Couldn't delete the Comment: ${messageOf(err)}`
@@ -312,26 +315,26 @@ export class ReviewComments implements vscode.Disposable {
     const pullRequest = change.pullRequest;
     if (!pullRequest) return false;
     try {
-      await this.pending.submit(
-        pullRequest,
-        change.headSha,
-        events[verdict],
-        summary
-      );
+      await this.pending.submit(change, events[verdict], summary);
     } catch (err) {
       void vscode.window.showErrorMessage(
         `Couldn't submit your Review of ${pullRequest.repository} #${pullRequest.number}: ${messageOf(err)}`
       );
       return false;
     }
-    this.clear(change.id);
-    this.loaded.delete(change.id);
-    await this.sync();
+    await this.reload(change);
     return true;
   }
 
-  private async load(change: Place["change"]): Promise<void> {
-    const threads = await this.pending.threads(change.pullRequest);
+  /** Shows the Change's threads afresh, such as after its Review ended. */
+  async reload(change: Change): Promise<void> {
+    this.clear(change.id);
+    this.loaded.delete(change.id);
+    await this.sync();
+  }
+
+  private async load(change: Change): Promise<void> {
+    const threads = await this.pending.threads(change);
     const icons = await this.icons(threads);
     this.viewerIcon = icons.get(this.pending.viewer?.avatarUrl ?? "");
     const places = await Promise.all(
@@ -359,7 +362,7 @@ export class ReviewComments implements vscode.Disposable {
   }
 
   private show(
-    change: Place["change"],
+    change: Change,
     found: ReviewThread,
     place: { file: string; range: vscode.Range },
     icons: Map<string, vscode.Uri | undefined>
@@ -429,7 +432,10 @@ export class ReviewComments implements vscode.Disposable {
     };
   }
 
-  /** The lines of the diff on the document's side: GitHub only takes Comments there. */
+  /**
+   * The lines of the diff on the document's side: GitHub only takes
+   * Comments there, and a local Change offers the same.
+   */
   private async commentingRanges(
     document: vscode.TextDocument
   ): Promise<vscode.Range[]> {
@@ -457,10 +463,10 @@ export class ReviewComments implements vscode.Disposable {
     return hunks;
   }
 
-  /** Which pull request Change, side and file the URI is, if it is in one. */
+  /** Which Change, side and file the URI is, if it is in one. */
   private placeOf(uri: vscode.Uri): Place | undefined {
     if (uri.scheme !== "file") return;
-    for (const change of this.pullRequestChanges()) {
+    for (const change of this.shownChanges()) {
       for (const [side, dir] of [
         ["LEFT", change.baseDir],
         ["RIGHT", change.headDir],
@@ -476,12 +482,9 @@ export class ReviewComments implements vscode.Disposable {
     }
   }
 
-  private pullRequestChanges(): Place["change"][] {
+  private shownChanges(): Change[] {
     return this.openChanges().filter(
-      (change): change is Place["change"] =>
-        change.pullRequest !== undefined &&
-        hasFolder(change.baseDir) &&
-        hasFolder(change.headDir)
+      (change) => hasFolder(change.baseDir) && hasFolder(change.headDir)
     );
   }
 }
@@ -557,6 +560,13 @@ async function diffHunks(change: Change, file: string): Promise<Hunks> {
     }
   }
   return hunks;
+}
+
+/** The Change as the Reviewer knows it: its pull request, or its commits. */
+function describe(change: Change): string {
+  return change.pullRequest
+    ? `${change.pullRequest.repository} #${change.pullRequest.number}`
+    : changeTitle(change);
 }
 
 function refresh(thread: vscode.CommentThread): void {

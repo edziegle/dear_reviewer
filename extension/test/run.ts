@@ -185,6 +185,9 @@ async function main() {
       "sinceLastReview",
       multiRootWorkspace("since-last-review", "since-last-review")
     );
+    const localReview = multiRootWorkspace("local-review", "local-review");
+    await runSuite("localReview", localReview);
+    await runSuite("localReview/afterReload", localReview);
     // Last, so the repositories it remembers can't reach other suites; it forgets them when done.
     await runSuite(
       "openFolders",

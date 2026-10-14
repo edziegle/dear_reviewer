@@ -1,6 +1,8 @@
 // The Reviews of each Change: which head commit the Reviewer's last Review
 // covered, and what changed since. For a pull request, GitHub records the
-// commit with each submitted review (see ADR 0015). What changed since opens
+// commit with each submitted review (see ADR 0015); for a local Change, the
+// extension's storage records the head each Brief covered (see ADR 0016).
+// What changed since opens
 // as a multi-file diff from that commit to the Change's head, whose old side
 // Dear Reviewer reads from git, since no worktree is at that commit.
 
@@ -9,42 +11,49 @@ import * as vscode from "vscode";
 import { Change, filesChangedBetween, remoteFor } from "./changeWorkspace";
 import { git, gitOutput } from "./git";
 import type { GitHubClient } from "./github/client";
+import type { LocalPendingReviews } from "./localReviews";
 
 /** Gives a file's text at a commit, for the old side of what changed since a Review. */
 export const commitFileScheme = "dear-reviewer-commit";
 
 export class Reviews {
-  constructor(private readonly github: GitHubClient) {}
+  constructor(
+    private readonly github: GitHubClient,
+    private readonly local: LocalPendingReviews
+  ) {}
 
   /**
    * The head commit the Reviewer's last Review of the Change covered, if
-   * one has ended, fetched into the Change's repository if it isn't there.
-   * Only a pull request's Reviews are known for now.
+   * one has ended. A pull request's is fetched into the Change's repository
+   * if it isn't there; a local Change's counts only while the repository
+   * still has it.
    */
   async lastReviewed(change: Change): Promise<string | undefined> {
     const pullRequest = change.pullRequest;
-    if (!pullRequest) return;
+    if (!pullRequest) {
+      const commit = this.local.lastBriefed(change.conversation);
+      if (commit && (await hasCommit(change.repository, commit))) return commit;
+      return;
+    }
     const commit = await this.github.lastReviewedCommit(
       pullRequest.repository,
       pullRequest.number
     );
     if (!commit) return;
-    const present = await git(
-      change.repository,
-      "cat-file",
-      "-e",
-      `${commit}^{commit}`
-    ).then(
-      () => true,
-      () => false
-    );
-    if (!present) {
+    if (!(await hasCommit(change.repository, commit))) {
       // Such as a Review submitted from another machine, before a force push.
       const remote = await remoteFor(change.repository, pullRequest.repository);
       await git(change.repository, "fetch", "--no-tags", "--", remote, commit);
     }
     return commit;
   }
+}
+
+function hasCommit(repository: string, commit: string): Promise<boolean> {
+  return git(repository, "cat-file", "-e", `${commit}^{commit}`).then(
+    () => true,
+    () => false
+  );
 }
 
 /** The title of the diff of what changed in the Change since this commit. */

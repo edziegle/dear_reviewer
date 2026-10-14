@@ -25,12 +25,7 @@ import {
   threadAt,
   withoutIds,
 } from "../review";
-import {
-  closeChange,
-  foldersAddedSince,
-  openChange,
-  workspaceFolders,
-} from "../reviewer";
+import { foldersAddedSince, workspaceFolders } from "../reviewer";
 import { leaveForReload } from "./handoff";
 
 const viewer = { login: "reviewer", token: "test-token" };
@@ -249,21 +244,6 @@ describe("Commenting on a pull request", () => {
         [path.join(head, "util.py"), ["Why a docstring here?"]],
       ]
     );
-  });
-
-  it("offers no Comments on a local Change", async () => {
-    const local = { repository: pr.clone, base: pr.base, head: pr.head };
-    const before = workspaceFolders();
-    await openChange(local);
-    const [localBase, localHead] = foldersAddedSince(before).map((f) => f.path);
-
-    const lines = [
-      await commentingLines(path.join(localHead, "util.py")),
-      await commentingLines(path.join(localBase, "util.py")),
-    ];
-
-    await closeChange(local);
-    assert.deepStrictEqual(lines, [[], []]);
   });
 
   it("leaves the pending review for the next launch", () => {

@@ -14,15 +14,17 @@ import {
   emptyFileScheme,
 } from "./changeFiles";
 import { Assistants } from "./assistant/assistant";
+import { Briefs } from "./briefs";
 import { Conversations } from "./assistant/conversations";
 import { selectionInChange } from "./assistant/selection";
 import { GitHubAuth } from "./github/auth";
 import { GitHubClient, PullRequestSummary } from "./github/client";
 import { Avatars, InboxNode, InboxTree, setContext } from "./inbox";
 import { Lifecycle } from "./lifecycle";
+import { LocalPendingReviews } from "./localReviews";
 import { Repositories } from "./repositories";
 import { ReviewWindow } from "./reviewWindow";
-import { PendingReviews } from "./pendingReview";
+import { GitHubPendingReviews, PendingReviewsBySource } from "./pendingReview";
 import { ReviewComments, Verdict } from "./reviewComments";
 import {
   CommitFiles,
@@ -64,9 +66,14 @@ export function activate(context: vscode.ExtensionContext) {
     github,
     path.join(context.globalStorageUri.fsPath, "avatars")
   );
+  const githubReviews = new GitHubPendingReviews(github);
+  const localReviews = new LocalPendingReviews(
+    context.globalStorageUri.fsPath,
+    () => githubReviews.viewer
+  );
   const review = new ReviewComments(
     () => changes.list(),
-    new PendingReviews(github),
+    new PendingReviewsBySource(localReviews, githubReviews),
     avatars
   );
   const changeFilesTree = vscode.window.createTreeView(
@@ -83,7 +90,7 @@ export function activate(context: vscode.ExtensionContext) {
   const openExternal: LinkOpener = (uri) => vscode.env.openExternal(uri);
   let openLink = openExternal;
   const conversations = new Conversations(context.globalStorageUri.fsPath);
-  const reviews = new Reviews(github);
+  const reviews = new Reviews(github, localReviews);
   const assistants = new Assistants(
     () =>
       expandHome(settings().inspect<string>("claudePath")?.globalValue ?? ""),
@@ -113,7 +120,18 @@ export function activate(context: vscode.ExtensionContext) {
     github,
     () => repositories.inboxRepositories(),
     () => repositories.inboxClones(),
-    avatars
+    avatars,
+    (conversation) => localReviews.lastBriefed(conversation)
+  );
+  const briefs = new Briefs(
+    context.globalStorageUri.fsPath,
+    localReviews,
+    (change, threads) => assistants.writeBrief(change, threads),
+    async (change) => {
+      await review.reload(change);
+      // The Inbox shows which branches changed since a Brief.
+      void inbox.refresh();
+    }
   );
   const timelines = new Timelines(github, avatars, (uri) => openLink(uri));
 
@@ -396,40 +414,68 @@ export function activate(context: vscode.ExtensionContext) {
       }
     ),
     vscode.commands.registerCommand(
-      "dearReviewer.showChangesSinceLastReview",
+      "dearReviewer.writeBrief",
       async (request?: ChangeRequest) => {
         request ??= await pickOpenChange(
-          changes.list().filter((c) => c.pullRequest),
-          "Show Changes Since My Last Review"
+          changes.list().filter((c) => !c.pullRequest),
+          "Write Brief"
         );
         const change = request && (await changes.find(request));
-        if (!change?.pullRequest) {
+        if (!change || change.pullRequest) {
           if (request)
             void vscode.window.showErrorMessage(
-              "Only a pull request's Change has submitted Reviews to compare with."
+              change
+                ? "A pull request's Review ends when you submit it; a Brief ends a local Change's Review."
+                : "The Change isn't open in this window."
             );
           return;
         }
-        const { repository, number } = change.pullRequest;
+        await briefs.write(change);
+      }
+    ),
+    vscode.commands.registerCommand(
+      "dearReviewer.copyBrief",
+      (uri?: vscode.Uri) => briefs.copy(uri)
+    ),
+    vscode.commands.registerCommand(
+      "dearReviewer.showChangesSinceLastReview",
+      async (request?: ChangeRequest) => {
+        request ??= await pickOpenChange(
+          changes.list(),
+          "Show Changes Since My Last Review"
+        );
+        const change = request && (await changes.find(request));
+        if (!change) {
+          if (request)
+            void vscode.window.showErrorMessage(
+              "The Change isn't open in this window."
+            );
+          return;
+        }
+        const name = change.pullRequest
+          ? `${change.pullRequest.repository} #${change.pullRequest.number}`
+          : changeTitle(change);
         let from: string | undefined;
         try {
           from = await reviews.lastReviewed(change);
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           void vscode.window.showErrorMessage(
-            `Couldn't find your last Review of ${repository} #${number}: ${message}`
+            `Couldn't find your last Review of ${name}: ${message}`
           );
           return;
         }
         if (!from) {
           void vscode.window.showInformationMessage(
-            `You haven't submitted a Review of ${repository} #${number} yet, so all of it is new to you.`
+            change.pullRequest
+              ? `You haven't submitted a Review of ${name} yet, so all of it is new to you.`
+              : `You haven't written a Brief for ${name} yet, so all of it is new to you.`
           );
           return;
         }
         if (from === change.headSha) {
           void vscode.window.showInformationMessage(
-            `${repository} #${number} has no new commits since your last Review, at ${from.slice(0, 7)}.`
+            `${name} has no new commits since your last Review, at ${from.slice(0, 7)}.`
           );
           return;
         }

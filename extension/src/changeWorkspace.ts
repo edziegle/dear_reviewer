@@ -236,8 +236,18 @@ async function conversationName(
     request.head
   ).catch(() => "");
   if (ref.startsWith("refs/heads/"))
-    return `branch ${ref.slice("refs/heads/".length)} in ${repository}`;
+    return branchConversation(repository, ref.slice("refs/heads/".length));
   return `range ${mergeBase}..${headSha} in ${repository}`;
+}
+
+/** The name a local branch's Change keeps its Assistant conversation and Reviews under. */
+export function branchConversation(repository: string, branch: string): string {
+  return `branch ${branch} in ${path.resolve(repository)}`;
+}
+
+/** The local branch a conversation name gives, if it names one. */
+export function branchOfConversation(name: string): string | undefined {
+  return /^branch (.+) in \//.exec(name)?.[1];
 }
 
 /** The name a pull request's Change keeps its Assistant conversation under. */

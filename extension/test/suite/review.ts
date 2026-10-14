@@ -132,6 +132,16 @@ export function showChangesSinceLastReview(
   );
 }
 
+/** Runs Write Brief on the local Change, which ends its Review with a Brief. */
+export function writeBrief(change: ChangeRequest): Thenable<unknown> {
+  return vscode.commands.executeCommand("dearReviewer.writeBrief", change);
+}
+
+/** Clicks Copy Brief on the Brief's editor, the active one. */
+export function copyBrief(): Thenable<unknown> {
+  return vscode.commands.executeCommand("dearReviewer.copyBrief");
+}
+
 export interface ShownThread {
   file: string;
   /** First and last line, counted from 0. */

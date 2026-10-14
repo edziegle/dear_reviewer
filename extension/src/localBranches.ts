@@ -11,6 +11,8 @@ export interface LocalBranch {
   /** The ref the Change starts from: main, as the clone knows it. */
   main: string;
   commitsAhead: number;
+  /** The commit the branch points at. */
+  headSha: string;
 }
 
 /** The clone's branches with commits that main doesn't have, newest first. */
@@ -26,17 +28,18 @@ export async function branchesAhead(
     "for-each-ref",
     "--sort=refname",
     "--sort=-committerdate",
-    "--format=%(refname)",
+    "--format=%(refname) %(objectname)",
     "refs/heads"
   );
   const branches: LocalBranch[] = [];
-  for (const ref of refs.split("\n").filter(Boolean)) {
+  for (const line of refs.split("\n").filter(Boolean)) {
+    const [ref, headSha] = line.split(" ");
     const name = ref.slice("refs/heads/".length);
     if (name === mainName) continue;
     const commitsAhead = Number(
       await git(clone, "rev-list", "--count", `${main}..${ref}`)
     );
-    if (commitsAhead > 0) branches.push({ name, main, commitsAhead });
+    if (commitsAhead > 0) branches.push({ name, main, commitsAhead, headSha });
   }
   return branches;
 }

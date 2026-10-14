@@ -193,6 +193,17 @@
         "category": "Dear Reviewer"
       },
       {
+        "command": "dearReviewer.writeBrief",
+        "title": "Write Brief",
+        "category": "Dear Reviewer"
+      },
+      {
+        "command": "dearReviewer.copyBrief",
+        "title": "Copy Brief",
+        "category": "Dear Reviewer",
+        "icon": "$(copy)"
+      },
+      {
         "command": "dearReviewer.showChangesSinceLastReview",
         "title": "Show Changes Since My Last Review",
         "category": "Dear Reviewer"
@@ -356,6 +367,17 @@
         {
           "command": "dearReviewer.sendSelectionToAssistant",
           "when": "editorIsOpen && resourcePath =~ /edziegle\\.dear-reviewer\\/changes\\//"
+        },
+        {
+          "command": "dearReviewer.copyBrief",
+          "when": "resourcePath =~ /edziegle\\.dear-reviewer\\/briefs\\//"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "dearReviewer.copyBrief",
+          "when": "resourcePath =~ /edziegle\\.dear-reviewer\\/briefs\\//",
+          "group": "navigation"
         }
       ],
       "editor/context": [

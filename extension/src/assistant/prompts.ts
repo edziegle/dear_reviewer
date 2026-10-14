@@ -2,12 +2,14 @@
 
 import * as path from "path";
 import {
+  branchOfConversation,
   Change,
   changedFiles,
   changeTitle,
   filesChangedBetween,
 } from "../changeWorkspace";
-import { git } from "../git";
+import { git, gitOutput } from "../git";
+import type { LocalThread } from "../localReviews";
 
 /** The most diff text put in a prompt; the Assistant can read the rest itself. */
 const maxDiffChars = 60_000;
@@ -172,4 +174,72 @@ export async function sinceLastReviewPrompt(
     diff,
     "```",
   ].join("\n");
+}
+
+/**
+ * Asks the Assistant to turn the Reviewer's Comments on a local Change into
+ * a Brief for an agent, after `note` if the conversation has news for the
+ * Assistant. Each Comment comes with its file, side, lines and code.
+ */
+export async function briefPrompt(
+  change: Change,
+  threads: LocalThread[],
+  note?: string
+): Promise<string> {
+  const branch = branchOfConversation(change.conversation);
+  const comments = await Promise.all(
+    threads.map(async (thread, i) => {
+      const side = thread.side === "LEFT" ? "base" : "head";
+      const current =
+        thread.side === "LEFT" ? change.mergeBase : change.headSha;
+      const first = thread.startLine ?? thread.line;
+      const lines = await linesAt(
+        change.repository,
+        thread.commit,
+        thread.path,
+        first,
+        thread.line
+      );
+      const reference = `${thread.path}:${first === thread.line ? first : `${first}-${thread.line}`}`;
+      return [
+        `${i + 1}. ${reference} on the ${side} side${thread.commit === current ? "" : `, written at the older commit ${thread.commit}, so those lines may have moved since`}:`,
+        ...(lines === undefined ? [] : ["```", lines, "```"]),
+        ...thread.comments.map((c) => c.body),
+        "",
+      ].join("\n");
+    })
+  );
+  return [
+    ...(note ? [note, ""] : []),
+    `The Reviewer has ended their Review of the Change ${changeTitle(change)}${branch ? `, the branch ${branch}` : ""}: from ${change.mergeBase} to ${change.headSha}.`,
+    "",
+    `Turn their Comments, below, into a Brief: instructions that a coding agent working on ${branch ? `the branch ${branch}` : "this code"} can act on to address them.`,
+    "- Cover every Comment, and only what the Reviewer asked for or questioned. Keep their intent; don't add requests of your own.",
+    "- Point at the code with its path relative to the repository root and its lines at the head commit, such as `src/app.py:12` or `src/app.py:12-30`. A Comment on the base side is about the code as it was before the Change.",
+    "- Read the worktrees' files if you need more context.",
+    "- Reply with only the Brief, in Markdown, with no preamble: it goes to the agent as you write it.",
+    "",
+    `The Reviewer's Comments (${threads.length}):`,
+    "",
+    ...comments,
+  ].join("\n");
+}
+
+/** Lines of a file at a commit, counted from 1, if the commit has the file. */
+async function linesAt(
+  repository: string,
+  commit: string,
+  file: string,
+  first: number,
+  last: number
+): Promise<string | undefined> {
+  try {
+    const text = await gitOutput(repository, "show", `${commit}:${file}`);
+    return text
+      .split("\n")
+      .slice(first - 1, last)
+      .join("\n");
+  } catch {
+    return undefined;
+  }
 }

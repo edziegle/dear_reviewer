@@ -5,12 +5,14 @@
 // and where the risk is, and a saved one carries on with `claude --resume`.
 // When the Change has new commits since the Reviewer's last Review, the
 // Assistant explains what changed, once for each such pair of commits (ADR
-// 0015).
+// 0015). At the end of a local Change's Review, it turns the Reviewer's
+// Comments into a Brief in the same conversation (ADR 0016).
 
 import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 import { Change, changeTitle } from "../changeWorkspace";
+import type { LocalThread } from "../localReviews";
 import { describeToolUse } from "./activity";
 import {
   ClaudeCli,
@@ -29,6 +31,7 @@ import {
 } from "./panel";
 import {
   assistantRole,
+  briefPrompt,
   chatPrompt,
   newHeadNote,
   Selection,
@@ -118,6 +121,19 @@ export class Assistants implements vscode.Disposable {
     this.byConversation.get(change.conversation)?.addSelection(selection);
   }
 
+  /**
+   * Has the Change's Assistant write a Brief from the Reviewer's Comments,
+   * starting it if it hasn't started, and gives the Brief. Its panel shows
+   * only a note about the Brief, which opens in the editor instead.
+   */
+  async writeBrief(change: Change, threads: LocalThread[]): Promise<string> {
+    if (this.byConversation.get(change.conversation)?.changeId !== change.id)
+      void this.open(change);
+    const assistant = this.byConversation.get(change.conversation);
+    if (!assistant) throw new Error("The Assistant didn't start.");
+    return assistant.writeBrief(threads);
+  }
+
   /** Stops the Change's Assistant, unless it has moved to a newer head. The conversation stays saved. */
   close(change: Change): void {
     const assistant = this.byConversation.get(change.conversation);
@@ -195,6 +211,9 @@ class ChangeAssistant {
   private disposed = false;
   /** What the problem's button runs. */
   private problemAction?: vscode.Command;
+  /** Settles once the Assistant has started, or failed to. */
+  private readonly ready: Promise<void>;
+  private settle!: () => void;
 
   constructor(
     private change: Change,
@@ -208,6 +227,7 @@ class ChangeAssistant {
       busy: true,
       messages: saved?.messages ?? [],
     };
+    this.ready = new Promise((resolve) => (this.settle = resolve));
     if (saved) {
       this.session = { id: saved.sessionId, headSha: saved.headSha };
       this.explained = saved.sinceLastReview;
@@ -241,11 +261,14 @@ class ChangeAssistant {
   async start(cli: ClaudeCli): Promise<void> {
     if (this.disposed) return;
     this.cli = cli;
+    let summary = Promise.resolve();
     if (this.session) this.update({ busy: false });
     else
-      await this.enqueue(async () =>
-        this.turn(await summaryPrompt(this.change))
-      );
+      summary = this.enqueue(async () => {
+        await this.turn(await summaryPrompt(this.change));
+      });
+    this.settle();
+    await summary;
     await this.explainSinceLastReview();
   }
 
@@ -269,7 +292,43 @@ class ChangeAssistant {
     this.panel?.reveal(true);
   }
 
+  /**
+   * Writes a Brief from the Comments, after whatever the Assistant is busy
+   * with, and gives it. The panel gets a note rather than the Brief.
+   */
+  async writeBrief(threads: LocalThread[]): Promise<string> {
+    await this.ready;
+    const brief = this.queue.then(async () => {
+      if (this.disposed) throw new Error("The Assistant was closed.");
+      const prompt = await briefPrompt(this.change, threads, this.note);
+      this.note = undefined;
+      let text: string | undefined;
+      try {
+        text = await this.turn(prompt, false);
+      } catch (err) {
+        this.fail(err);
+        throw err;
+      }
+      if (text === undefined) throw new Error("The Assistant was closed.");
+      const count = threads.reduce((n, t) => n + t.comments.length, 0);
+      this.update({
+        messages: [
+          ...this.state.messages,
+          {
+            from: "note",
+            text: `Wrote a Brief from your ${count} Comment${count === 1 ? "" : "s"}. It is open in the editor.`,
+          },
+        ],
+      });
+      this.save();
+      return text;
+    });
+    this.queue = brief.catch(() => undefined);
+    return brief;
+  }
+
   fail(err: unknown): void {
+    this.settle();
     if (this.disposed) return;
     this.problemAction =
       err instanceof ClaudeProblem ? helpWith(err) : undefined;
@@ -392,10 +451,10 @@ class ChangeAssistant {
         },
       ],
     });
-    await this.enqueue(() => {
+    await this.enqueue(async () => {
       const prompt = chatPrompt(this.change, question, context, this.note);
       this.note = undefined;
-      return this.turn(prompt);
+      await this.turn(prompt);
     });
   }
 
@@ -444,8 +503,14 @@ class ChangeAssistant {
     return run;
   }
 
-  /** Sends the prompt and streams the reply into the panel. */
-  private async turn(prompt: string): Promise<void> {
+  /**
+   * Sends the prompt and streams the reply into the panel, unless it isn't
+   * `shown`, and gives the reply, if the Assistant is still open.
+   */
+  private async turn(
+    prompt: string,
+    shown = true
+  ): Promise<string | undefined> {
     if (!this.cli)
       throw new ClaudeProblem(
         "failed",
@@ -461,6 +526,7 @@ class ChangeAssistant {
     const conversation = this.conversationNow(this.cli);
     const index = this.state.messages.length;
     const reply = (text: string) => {
+      if (!shown) return;
       const messages = [...this.state.messages];
       messages[index] = { from: "assistant", text };
       this.update({ messages });
@@ -469,8 +535,10 @@ class ChangeAssistant {
       this.update({
         steps: [...(this.state.steps ?? []), describeToolUse(this.change, use)],
       });
+    let text: string;
     try {
-      reply(await conversation.ask(prompt, reply, step));
+      text = await conversation.ask(prompt, reply, step);
+      reply(text);
     } catch (err) {
       if (this.disposed) return;
       // The next turn starts `claude` again, resuming the session if it has one.
@@ -492,11 +560,12 @@ class ChangeAssistant {
           },
         ],
       });
-      return this.turn(prompt);
+      return this.turn(prompt, shown);
     }
     if (this.disposed) return;
     this.update({ busy: false, steps: undefined });
     this.save(conversation);
+    return text;
   }
 
   /** The running conversation, or a new `claude` that resumes the saved session. */

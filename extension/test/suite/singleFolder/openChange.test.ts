@@ -241,9 +241,13 @@ describe("Open Change from a single-folder window", () => {
     for (const change of ending) await openChange(change);
     // The first of them again, in front, so they don't end in the order shown.
     await openChange(ending[0]);
+    await eventually(
+      () => assert.deepStrictEqual(pendingInReviewWindow(repo.path), []),
+      30_000
+    );
     let shownBefore = 0;
     await inReviewWindow((report) => {
-      assert.strictEqual(report.shown.at(-1), titleOf(ending[0]));
+      inFront(titleOf(ending[0]))(report);
       shownBefore = report.shown.length;
     });
     // Deleted by hand, so the lifecycle finds them over.

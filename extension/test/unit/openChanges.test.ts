@@ -3,6 +3,7 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import {
+  arrivedDiffs,
   changeInFront,
   OpenChange,
   OpenChanges,
@@ -113,6 +114,15 @@ describe("The open Changes' order", () => {
     open.remove("def");
     assert.deepStrictEqual(ids(open.all()), ["abc", "xyz"]);
   });
+
+  it("keeps a Change where it is when its diff shows, so one opened later stays in front", () => {
+    open.put(changeNamed("abc", { diffPending: true }));
+    open.put(changeNamed("xyz"));
+    open.markShown(["abc"]);
+    assert.deepStrictEqual(ids(open.all()), ["abc", "xyz"]);
+    assert.strictEqual(open.get("abc")?.diffPending, false);
+    assert.strictEqual(changeInFront(open.all(), () => true)?.id, "xyz");
+  });
 });
 
 describe("Whether the review window has a Change sent to it still to show", () => {
@@ -145,6 +155,62 @@ describe("Whether the review window has a Change sent to it still to show", () =
         ["/home", ...sent]
       ),
       false
+    );
+  });
+});
+
+describe("The diffs that arrive in the review window", () => {
+  const arrived = (
+    changes: OpenChange[],
+    isHere: (change: OpenChange) => boolean = () => true
+  ) =>
+    arrivedDiffs(changes, isHere).map(({ change, show }) => [change.id, show]);
+
+  it("show in the order their Changes were opened", () => {
+    assert.deepStrictEqual(
+      arrived([
+        changeNamed("abc", { diffPending: true }),
+        changeNamed("xyz", { diffPending: true }),
+      ]),
+      [
+        ["abc", true],
+        ["xyz", true],
+      ]
+    );
+  });
+
+  it("leave out a Change already shown, and one whose folders haven't arrived", () => {
+    assert.deepStrictEqual(
+      arrived(
+        [
+          changeNamed("abc"),
+          changeNamed("def", { diffPending: true }),
+          changeNamed("xyz", { diffPending: true }),
+        ],
+        (c) => c.id !== "def"
+      ),
+      [["xyz", true]]
+    );
+  });
+
+  it("keep one opened before a Change already shown here behind it, unshown", () => {
+    assert.deepStrictEqual(
+      arrived([
+        changeNamed("abc"),
+        changeNamed("def", { diffPending: true }),
+        changeNamed("xyz"),
+      ]),
+      [["def", false]]
+    );
+  });
+
+  it("show one opened before a Change shown only in another window", () => {
+    assert.deepStrictEqual(
+      arrived(
+        [changeNamed("def", { diffPending: true }), changeNamed("xyz")],
+        (c) => c.id !== "xyz"
+      ),
+      [["def", true]]
     );
   });
 });

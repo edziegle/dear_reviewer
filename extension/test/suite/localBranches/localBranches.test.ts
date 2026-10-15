@@ -221,7 +221,7 @@ describe("Local branches in the Inbox", () => {
 
     assert.deepStrictEqual(
       groups.map((g) => g.label),
-      ["Awaiting my review", "Authored by me"]
+      ["Awaiting my review", "Authored by me", "Reviewed by me"]
     );
   });
 });

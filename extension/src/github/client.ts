@@ -25,6 +25,8 @@ export interface PullRequestSummary {
 export interface InboxPullRequests {
   awaitingMyReview: PullRequestSummary[];
   authoredByMe: PullRequestSummary[];
+  /** Ones I reviewed and didn't author, leaving out any awaiting my review again. */
+  reviewedByMe: PullRequestSummary[];
 }
 
 export interface PullRequestFiles {
@@ -157,10 +159,10 @@ export class GitHubClient {
     private readonly apiUrl: () => string
   ) {}
 
-  /** Open pull requests in these repositories that await my review or that I authored. */
+  /** Open pull requests in these repositories that await my review, that I authored, or that I reviewed. */
   async inbox(repositories: string[]): Promise<InboxPullRequests> {
     if (repositories.length === 0)
-      return { awaitingMyReview: [], authoredByMe: [] };
+      return { awaitingMyReview: [], authoredByMe: [], reviewedByMe: [] };
     const searches = repositories.flatMap((repository, i) => [
       {
         alias: `awaiting${i}`,
@@ -169,6 +171,10 @@ export class GitHubClient {
       {
         alias: `authored${i}`,
         query: `is:pr is:open archived:false repo:${repository} author:@me`,
+      },
+      {
+        alias: `reviewed${i}`,
+        query: `is:pr is:open archived:false repo:${repository} reviewed-by:@me -author:@me`,
       },
     ]);
     const reviewer = await this.viewerLogin();
@@ -194,9 +200,16 @@ ${INBOX_PULL_REQUEST}`;
         .filter((node) => node.__typename === "PullRequest")
         .map(summaryOf)
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    const awaitingMyReview = collect("awaiting");
+    const awaiting = new Set(
+      awaitingMyReview.map((pr) => `${pr.repository}#${pr.number}`)
+    );
     return {
-      awaitingMyReview: collect("awaiting"),
+      awaitingMyReview,
       authoredByMe: collect("authored"),
+      reviewedByMe: collect("reviewed").filter(
+        (pr) => !awaiting.has(`${pr.repository}#${pr.number}`)
+      ),
     };
   }
 

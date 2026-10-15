@@ -815,6 +815,13 @@ export async function startFakeGitHub(): Promise<{
           (pr) => pr.repository.toLowerCase() === value.toLowerCase()
         );
       else if (key === "author") filters.push((pr) => pr.author === user);
+      else if (key === "-author") filters.push((pr) => pr.author !== user);
+      else if (key === "reviewed-by")
+        filters.push((pr) =>
+          (pr.reviews ?? []).some(
+            (review) => review.author === user && review.state !== "PENDING"
+          )
+        );
       else if (key === "review-requested")
         filters.push((pr) => (pr.reviewRequested ?? []).includes(user));
       else throw new Error(`The fake GitHub does not know "${term}"`);

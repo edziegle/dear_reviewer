@@ -203,6 +203,7 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
       return [
         pullRequestGroup("Awaiting my review", inbox.awaitingMyReview),
         pullRequestGroup("Authored by me", inbox.authoredByMe),
+        pullRequestGroup("Reviewed by me", inbox.reviewedByMe),
         ...(await localBranches),
       ];
     } catch (err) {

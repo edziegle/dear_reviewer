@@ -33,7 +33,7 @@ The order the Assistant suggests for reading a Change's files, in a few labelled
 _Avoid_: File order, review plan, story
 
 **Inbox**:
-The list of Changes waiting for the Reviewer: pull requests that await their review or that they authored, across the repositories they have open in VSCodium, have opened before, or listed, plus local branches ahead of main.
+The list of Changes waiting for the Reviewer: open pull requests that await their review or that they authored or reviewed, across the repositories they have open in VSCodium, have opened before, or listed, plus local branches ahead of main.
 _Avoid_: Queue, dashboard
 
 **Home**:

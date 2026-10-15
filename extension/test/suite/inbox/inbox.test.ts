@@ -4,6 +4,7 @@ import {
   avatarServedFor,
   configure,
   inbox,
+  inboxEntry,
   refreshInbox,
   requestsToGitHub,
   serveGitHub,
@@ -125,8 +126,146 @@ describe("Inbox", () => {
           ],
         },
         { group: "Authored by me", entries: ["My own work (acme/web #3)"] },
+        { group: "Reviewed by me", entries: [] },
       ]
     );
+  });
+
+  it("keeps open pull requests I reviewed, and didn't author, in Reviewed by me", async () => {
+    const reviewedBy = (author: string, state: "APPROVED" | "PENDING") => [
+      { id: `review-${author}-${state}`, author, state, threads: [] },
+    ];
+    await serveGitHub({
+      viewer,
+      pullRequests: [
+        {
+          repository: "acme/api",
+          number: 1,
+          title: "I approved it",
+          author: "alice",
+          reviews: reviewedBy("reviewer", "APPROVED"),
+          updatedAt: "2026-10-01T00:00:00Z",
+        },
+        {
+          repository: "acme/web",
+          number: 2,
+          title: "I asked for changes",
+          author: "bob",
+          reviews: [
+            {
+              id: "changes",
+              author: "reviewer",
+              state: "CHANGES_REQUESTED",
+              threads: [],
+            },
+          ],
+          updatedAt: "2026-10-03T00:00:00Z",
+        },
+        {
+          repository: "acme/api",
+          number: 3,
+          title: "Re-requested after my review",
+          author: "alice",
+          reviewRequested: ["reviewer"],
+          reviews: reviewedBy("reviewer", "APPROVED"),
+        },
+        {
+          repository: "acme/api",
+          number: 4,
+          title: "My own work, which I commented on",
+          author: "reviewer",
+          reviews: reviewedBy("reviewer", "APPROVED"),
+        },
+        {
+          repository: "acme/api",
+          number: 5,
+          title: "Merged after my review",
+          author: "alice",
+          state: "MERGED",
+          reviews: reviewedBy("reviewer", "APPROVED"),
+        },
+        {
+          repository: "acme/api",
+          number: 6,
+          title: "Reviewed by someone else",
+          author: "alice",
+          reviews: reviewedBy("carol", "APPROVED"),
+        },
+        {
+          repository: "acme/api",
+          number: 7,
+          title: "My review is still pending",
+          author: "alice",
+          reviews: reviewedBy("reviewer", "PENDING"),
+        },
+      ],
+    });
+    await configure({ repositories: ["acme/api", "acme/web"] });
+    await setToken(viewer.token);
+    await refreshInbox();
+
+    const groups = await inbox();
+
+    assert.deepStrictEqual(
+      groups.map((g) => ({
+        group: g.label,
+        count: g.description,
+        entries: g.entries.map((e) => `${e.label} (${e.description})`),
+      })),
+      [
+        {
+          group: "Awaiting my review",
+          count: "1",
+          entries: ["Re-requested after my review (acme/api #3)"],
+        },
+        {
+          group: "Authored by me",
+          count: "1",
+          entries: ["My own work, which I commented on (acme/api #4)"],
+        },
+        {
+          group: "Reviewed by me",
+          count: "2",
+          entries: [
+            "I asked for changes (acme/web #2)",
+            "I approved it (acme/api #1)",
+          ],
+        },
+      ]
+    );
+    const reviewed = inboxEntry(groups, "I approved it");
+    assert.strictEqual(
+      reviewed.command?.command,
+      "dearReviewer.openPullRequest",
+      "a click opens it as a Change, as from the other groups"
+    );
+  });
+
+  it("searches each repository for pull requests awaiting my review, authored by me and reviewed by me", async () => {
+    await serveGitHub({ viewer, pullRequests: [] });
+    await configure({ repositories: ["acme/api", "acme/web"] });
+    await setToken(viewer.token);
+    await refreshInbox();
+    await inbox();
+
+    const searches = (await requestsToGitHub())
+      .map(
+        (r) =>
+          (r.body as { variables?: Record<string, unknown> } | undefined)
+            ?.variables ?? {}
+      )
+      .flatMap((variables) => Object.values(variables))
+      .filter((value): value is string => typeof value === "string")
+      .filter((value) => value.startsWith("is:pr "));
+
+    assert.strictEqual(searches.length, 6, JSON.stringify(searches));
+    for (const repository of ["acme/api", "acme/web"])
+      assert.ok(
+        searches.includes(
+          `is:pr is:open archived:false repo:${repository} reviewed-by:@me -author:@me`
+        ),
+        JSON.stringify(searches)
+      );
   });
 
   it("shows each pull request's check status", async () => {

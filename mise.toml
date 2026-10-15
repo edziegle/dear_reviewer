@@ -88,8 +88,12 @@ depends = ["test-unit"]
 run = [{ task = "test-integration" }]
 
 [tasks.lint-docs]
-description = "Check prose with Vale"
-run = "vale docs GLOSSARY.md AGENTS.md DESIGN.md"
+description = "Check prose with Vale; warnings and errors fail, suggestions are advice"
+# Vale exits nonzero only on errors, so the second command fails on warnings too.
+run = [
+  "vale --no-exit docs GLOSSARY.md AGENTS.md DESIGN.md",
+  "vale --minAlertLevel=warning --output=line docs GLOSSARY.md AGENTS.md DESIGN.md | awk '{ print } END { exit NR > 0 }'",
+]
 
 # A range whose start isn't in the history (a new branch's all-zeros "before", or
 # a force-push) lints only the last commit.

@@ -89,7 +89,7 @@ run = [{ task = "test-integration" }]
 
 [tasks.lint-docs]
 description = "Check prose with Vale"
-run = "vale docs GLOSSARY.md AGENTS.md"
+run = "vale docs GLOSSARY.md AGENTS.md DESIGN.md"
 
 # A range whose start isn't in the history (a new branch's all-zeros "before", or
 # a force-push) lints only the last commit.

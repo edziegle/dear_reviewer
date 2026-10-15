@@ -28,3 +28,4 @@ node_modules/
 extension/.impeccable/
 # Impeccable critique snapshots, kept for later runs on this machine
 **/.impeccable/critique/
+!.vale/styles/House/

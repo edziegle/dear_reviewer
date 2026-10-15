@@ -25,7 +25,7 @@ subprocess
 tsserver
 URIs?
 venv
-VSCodium
+(VS)?Codium
 [Ww]ebviews?
 [Ww]orktrees?
 VS Code
@@ -44,3 +44,12 @@ very large
 [Dd]ismiss(es|ed|ing)?
 [Cc]ontext menus?
 Dependabot
+codicons?
+lightbulbs?
+SVGs?
+SHAs?
+semibold
+backticked
+Don'ts
+PyCharm
+MCP

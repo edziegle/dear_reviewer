@@ -2,6 +2,7 @@ import * as assert from "assert";
 import * as path from "path";
 import * as vscode from "vscode";
 import {
+  askAboutFile,
   askAssistant,
   assistantRuns,
   flag,
@@ -215,6 +216,115 @@ describe("Chatting with the Assistant about a Change", () => {
         `the prompt has ${expected}:\n${prompt}`
       );
 
+    await closeChange(request);
+  });
+
+  it("offers Ask the Assistant on every file of a Change, and binds Ctrl+Alt+R A to it", () => {
+    const { menus, keybindings } = vscode.extensions.getExtension(
+      "edziegle.dear-reviewer"
+    )!.packageJSON.contributes as {
+      menus: Record<
+        string,
+        { command: string; when?: string; group?: string }[]
+      >;
+      keybindings: { command: string; key: string }[];
+    };
+    const sendSelection = menus["editor/context"].find(
+      (m) => m.command === "dearReviewer.sendSelectionToAssistant"
+    );
+    assert.deepStrictEqual(
+      menus["editor/title"]
+        .filter((m) => m.command === "dearReviewer.askAssistant")
+        .map((m) => [m.when, m.group]),
+      [[sendSelection?.when, "navigation"]]
+    );
+    assert.deepStrictEqual(
+      keybindings.filter((k) => k.key === "ctrl+alt+r a").map((k) => k.command),
+      ["dearReviewer.askAssistant"]
+    );
+  });
+
+  it("asks about the selection, or else the lines on screen, from the file the Reviewer is reading", async () => {
+    scriptClaude({ turns: [replyTurn("A summary.")] });
+    // A repository of its own, so the conversation is new.
+    const asking = buildFixtureRepo("chat-asking");
+    const request = {
+      repository: asking.path,
+      base: asking.commits.renamed,
+      head: asking.commits.documented,
+    };
+    const title = `${path.basename(asking.path)} ${short(request.base)}..${short(request.head)}`;
+    const before = workspaceFolders();
+    await openChange(request);
+    const [base, head] = foldersAddedSince(before);
+
+    await askAboutFile(path.join(head.path, "util.py"), {
+      startLine: 1,
+      endLine: 1,
+    });
+    await askAboutFile(path.join(base.path, "util.py"));
+
+    await eventually(async () =>
+      assert.deepStrictEqual((await renderedPanel(title))?.context, [
+        {
+          path: "util.py",
+          side: "head",
+          startLine: 2,
+          endLine: 2,
+          text: '    """Two."""',
+        },
+        {
+          path: "util.py",
+          side: "base",
+          startLine: 1,
+          endLine: 3,
+          text: "def new_helper():\n    return 2\n",
+        },
+      ])
+    );
+    assert.deepStrictEqual(
+      assistantTabs(),
+      [`Assistant · ${title}`],
+      "the Assistant's panel is open"
+    );
+    await eventually(async () =>
+      assert.strictEqual((await renderedPanel(title))?.busy, false)
+    );
+    assert.strictEqual(
+      userMessages(assistantRuns()[0]).length,
+      1,
+      "nothing went to the Assistant but the summary"
+    );
+
+    await closeChange(request);
+  });
+
+  it("shows the Change's Assistant when asked from a file that isn't the Change's", async () => {
+    scriptClaude({ turns: [replyTurn("A summary.")] });
+    // A repository of its own, so the conversation is new.
+    const asking = buildFixtureRepo("chat-asking-elsewhere");
+    const request = {
+      repository: asking.path,
+      base: asking.commits.renamed,
+      head: asking.commits.documented,
+    };
+    const title = `${path.basename(asking.path)} ${short(request.base)}..${short(request.head)}`;
+    await openChange(request);
+    const elsewhere = await vscode.workspace.openTextDocument({
+      content: "Not the Change.",
+    });
+
+    await askAboutFile(elsewhere.uri, { startLine: 0, endLine: 0 });
+
+    await eventually(async () =>
+      assert.deepStrictEqual(assistantTabs(), [`Assistant · ${title}`])
+    );
+    assert.deepStrictEqual((await renderedPanel(title))?.context ?? [], []);
+
+    await vscode.window.showTextDocument(elsewhere);
+    await vscode.commands.executeCommand(
+      "workbench.action.revertAndCloseActiveEditor"
+    );
     await closeChange(request);
   });
 

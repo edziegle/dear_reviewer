@@ -20,6 +20,7 @@ import { Findings, FindingsNode } from "./findings";
 import {
   ReadingTracker,
   selectionInChange,
+  selectionOrScreenInChange,
   whereInChange,
 } from "./assistant/selection";
 import { ThreadsFiles } from "./assistant/threads";
@@ -1098,6 +1099,17 @@ export function activate(context: vscode.ExtensionContext) {
         await assistants.addSelection(found.change, found.selection);
       }
     ),
+    vscode.commands.registerCommand("dearReviewer.askAssistant", async () => {
+      const editor = vscode.window.activeTextEditor;
+      const found =
+        editor && selectionOrScreenInChange(editor, changes.shownHere());
+      if (found) {
+        await assistants.addSelection(found.change, found.selection);
+        return;
+      }
+      const change = await changeFor(undefined, "Ask the Assistant");
+      if (change) await assistants.open(change, true);
+    }),
     vscode.commands.registerCommand(
       "dearReviewer.checkClaudeLogin",
       async () => {

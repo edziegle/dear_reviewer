@@ -192,6 +192,12 @@
         "category": "Dear Reviewer"
       },
       {
+        "command": "dearReviewer.askAssistant",
+        "title": "Ask the Assistant",
+        "category": "Dear Reviewer",
+        "icon": "$(comment-discussion)"
+      },
+      {
         "command": "dearReviewer.checkClaudeLogin",
         "title": "Check Claude Login",
         "category": "Dear Reviewer"
@@ -508,6 +514,10 @@
           "when": "editorIsOpen && (resourcePath =~ /edziegle\\.dear-reviewer\\/changes\\// || resourceScheme == dear-reviewer-commit)"
         },
         {
+          "command": "dearReviewer.askAssistant",
+          "when": "dearReviewer.hasOpenChange"
+        },
+        {
           "command": "dearReviewer.copyBrief",
           "when": "resourcePath =~ /edziegle\\.dear-reviewer\\/briefs\\//"
         },
@@ -556,6 +566,11 @@
         {
           "command": "dearReviewer.copyBrief",
           "when": "resourcePath =~ /edziegle\\.dear-reviewer\\/briefs\\//",
+          "group": "navigation"
+        },
+        {
+          "command": "dearReviewer.askAssistant",
+          "when": "resourcePath =~ /edziegle\\.dear-reviewer\\/changes\\// || resourceScheme == dear-reviewer-commit",
           "group": "navigation"
         },
         {
@@ -796,7 +811,7 @@
         "when": "dearReviewer.hasFindings"
       },
       {
-        "command": "dearReviewer.showAssistant",
+        "command": "dearReviewer.askAssistant",
         "key": "ctrl+alt+r a",
         "when": "dearReviewer.hasOpenChange"
       },

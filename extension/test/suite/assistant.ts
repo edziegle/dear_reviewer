@@ -277,6 +277,28 @@ export async function sendSelection(
   await vscode.commands.executeCommand("dearReviewer.sendSelectionToAssistant");
 }
 
+/**
+ * Shows the file or document in an editor, with these lines selected,
+ * counted from 0, or with nothing selected, and runs Ask the Assistant.
+ */
+export async function askAboutFile(
+  file: string | vscode.Uri,
+  lines?: { startLine: number; endLine: number }
+): Promise<void> {
+  const document = await vscode.workspace.openTextDocument(
+    typeof file === "string" ? vscode.Uri.file(file) : file
+  );
+  const end = lines && document.lineAt(lines.endLine).range.end;
+  await vscode.window.showTextDocument(document, {
+    selection:
+      lines && end
+        ? new vscode.Range(lines.startLine, 0, end.line, end.character)
+        : new vscode.Range(0, 0, 0, 0),
+    preview: false,
+  });
+  await vscode.commands.executeCommand("dearReviewer.askAssistant");
+}
+
 export async function loginStatus(): Promise<
   { text: string; tooltip?: string } | undefined
 > {

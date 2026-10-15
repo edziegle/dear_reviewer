@@ -1,7 +1,8 @@
-// Turns the Reviewer's selection in an editor into chat context: which open
-// Change, which side's worktree, or the reviewed commit of what changed since
-// the last Review, which file and which lines. Tells where the Reviewer is
-// reading in the same terms: the lines on screen of the editor they used last.
+// Turns the Reviewer's selection in an editor, or the lines on screen, into
+// chat context: which open Change, which side's worktree, or the reviewed
+// commit of what changed since the last Review, which file and which lines.
+// Tells where the Reviewer is reading in the same terms: the lines on screen
+// of the editor they used last.
 
 import * as path from "path";
 import * as vscode from "vscode";
@@ -13,14 +14,37 @@ export function selectionInChange(
   editor: vscode.TextEditor,
   changes: Change[]
 ): { change: Change; selection: Selection & { text: string } } | undefined {
-  const where = whereInChange(editor.document.uri, changes);
-  if (!where) return;
   const { start, end } = editor.selection;
   // A selection that ends at the start of a line doesn't take that line.
   const lastLine =
     end.line > start.line && end.character === 0 ? end.line - 1 : end.line;
+  return linesInChange(editor, changes, start.line, lastLine);
+}
+
+/**
+ * The selection in a file of a Change, as `selectionInChange` gives it, or
+ * without one, the lines on screen, so the Reviewer can ask about them.
+ */
+export function selectionOrScreenInChange(
+  editor: vscode.TextEditor,
+  changes: Change[]
+): ReturnType<typeof selectionInChange> {
+  const [onScreen] = editor.visibleRanges;
+  if (!editor.selection.isEmpty || !onScreen)
+    return selectionInChange(editor, changes);
+  return linesInChange(editor, changes, onScreen.start.line, onScreen.end.line);
+}
+
+function linesInChange(
+  editor: vscode.TextEditor,
+  changes: Change[],
+  firstLine: number,
+  lastLine: number
+): ReturnType<typeof selectionInChange> {
+  const where = whereInChange(editor.document.uri, changes);
+  if (!where) return;
   const lines = new vscode.Range(
-    start.line,
+    firstLine,
     0,
     lastLine,
     editor.document.lineAt(lastLine).range.end.character
@@ -29,7 +53,7 @@ export function selectionInChange(
     change: where.change,
     selection: {
       ...where.file,
-      startLine: start.line + 1,
+      startLine: firstLine + 1,
       endLine: lastLine + 1,
       text: editor.document.getText(lines),
     },

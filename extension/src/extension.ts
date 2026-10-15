@@ -342,8 +342,15 @@ export function activate(context: vscode.ExtensionContext) {
    * since the last Review.
    */
   function activeFile(): ReturnType<typeof whereInChange> {
+    return fileIn(vscode.window.tabGroups.activeTabGroup.activeTab);
+  }
+
+  /** The file of a Change open in this window that the tab shows, as for `activeFile`. */
+  function fileIn(
+    tab: vscode.Tab | undefined
+  ): ReturnType<typeof whereInChange> {
     const shown = changes.shownHere();
-    const input = vscode.window.tabGroups.activeTabGroup.activeTab?.input;
+    const input = tab?.input;
     const uris =
       input instanceof vscode.TabInputTextDiff
         ? [input.modified, input.original]
@@ -390,6 +397,17 @@ export function activate(context: vscode.ExtensionContext) {
     return pickChange(changes.shownHere().filter(fits), title, none);
   }
 
+  /** The file of the Change shown in front of its code column. */
+  async function shownIn(
+    change: Change
+  ): Promise<ReturnType<typeof whereInChange>> {
+    const column = await codeColumnOf(change);
+    return fileIn(
+      vscode.window.tabGroups.all.find((g) => g.viewColumn === column)
+        ?.activeTab
+    );
+  }
+
   /** Moves to the next or previous file not yet viewed, first marking the one shown viewed if asked. */
   async function stepUnviewed(
     direction: 1 | -1,
@@ -399,7 +417,9 @@ export function activate(context: vscode.ExtensionContext) {
     // Given a Change, such as by its overview, step through that one.
     const given = target && (await changeFor(target, "Next Unviewed File"));
     if (target && !given) return;
-    const where = activeFile();
+    // The overview's button leaves the overview in front, so step from its
+    // code column rather than the focused group.
+    const where = given ? await shownIn(given) : activeFile();
     const here =
       where?.file.side === "commit" || (given && where?.change.id !== given.id)
         ? undefined

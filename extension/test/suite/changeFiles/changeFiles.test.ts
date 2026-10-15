@@ -14,7 +14,9 @@ import {
   unmarkViewed,
 } from "../changeFiles";
 import { buildFixtureRepo } from "../fixtures";
+import { clickOverview, showTimeline } from "../timeline";
 import {
+  activeTabLabel,
   eventually,
   foldersAddedSince,
   openChange,
@@ -168,6 +170,73 @@ describe("The Change files view", () => {
     const tree = await changeFiles();
     assert.strictEqual(entryAt(tree, title, "added.py").viewed, true);
     await unmarkViewed(entryAt(tree, title, "added.py"));
+  });
+
+  /**
+   * Waits for the code column, beside the overview, to show the file's diff,
+   * on either side. The focus may stay on the overview.
+   */
+  const shows = async (file: string) =>
+    eventually(() => {
+      const input = vscode.window.tabGroups.all.find(
+        (g) => g.viewColumn === vscode.ViewColumn.Two
+      )?.activeTab?.input;
+      assert.ok(
+        input instanceof vscode.TabInputTextDiff,
+        `the code column shows no diff: ${JSON.stringify(input)}`
+      );
+      assert.ok(
+        [input.original.fsPath, input.modified.fsPath].includes(
+          path.join(file === "pkg/legacy.py" ? base : head, file)
+        ),
+        `${file} shows: ${input.original.fsPath} ↔ ${input.modified.fsPath}`
+      );
+    });
+
+  /** Brings the overview in front, then clicks its button there. */
+  const nextFromOverview = async () => {
+    await showTimeline(request);
+    await eventually(() => assert.strictEqual(activeTabLabel(), title));
+    await clickOverview(title, "nextFile");
+  };
+
+  /** Puts a tab that isn't one of the Change's files in front of the code column. */
+  const showElsewhere = async () =>
+    vscode.window.showTextDocument(
+      // The repository's own clone, not one of the Change's worktrees.
+      vscode.Uri.file(path.join(repo.path, "main.py")),
+      { viewColumn: vscode.ViewColumn.Two, preview: false }
+    );
+
+  it("opens the next unviewed file from the overview after the one in the code column, not the first again", async () => {
+    await showElsewhere();
+    await nextFromOverview();
+    await shows("pkg/legacy.py");
+    await nextFromOverview();
+    await shows("added.py");
+    await nextFromOverview();
+    await shows("main.py");
+  });
+
+  it("opens the first unviewed file from the overview when the code column shows another file", async () => {
+    await select(entryAt(await changeFiles(), title, "main.py"));
+    await shows("main.py");
+    await showElsewhere();
+
+    await nextFromOverview();
+    await shows("pkg/legacy.py");
+  });
+
+  it("skips the files already viewed when stepping from the overview", async () => {
+    await showElsewhere();
+    await markViewed(entryAt(await changeFiles(), title, "pkg", "legacy.py"));
+
+    await nextFromOverview();
+    await shows("added.py");
+    await nextFromOverview();
+    await shows("main.py");
+
+    await unmarkViewed(entryAt(await changeFiles(), title, "pkg", "legacy.py"));
   });
 
   it("hides viewed files, and directories left empty, until they are shown again", async () => {

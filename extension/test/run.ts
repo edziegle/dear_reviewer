@@ -25,6 +25,7 @@ const work = path.join(testRoot, "work");
 const fakeClaudeDir = path.join(work, "fake-claude");
 const fakeClaude = path.join(fakeClaudeDir, "bin", "claude");
 const backgroundCodium = path.join(testRoot, "background-codium");
+const codiumOutput = path.join(testRoot, "codium-output");
 
 /**
  * Only the basedpyright suite needs these, so a failed install stops a CI run
@@ -71,9 +72,10 @@ const quote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
  * test/backgroundCodium.ts with this node, so VSCodium opens without focus.
  */
 function installBackgroundCodium() {
+  fs.rmSync(codiumOutput, { recursive: true, force: true });
   fs.writeFileSync(
     backgroundCodium,
-    `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(path.join(__dirname, "backgroundCodium.js"))} ${quote(codiumApp)} "$@"\n`,
+    `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(path.join(__dirname, "backgroundCodium.js"))} ${quote(codiumApp)} ${quote(codiumOutput)} "$@"\n`,
     { mode: 0o755 }
   );
 }

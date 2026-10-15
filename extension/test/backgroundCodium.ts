@@ -3,23 +3,28 @@
 // again whenever it takes focus anyway, as it does when it opens a window. `open`
 // drops the app's environment, output and exit code, so this forwards the
 // environment, streams the output back through FIFOs, and reads the result the
-// suite writes.
-// Usage: node backgroundCodium.js <VSCodium.app> [codium args...]
+// suite writes. The output and the result also stay in <output dir> for CI to
+// keep when a run fails.
+// Usage: node backgroundCodium.js <VSCodium.app> <output dir> [codium args...]
 
 import * as cp from "child_process";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 
-const [codiumApp, ...codiumArgs] = process.argv.slice(2);
+const [codiumApp, outputDir, ...codiumArgs] = process.argv.slice(2);
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dear-reviewer-codium-"));
-const result = path.join(dir, "result");
+const result = path.join(outputDir, "result");
+fs.mkdirSync(outputDir, { recursive: true });
+fs.rmSync(result, { force: true });
 
 function relay(name: string, to: NodeJS.WritableStream): fs.ReadStream {
   const fifo = path.join(dir, name);
   cp.execFileSync("mkfifo", [fifo]);
   const stream = fs.createReadStream(fifo);
   stream.pipe(to, { end: false });
+  const log = path.join(outputDir, `${name}.log`);
+  stream.on("data", (chunk) => fs.appendFileSync(log, chunk));
   return stream;
 }
 
@@ -88,14 +93,21 @@ function launchedPid(): number | undefined {
   }
 }
 
-const findPid = setInterval(() => {
-  const pid = launchedPid();
-  if (pid === undefined) return;
-  clearInterval(findPid);
-  cp.spawn("osascript", ["-l", "JavaScript", "-e", keepHidden, String(pid)], {
-    stdio: "ignore",
-  });
-}, 100);
+// CI runners have no one to take focus from, and may not let System Events in.
+const findPid = process.env.CI
+  ? undefined
+  : setInterval(() => {
+      const pid = launchedPid();
+      if (pid === undefined) return;
+      clearInterval(findPid);
+      cp.spawn(
+        "osascript",
+        ["-l", "JavaScript", "-e", keepHidden, String(pid)],
+        {
+          stdio: "ignore",
+        }
+      );
+    }, 100);
 
 const closed = (stream: fs.ReadStream) =>
   new Promise<void>((resolve) => stream.on("close", () => resolve()));

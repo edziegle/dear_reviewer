@@ -10,21 +10,31 @@
 // directory it ran in, so `--resume <id>` brings them back only from that
 // same directory; otherwise it fails as Claude Code does.
 //
+// A print-mode run belongs to the conversation of the folder it runs in:
+// Dear Reviewer runs `claude` in a folder of each conversation's own, named
+// after a hash of the conversation's name (ADR 0009). Each conversation has
+// its own script and counts its own turns, so what one Change asks never
+// uses up another's replies.
+//
 // Tests control it through files in the state folder:
-//   script.json   what to answer (FakeClaudeScript); absent means the defaults
-//   calls/        one JSON file (RecordedClaudeCall) per run, kept up to date
+//   login.json    how `claude auth status` answers (FakeClaudeLogin); absent
+//                 means signed in with a Claude subscription
+//   calls/        one JSON file (RecordedClaudeCall) per run outside a
+//                 conversation, such as `claude auth status`
+//   conversations/<folder>/
+//     script.json   what the conversation's turns answer (FakeClaudeScript);
+//                   absent means the defaults
+//     turns-taken   how many of the script's turns it has answered
+//     calls/        one JSON file per run of the conversation, kept up to date
 //   sessions/     each session's working directory and user messages
 //   <name>        a file a turn waits for (see waitFor), written by the test
+//
+// A run reads its conversation's script as each user message arrives, so a
+// test that scripts a conversation already going on reaches its next turn.
 //
 // A request for a Reading Order, which follows every new summary, gets the
 // script's `readingOrder` answer on the side, so the scripted turns stay
 // the summary and what the Reviewer asks.
-//
-// The scripted turns are one list for every Change: `turns-taken` counts
-// the turns of every run, so whichever Change asks next gets the next turn,
-// and each new conversation takes one as its summary. A run reads script.json
-// once, as it starts, so a run already going on when the test scripts the
-// fake again keeps its old turns while counting from the first again.
 //
 // In the scripted events, the strings {head} and {base} stand for the first
 // and second `--add-dir` the run was given, the Change's worktrees, so a
@@ -41,16 +51,23 @@ import * as fs from "fs";
 import * as path from "path";
 import * as readline from "readline";
 
-export interface FakeClaudeScript {
+/** How the fake answers `claude auth status`. */
+export interface FakeClaudeLogin {
   /** What `claude auth status` prints as JSON. Defaults to a claude.ai login. */
   authStatus?: Record<string, unknown>;
   /** Its exit code; defaults to 0 when signed in and 1 otherwise. */
   authStatusExitCode?: number;
+}
+
+/** What one conversation's turns answer. */
+export interface FakeClaudeScript {
   /**
-   * The stream-json events printed for each user message, in order, counted
-   * across every run of every Change. Once they run out, the last turn repeats. Defaults to a
-   * short summary. Each event's `session_id` is replaced with the run's
-   * session, and a `waitFor` event pauses the turn until its file exists.
+   * The stream-json events printed for each of the conversation's user
+   * messages from when it was scripted, in order: for a new conversation,
+   * the first is its summary. Once they run out, the last turn repeats.
+   * Defaults to a short summary. Each event's `session_id` is replaced with
+   * the run's session, and a `waitFor` event pauses the turn until its file
+   * exists.
    */
   turns?: Record<string, unknown>[][];
   /**
@@ -169,20 +186,26 @@ export function defaultTurn(
 
 function main(): void {
   const [stateDir, ...args] = process.argv.slice(2);
-  const script = readScript(stateDir);
+  const printMode = args.includes("-p") || args.includes("--print");
+  const conversationDir = path.join(
+    stateDir,
+    "conversations",
+    path.basename(process.cwd())
+  );
   const call: RecordedClaudeCall = {
     args,
     cwd: process.cwd(),
     env: { ...process.env } as Record<string, string>,
     input: [],
   };
-  const callsDir = path.join(stateDir, "calls");
-  fs.mkdirSync(callsDir, { recursive: true });
+  const callsDir = path.join(printMode ? conversationDir : stateDir, "calls");
   const callFile = path.join(
     callsDir,
     `${process.hrtime.bigint()}-${process.pid}.json`
   );
+  // Scripting the conversation again forgets its calls, this one's too.
   const record = () => {
+    fs.mkdirSync(callsDir, { recursive: true });
     fs.writeFileSync(`${callFile}.tmp`, JSON.stringify(call, null, 2));
     fs.renameSync(`${callFile}.tmp`, callFile);
   };
@@ -193,7 +216,9 @@ function main(): void {
     return;
   }
   if (args[0] === "auth" && args[1] === "status") {
-    const status = script.authStatus ?? {
+    const login =
+      readJson<FakeClaudeLogin>(path.join(stateDir, "login.json")) ?? {};
+    const status = login.authStatus ?? {
       loggedIn: true,
       authMethod: "claude.ai",
       apiProvider: "firstParty",
@@ -201,10 +226,10 @@ function main(): void {
     };
     process.stdout.write(JSON.stringify(status, null, 2) + "\n");
     process.exitCode =
-      script.authStatusExitCode ?? (status.loggedIn === false ? 1 : 0);
+      login.authStatusExitCode ?? (status.loggedIn === false ? 1 : 0);
     return;
   }
-  if (!args.includes("-p") && !args.includes("--print")) {
+  if (!printMode) {
     process.stderr.write(
       `fake claude: unexpected arguments ${args.join(" ")}\n`
     );
@@ -238,8 +263,6 @@ function main(): void {
     call.mcpResults = [...(call.mcpResults ?? []), result];
     record();
   });
-  const turns = script.turns?.length ? script.turns : [defaultTurn()];
-  const turnCounter = path.join(stateDir, "turns-taken");
   let replying = Promise.resolve();
   const lines = readline.createInterface({ input: process.stdin });
   lines.on("line", (line) => {
@@ -254,6 +277,9 @@ function main(): void {
     const worktrees = args.flatMap((arg, i) =>
       args[i - 1] === "--add-dir" ? [arg] : []
     );
+    const script =
+      readJson<FakeClaudeScript>(path.join(conversationDir, "script.json")) ??
+      {};
     if (text.includes(readingOrderRequest)) {
       const events =
         script.readingOrder ?? defaultTurn("No Reading Order, sorry.");
@@ -262,7 +288,10 @@ function main(): void {
       );
       return;
     }
+    const turns = script.turns?.length ? script.turns : [defaultTurn()];
+    const turnCounter = path.join(conversationDir, "turns-taken");
     const taken = Number(readText(turnCounter) ?? "0");
+    fs.mkdirSync(conversationDir, { recursive: true });
     fs.writeFileSync(turnCounter, String(taken + 1));
     const events = turns[Math.min(taken, turns.length - 1)];
     replying = replying.then(() =>
@@ -482,16 +511,6 @@ function readText(file: string): string | undefined {
 function readJson<T>(file: string): T | undefined {
   const text = readText(file);
   return text === undefined ? undefined : (JSON.parse(text) as T);
-}
-
-function readScript(stateDir: string): FakeClaudeScript {
-  try {
-    return JSON.parse(
-      fs.readFileSync(path.join(stateDir, "script.json"), "utf8")
-    ) as FakeClaudeScript;
-  } catch {
-    return {};
-  }
 }
 
 if (require.main === module) main();

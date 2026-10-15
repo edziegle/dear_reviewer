@@ -10,7 +10,7 @@ describe("The Reading Order after a reload", () => {
   const handoff = pickUpAfterReload();
 
   before(() =>
-    scriptClaude({
+    scriptClaude(handoff.branch, {
       turns: [replyTurn("Shouldn't be asked.")],
       readingOrder: replyTurn('{"steps": []}'),
     })
@@ -27,6 +27,6 @@ describe("The Reading Order after a reload", () => {
         handoff.readingOrder
       )
     );
-    assert.deepStrictEqual(assistantRuns(), []);
+    assert.deepStrictEqual(assistantRuns(handoff.branch), []);
   });
 });

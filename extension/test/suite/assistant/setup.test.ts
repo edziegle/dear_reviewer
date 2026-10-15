@@ -4,13 +4,14 @@ import * as path from "path";
 import * as vscode from "vscode";
 import {
   assistantRuns,
-  callsToClaude,
   fakeClaudePath,
+  loginChecks,
   loginStatus,
   renderedPanel,
   replyTurn,
   retryAssistant,
   scriptClaude,
+  scriptClaudeLogin,
   setClaudePath,
   showAssistant,
   summaryNote,
@@ -39,12 +40,13 @@ describe("Setting up the Assistant", () => {
       "nowhere",
       "claude"
     );
-    scriptClaude({});
-    await setClaudePath(missing);
     const { request, title } = changeOf(
       repo.commits.renamed,
       repo.commits.documented
     );
+    scriptClaudeLogin();
+    scriptClaude(request, {});
+    await setClaudePath(missing);
     try {
       await openChange(request);
       await showAssistant(request);
@@ -66,7 +68,8 @@ describe("Setting up the Assistant", () => {
       assert.strictEqual(status.warning, true);
       assert.match(status.tooltip ?? "", /^\**Dear Reviewer Assistant\**/);
       assert.ok(status.tooltip?.includes(missing), "the tooltip has the error");
-      assert.deepStrictEqual(callsToClaude(), []);
+      assert.deepStrictEqual(loginChecks(), []);
+      assert.deepStrictEqual(assistantRuns(request), []);
       const take = await overviewTake(title);
       assert.ok(take?.problem?.includes(missing), "the overview says so too");
       assert.strictEqual(take?.problemAction, "Set Claude Path");
@@ -78,7 +81,7 @@ describe("Setting up the Assistant", () => {
   });
 
   it("says clearly when claude isn't signed in, and leaves signing in to Claude Code", async () => {
-    scriptClaude({
+    scriptClaudeLogin({
       authStatus: {
         loggedIn: false,
         authMethod: "none",
@@ -89,31 +92,38 @@ describe("Setting up the Assistant", () => {
       repo.commits.renamed,
       repo.commits.restructured
     );
+    scriptClaude(request, {});
+    try {
+      await openChange(request);
 
-    await openChange(request);
+      await showAssistant(request);
 
-    await showAssistant(request);
-
-    await eventually(async () => {
-      const panel = await renderedPanel(title);
-      assert.match(panel?.problem ?? "", /isn't signed in/);
-      assert.match(panel?.problem ?? "", /run `claude` in a terminal/i);
-      assert.strictEqual(panel?.problemAction, "Open a Terminal");
-      assert.strictEqual(panel?.busy, false);
-    });
-    const status = await loginStatus();
-    assert.strictEqual(
-      status?.text,
-      "$(dear-reviewer-logo) Assistant: not signed in"
-    );
-    assert.strictEqual(status.warning, true);
-    assert.deepStrictEqual(assistantRuns(), [], "the Assistant didn't start");
-
-    await closeChange(request);
+      await eventually(async () => {
+        const panel = await renderedPanel(title);
+        assert.match(panel?.problem ?? "", /isn't signed in/);
+        assert.match(panel?.problem ?? "", /run `claude` in a terminal/i);
+        assert.strictEqual(panel?.problemAction, "Open a Terminal");
+        assert.strictEqual(panel?.busy, false);
+      });
+      const status = await loginStatus();
+      assert.strictEqual(
+        status?.text,
+        "$(dear-reviewer-logo) Assistant: not signed in"
+      );
+      assert.strictEqual(status.warning, true);
+      assert.deepStrictEqual(
+        assistantRuns(request),
+        [],
+        "the Assistant didn't start"
+      );
+    } finally {
+      scriptClaudeLogin();
+      await closeChange(request);
+    }
   });
 
   it("starts the Assistant on Retry once Claude Code is signed in", async () => {
-    scriptClaude({
+    scriptClaudeLogin({
       authStatus: {
         loggedIn: false,
         authMethod: "none",
@@ -124,6 +134,7 @@ describe("Setting up the Assistant", () => {
       repo.commits.initial,
       repo.commits.restructured
     );
+    scriptClaude(request, { turns: [replyTurn("A summary.")] });
     await openChange(request);
     await showAssistant(request);
     await eventually(async () => {
@@ -133,7 +144,7 @@ describe("Setting up the Assistant", () => {
       assert.strictEqual((await overviewTake(title))?.canRetry, true);
     });
 
-    scriptClaude({ turns: [replyTurn("A summary.")] });
+    scriptClaudeLogin();
     await retryAssistant(title);
 
     await eventually(async () => {
@@ -144,7 +155,11 @@ describe("Setting up the Assistant", () => {
       assert.strictEqual(take?.problem, undefined);
       assert.strictEqual(take?.text, "A summary.");
     });
-    assert.strictEqual(assistantRuns().length, 1, "the Assistant started");
+    assert.strictEqual(
+      assistantRuns(request).length,
+      1,
+      "the Assistant started"
+    );
 
     await closeChange(request);
   });
@@ -177,11 +192,11 @@ describe("Setting up the Assistant", () => {
         },
       })
     );
-    scriptClaude({});
     const { request, title } = changeOf(
       repo.commits.documented,
       repo.commits.restructured
     );
+    scriptClaude(request, {});
     try {
       await eventually(() =>
         assert.deepStrictEqual(config().get("repositories"), ["acme/planted"])
@@ -195,7 +210,7 @@ describe("Setting up the Assistant", () => {
         assert.strictEqual((await renderedPanel(title))?.messages.length, 1)
       );
       assert.ok(!fs.existsSync(marker), "the workspace's claude never ran");
-      assert.ok(assistantRuns().length > 0, "the Reviewer's claude ran");
+      assert.ok(assistantRuns(request).length > 0, "the Reviewer's claude ran");
     } finally {
       await closeChange(request);
       const workspace = JSON.parse(fs.readFileSync(workspaceFile, "utf8"));

@@ -59,6 +59,8 @@ describe("Ending a local Review with a Brief", () => {
   const title = `${repo} ${short(change.base)}..${short(change.head)}`;
   let newHead = "";
   const requestAt = (head: string) => ({ ...change, head });
+  // Opened from the Inbox as a branch, it has the branch's conversation.
+  const branch = requestAt("refs/heads/agent/docs");
 
   before(async () => {
     // The token was kept in memory only, so it went with the reload.
@@ -103,7 +105,7 @@ describe("Ending a local Review with a Brief", () => {
     await eventually(async () =>
       assert.strictEqual((await renderedPanel(title))?.busy, false)
     );
-    scriptClaude({
+    scriptClaude(branch, {
       turns: [
         [
           {
@@ -133,11 +135,11 @@ describe("Ending a local Review with a Brief", () => {
   });
 
   it("asks the Assistant for a Brief built from the Comments, with file and line references", async () => {
-    scriptClaude({ turns: [replyTurn(brief)] });
+    scriptClaude(branch, { turns: [replyTurn(brief)] });
 
     await writeBrief(change);
 
-    const [run, ...others] = assistantRuns();
+    const [run, ...others] = assistantRuns(branch);
     assert.deepStrictEqual(others, [], "one run of claude");
     assert.ok(flag(run, "--resume"), "in the Change's own conversation");
     const [prompt] = userMessages(run);
@@ -246,11 +248,11 @@ describe("Ending a local Review with a Brief", () => {
   });
 
   it("writes no Brief without Comments", async () => {
-    scriptClaude({ turns: [replyTurn("An empty Brief.")] });
+    scriptClaude(branch, { turns: [replyTurn("An empty Brief.")] });
 
     await writeBrief(change);
 
-    assert.deepStrictEqual(assistantRuns(), []);
+    assert.deepStrictEqual(assistantRuns(branch), []);
   });
 
   it("marks the branch in the Inbox once the agent adds commits", async () => {
@@ -273,7 +275,7 @@ describe("Ending a local Review with a Brief", () => {
   });
 
   it("has the Assistant explain what changed since the Brief", async () => {
-    scriptClaude({ turns: [replyTurn("since.py is new.")] });
+    scriptClaude(branch, { turns: [replyTurn("since.py is new.")] });
 
     await openBranchFromInbox(inboxEntry(await inbox(), "agent/docs"));
 
@@ -285,7 +287,7 @@ describe("Ending a local Review with a Brief", () => {
         text: "since.py is new.",
       })
     );
-    const [run] = assistantRuns();
+    const [run] = assistantRuns(branch);
     const [prompt] = userMessages(run);
     for (const expected of [change.head, newHead, "since.py"])
       assert.ok(prompt.includes(expected), `${expected} in ${prompt}`);

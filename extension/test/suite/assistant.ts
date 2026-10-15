@@ -1,10 +1,13 @@
 // Scripts the fake `claude`, reads back what it received, and reads the
 // Assistant panel and the Claude login the way the Reviewer sees them.
 
+import * as cp from "child_process";
+import * as crypto from "crypto";
 import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 import type {
+  FakeClaudeLogin,
   FakeClaudeScript,
   McpResult,
   RecordedClaudeCall,
@@ -13,7 +16,12 @@ import { mcpCall, readingOrderRequest, toolUse, waitFor } from "../fakeClaude";
 import { eventually, type ChangeRequest } from "./reviewer";
 import type { Take } from "./timeline";
 
-export type { FakeClaudeScript, McpResult, RecordedClaudeCall };
+export type {
+  FakeClaudeLogin,
+  FakeClaudeScript,
+  McpResult,
+  RecordedClaudeCall,
+};
 export { mcpCall, toolUse, waitFor };
 
 export function fakeClaudePath(): string {
@@ -29,20 +37,87 @@ function fakeClaudeDir(): string {
 }
 
 /**
- * Replaces what the fake `claude` answers, and forgets the runs it saw and
- * the turns they took. The sessions it keeps, which `--resume` brings back,
- * stay.
- *
- * The new script reaches only the runs that start after it: a conversation
- * already going on keeps its old turns, counted from the first again. Every
- * Change takes its turns from the one list, so a Change whose conversation
- * starts after this takes the next turn as its summary.
+ * The name of the conversation a Change opened by this request has, as
+ * ADR 0009 names it: its pull request, or else the local branch the request
+ * names (`HEAD` names the checked-out branch), or else its commits. A Change
+ * the Inbox opened from a branch has the branch's conversation, so name the
+ * branch as the request's head. It follows `conversationOf` in
+ * src/changeWorkspace.ts, which a test can't import.
  */
-export function scriptClaude(script: FakeClaudeScript): void {
-  const dir = fakeClaudeDir();
+function conversationName(change: ChangeRequest): string {
+  if (change.pullRequest)
+    return `pull request ${change.pullRequest.repository.toLowerCase()}#${change.pullRequest.number}`;
+  const repository = path.resolve(change.repository);
+  const git = (...args: string[]) =>
+    cp
+      .execFileSync("git", args, {
+        cwd: repository,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      })
+      .trim();
+  let ref = "";
+  try {
+    ref = git("rev-parse", "--symbolic-full-name", change.head);
+  } catch {
+    // Not a name git knows, so the Change is its commits.
+  }
+  if (ref.startsWith("refs/heads/"))
+    return `branch ${ref.slice("refs/heads/".length)} in ${repository}`;
+  const mergeBase = git("merge-base", change.base, change.head);
+  const headSha = git("rev-parse", `${change.head}^{commit}`);
+  return `range ${mergeBase}..${headSha} in ${repository}`;
+}
+
+/**
+ * The fake's state for the Change's conversation, under the name of the
+ * folder Dear Reviewer runs the conversation's `claude` in.
+ */
+function conversationDir(change: ChangeRequest): string {
+  const folder = crypto
+    .createHash("sha256")
+    .update(conversationName(change))
+    .digest("hex")
+    .slice(0, 16);
+  return path.join(fakeClaudeDir(), "conversations", folder);
+}
+
+/**
+ * Scripts what the Assistant answers in the conversation of the Change this
+ * request opens, or opened, and forgets the conversation's runs so far.
+ *
+ * The script's turns answer the conversation's user messages from now on,
+ * in order: for a conversation that hasn't started, the first is its
+ * summary. A conversation already going on gets them from its next message.
+ * Other Changes' conversations keep their own scripts, and a conversation no
+ * test scripted gets a short summary for every turn.
+ */
+export function scriptClaude(
+  change: ChangeRequest,
+  script: FakeClaudeScript
+): void {
+  const dir = conversationDir(change);
   fs.rmSync(path.join(dir, "calls"), { recursive: true, force: true });
   fs.rmSync(path.join(dir, "turns-taken"), { force: true });
-  fs.writeFileSync(path.join(dir, "script.json"), JSON.stringify(script));
+  fs.mkdirSync(dir, { recursive: true });
+  writeAtOnce(path.join(dir, "script.json"), script);
+}
+
+/**
+ * Replaces how the fake `claude` answers `claude auth status`, by default
+ * signed in with a Claude subscription, and forgets the login checks so far.
+ * A test that signs out puts the default back when it ends.
+ */
+export function scriptClaudeLogin(login: FakeClaudeLogin = {}): void {
+  const dir = fakeClaudeDir();
+  fs.rmSync(path.join(dir, "calls"), { recursive: true, force: true });
+  writeAtOnce(path.join(dir, "login.json"), login);
+}
+
+/** Writes the JSON so that a run reading the file never finds it half written. */
+function writeAtOnce(file: string, value: unknown): void {
+  fs.writeFileSync(`${file}.tmp`, JSON.stringify(value));
+  fs.renameSync(`${file}.tmp`, file);
 }
 
 /** Lets a turn held back by `waitFor(name)` go on. */
@@ -58,9 +133,7 @@ export function forgetClaudeSessions(): void {
   });
 }
 
-/** Every run of the fake `claude` since it was last scripted, oldest first. */
-export function callsToClaude(): RecordedClaudeCall[] {
-  const dir = path.join(fakeClaudeDir(), "calls");
+function callsIn(dir: string): RecordedClaudeCall[] {
   if (!fs.existsSync(dir)) return [];
   return fs
     .readdirSync(dir)
@@ -71,9 +144,22 @@ export function callsToClaude(): RecordedClaudeCall[] {
     .map((f) => JSON.parse(fs.readFileSync(path.join(dir, f), "utf8")));
 }
 
-/** The print-mode runs, which carry the Assistant's conversations. */
-export function assistantRuns(): RecordedClaudeCall[] {
-  return callsToClaude().filter((c) => c.args.includes("-p"));
+/**
+ * The runs of the fake `claude` outside any conversation, such as
+ * `claude auth status`, since its login was last scripted, oldest first.
+ */
+export function loginChecks(): RecordedClaudeCall[] {
+  return callsIn(path.join(fakeClaudeDir(), "calls"));
+}
+
+/**
+ * The runs of the Change's conversation, each in print mode, that recorded
+ * anything since the test last scripted it, oldest first. A run already
+ * going on then comes back once it receives a message, with everything it
+ * received.
+ */
+export function assistantRuns(change: ChangeRequest): RecordedClaudeCall[] {
+  return callsIn(path.join(conversationDir(change), "calls"));
 }
 
 /** The value after a flag, such as `--tools`. */

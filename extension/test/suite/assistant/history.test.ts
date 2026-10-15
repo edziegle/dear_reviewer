@@ -42,10 +42,10 @@ describe("The Assistant's git history tools", () => {
   it("starts Dear Reviewer's git server for claude on VS Code's own binary, limited to the Change's repository and history", async () => {
     const base = repo.commits.renamed;
     const { request } = changeOf(base);
-    scriptClaude({});
+    scriptClaude(request, {});
     await openChange(request);
-    await eventually(() => assert.ok(assistantRuns().length > 0));
-    const [run] = assistantRuns();
+    await eventually(() => assert.ok(assistantRuns(request).length > 0));
+    const [run] = assistantRuns(request);
 
     assert.ok(run.args.includes("--strict-mcp-config"));
     const config = JSON.parse(flag(run, "--mcp-config") ?? "{}") as {
@@ -82,7 +82,7 @@ describe("The Assistant's git history tools", () => {
   it("answers the Assistant's git calls from the Change's history, refuses other commits, and shows each call in the panel", async () => {
     const { request, title } = changeOf(repo.commits.initial);
     const [init, ...rest] = replyTurn("util.py changed in rename helper.");
-    scriptClaude({
+    scriptClaude(request, {
       turns: [
         replyTurn("A summary."),
         [
@@ -114,7 +114,8 @@ describe("The Assistant's git history tools", () => {
         { doing: "Reading who last changed", subject: "util.py:2-2" },
       ])
     );
-    const results = () => assistantRuns().flatMap((r) => r.mcpResults ?? []);
+    const results = () =>
+      assistantRuns(request).flatMap((r) => r.mcpResults ?? []);
     await eventually(() => assert.strictEqual(results().length, 3));
     const [log, sideline, blame] = results();
 

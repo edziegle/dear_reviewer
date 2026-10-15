@@ -18,7 +18,9 @@ import { pickUpAfterReload } from "../handoff";
 // Change open and a conversation in its Assistant panel.
 describe("The Assistant after a window reload", () => {
   const { change, title, sessionId } = pickUpAfterReload();
-  scriptClaude({ turns: [replyTurn("You asked what new_helper returns.")] });
+  scriptClaude(change, {
+    turns: [replyTurn("You asked what new_helper returns.")],
+  });
 
   after(() => closeChange(change));
 
@@ -47,7 +49,7 @@ describe("The Assistant after a window reload", () => {
         ],
       })
     );
-    assert.deepStrictEqual(assistantRuns(), [], "no new summary");
+    assert.deepStrictEqual(assistantRuns(change), [], "no new summary");
   });
 
   it("resumes the Claude session, so the Assistant remembers the earlier turns", async () => {
@@ -59,7 +61,7 @@ describe("The Assistant after a window reload", () => {
         "You asked what new_helper returns."
       )
     );
-    const [run] = assistantRuns();
+    const [run] = assistantRuns(change);
     assert.strictEqual(flag(run, "--resume"), sessionId);
     assert.strictEqual(run.sessionId, sessionId);
     assert.ok(

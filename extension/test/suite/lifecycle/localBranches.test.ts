@@ -89,7 +89,7 @@ describe("Local branches that are merged or deleted", () => {
     const request = branchChange(repo, "agent/merged");
     const title = titleOf(repo, work);
     const before = workspaceFolders();
-    scriptClaude({ turns: [replyTurn("A summary.")] });
+    scriptClaude(request, { turns: [replyTurn("A summary.")] });
     const [, head] = await open(request, title);
     const [[first, last]] = await commentingLines(
       path.join(head.path, "pkg", "core.py")
@@ -121,10 +121,10 @@ describe("Local branches that are merged or deleted", () => {
 
     // Main goes back, so the branch has something to review again.
     repo.git("update-ref", "refs/heads/main", repo.commits.restructured);
-    scriptClaude({ turns: [replyTurn("A new summary.")] });
+    scriptClaude(request, { turns: [replyTurn("A new summary.")] });
     const [, again] = await open(request, title);
 
-    const [run] = assistantRuns();
+    const [run] = assistantRuns(request);
     assert.ok(run, "the Assistant ran");
     assert.strictEqual(flag(run, "--resume"), undefined);
     assert.strictEqual((await assistantTake(title))?.text, "A new summary.");
@@ -144,7 +144,7 @@ describe("Local branches that are merged or deleted", () => {
     repo.git("branch", "agent/gone", work);
     const request = branchChange(repo, "agent/gone");
     const title = titleOf(repo, work);
-    scriptClaude({ turns: [replyTurn("A summary.")] });
+    scriptClaude(request, { turns: [replyTurn("A summary.")] });
     await open(request, title);
     await closeChange(request);
 
@@ -152,10 +152,10 @@ describe("Local branches that are merged or deleted", () => {
     await refreshInbox();
 
     repo.git("branch", "agent/gone", work);
-    scriptClaude({ turns: [replyTurn("A new summary.")] });
+    scriptClaude(request, { turns: [replyTurn("A new summary.")] });
     await open(request, title);
 
-    const [run] = assistantRuns();
+    const [run] = assistantRuns(request);
     assert.ok(run, "the Assistant ran");
     assert.strictEqual(flag(run, "--resume"), undefined);
     assert.strictEqual((await assistantTake(title))?.text, "A new summary.");
@@ -176,7 +176,8 @@ describe("Local branches that are merged or deleted", () => {
       base: repo.commits.initial,
       head: "HEAD",
     };
-    scriptClaude({ turns: [replyTurn("A summary.")] });
+    for (const change of [range, main])
+      scriptClaude(change, { turns: [replyTurn("A summary.")] });
     const before = workspaceFolders();
     await open(range, titleOf(repo, work));
     await open(

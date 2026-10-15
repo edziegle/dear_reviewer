@@ -18,14 +18,14 @@ describe("A conversation before a window reload", () => {
   const repo = buildFixtureRepo("reload");
 
   it("leaves a Change open with a conversation in its Assistant panel", async () => {
-    scriptClaude({
-      turns: [replyTurn("A summary."), replyTurn("It returns 2.")],
-    });
     const change = {
       repository: repo.path,
       base: repo.commits.initial,
       head: repo.commits.renamed,
     };
+    scriptClaude(change, {
+      turns: [replyTurn("A summary."), replyTurn("It returns 2.")],
+    });
     const title = `${path.basename(repo.path)} ${short(change.base)}..${short(change.head)}`;
     await openChange(change);
     await showAssistant(change);
@@ -41,7 +41,7 @@ describe("A conversation before a window reload", () => {
         "It returns 2."
       )
     );
-    const [run] = assistantRuns();
+    const [run] = assistantRuns(change);
     leaveForReload({ change, title, sessionId: run.sessionId! });
   });
 });

@@ -73,7 +73,7 @@ describe("The Reading Order", () => {
   const longWhy = "because ".repeat(20);
 
   it("lists the Assistant's steps in the overview, keeping only the Change's files, with its start first and the rest last", async () => {
-    scriptClaude({
+    scriptClaude(request, {
       turns: [
         replyTurn(
           "Renames the helper and restructures pkg. Start with util.py:1, where the rename happens."
@@ -143,7 +143,7 @@ describe("The Reading Order", () => {
         },
       ],
     });
-    const [run] = assistantRuns();
+    const [run] = assistantRuns(request);
     assert.strictEqual(userMessages(run).length, 1, "the summary");
     const [asked, ...more] = readingOrderRequests(run);
     assert.deepStrictEqual(more, [], "then one request for the order");
@@ -160,17 +160,17 @@ describe("The Reading Order", () => {
   });
 
   it("leaves a Change in tree order when the reply holds no usable order, with no error", async () => {
-    scriptClaude({
+    const other = { ...request, head: repo.commits.renamed };
+    scriptClaude(other, {
       turns: [replyTurn("Renames the helper. Start with util.py:1.")],
       readingOrder: replyTurn("I would rather not say."),
     });
-    const other = { ...request, head: repo.commits.renamed };
     const otherTitle = `${path.basename(repo.path)} ${short(repo.commits.initial)}..${short(repo.commits.renamed)}`;
 
     await openChange(other);
 
     await eventually(() => {
-      const [run] = assistantRuns();
+      const [run] = assistantRuns(other);
       assert.strictEqual(run && readingOrderRequests(run).length, 1);
     });
     await eventually(async () =>
@@ -189,7 +189,7 @@ describe("The Reading Order", () => {
   });
 
   it("lists a Change in Change Files by its Reading Order, kept from its conversation, or as a tree", async () => {
-    scriptClaude({
+    scriptClaude(request, {
       turns: [replyTurn("A summary that shouldn't be written.")],
     });
     const cutLabel = `${longLabel.slice(0, 79)}…`;
@@ -213,7 +213,7 @@ describe("The Reading Order", () => {
     await eventually(async () =>
       assert.deepStrictEqual(render(await changeFiles()), inReadingOrder)
     );
-    assert.deepStrictEqual(assistantRuns(), [], "no new turn");
+    assert.deepStrictEqual(assistantRuns(request), [], "no new turn");
 
     await vscode.commands.executeCommand("dearReviewer.sortByTree");
 
@@ -283,7 +283,7 @@ describe("The Reading Order", () => {
     };
     // A branch's overview is named after the branch, whatever its head.
     const overview = "order";
-    scriptClaude({
+    scriptClaude(branch, {
       turns: [replyTurn("Renames the helper. Start with util.py:1.")],
       readingOrder: orderReply({
         steps: [
@@ -324,7 +324,7 @@ describe("The Reading Order", () => {
     repo.git("branch", "-f", "order", later);
     // Main without the branch's commits, or the branch's Change would end as merged.
     repo.git("reset", "-q", "--hard", repo.commits.restructured);
-    scriptClaude({
+    scriptClaude(branch, {
       turns: [replyTurn("Shouldn't be asked.")],
       readingOrder: orderReply({
         steps: [{ label: "Everything", files: [{ path: "since.py" }] }],
@@ -357,7 +357,7 @@ describe("The Reading Order", () => {
         },
       ],
     });
-    assert.deepStrictEqual(assistantRuns(), [], "no new turn on its own");
+    assert.deepStrictEqual(assistantRuns(branch), [], "no new turn on its own");
 
     await clickOverview(overview, "suggestReadingOrder");
 
@@ -385,7 +385,7 @@ describe("The Reading Order", () => {
         },
       ],
     });
-    const [run] = assistantRuns();
+    const [run] = assistantRuns(branch);
     const [prompt] = readingOrderRequests(run);
     assert.ok(prompt.includes(later), `it hears of the new head: ${prompt}`);
 

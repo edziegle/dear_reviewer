@@ -511,7 +511,7 @@ export function activate(context: vscode.ExtensionContext) {
     target: ChangeTarget | vscode.Uri | undefined,
     title: string,
     fits: (change: Change) => boolean = () => true,
-    none = "No Change is open in this window."
+    none = "No Change is in front in this window."
   ): Promise<Change | undefined> {
     if (target instanceof vscode.Uri) {
       const ofFile = whereInChange(target, changes.shownHere())?.change;
@@ -906,7 +906,7 @@ export function activate(context: vscode.ExtensionContext) {
           target,
           "Submit Review",
           (c) => !!c.pullRequest,
-          "No pull request's Change is open in this window. A local Change's Review ends with a Brief."
+          "No pull request's Change is in front in this window. A local Change's Review ends with a Brief."
         );
         if (!change) return;
         if (!change.pullRequest) {
@@ -999,7 +999,7 @@ export function activate(context: vscode.ExtensionContext) {
           target,
           "Write Brief",
           (c) => !c.pullRequest,
-          "No local Change is open in this window. A pull request's Review ends when you submit it."
+          "No local Change is in front in this window. A pull request's Review ends when you submit it."
         );
         if (!change) return;
         if (change.pullRequest) {

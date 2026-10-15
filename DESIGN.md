@@ -136,7 +136,7 @@ Rejected on sight: the GitHub Pull Requests extension's webviews, which are slow
 - Type is the workbench font for prose and the editor font for anything code-shaped.
 - Flat surfaces, 1px hairlines and sticky bars on the editor background.
 - Controls copy VS Code's own: 2px corners, theme button colors, no flourish.
-- Code appears in webviews only as plain quoted text; navigation happens in the editor.
+- Code shows in webviews only as plain quoted text; navigation happens in the editor.
 
 ## Colors
 
@@ -205,7 +205,7 @@ Plain text keeps its line breaks (`pre-wrap`); rendered Markdown flows normally.
 
 ## Elevation & Depth
 
-Flat. There are no shadows anywhere. Depth comes from three things only: 1px `hairline` rules, sticky header and footer bars on `editor-background` that cover content as it scrolls past, and tinted blocks (Quiet Tint, Code Ground, Problem) that set content apart from the ground.
+Flat. Nothing has a shadow. Depth comes from three things only: 1px `hairline` rules, sticky header and footer bars on `editor-background` that cover content as it scrolls past, and tinted blocks (Quiet Tint, Code Ground, Problem) that set content apart from the ground.
 
 ### Named Rules
 
@@ -225,7 +225,7 @@ The feel of every control is quiet and editor-plain. If a control looks custom, 
 
 - **Shape:** nearly square (2px), with a 1px border in `--vscode-button-border`, else `--vscode-contrastBorder`, else transparent. Only high-contrast themes draw it, and there it is the button's only edge.
 - **Primary:** `action-background` on `action-foreground`, 4px 12px padding, inheriting the body font. Used for Send, for a problem's fix, and in the overview for whatever comes next in the Review: the way in while files are unviewed, then the finishing button (see Change Overview).
-- **Hover / Focus:** hover switches to `action-hover` with no transition. Focus shows a 1px `focus` outline; every button and link needs a visible `:focus-visible` state.
+- **Hover / Focus:** hover switches to `action-hover` at once. Focus shows a 1px `focus` outline; every button and link needs a visible `:focus-visible` state.
 - **Disabled:** 50% opacity with the default cursor, such as Send while the Assistant works.
 - **Secondary:** `secondary-background` on `secondary-foreground`, tighter (2px 8px), for the finishing button until every file is viewed, and for Retry beside a problem's fix.
 - **Icon button:** Refresh, a 16px codicon glyph as inline SVG with 4px padding (a 24px target), no fill until hover (`toolbar-hoverBackground`).
@@ -240,7 +240,7 @@ The feel of every control is quiet and editor-plain. If a control looks custom, 
 ### Cards / Containers
 
 - **Timeline row:** avatar, then author in bold, verb and muted date on one line, then the body; a hairline below. No card chrome.
-- **Reviewer message:** the only filled message, in `quiet-tint` with 4px corners and 8px padding, so the Reviewer's words stand out from the Assistant's without either looking like a chat bubble app.
+- **Reviewer message:** the only filled message, in `quiet-tint` with 4px corners and 8px padding, so the Reviewer's words stand out from the Assistant's without either resembling a chat bubble app.
 - **Assistant reply:** plain rendered Markdown on the ground, with no fill, no avatar and no visible name. Every message starts with a visually hidden speaker ("You:", "Assistant:", "Dear Reviewer:") so a screen reader can tell them apart.
 - **Note:** Dear Reviewer's own remarks (new commits arrived, for example) in italic `muted-foreground`.
 - **Problem banner:** the Assistant panel's alone. `problem-background` with a 1px `problem-border` outline, 8px padding, the message in plain words with backticked words in the editor font, and below it the button that helps, with Retry as a secondary beside it when `claude` couldn't start. While `claude` can't run, Send is off and the message box's placeholder says why.
@@ -253,7 +253,7 @@ The feel of every control is quiet and editor-plain. If a control looks custom, 
 
 ### Navigation
 
-Navigation is native: the activity-bar container holds the Inbox, Change Files and Findings tree views, with codicons (`account`, `git-branch`, `git-compare`, `lightbulb`, `error`, and `list-ordered` for a Reading Order's steps) and git decoration colors for file status. The status bar item shows the Dear Reviewer logo and `Assistant ready`. On a warning background it says `Assistant: billed per token`, `Assistant: not signed in` or `Assistant: Claude not found`. A status bar item shows only font glyphs, so the logo is also a one-glyph icon font, built from the activity-bar SVG. Its tooltip, headed Dear Reviewer Assistant, holds the Claude login, its `claude auth status` method and the `claude` executable. An untrusted review window adds a second, quiet item on the left, `$(workspace-untrusted) Navigation off`, with no background colour, which runs Trust the Review Window… to show Workspace Trust there; it hides once the window is trusted. Only the editor's own prompt asks about trust, once, never on every start (ADR 0021). Webviews never build their own navigation; links and `path:line` references go back to the extension, which opens them in the editor or the browser.
+Navigation is native: the activity-bar container holds the Inbox, Change Files and Findings tree views, with codicons (`account`, `git-branch`, `git-compare`, `lightbulb`, `error`, and `list-ordered` for a Reading Order's steps) and git decoration colors for file status. The status bar item shows the Dear Reviewer logo and `Assistant ready`. On a warning background it says `Assistant: billed per token`, `Assistant: not signed in` or `Assistant: Claude not found`. A status bar item shows only font glyphs, so the logo is also a one-glyph icon font, built from the activity-bar SVG. Its tooltip, headed Dear Reviewer Assistant, holds the Claude login, its `claude auth status` method and the `claude` executable. An untrusted review window adds a second, quiet item on the left, `$(workspace-untrusted) Navigation off`, with no background color, which runs Trust the Review Window… to show Workspace Trust there; it hides once the window is trusted. Only the editor's own prompt asks about trust, once, never on every start (ADR 0021). Webviews never build their own navigation; links and `path:line` references go back to the extension, which opens them in the editor or the browser.
 
 Each Change in Change Files carries its finishing actions as inline codicon buttons (`check-all` Submit Review or `note` Write Brief, `history` Show Timeline, `comment-discussion` Show Assistant), with the rest in its context menu, and says in its description whether there are new commits since the Reviewer's last Review, or, while there are none, that Review's verdict: `Approved`, `Changes requested` or `Commented`. Each file of a Change carries `comment-discussion` Ask the Assistant in its title bar, which hands the Assistant the selection, or else the lines on screen, and leaves the question to the Reviewer. The Inbox marks a pull request or branch `opening…` and then `open`. Review keys sit under one chord, `Ctrl+Alt+R`, so they don't take over keys the editor already uses.
 
@@ -263,7 +263,7 @@ The only thing that opens when a Change opens: alone in the main column, with th
 
 - **What is this:** the title (a link to the pull request) and a muted byline, `acme/api #482 · octocat → main`. Until the pull request loads, the title is its name and the byline is empty, so nothing shows twice.
 - **How big, and is it healthy:** `12 files · +340 −58 · checks failed`, with tabular numerals, additions and deletions in the git decoration colors mixed 60% with `foreground` (`color-mix`), which keeps the hue and lifts small text past 4.5:1.
-- **Where am I:** a muted line, `New commits since your Review · 2 pending Comments · 3 of 12 viewed`. While no new commits came since the Reviewer's last Review, the line opens with it in `foreground`: `✓ You approved at 14:32 · 3 Comments published`, `✗ You requested changes at 14:32` or `• You commented at 14:32`. Only the mark takes a hue: `check-passed` for approved, `check-failed` for changes requested, `muted-foreground` for commented. In an untrusted review window it ends `Navigation off: Trust the review window…`, a link that shows Workspace Trust. That says why go to definition does nothing, where the Reviewer is looking; it informs rather than asks, so ADR 0021's one prompt stays the only one.
+- **Your place:** a muted line, `New commits since your Review · 2 pending Comments · 3 of 12 viewed`. While no new commits came since the Reviewer's last Review, the line opens with it in `foreground`: `✓ You approved at 14:32 · 3 Comments published`, `✗ You requested changes at 14:32` or `• You commented at 14:32`. Only the mark takes a hue: `check-passed` for approved, `check-failed` for changes requested, `muted-foreground` for commented. In an untrusted review window it ends `Navigation off: Trust the review window…`, a link that shows Workspace Trust. That says why go to definition does nothing, where the Reviewer is looking; it informs rather than asks, so ADR 0021's one prompt stays the only one.
 - **Will its syntax highlight:** while some changed files have a file extension no installed language covers, a muted line under where the Reviewer stands, `No syntax highlighting for .tofu files. Find an Extension · Don't ask again`. Find an Extension opens the Extensions view with a search for the bare extension, `tofu`; with more than one, each extension is its own link. The Reviewer picks and installs; Dear Reviewer keeps no list of extensions to suggest. Don't ask again drops those extensions for good, in every Change. The line drops what an installed extension or `files.associations` comes to cover. Files without an extension, binary files and plain ones such as `.txt` or `.lock` never count.
 - **The Assistant's take:** a small "Assistant" heading (or "Since your Review at `3f9c2a1`") over one paragraph of rendered Markdown, capped at 72ch. While it is written, a muted italic "Reading the Change…"; when `claude` can't run, a muted line with a link that helps and, when trying again can mend it, Retry. Both sit in one status region that screen readers hear only when its words change. Never a red banner: the overview works without the Assistant.
 - **The Reading Order:** under the take, a small "Reading Order" heading over a numbered list of steps, each a semibold label with its files beneath: the path, a link in the editor font that opens its diff, then its reason, muted. A viewed file has a ✓ in `foreground` and a muted path; hue would claim it passed. While the order is written, a muted italic "Choosing an order to read the files in…"; once new commits make it out of date, a muted line says so with a Suggest again link (ADR 0022). A Change without one shows nothing here.
@@ -286,7 +286,7 @@ The shared reading style for timeline bodies and Assistant replies: tight margin
 
 ### Do:
 
-- **Do** take every color from a `--vscode-*` variable, with a fallback inside `var()` when the theme may not define it, like `var(--vscode-input-border, transparent)`.
+- **Do** take every color from a `--vscode-*` variable, with a fallback inside `var()` when the theme might not define it, as in `var(--vscode-input-border, transparent)`.
 - **Do** reach for native UI first (tree views, comment threads, decorations, quick picks, status bar) and add a webview only when an ADR says why none fits.
 - **Do** put styles both webviews use in `sharedStyles` in `extension/src/markdownPanel.ts`, never a copy in each panel.
 - **Do** give every interactive element a visible `:focus-visible` outline in `focus`, and make links in rendered Markdown reachable with Tab and Enter.

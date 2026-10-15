@@ -364,6 +364,54 @@ export function activate(context: vscode.ExtensionContext) {
     }
   }
 
+  /**
+   * Marks files viewed or not: the Change file a tab shows, from its menu or
+   * title bar, or Change Files elements, from its menu, the ones selected
+   * with it, or else the view's selection.
+   */
+  async function setViewed(
+    viewed: boolean,
+    target?: ChangeFilesNode | vscode.Uri,
+    selected?: unknown
+  ): Promise<void> {
+    if (target instanceof vscode.Uri) {
+      const where = worktreeFile(target);
+      if (!where) return;
+      return changeFiles.setFilesViewed(
+        where.change,
+        [where.file.path],
+        viewed
+      );
+    }
+    await changeFiles.setViewed(
+      Array.isArray(selected)
+        ? (selected as ChangeFilesNode[])
+        : target
+          ? [target]
+          : [...changeFilesTree.selection],
+      viewed
+    );
+  }
+
+  /** The Change file in one of its worktrees, which has a viewed state, unlike the commit side. */
+  function worktreeFile(uri: vscode.Uri): ReturnType<typeof whereInChange> {
+    const where = whereInChange(uri, changes.shownHere());
+    return where?.file.side === "commit" ? undefined : where;
+  }
+
+  /** Closes the tabs that show the file, on its own or as a side of a diff. */
+  async function closeTabsOf(file: vscode.Uri): Promise<void> {
+    const shows = (uri: vscode.Uri) => uri.toString() === file.toString();
+    const tabs = vscode.window.tabGroups.all
+      .flatMap((group) => group.tabs)
+      .filter(({ input }) =>
+        input instanceof vscode.TabInputTextDiff
+          ? shows(input.original) || shows(input.modified)
+          : input instanceof vscode.TabInputText && shows(input.uri)
+      );
+    await vscode.window.tabGroups.close(tabs);
+  }
+
   /** The Change open in this window of the panel or editor the Reviewer is looking at. */
   function activeChange(): Change | undefined {
     const panel = assistants.activeChangeId() ?? timelines.activeChangeId();
@@ -409,18 +457,27 @@ export function activate(context: vscode.ExtensionContext) {
     );
   }
 
-  /** Moves to the next or previous file not yet viewed, first marking the one shown viewed if asked. */
+  /**
+   * Moves to the next or previous file not yet viewed, first marking the one
+   * shown viewed if asked: the one given, by its title bar, or else the
+   * active one.
+   */
   async function stepUnviewed(
     direction: 1 | -1,
     markShown: boolean,
-    target?: ChangeTarget
+    target?: ChangeTarget,
+    shown?: vscode.Uri
   ): Promise<void> {
     // Given a Change, such as by its overview, step through that one.
     const given = target && (await changeFor(target, "Next Unviewed File"));
     if (target && !given) return;
     // The overview's button leaves the overview in front, so step from its
     // code column rather than the focused group.
-    const where = given ? await shownIn(given) : activeFile();
+    const where = given
+      ? await shownIn(given)
+      : shown
+        ? whereInChange(shown, changes.shownHere())
+        : activeFile();
     const here =
       where?.file.side === "commit" || (given && where?.change.id !== given.id)
         ? undefined
@@ -882,8 +939,15 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("dearReviewer.previousUnviewedFile", () =>
       stepUnviewed(-1, false)
     ),
-    vscode.commands.registerCommand("dearReviewer.markViewedAndNext", () =>
-      stepUnviewed(1, true)
+    vscode.commands.registerCommand(
+      "dearReviewer.markViewedAndNext",
+      (file?: unknown) =>
+        stepUnviewed(
+          1,
+          true,
+          undefined,
+          file instanceof vscode.Uri ? file : undefined
+        )
     ),
     vscode.commands.registerCommand(
       "dearReviewer.revealFinding",
@@ -1002,19 +1066,21 @@ export function activate(context: vscode.ExtensionContext) {
     ),
     vscode.commands.registerCommand(
       "dearReviewer.markViewed",
-      (node?: ChangeFilesNode, selected?: ChangeFilesNode[]) =>
-        changeFiles.setViewed(
-          selected ?? (node ? [node] : [...changeFilesTree.selection]),
-          true
-        )
+      (target?: ChangeFilesNode | vscode.Uri, selected?: unknown) =>
+        setViewed(true, target, selected)
+    ),
+    vscode.commands.registerCommand(
+      "dearReviewer.markViewedAndClose",
+      async (file?: vscode.Uri) => {
+        if (!file || !worktreeFile(file)) return;
+        await setViewed(true, file);
+        await closeTabsOf(file);
+      }
     ),
     vscode.commands.registerCommand(
       "dearReviewer.unmarkViewed",
-      (node?: ChangeFilesNode, selected?: ChangeFilesNode[]) =>
-        changeFiles.setViewed(
-          selected ?? (node ? [node] : [...changeFilesTree.selection]),
-          false
-        )
+      (target?: ChangeFilesNode | vscode.Uri, selected?: unknown) =>
+        setViewed(false, target, selected)
     ),
     vscode.commands.registerCommand("dearReviewer.refreshChangeFiles", () =>
       changeFiles.refresh()

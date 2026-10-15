@@ -114,6 +114,8 @@ export class ChangeFilesView
   private readonly files = new Map<string, Promise<ChangedFile[]>>();
   /** The commit each Change's last Review covered, until a Review ends. */
   private readonly reviewed = new Map<string, Promise<string | undefined>>();
+  private viewedPathsShown: readonly string[] = [];
+  private viewedPathsLoads = 0;
 
   constructor(
     private readonly openChanges: () => Change[],
@@ -136,6 +138,16 @@ export class ChangeFilesView
 
   refresh(): void {
     this.changed.fire();
+    void this.showViewedPaths();
+  }
+
+  /**
+   * Both worktree files of every viewed file of the Changes open in this
+   * window, as `resourcePath` gives them: the `dearReviewer.viewedFiles`
+   * context key, which picks a file's title bar buttons.
+   */
+  get viewedPaths(): readonly string[] {
+    return this.viewedPathsShown;
   }
 
   /** Shows the Change's state since its last Review afresh, such as after a Review ended. */
@@ -326,9 +338,7 @@ export class ChangeFilesView
 
   async getChildren(node?: ChangeFilesNode): Promise<ChangeFilesNode[]> {
     if (node) return "children" in node ? node.children : [];
-    const open = this.openChanges().filter(
-      (change) => hasFolder(change.baseDir) && hasFolder(change.headDir)
-    );
+    const open = this.openHere();
     void setContext(
       "dearReviewer.hasReadingOrder",
       open.some((change) => this.readingOrderOf(change)?.order)
@@ -517,6 +527,31 @@ export class ChangeFilesView
       this.reviewed.set(change.id, reviewed);
     }
     return reviewed;
+  }
+
+  private openHere(): Change[] {
+    return this.openChanges().filter(
+      (change) => hasFolder(change.baseDir) && hasFolder(change.headDir)
+    );
+  }
+
+  private async showViewedPaths(): Promise<void> {
+    const load = ++this.viewedPathsLoads;
+    const paths = await Promise.all(
+      this.openHere().map(async (change) => {
+        // The view shows why a Change's viewed state didn't load.
+        const viewed = await this.viewedFiles
+          .viewed(change)
+          .catch((): ReadonlySet<string> => new Set());
+        return [...viewed].flatMap((file) =>
+          [change.baseDir, change.headDir].map((dir) => path.join(dir, file))
+        );
+      })
+    );
+    // A later refresh has newer state.
+    if (load !== this.viewedPathsLoads) return;
+    this.viewedPathsShown = paths.flat();
+    await setContext("dearReviewer.viewedFiles", this.viewedPathsShown);
   }
 
   private filesOf(change: Change): Promise<ChangedFile[]> {

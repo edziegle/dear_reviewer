@@ -107,9 +107,15 @@
         "category": "Dear Reviewer"
       },
       {
+        "command": "dearReviewer.markViewedAndClose",
+        "title": "Mark Viewed and Close",
+        "category": "Dear Reviewer"
+      },
+      {
         "command": "dearReviewer.unmarkViewed",
         "title": "Unmark Viewed",
-        "category": "Dear Reviewer"
+        "category": "Dear Reviewer",
+        "icon": "$(circle-large-outline)"
       },
       {
         "command": "dearReviewer.refreshChangeFiles",
@@ -159,7 +165,8 @@
       {
         "command": "dearReviewer.markViewedAndNext",
         "title": "Mark Viewed and Open Next",
-        "category": "Dear Reviewer"
+        "category": "Dear Reviewer",
+        "icon": "$(check)"
       },
       {
         "command": "dearReviewer.showAssistant",
@@ -431,6 +438,10 @@
           "when": "false"
         },
         {
+          "command": "dearReviewer.markViewedAndClose",
+          "when": "false"
+        },
+        {
           "command": "dearReviewer.unmarkViewed",
           "when": "false"
         },
@@ -540,6 +551,33 @@
           "command": "dearReviewer.copyBrief",
           "when": "resourcePath =~ /edziegle\\.dear-reviewer\\/briefs\\//",
           "group": "navigation"
+        },
+        {
+          "command": "dearReviewer.markViewedAndNext",
+          "when": "resourceScheme == file && resourcePath =~ /edziegle\\.dear-reviewer\\/changes\\// && resourcePath not in dearReviewer.viewedFiles",
+          "group": "navigation"
+        },
+        {
+          "command": "dearReviewer.unmarkViewed",
+          "when": "resourceScheme == file && resourcePath =~ /edziegle\\.dear-reviewer\\/changes\\// && resourcePath in dearReviewer.viewedFiles",
+          "group": "navigation"
+        }
+      ],
+      "editor/title/context": [
+        {
+          "command": "dearReviewer.markViewed",
+          "when": "resourceScheme == file && resourcePath =~ /edziegle\\.dear-reviewer\\/changes\\// && resourcePath not in dearReviewer.viewedFiles",
+          "group": "4_viewed@1"
+        },
+        {
+          "command": "dearReviewer.markViewedAndClose",
+          "when": "resourceScheme == file && resourcePath =~ /edziegle\\.dear-reviewer\\/changes\\// && resourcePath not in dearReviewer.viewedFiles",
+          "group": "4_viewed@2"
+        },
+        {
+          "command": "dearReviewer.unmarkViewed",
+          "when": "resourceScheme == file && resourcePath =~ /edziegle\\.dear-reviewer\\/changes\\// && resourcePath in dearReviewer.viewedFiles",
+          "group": "4_viewed@3"
         }
       ],
       "editor/context": [

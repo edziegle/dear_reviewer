@@ -9,11 +9,13 @@ import {
   filesIn,
   hideViewedFiles,
   markViewed,
+  onTab,
   render,
   review,
   select,
   showViewedFiles,
   unmarkViewed,
+  viewedFilesKey,
 } from "../changeFiles";
 import { buildFixtureRepo } from "../fixtures";
 import {
@@ -254,6 +256,126 @@ describe("The Change files view", () => {
     await shows("main.py");
 
     await unmarkViewed(entryAt(await changeFiles(), title, "pkg", "legacy.py"));
+  });
+
+  it("lists both sides of every viewed file for the title bar's buttons, as files are marked and unmarked", async () => {
+    const sides = (file: string) => [
+      path.join(base, file),
+      path.join(head, file),
+    ];
+    await markViewed(entryAt(await changeFiles(), title, "main.py"));
+    await eventually(async () =>
+      assert.deepStrictEqual(
+        [...(await viewedFilesKey())].sort(),
+        [
+          ...sides("main.py"),
+          ...sides("pkg/core.py"),
+          ...sides("pkg/sub/new.py"),
+        ].sort()
+      )
+    );
+
+    await unmarkViewed(entryAt(await changeFiles(), title, "main.py"));
+    await eventually(async () => {
+      const key = await viewedFilesKey();
+      for (const side of sides("main.py")) assert.ok(!key.includes(side));
+      assert.ok(key.includes(path.join(head, "pkg/core.py")));
+    });
+  });
+
+  it("offers the title bar's buttons on a Change's worktree files only, by their viewed state", () => {
+    const menus = vscode.extensions.getExtension("edziegle.dear-reviewer")!
+      .packageJSON.contributes.menus as Record<
+      string,
+      { command: string; when?: string; group?: string }[]
+    >;
+    const onChangeFile =
+      "resourceScheme == file && resourcePath =~ /edziegle\\.dear-reviewer\\/changes\\//";
+    const titleBar = menus["editor/title"].filter((m) =>
+      m.when?.includes("dearReviewer.viewedFiles")
+    );
+    assert.deepStrictEqual(
+      titleBar.map((m) => [m.command, m.when, m.group]),
+      [
+        [
+          "dearReviewer.markViewedAndNext",
+          `${onChangeFile} && resourcePath not in dearReviewer.viewedFiles`,
+          "navigation",
+        ],
+        [
+          "dearReviewer.unmarkViewed",
+          `${onChangeFile} && resourcePath in dearReviewer.viewedFiles`,
+          "navigation",
+        ],
+      ]
+    );
+  });
+
+  it("marks the file of a tab from its menu, not the active one", async () => {
+    await select(entryAt(await changeFiles(), title, "main.py"));
+    await eventually(() =>
+      assert.strictEqual(
+        activeDiff().modified.fsPath,
+        path.join(head, "main.py")
+      )
+    );
+    await select(entryAt(await changeFiles(), title, "util.py"));
+    await eventually(() =>
+      assert.strictEqual(
+        activeDiff().modified.fsPath,
+        path.join(head, "util.py")
+      )
+    );
+
+    await onTab("markViewed", vscode.Uri.file(path.join(head, "main.py")));
+
+    let tree = await changeFiles();
+    assert.strictEqual(entryAt(tree, title, "main.py").viewed, true);
+    assert.strictEqual(entryAt(tree, title, "util.py").viewed, false);
+
+    await onTab("unmarkViewed", vscode.Uri.file(path.join(head, "main.py")));
+    tree = await changeFiles();
+    assert.strictEqual(entryAt(tree, title, "main.py").viewed, false);
+  });
+
+  it("marks a deleted file viewed from its tab's menu and closes the tab", async () => {
+    const file = path.join(base, "obsolete.py");
+    await select(entryAt(await changeFiles(), title, "obsolete.py"));
+    await eventually(() => assert.strictEqual(activeText().fsPath, file));
+
+    await onTab("markViewedAndClose", vscode.Uri.file(file));
+
+    assert.strictEqual(
+      entryAt(await changeFiles(), title, "obsolete.py").viewed,
+      true
+    );
+    await eventually(() =>
+      assert.ok(
+        !vscode.window.tabGroups.all
+          .flatMap((g) => g.tabs)
+          .some((tab) => filesIn(tab).includes(file)),
+        "the tab is still open"
+      )
+    );
+    await unmarkViewed(entryAt(await changeFiles(), title, "obsolete.py"));
+  });
+
+  it("unmarks the active file from the title bar and keeps it open", async () => {
+    const file = path.join(head, "util.py");
+    await select(entryAt(await changeFiles(), title, "util.py"));
+    await eventually(() =>
+      assert.strictEqual(activeDiff().modified.fsPath, file)
+    );
+    await markViewed(entryAt(await changeFiles(), title, "util.py"));
+
+    // The title bar passes the diff's resource: its modified side.
+    await onTab("unmarkViewed", activeDiff().modified);
+
+    assert.strictEqual(
+      entryAt(await changeFiles(), title, "util.py").viewed,
+      false
+    );
+    assert.strictEqual(activeDiff().modified.fsPath, file);
   });
 
   it("hides viewed files, and directories left empty, until they are shown again", async () => {

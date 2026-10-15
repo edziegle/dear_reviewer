@@ -4,7 +4,9 @@
 import * as vscode from "vscode";
 
 type ChangeFilesView = vscode.TreeDataProvider<unknown> &
-  vscode.FileDecorationProvider;
+  vscode.FileDecorationProvider & {
+    readonly viewedPaths: readonly string[];
+  };
 
 export interface FileEntry {
   label: string;
@@ -115,6 +117,24 @@ export function unmarkViewed(...entries: FileEntry[]): Thenable<unknown> {
     nodes[0],
     nodes
   );
+}
+
+/**
+ * Runs a command of a Change file's tab menu, or of its title bar, as VS Code
+ * does: on the file the tab shows.
+ */
+export function onTab(
+  command: "markViewed" | "markViewedAndClose" | "unmarkViewed",
+  file: vscode.Uri
+): Thenable<unknown> {
+  return vscode.commands.executeCommand(`dearReviewer.${command}`, file, {
+    groupId: vscode.window.tabGroups.activeTabGroup.viewColumn,
+  });
+}
+
+/** The files the `dearReviewer.viewedFiles` context key lists, as `resourcePath` gives them. */
+export async function viewedFilesKey(): Promise<readonly string[]> {
+  return (await changeFilesView()).viewedPaths;
 }
 
 /** Runs a review keybinding's command, such as `nextUnviewedFile`. */

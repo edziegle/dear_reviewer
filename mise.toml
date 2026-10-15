@@ -50,3 +50,9 @@ run = [
   'codium --install-extension "{{config_root}}/extension/dist/dear-reviewer.vsix" --force',
   "codium",
 ]
+
+[tasks.upload-vsix]
+description = "Attach the packaged .vsix to a GitHub Release"
+dir = "extension"
+usage = 'arg "<tag>" help="The release tag, like v0.1.0"'
+run = 'gh release upload "$usage_tag" dist/dear-reviewer.vsix --clobber'

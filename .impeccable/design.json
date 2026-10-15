@@ -136,12 +136,19 @@
         "canonical": "var(--vscode-testing-iconQueued)",
         "previewValue": "#cca700"
       },
+      "assistant": {
+        "role": "tertiary",
+        "displayName": "Assistant",
+        "canonical": "var(--vscode-dearReviewer-assistantForeground)",
+        "previewValue": "#b180d7",
+        "note": "The extension's one contributed color, dearReviewer.assistantForeground, defaulting to charts.purple. The rule and cat of the Assistant's Hand, and its Findings (ADR 0031)."
+      },
       "finding": {
         "role": "tertiary",
         "displayName": "Finding",
-        "canonical": "var(--vscode-editorWarning-foreground)",
-        "previewValue": "#cca700",
-        "note": "Gutter icons can't take a theme color: extension/media/finding.svg, finding-start.svg and finding-bar.svg (#cca700, dark) and finding-light.svg, finding-start-light.svg and finding-bar-light.svg (#bf8803, light) carry editorWarning.foreground's defaults."
+        "canonical": "var(--vscode-dearReviewer-assistantForeground)",
+        "previewValue": "#b180d7",
+        "note": "Gutter icons can't take a theme color: extension/media/finding.svg, finding-start.svg and finding-bar.svg (#b180d7, dark) and finding-light.svg, finding-start-light.svg and finding-bar-light.svg (#652d90, light) carry charts.purple's defaults."
       },
       "problem-background": {
         "role": "tertiary",
@@ -224,8 +231,8 @@
       "name": "Selection Chip",
       "kind": "chip",
       "refersTo": "chip-selection",
-      "description": "A code selection waiting to go with the Reviewer's next message; the × removes it.",
-      "html": "<span class=\"ds-chip\">src/inbox.ts · head · lines 52–60<button type=\"button\" title=\"Don't send this selection\">×</button></span>",
+      "description": "A code selection waiting to go with the Reviewer's next message; the \u00d7 removes it.",
+      "html": "<span class=\"ds-chip\">src/inbox.ts \u00b7 head \u00b7 lines 52\u201360<button type=\"button\" title=\"Don't send this selection\">\u00d7</button></span>",
       "css": ".ds-chip { font-family: var(--vscode-editor-font-family, ui-monospace, monospace); font-size: 0.85em; padding: 1px 6px; border-radius: 3px; background: var(--vscode-badge-background, #616161); color: var(--vscode-badge-foreground, #f8f8f8); white-space: nowrap; } .ds-chip button { background: none; border: none; color: inherit; cursor: pointer; padding: 0 0 0 4px; font: inherit; } .ds-chip button:focus-visible { outline: 1px solid var(--vscode-focusBorder, #0078d4); }"
     },
     {
@@ -263,9 +270,9 @@
   ],
   "narrative": {
     "northStar": "The Margin Note",
-    "overview": "The Change's code is the page, and the code lives only in the editor. Dear Reviewer writes in the margin beside it: the timeline, the Assistant's replies and the Findings list are notes about the code, never a second copy of it (ADR 0012). A margin note is in the reader's own hand and the book's own ink. Every surface takes its color, type and controls from the active VS Code theme, and must look right in light, dark and high-contrast themes without a single theme-specific rule.\n\nThe system has almost nothing of its own on purpose. Native UI comes first: tree views, comment threads, gutter decorations, codicons, quick picks and the status bar. The three webviews, each Change's overview, Home and the Assistant panel, exist only where no native view fits, and they behave like editor panels: compact, text-led, flat, divided by hairlines, readable for a whole working day. Density is the editor's density. A Reviewer who glances from the diff to the margin should notice the content, not the change of world.\n\nRejected on sight: the GitHub Pull Requests extension's webviews, which are slow, custom-styled review pages that look wrong next to VSCodium, and branded AI chat panels with gradients, glows, sparkle motifs or a face for the bot. The Assistant is a plain panel of prose, not a character.",
+    "overview": "The Change's code is the page, and the code lives only in the editor. Dear Reviewer writes in the margin beside it: the timeline, the Assistant's replies and the Findings list are notes about the code, never a second copy of it (ADR 0012). A margin note is in the reader's own hand and the book's own ink. Every surface takes its color, type and controls from the active VS Code theme, and must look right in light, dark and high-contrast themes without a single theme-specific rule.\n\nThe system has almost nothing of its own on purpose. Native UI comes first: tree views, comment threads, gutter decorations, codicons, quick picks and the status bar. The three webviews, each Change's overview, Home and the Assistant panel, exist only where no native view fits, and they behave like editor panels: compact, text-led, flat, divided by hairlines, readable for a whole working day. Density is the editor's density. A Reviewer who glances from the diff to the margin should notice the content, not the change of world.\n\nRejected on sight: the GitHub Pull Requests extension's webviews, which are slow, custom-styled review pages that look wrong next to VSCodium, and branded AI chat panels with gradients, glows, sparkle motifs or a face for the bot. The Assistant is not a character, but it writes in a hand of its own: a rule down the margin of what it says, headed by the reading cat and its name, in the one color the extension adds (ADR 0031).",
     "keyCharacteristics": [
-      "Every color is a `--vscode-*` theme variable; the extension defines no palette.",
+      "Every color is a `--vscode-*` theme variable; the extension adds one, the Assistant's, which a theme can set.",
       "Type is the workbench font for prose and the editor font for anything code-shaped.",
       "Flat surfaces, 1px hairlines and sticky bars on the editor background.",
       "Controls copy VS Code's own: 2px corners, theme button colors, no flourish.",
@@ -279,7 +286,7 @@
       },
       {
         "name": "The Semantic Hue Rule",
-        "body": "Hue means state, never decoration: green for passed, red for failed or a problem, the warning color for Findings and for a Claude login billed per token. Nothing is colored only to look nice.",
+        "body": "Hue means state, never decoration: green for passed, red for failed or a problem, the Assistant's color for what the Assistant says, Findings included, and the warning color for a Claude login billed per token. Nothing is colored only to look nice.",
         "section": "colors"
       },
       {
@@ -306,6 +313,11 @@
         "name": "The Breathing Room Rule",
         "body": "Opening a Change shows one thing. Nothing opens beside the overview, below it or behind it until the Reviewer asks.",
         "section": "layout"
+      },
+      {
+        "name": "The Assistant's Hand Rule",
+        "body": "Wherever the Assistant speaks in a webview, its words sit behind a 2px rule in the Assistant's color, headed by the reading cat in that color and \"Assistant\" in `foreground`, at label size and semibold. The hand has no fill, so the Reviewer's filled messages stay the main flow. Nothing else uses the rule or the color, so a Reviewer can tell the Assistant's words from the Reviewer's own, from GitHub's and from Dear Reviewer's at a glance. In the editor, the Finding's gutter bar is the same rule.",
+        "section": "components"
       }
     ],
     "dos": [
@@ -322,7 +334,7 @@
       "**Don't** show the Change's code as code in a webview: no files, diffs, hunks, line numbers or syntax highlighting (ADR 0012).",
       "**Don't** write a literal color, except in an editor-drawn image that can't take a theme color, and then only the theme color's default values.",
       "**Don't** use shadows, gradients, blur or glow.",
-      "**Don't** brand the Assistant: no avatar, mascot, gradient, sparkle motif or accent color for the bot in its panel. The status bar item, with its stock `sparkle` codicon and the Claude login, is the only mark it gets.",
+      "**Don't** brand the Assistant beyond its Hand: no avatar, mascot, face, fill, gradient, glow or sparkle motif. Its marks are the reading cat, its name, its rule and its color, and nothing else.",
       "**Don't** build custom-styled review pages in the manner of the GitHub Pull Requests extension's webviews.",
       "**Don't** load web fonts or set absolute font sizes."
     ]

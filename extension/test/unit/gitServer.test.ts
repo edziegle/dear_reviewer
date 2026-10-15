@@ -636,23 +636,26 @@ describe("The git tools on a repository", function () {
       "..",
       `${path.basename(repo.dir)}-slow-git`
     );
-    // The slow git's process id, which `exec` keeps for the sleep.
+    // The slow git's process id, which `exec` keeps for the sleep. It
+    // sleeps far past the suite's timeout, so a run that is waited for
+    // rather than killed fails the test.
     const pidFile = `${slow}.pid`;
     fs.writeFileSync(
       slow,
-      `#!/bin/sh\ncase " $* " in *" log "*) echo $$ > '${pidFile}'; exec sleep 30;; esac\nexec git "$@"\n`,
+      `#!/bin/sh\ncase " $* " in *" log "*) echo $$ > '${pidFile}'; exec sleep 600;; esac\nexec git "$@"\n`,
       { mode: 0o755 }
     );
     try {
       const result = await new GitHistory(
         history,
-        { maxChars: 20_000, timeoutMs: 300 },
+        // Long enough for the shell to write its process id first.
+        { maxChars: 20_000, timeoutMs: 2_000 },
         slow
       ).call("log", {});
       assert.strictEqual(result.isError, true);
       assert.match(
         result.text,
-        /git took longer than 0\.3 seconds, so it was stopped/
+        /git took longer than 2 seconds, so it was stopped/
       );
       const pid = Number(fs.readFileSync(pidFile, "utf8"));
       assert.throws(

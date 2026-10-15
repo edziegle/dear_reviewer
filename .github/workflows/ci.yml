@@ -74,10 +74,31 @@ jobs:
           FROM: ${{ github.event.pull_request.base.sha || github.event.before }}
           TO: ${{ github.event.pull_request.head.sha || github.sha }}
 
-  test:
+  # Pure logic under plain Node: no VSCodium, so it reports in a minute.
+  test-unit:
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json', 'extension/package-lock.json') }}
+          restore-keys: npm-${{ runner.os }}-
+      - uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
+        with:
+          install_args: node
+      - run: mise run deps
+      - run: mise run test-unit
+
+  test-integration:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    # Pull requests test on Linux, whose runners start at once; pushes to main,
+    # and so every release, on macOS, where the Reviewer runs Dear Reviewer
+    # (docs/adr/0029-ci-tests-on-linux.md).
+    runs-on: ${{ github.event_name == 'push' && 'macos-latest' || 'ubuntu-latest' }}
     timeout-minutes: 30
     # Only the tests are worth cancelling: a cancelled commitlint run would
     # leave its push's commits unlinted.
@@ -102,7 +123,11 @@ jobs:
           path: extension/.vscode-test/extensions
           key: vscode-test-extensions-${{ runner.os }}-${{ steps.week.outputs.week }}
       - run: mise run deps
-      - run: mise run test
+      # Ubuntu's AppArmor stops Electron's sandbox from making namespaces.
+      - if: runner.os == 'Linux'
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      # Linux runners have no display; xvfb-run gives VSCodium one.
+      - run: ${{ runner.os == 'Linux' && 'xvfb-run -a ' || '' }}mise run test-integration
       # A timeout counts as cancelled, not failed, and a hung run is the one
       # whose logs matter most.
       - if: failure() || cancelled()

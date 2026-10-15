@@ -2,7 +2,7 @@
 // mise run test-unit runPlan
 
 import * as assert from "assert";
-import { planLaunches, testWindowPids } from "./runPlan";
+import { codiumInstall, planLaunches, testWindowPids } from "./runPlan";
 
 const phases = [
   "inbox",
@@ -103,5 +103,40 @@ describe("Which processes belong to a run's test windows", () => {
       testWindowPids(ps, "/tmp/dr-abc/user-data"),
       [101, 102]
     );
+  });
+});
+
+describe("Where the test run finds VSCodium", () => {
+  it("opens the app mise unpacked on macOS", () => {
+    assert.deepStrictEqual(codiumInstall("darwin", "/mise/vscodium"), {
+      app: "/mise/vscodium/VSCodium.app",
+      executable: "/mise/vscodium/VSCodium.app/Contents/MacOS/VSCodium",
+      cli: "/mise/vscodium/VSCodium.app/Contents/Resources/app/bin/codium",
+    });
+  });
+
+  it("falls back to the one in /Applications on macOS", () => {
+    assert.strictEqual(
+      codiumInstall("darwin").app,
+      "/Applications/VSCodium.app"
+    );
+  });
+
+  it("runs the binary mise unpacked on Linux, with no app to open", () => {
+    assert.deepStrictEqual(codiumInstall("linux", "/mise/vscodium"), {
+      executable: "/mise/vscodium/codium",
+      cli: "/mise/vscodium/bin/codium",
+    });
+  });
+
+  it("falls back to the package's install on Linux", () => {
+    assert.strictEqual(
+      codiumInstall("linux").executable,
+      "/usr/share/codium/codium"
+    );
+  });
+
+  it("refuses other platforms", () => {
+    assert.throws(() => codiumInstall("win32"), /win32/);
   });
 });

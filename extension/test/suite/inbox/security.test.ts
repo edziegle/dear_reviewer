@@ -55,8 +55,12 @@ describe("Where the GitHub token goes", () => {
       })
     );
     try {
-      await eventually(() =>
-        assert.deepStrictEqual(config().get("repositories"), ["acme/web"])
+      // On Linux, VSCodium can take more than 10 seconds to see a new
+      // .vscode folder.
+      await eventually(
+        () =>
+          assert.deepStrictEqual(config().get("repositories"), ["acme/web"]),
+        30_000
       );
       await refreshInbox();
 

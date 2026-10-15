@@ -1,3 +1,5 @@
+import * as path from "path";
+
 export interface Selection {
   suites?: string[];
   /** Test files as `<phase>/<name>`, like `review/afterReload/pendingReview`. */
@@ -69,4 +71,41 @@ export function testWindowPids(ps: string, userDataDir: string): number[] {
       pids.push(Number(pid));
   }
   return pids;
+}
+
+export interface CodiumInstall {
+  /** The app `open -a` launches on macOS; absent elsewhere. */
+  app?: string;
+  /** The binary whose processes are the test windows. */
+  executable: string;
+  /** The command line tool that installs extensions. */
+  cli: string;
+}
+
+/**
+ * Where a VSCodium install keeps what a test run needs. `dir` is the folder
+ * mise unpacked VSCodium into; without it, the install a package puts in place.
+ */
+export function codiumInstall(
+  platform: NodeJS.Platform,
+  dir?: string
+): CodiumInstall {
+  if (platform === "darwin") {
+    const app = dir
+      ? path.join(dir, "VSCodium.app")
+      : "/Applications/VSCodium.app";
+    return {
+      app,
+      executable: path.join(app, "Contents", "MacOS", "VSCodium"),
+      cli: path.join(app, "Contents", "Resources", "app", "bin", "codium"),
+    };
+  }
+  if (platform === "linux") {
+    const root = dir ?? "/usr/share/codium";
+    return {
+      executable: path.join(root, "codium"),
+      cli: path.join(root, "bin", "codium"),
+    };
+  }
+  throw new Error(`The tests run on macOS and Linux, not ${platform}`);
 }

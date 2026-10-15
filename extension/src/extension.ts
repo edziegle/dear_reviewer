@@ -279,7 +279,7 @@ export function activate(context: vscode.ExtensionContext) {
       )?.repository,
     async (change) => {
       await letGo(change);
-      showOpenChanges();
+      showOpenChangesAfterClosing();
     }
   );
 
@@ -290,6 +290,7 @@ export function activate(context: vscode.ExtensionContext) {
    * other Change's editors, overview or Assistant chat.
    */
   function showChange(change: Change): Promise<void> {
+    shownLast = change.id;
     // A failed showing doesn't hold up the next.
     showingChange = showingChange
       .catch(() => undefined)
@@ -304,6 +305,8 @@ export function activate(context: vscode.ExtensionContext) {
       });
     return showingChange;
   }
+  /** The id of the Change shown last, as a review starts. */
+  let shownLast: string | undefined;
   /** Settles once the Change being shown is in front, so a diff can open after it. */
   let showingChange = Promise.resolve();
 
@@ -382,6 +385,16 @@ export function activate(context: vscode.ExtensionContext) {
     findings.refresh();
     inbox.redraw();
     void setContext("dearReviewer.hasOpenChange", !!changes.inFront());
+  }
+
+  /**
+   * Shows which Changes are open after one closed, and, if the Change in
+   * front closed, shows the one now in front the way a review starts.
+   */
+  function showOpenChangesAfterClosing(): void {
+    showOpenChanges();
+    const front = changes.inFront();
+    if (front && front.id !== shownLast) void showChange(front);
   }
 
   /**
@@ -806,7 +819,7 @@ export function activate(context: vscode.ExtensionContext) {
         }
         if (!request) return;
         await letGo(await changes.close(request));
-        showOpenChanges();
+        showOpenChangesAfterClosing();
       }
     ),
     // A Change opens with its overview alone; the Assistant starts behind

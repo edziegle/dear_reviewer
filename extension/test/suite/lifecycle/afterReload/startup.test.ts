@@ -49,9 +49,12 @@ describe("Changes that ended while the window was closed", () => {
     await setToken(viewer.token);
 
     await eventually(() => assert.deepStrictEqual(workspaceFolders(), before));
-    assert.deepStrictEqual(
-      worktreesOf(merged.change.repository).map((w) => w.path),
-      [merged.change.repository]
+    // The Change's folders leave the window before git's records are pruned.
+    await eventually(() =>
+      assert.deepStrictEqual(
+        worktreesOf(merged.change.repository).map((w) => w.path),
+        [merged.change.repository]
+      )
     );
     for (const folder of merged.folders)
       assert.ok(!fs.existsSync(folder), `${folder} was deleted`);

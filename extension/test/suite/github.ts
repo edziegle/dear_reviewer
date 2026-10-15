@@ -99,6 +99,10 @@ export interface InboxEntry {
   description?: string;
   /** A file path for an image icon, or `$(id)` for a theme icon. */
   icon?: string;
+  /** A theme icon's colour, by its theme colour id. */
+  iconColor?: string;
+  /** The tooltip's text, Markdown as written. */
+  tooltip?: string;
   /** The tree element, for passing to the view's commands. */
   node?: unknown;
   /** What clicking the entry runs. */
@@ -199,7 +203,13 @@ function entryOf(item: vscode.TreeItem): InboxEntry {
   const icon = item.iconPath;
   if (item.command) entry.command = item.command;
   if (icon instanceof vscode.Uri) entry.icon = icon.fsPath;
-  else if (icon instanceof vscode.ThemeIcon) entry.icon = `$(${icon.id})`;
+  else if (icon instanceof vscode.ThemeIcon) {
+    entry.icon = `$(${icon.id})`;
+    if (icon.color) entry.iconColor = icon.color.id;
+  }
+  const tooltip = item.tooltip;
+  if (typeof tooltip === "string") entry.tooltip = tooltip;
+  else if (tooltip) entry.tooltip = tooltip.value;
   return entry;
 }
 

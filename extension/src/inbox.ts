@@ -12,6 +12,11 @@ import {
   SignInRejectedError,
 } from "./github/client";
 import type { Change } from "./changeWorkspace";
+import {
+  authoredStateLook,
+  authoredStates,
+  noStateIcon,
+} from "./authoredStates";
 import { setContext } from "./context";
 import { conversationName } from "./conversationName";
 import { branchesAhead, LocalBranch } from "./localBranches";
@@ -23,7 +28,12 @@ export type { LocalClone } from "./repositories";
 export type InboxNode =
   | { kind: "group"; label: string; children: InboxNode[]; count: number }
   | { kind: "problem"; message: string; action?: vscode.Command }
-  | { kind: "pullRequest"; pullRequest: PullRequestSummary }
+  | {
+      kind: "pullRequest";
+      pullRequest: PullRequestSummary;
+      /** Set in Authored by me, whose rows show the pull request's states. */
+      authoredByMe?: boolean;
+    }
   | { kind: "localBranch"; branch: LocalBranch & LocalClone };
 
 export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
@@ -192,9 +202,15 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
     const item = new vscode.TreeItem(pr.title);
     const changedSinceReview =
       pr.lastReviewedSha !== undefined && pr.lastReviewedSha !== pr.headSha;
+    const states = node.authoredByMe ? authoredStates(pr) : [];
+    // The checks already say when they failed.
+    const stateLooks = states
+      .filter((state) => state !== "checksFailed")
+      .map((state) => authoredStateLook(state, pr));
     item.description = [
       `${pr.repository} #${pr.number}`,
       ...(pr.checks ? [`checks ${pr.checks}`] : []),
+      ...stateLooks.map((look) => look.description),
       ...(changedSinceReview ? ["new commits since my Review"] : []),
       ...this.openState(node),
     ].join(" · ");
@@ -203,6 +219,7 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
         `**${escapeMarkdown(pr.title)}**`,
         `${pr.repository} #${pr.number} by ${pr.author.login}`,
         pr.checks ? `Checks ${pr.checks}` : "No checks",
+        ...stateLooks.map((look) => escapeMarkdown(look.tooltip)),
         ...(changedSinceReview
           ? [
               `New commits since my last Review, at ${pr.lastReviewedSha!.slice(0, 7)}`,
@@ -210,9 +227,15 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
           : []),
       ].join("\n\n")
     );
-    item.iconPath =
-      (await this.avatars.file(pr.author.avatarUrl)) ??
-      new vscode.ThemeIcon("account");
+    if (node.authoredByMe) {
+      const look = states[0] && authoredStateLook(states[0], pr);
+      item.iconPath = look
+        ? new vscode.ThemeIcon(look.icon, new vscode.ThemeColor(look.color))
+        : new vscode.ThemeIcon(noStateIcon);
+    } else
+      item.iconPath =
+        (await this.avatars.file(pr.author.avatarUrl)) ??
+        new vscode.ThemeIcon("account");
     item.contextValue = "pullRequest";
     item.command = {
       title: "Open Pull Request",
@@ -268,7 +291,9 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
       return {
         nodes: [
           pullRequestGroup(awaitingMyReview, inbox.awaitingMyReview),
-          pullRequestGroup("Authored by me", inbox.authoredByMe),
+          pullRequestGroup("Authored by me", inbox.authoredByMe, {
+            authoredByMe: true,
+          }),
           pullRequestGroup(reviewedByMe, inbox.reviewedByMe),
           ...(await localBranches),
         ],
@@ -420,7 +445,8 @@ function keyOf(node: InboxNode): string | undefined {
 
 function pullRequestGroup(
   label: string,
-  pullRequests: PullRequestSummary[]
+  pullRequests: PullRequestSummary[],
+  { authoredByMe = false } = {}
 ): InboxNode {
   return {
     kind: "group",
@@ -429,6 +455,7 @@ function pullRequestGroup(
     children: pullRequests.map((pullRequest) => ({
       kind: "pullRequest",
       pullRequest,
+      ...(authoredByMe && { authoredByMe }),
     })),
   };
 }

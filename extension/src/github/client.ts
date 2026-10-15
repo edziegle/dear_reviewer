@@ -20,6 +20,26 @@ export interface PullRequestSummary {
   checks?: CheckStatus;
   /** The head commit my last submitted Review covered; undefined if I haven't reviewed it. */
   lastReviewedSha?: string;
+  isDraft: boolean;
+  /** Whether it merges into its base cleanly; unknown while GitHub works it out. */
+  mergeable: Mergeability;
+  /** GitHub's review decision; undefined where the base branch requires no reviews. */
+  reviewDecision?: ReviewDecision;
+  /** Each reviewer's latest submitted review, the author's own included. */
+  latestReviews: LatestReview[];
+}
+
+export type Mergeability = "mergeable" | "conflicting" | "unknown";
+
+export type ReviewDecision = "approved" | "changesRequested" | "reviewRequired";
+
+/** One reviewer's latest submitted review of a pull request. */
+export interface LatestReview {
+  /** The reviewer's login. */
+  author: string;
+  verdict: ReviewVerdict;
+  /** The head commit it covered. */
+  commit?: string;
 }
 
 /** The Reviewer's last submitted review of a pull request. */
@@ -1032,8 +1052,12 @@ const INBOX_PULL_REQUEST = `fragment InboxPullRequest on PullRequest {
   baseRefName
   repository { nameWithOwner }
   author { login avatarUrl }
+  isDraft
+  mergeable
+  reviewDecision
   commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
   reviews(last: 1, author: $reviewer, states: ${SUBMITTED_REVIEWS}) { nodes { commit { oid } } }
+  latestReviews(first: 100) { nodes { state author { login } commit { oid } } }
 }`;
 
 interface PullRequestNode {
@@ -1051,6 +1075,16 @@ interface PullRequestNode {
     nodes: { commit: { statusCheckRollup: { state: string } | null } }[];
   };
   reviews: ReviewsNode;
+  isDraft: boolean;
+  mergeable: string;
+  reviewDecision: string | null;
+  latestReviews: {
+    nodes: ({
+      state: string;
+      author: { login: string } | null;
+      commit: { oid: string } | null;
+    } | null)[];
+  };
 }
 
 function summaryOf(node: PullRequestNode): PullRequestSummary {
@@ -1067,7 +1101,40 @@ function summaryOf(node: PullRequestNode): PullRequestSummary {
     baseRefName: node.baseRefName,
     checks: checkStatus(node.commits.nodes[0]?.commit.statusCheckRollup?.state),
     lastReviewedSha: lastReviewedSha(node.reviews),
+    isDraft: node.isDraft,
+    mergeable: mergeabilities[node.mergeable] ?? "unknown",
+    reviewDecision: reviewDecisions[node.reviewDecision ?? ""],
+    latestReviews: latestReviewsOf(node.latestReviews),
   };
+}
+
+const mergeabilities: Record<string, Mergeability> = {
+  MERGEABLE: "mergeable",
+  CONFLICTING: "conflicting",
+  UNKNOWN: "unknown",
+};
+
+const reviewDecisions: Record<string, ReviewDecision> = {
+  APPROVED: "approved",
+  CHANGES_REQUESTED: "changesRequested",
+  REVIEW_REQUIRED: "reviewRequired",
+};
+
+/** The submitted ones of the latest reviews; a pending review has no verdict. */
+function latestReviewsOf(
+  reviews: PullRequestNode["latestReviews"] | undefined
+): LatestReview[] {
+  return (reviews?.nodes ?? []).flatMap((review) => {
+    const verdict = review && verdicts[review.state];
+    if (!review || !verdict) return [];
+    return [
+      {
+        author: review.author?.login ?? "ghost",
+        verdict,
+        ...(review.commit && { commit: review.commit.oid }),
+      },
+    ];
+  });
 }
 
 function checkStatus(state: string | undefined): CheckStatus | undefined {

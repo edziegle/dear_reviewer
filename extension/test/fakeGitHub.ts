@@ -5,7 +5,9 @@
 // and submitting it), serves every review thread the viewer can see, takes
 // replies to them and resolves and unresolves them, serves a pull request's
 // timeline and its latest commit's checks, serves the commit each review
-// covered, serves avatars, and records every request it receives.
+// covered and each reviewer's latest review, serves a pull request's draft
+// state, mergeability and review decision, serves avatars, and records every
+// request it receives.
 //
 // Tests control it over HTTP:
 //   PUT /_fake/state        replaces the fixtures and clears what was recorded
@@ -52,6 +54,11 @@ export interface FakePullRequest {
   timeline?: FakeTimelineItem[];
   /** The latest commit's check runs and commit statuses, in order. */
   checkRuns?: FakeCheck[];
+  isDraft?: boolean;
+  /** Whether it merges into its base cleanly; MERGEABLE when absent. */
+  mergeable?: "MERGEABLE" | "CONFLICTING" | "UNKNOWN";
+  /** GitHub's review decision; absent where the base requires no reviews. */
+  reviewDecision?: "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED";
 }
 
 export type FakeTimelineItem =
@@ -868,7 +875,9 @@ export async function startFakeGitHub(): Promise<{
       title: pr.title,
       url: `https://github.com/${pr.repository}/pull/${pr.number}`,
       updatedAt: pr.updatedAt ?? "2026-10-01T00:00:00Z",
-      isDraft: false,
+      isDraft: pr.isDraft ?? false,
+      mergeable: pr.mergeable ?? "MERGEABLE",
+      reviewDecision: pr.reviewDecision ?? null,
       headRefName: pr.headRefName ?? `feature-${pr.number}`,
       headRefOid: pr.headSha ?? "0".repeat(40),
       baseRefName: pr.baseRefName ?? "main",
@@ -889,6 +898,25 @@ export async function startFakeGitHub(): Promise<{
       ...(/\breviews\(/.test(query) && {
         reviews: reviewsField(pr, query, vars),
       }),
+      ...(/\blatestReviews\(/.test(query) && {
+        latestReviews: latestReviewsField(pr),
+      }),
+    };
+  }
+
+  /** Each author's latest review that the viewer can see, in the order given. */
+  function latestReviewsField(pr: FakePullRequest) {
+    const me = state.viewer.login;
+    const latest = new Map<string, FakeReview>();
+    for (const review of pr.reviews ?? [])
+      if (review.state !== "PENDING" || review.author === me)
+        latest.set(review.author, review);
+    return {
+      nodes: [...latest.values()].map((r) => ({
+        state: r.state,
+        author: { login: r.author },
+        commit: r.commit ? { oid: r.commit } : null,
+      })),
     };
   }
 

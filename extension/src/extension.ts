@@ -477,9 +477,10 @@ export function activate(context: vscode.ExtensionContext) {
 
   /**
    * The Change a command acts on: the one given, by a Change Files menu or
-   * a test, or the one of the file given, by an editor's title bar, or else
-   * the one the Reviewer is looking at, or else the only one open in this
-   * window that fits, or else one they pick. `none` says why there is none.
+   * a test, or the one of the file given, by an editor's title bar (none if
+   * that one isn't open here), or else the one the Reviewer is looking at,
+   * or else the only one open in this window that fits, or else one they
+   * pick. `none` says why there is none.
    */
   async function changeFor(
     target: ChangeTarget | vscode.Uri | undefined,
@@ -489,8 +490,11 @@ export function activate(context: vscode.ExtensionContext) {
   ): Promise<Change | undefined> {
     if (target instanceof vscode.Uri) {
       const ofFile = whereInChange(target, changes.shownHere())?.change;
-      if (ofFile) return ofFile;
-      target = undefined;
+      if (!ofFile)
+        void vscode.window.showErrorMessage(
+          "The file's Change isn't open in this window."
+        );
+      return ofFile;
     }
     if (target && "kind" in target)
       return target.kind === "change" ? target.change : undefined;

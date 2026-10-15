@@ -708,6 +708,23 @@ describe("A pull request's timeline", () => {
     await eventually(() => assert.strictEqual(activeTabLabel(), title));
   });
 
+  it("does nothing from the title bar of a file of no Change open here, rather than act on the Change in front", async () => {
+    await inFrontOfOtherChange();
+    const tab = timelineTab(other.title);
+    if (tab) await vscode.window.tabGroups.close(tab);
+    const closedChangeFile = vscode.Uri.file(
+      path.join(
+        path.dirname(other.folders[0]),
+        "edziegle.dear-reviewer/changes/closed/head/util.py"
+      )
+    );
+
+    await onTab("showTimeline", closedChangeFile);
+
+    assert.ok(activeTabLabel()?.startsWith("main.py"), activeTabLabel());
+    assert.strictEqual(timelineTab(other.title), undefined);
+  });
+
   it("finishes the Review of a file's Change from its title bar, not the Change in front", async () => {
     await inFrontOfOtherChange();
     const before = await submittedReviews();

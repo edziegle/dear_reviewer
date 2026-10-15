@@ -37,7 +37,8 @@ export interface OpenChange extends Change {
 }
 
 export class OpenChanges {
-  private readonly file: string;
+  /** The file every window reads and writes the open Changes in. */
+  readonly file: string;
 
   constructor(storageDir: string) {
     this.file = path.join(storageDir, "open-changes.json");

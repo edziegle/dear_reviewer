@@ -279,7 +279,7 @@ export function activate(context: vscode.ExtensionContext) {
       )?.repository,
     async (change) => {
       await letGo(change);
-      showOpenChangesAfterClosing();
+      void syncOpenChanges();
     }
   );
 
@@ -388,13 +388,22 @@ export function activate(context: vscode.ExtensionContext) {
   }
 
   /**
-   * Shows which Changes are open after one closed, and, if the Change in
-   * front closed, shows the one now in front the way a review starts.
+   * Catches up with the open Changes, which any window may have changed:
+   * shows them, and, if the Change shown last closed, shows the one now in
+   * front the way a review starts; in the review window, also shows the
+   * Changes sent here from another window.
    */
-  function showOpenChangesAfterClosing(): void {
+  function syncOpenChanges(): Promise<void> {
     showOpenChanges();
     const front = changes.inFront();
-    if (front && front.id !== shownLast) void showChange(front);
+    if (!front) shownLast = undefined;
+    else if (
+      shownLast &&
+      front.id !== shownLast &&
+      !changes.list().some((change) => change.id === shownLast)
+    )
+      void showChange(front);
+    return changes.showPendingDiffs();
   }
 
   /**
@@ -819,7 +828,7 @@ export function activate(context: vscode.ExtensionContext) {
         }
         if (!request) return;
         await letGo(await changes.close(request));
-        showOpenChangesAfterClosing();
+        void syncOpenChanges();
       }
     ),
     // A Change opens with its overview alone; the Assistant starts behind
@@ -1171,10 +1180,13 @@ export function activate(context: vscode.ExtensionContext) {
     ),
     vscode.workspace.onDidChangeWorkspaceFolders(() => {
       void repositories.scanWindow();
-      showOpenChanges();
       void review.sync();
-      return changes.showPendingDiffs();
+      return syncOpenChanges();
     }),
+    // Another window may change the open Changes without changing this
+    // window's folders, such as by opening again a Change it shows.
+    changes.onDidChangeOpenChanges(() => syncOpenChanges()),
+    changes,
     changeFilesTree,
     changeFilesTree.onDidChangeCheckboxState(async (e) => {
       for (const [node, state] of e.items) {

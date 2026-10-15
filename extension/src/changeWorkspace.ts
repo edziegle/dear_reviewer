@@ -42,8 +42,14 @@ export interface ChangeRequest {
   pullRequest?: PullRequestRef;
 }
 
-export class ChangeWorkspace {
+export class ChangeWorkspace implements vscode.Disposable {
   private readonly openChanges: OpenChanges;
+  private readonly watcher: vscode.FileSystemWatcher;
+  /**
+   * Fires when the open Changes change, in this window or another, such as
+   * when another window opens again a Change this one shows.
+   */
+  readonly onDidChangeOpenChanges: vscode.Event<unknown>;
   private readonly reviewWindow: ReviewWindow;
   private readonly shown = new vscode.EventEmitter<Change>();
   /** Fires when a Change opens in this window, for its overview to show. */
@@ -57,6 +63,23 @@ export class ChangeWorkspace {
   constructor(private readonly storageDir: string) {
     this.openChanges = new OpenChanges(storageDir);
     this.reviewWindow = new ReviewWindow(storageDir);
+    this.watcher = vscode.workspace.createFileSystemWatcher(
+      new vscode.RelativePattern(
+        vscode.Uri.file(path.dirname(this.openChanges.file)),
+        path.basename(this.openChanges.file)
+      )
+    );
+    const { onDidCreate, onDidChange, onDidDelete } = this.watcher;
+    this.onDidChangeOpenChanges = (listener, thisArgs, disposables) => {
+      const subscriptions = [onDidCreate, onDidChange, onDidDelete].map(
+        (event) => event(listener, thisArgs, disposables)
+      );
+      return vscode.Disposable.from(...subscriptions);
+    };
+  }
+
+  dispose(): void {
+    this.watcher.dispose();
   }
 
   open(request: ChangeRequest): Promise<Change> {

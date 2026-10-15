@@ -53,6 +53,31 @@ else
 fi
 '''
 
+# Writes to $GITHUB_OUTPUT in CI. A range whose start isn't in the history
+# counts as changing code, so the tests still run.
+[tasks.code-changed]
+description = "Say whether a range changes more than Markdown and docs/"
+usage = '''
+arg "<from>" help="The commit before the range, like the push's before SHA"
+arg "[to]" default="HEAD" help="The last commit in the range"
+'''
+run = '''
+if git cat-file -e "$usage_from^{commit}" 2>/dev/null &&
+  git diff --quiet "$usage_from...$usage_to" -- . ':(exclude,glob)**/*.md' ':(exclude)docs'; then
+  echo "code=false" >> "${GITHUB_OUTPUT:-/dev/stdout}"
+else
+  echo "code=true" >> "${GITHUB_OUTPUT:-/dev/stdout}"
+fi
+'''
+
+[tasks.week]
+description = "Print the ISO week, like 2026-W42, for cache keys that rotate weekly"
+run = 'echo "week=$(date -u +%G-W%V)" >> "${GITHUB_OUTPUT:-/dev/stdout}"'
+
+[tasks.install-vscodium]
+description = "Install VSCodium with Homebrew, for the tests"
+run = "brew install --cask vscodium"
+
 [tasks.fmt-docs]
 description = "Format Markdown with Prettier"
 run = "npx prettier --write '**/*.md'"

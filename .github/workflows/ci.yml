@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -52,3 +56,57 @@ jobs:
         env:
           FROM: ${{ github.event.pull_request.base.sha || github.event.before }}
           TO: ${{ github.event.pull_request.head.sha || github.sha }}
+
+  # Docs-only changes skip the tests; a workflow-level paths-ignore would skip
+  # lint-docs too.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.changes.outputs.code }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: jdx/mise-action@v3
+        with:
+          install: false
+      - id: changes
+        run: mise run code-changed "$FROM" "$TO"
+        env:
+          FROM: ${{ github.event.pull_request.base.sha || github.event.before }}
+          TO: ${{ github.event.pull_request.head.sha || github.sha }}
+
+  test:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json', 'extension/package-lock.json') }}
+          restore-keys: npm-${{ runner.os }}-
+      - uses: jdx/mise-action@v3
+        with:
+          install_args: node
+      - id: week
+        run: mise run week
+      # The Python and basedpyright extensions from Open VSX, refreshed weekly.
+      - uses: actions/cache@v4
+        with:
+          path: extension/.vscode-test/extensions
+          key: vscode-test-extensions-${{ runner.os }}-${{ steps.week.outputs.week }}
+      - run: mise run install-vscodium
+      - run: mise run deps
+      - run: mise run test
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vscodium-logs
+          path: |
+            extension/.vscode-test/codium-output/
+            extension/.vscode-test/user-data/logs/
+          include-hidden-files: true
+          retention-days: 7

@@ -8,10 +8,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -81,6 +77,11 @@ jobs:
     if: needs.changes.outputs.code == 'true'
     runs-on: macos-latest
     timeout-minutes: 30
+    # Only the tests are worth cancelling: a cancelled commitlint run would
+    # leave its push's commits unlinted.
+    concurrency:
+      group: ${{ github.workflow }}-test-${{ github.ref }}
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@v5
       - uses: actions/cache@v4

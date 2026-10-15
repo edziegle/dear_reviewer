@@ -71,6 +71,19 @@ export class OpenChanges {
     this.write(this.all().filter((c) => !gone.has(c.id)));
   }
 
+  /**
+   * Marks these Changes' diffs shown, each where it is, so a Change opened
+   * after them stays in front.
+   */
+  markShown(ids: Iterable<string>): void {
+    const shown = new Set(ids);
+    this.write(
+      this.all().map((c) =>
+        shown.has(c.id) ? { ...c, diffPending: false } : c
+      )
+    );
+  }
+
   private write(changes: OpenChange[]): void {
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
     fs.writeFileSync(this.file, JSON.stringify(changes, null, 2));
@@ -89,6 +102,30 @@ export function changeInFront<T extends OpenChange>(
   return changes
     .filter((change) => !change.diffPending && isHere(change))
     .at(-1);
+}
+
+/**
+ * The Changes waiting for their diff whose folders have arrived here, in the
+ * order they were opened, and whether each is to show the way a review
+ * starts. One opened before a Change already shown here, whose folders
+ * arrived later, stays behind that one rather than taking the front.
+ */
+export function arrivedDiffs<T extends OpenChange>(
+  changes: readonly T[],
+  isHere: (change: T) => boolean
+): { change: T; show: boolean }[] {
+  return changes.flatMap((change, i) =>
+    change.diffPending && isHere(change)
+      ? [
+          {
+            change,
+            show: !changes
+              .slice(i + 1)
+              .some((later) => !later.diffPending && isHere(later)),
+          },
+        ]
+      : []
+  );
 }
 
 /**

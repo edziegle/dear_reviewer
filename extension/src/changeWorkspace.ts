@@ -19,6 +19,7 @@ import { conversationOf } from "./conversationName";
 import { git } from "./git";
 import {
   Change,
+  arrivedDiffs,
   changeInFront,
   OpenChanges,
   waitingToShow,
@@ -222,16 +223,17 @@ export class ChangeWorkspace implements vscode.Disposable {
 
   /**
    * In the review window, shows each Change sent here from another window,
-   * once its folders have arrived.
+   * once its folders have arrived, unless one opened after it already shows.
    */
   async showPendingDiffs(): Promise<void> {
     if (!this.reviewWindow.isThisWindow()) return;
-    for (const change of this.openChanges.all()) {
-      if (!change.diffPending) continue;
-      if (!hasFolder(change.baseDir) || !hasFolder(change.headDir)) continue;
-      this.openChanges.put({ ...change, diffPending: false });
-      this.shown.fire(change);
-    }
+    const arrived = arrivedDiffs(
+      this.openChanges.all(),
+      (c) => hasFolder(c.baseDir) && hasFolder(c.headDir)
+    );
+    if (arrived.length === 0) return;
+    this.openChanges.markShown(arrived.map(({ change }) => change.id));
+    for (const { change, show } of arrived) if (show) this.shown.fire(change);
   }
 
   /**

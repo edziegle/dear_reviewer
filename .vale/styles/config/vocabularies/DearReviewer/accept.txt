@@ -39,3 +39,7 @@ VS Code
 uv
 [Dd]iff's
 [Ww]ayfind(ing|er)
+easy to leave out
+very large
+[Dd]ismiss(es|ed|ing)?
+[Cc]ontext menus?

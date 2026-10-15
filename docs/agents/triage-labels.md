@@ -24,4 +24,4 @@ An issue can also carry one priority label, separate from its triage role:
 | `priority: medium` | Do soon       |
 | `priority: low`    | Do eventually |
 
-When picking the next issue to work on, take `priority: high` first, then `priority: medium`, then unlabelled issues, then `priority: low`.
+When picking the next issue to work on, take `priority: high` first, then `priority: medium`, then unlabeled issues, then `priority: low`.

@@ -421,6 +421,11 @@
           "group": "navigation@1"
         },
         {
+          "command": "dearReviewer.showTimeline",
+          "when": "view == dearReviewer.changeFiles && dearReviewer.hasOpenChange",
+          "group": "navigation@2"
+        },
+        {
           "command": "dearReviewer.refreshChangeFiles",
           "when": "view == dearReviewer.changeFiles",
           "group": "navigation@9"

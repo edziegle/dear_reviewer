@@ -56,7 +56,7 @@ describe("The Change files view", () => {
 
   it("lists the open Change's files as a directory tree, with added, modified and deleted status", async () => {
     assert.deepStrictEqual(render(await changeFiles()), [
-      `${title} — ▱▱▱▱▱▱▱ 0/7`,
+      `${title} — □□□□□□□ 0/7`,
       "  pkg",
       "    sub",
       "      new.py [A]",
@@ -128,7 +128,7 @@ describe("The Change files view", () => {
     );
     tree = await changeFiles();
     assert.deepStrictEqual(render(tree), [
-      `${title} — ▰▰▱▱▱▱▱ 2/7`,
+      `${title} — ■■□□□□□ 2/7`,
       "  pkg",
       "    sub",
       "      new.py [A]",
@@ -144,7 +144,7 @@ describe("The Change files view", () => {
     await markViewed(entryAt(await changeFiles(), title, "pkg", "sub"));
 
     assert.deepStrictEqual(render(await changeFiles()), [
-      `${title} — ▰▰▱▱▱▱▱ 2/7`,
+      `${title} — ■■□□□□□ 2/7`,
       "  pkg",
       "    sub",
       "      new.py [A] (viewed)",
@@ -415,7 +415,7 @@ describe("The Change files view", () => {
     await hideViewedFiles();
 
     assert.deepStrictEqual(hidden, [
-      `${title} — ▰▰▱▱▱▱▱ 2/7`,
+      `${title} — ■■□□□□□ 2/7`,
       "  pkg",
       "    legacy.py [D]",
       "  added.py [A]",

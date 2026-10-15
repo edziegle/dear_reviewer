@@ -1,8 +1,9 @@
 // The Change files view: the Change in front in this window (ADR 0025), with
 // its files as a directory tree, or in the steps of its Reading Order (ADR
 // 0022). The other open Changes stay open behind it, unlisted. A Change
-// shows how many files are viewed and whether it has new commits since the
-// Reviewer's last Review, and holds the actions that finish its Review.
+// shows how many files are viewed, as a bar, and whether it has new commits
+// since the Reviewer's last Review, and holds the actions that finish its
+// Review.
 // Files show their status and a viewed checkbox; selecting one opens its diff
 // between the base and head worktrees, or an added or deleted file on its own.
 
@@ -32,6 +33,7 @@ import {
   type ShownReadingOrder,
 } from "./readingOrder";
 import { ViewedFiles } from "./viewedFiles";
+import { viewedProgress } from "./viewedProgress";
 
 export type ChangeFilesNode =
   | {
@@ -385,10 +387,13 @@ export class ChangeFilesView
             (node.verdict && verdictLabels[node.verdict]) ??
             "no new commits since my Review",
         };
-        item.description = [
-          `${node.viewedCount} of ${node.files.length} viewed`,
-          ...(node.sinceReview ? [since[node.sinceReview]] : []),
-        ].join(" · ");
+        const progress = viewedProgress(node.viewedCount, node.files.length);
+        // The progress comes first, so a narrow side bar cuts off the note.
+        const note = node.sinceReview ? [since[node.sinceReview]] : [];
+        item.description = [progress.text, ...note].join(" · ");
+        item.accessibilityInformation = {
+          label: [changeTitle(node.change), progress.label, ...note].join(", "),
+        };
         item.tooltip = node.change.repository;
         item.iconPath = new vscode.ThemeIcon("git-compare");
         // Menus show the actions that fit: submit or a Brief, and what changed since.

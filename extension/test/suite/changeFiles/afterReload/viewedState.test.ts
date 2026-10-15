@@ -25,7 +25,7 @@ describe("The Change files view after a reload", () => {
 
   it("still hides viewed files", async () => {
     assert.deepStrictEqual(render(await changeFiles()), [
-      `${title} — ▰▰▱▱▱▱▱ 2/7`,
+      `${title} — ■■□□□□□ 2/7`,
       "  pkg",
       "    legacy.py [D]",
       "  added.py [A]",
@@ -39,7 +39,7 @@ describe("The Change files view after a reload", () => {
     await showViewedFiles();
 
     assert.deepStrictEqual(render(await changeFiles()), [
-      `${title} — ▰▰▱▱▱▱▱ 2/7`,
+      `${title} — ■■□□□□□ 2/7`,
       "  pkg",
       "    sub",
       "      new.py [A] (viewed)",
@@ -60,7 +60,7 @@ describe("The Change files view after a reload", () => {
     const reopened = render(await changeFiles());
     await closeChange(request);
 
-    assert.strictEqual(reopened[0], `${title} — ▱▱▱▱▱▱▱ 0/7`);
+    assert.strictEqual(reopened[0], `${title} — □□□□□□□ 0/7`);
     assert.ok(
       reopened.every((line) => !line.includes("(viewed)")),
       reopened.join("\n")

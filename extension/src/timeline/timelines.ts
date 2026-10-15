@@ -18,7 +18,7 @@ import {
 } from "../changeWorkspace";
 import { branchOfConversation } from "../conversationName";
 import { git } from "../git";
-import type { CheckedFile } from "../highlighting";
+import type { CheckedFile } from "../unhighlighted";
 import {
   GitHubClient,
   NotSignedInError,

@@ -2,7 +2,13 @@
 
 This is a mise shop. `mise.toml` pins the tools (Node, Vale) and holds every project command as a task: list them with `mise tasks`, run them with `mise run <task>`. Add new project commands as mise tasks too; npm and uv are for dependency management, and an npm script exists only where a tool such as `vsce` requires one. When `mise` can't run (some sandboxes block it), run the task's `run` commands from `mise.toml` in its `dir`.
 
-`mise run test` runs every integration suite in VSCodium and ends with a list of every failure. Narrow a test-first loop with these environment variables, alone or together, on `mise run test` or on `node out/test/run.js` in `extension/` after `npx tsc -p test`:
+## Tests
+
+Pure logic gets unit tests; integration tests cover behaviour in the extension host.
+
+Unit tests live in `extension/test/unit/`, and the test runner's beside it in `extension/test/`. They import the modules they test directly and run under plain Node with `mise run test-unit [name]`, where `name` picks one file such as `prompts` for `prompts.test.ts`. A module they load must not import `vscode` at runtime, so move pure logic out of a module that does rather than mocking `vscode`.
+
+`mise run test` runs the unit tests, then every integration suite in VSCodium, and ends with a list of every failure. Narrow a test-first loop with these environment variables, alone or together, on `mise run test` or on `node out/test/run.js` in `extension/` after `npx tsc -p test`:
 
 - `DEAR_REVIEWER_SUITES=review,inbox`: whole suites, each a folder in `extension/test/suite/`, with its later phases such as `review/afterReload`.
 - `DEAR_REVIEWER_FILES=review/comments,inbox/settings.test.ts`: test files, by path from `test/suite/`, narrowing their suite even when `DEAR_REVIEWER_SUITES` names it. The phases before a file's phase also run, since they set up its state; the phases after it don't.

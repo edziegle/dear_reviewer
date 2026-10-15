@@ -25,11 +25,7 @@ import {
 } from "./assistant/selection";
 import { ThreadsFiles } from "./assistant/threads";
 import { GitHubAuth } from "./github/auth";
-import {
-  GitHubClient,
-  type LastReview,
-  PullRequestSummary,
-} from "./github/client";
+import { GitHubClient, PullRequestSummary } from "./github/client";
 import { setContext } from "./context";
 import { Avatars, InboxNode, InboxTree } from "./inbox";
 import { Lifecycle } from "./lifecycle";
@@ -46,7 +42,8 @@ import {
   Reviews,
   showChangesSince,
 } from "./reviews";
-import type { FromWebview, ReviewStanding } from "./timeline/panel";
+import { countOf, reviewStanding } from "./reviewStanding";
+import type { FromWebview } from "./timeline/panel";
 import { LinkOpener, Standing, Timelines } from "./timeline/timelines";
 import {
   GitHubViewedFiles,
@@ -55,7 +52,7 @@ import {
 } from "./viewedFiles";
 import { messageOf } from "./errors";
 import { ReviewWindowTrust } from "./trust";
-import { LanguageOffer, unhighlighted } from "./highlighting";
+import { LanguageOffer } from "./highlighting";
 
 export function activate(context: vscode.ExtensionContext) {
   const changes = new ChangeWorkspace(context.globalStorageUri.fsPath);
@@ -1333,11 +1330,10 @@ export function activate(context: vscode.ExtensionContext) {
           receive: (message: FromWebview) => panel.receive(message),
         })),
     },
-    /** The pure check of which file extensions go unhighlighted, and a stand-in for the Extensions view's search. */
+    /** A stand-in for the Extensions view's search. */
     languages: {
       searchWith: (search?: (query: string) => void) =>
         languageOffer.searchWith(search),
-      unhighlighted,
     },
     /** Stands in for workspace trust and for showing Workspace Trust; tests run with trust off. */
     trust: {
@@ -1470,42 +1466,6 @@ function requestOf(change: Change): ChangeRequest {
     head: change.headSha,
     pullRequest: change.pullRequest,
   };
-}
-
-/** Such as "no Comments", "1 Comment" or "3 Comments". */
-function countOf(count: number, noun: string): string {
-  if (count === 0) return `no ${noun}s`;
-  return `${count} ${noun}${count === 1 ? "" : "s"}`;
-}
-
-/** The last Review as the overview's standing line opens with it, for the verdicts it names. */
-function reviewStanding(review: LastReview): ReviewStanding | undefined {
-  const { verdict } = review;
-  if (
-    verdict !== "approved" &&
-    verdict !== "changesRequested" &&
-    verdict !== "commented"
-  )
-    return;
-  const did = {
-    approved: "You approved",
-    changesRequested: "You requested changes",
-    commented: "You commented",
-  }[verdict];
-  const at = review.submittedAt ? ` ${timeOf(review.submittedAt)}` : "";
-  const published = review.comments
-    ? ` · ${countOf(review.comments, "Comment")} published`
-    : "";
-  return { verdict, text: `${did}${at}${published}` };
-}
-
-/** "at 14:32" today, or "on 3 Oct 2026, 14:32" before. */
-function timeOf(iso: string): string {
-  const date = new Date(iso);
-  if (isNaN(date.getTime())) return "";
-  if (date.toDateString() === new Date().toDateString())
-    return `at ${date.toLocaleTimeString(undefined, { timeStyle: "short" })}`;
-  return `on ${date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}`;
 }
 
 const verdicts: Record<

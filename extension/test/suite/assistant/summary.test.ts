@@ -418,42 +418,6 @@ describe("The Assistant's summary when a Change opens", () => {
 
     await closeChange(request);
   });
-
-  it("cuts the Change's commits off when their messages are long, and says how many are left out", async () => {
-    const commits = buildFixtureRepo("long-commits");
-    const shas = [1, 2, 3, 4, 5].map((n) => {
-      fs.writeFileSync(path.join(commits.path, `long${n}.txt`), `${n}\n`);
-      commits.git("add", "-A");
-      commits.git(
-        "commit",
-        "-q",
-        "-m",
-        `Long commit ${n}`,
-        "-m",
-        `Reason ${n}. `.repeat(600)
-      );
-      return commits.git("rev-parse", "HEAD");
-    });
-    scriptClaude({ turns: [replyTurn("A summary.")] });
-    const request = {
-      repository: commits.path,
-      base: commits.commits.restructured,
-      head: shas[4],
-    };
-    const title = `${path.basename(commits.path)} ${short(request.base)}..${short(shas[4])}`;
-
-    await openChange(request);
-
-    const prompt = await summaryPromptOf(title);
-    for (const sha of shas.slice(0, 3))
-      assert.ok(prompt.includes(`commit ${sha}`), `${sha} is in the prompt`);
-    for (const sha of shas.slice(3))
-      assert.ok(!prompt.includes(`commit ${sha}`), `${sha} is left out`);
-    assert.ok(prompt.includes("2 later commits left out"), prompt);
-    assert.ok(prompt.includes("```diff"), "the diff still follows");
-
-    await closeChange(request);
-  });
 });
 
 describe("The Assistant's summary of a pull request", () => {

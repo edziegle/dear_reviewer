@@ -2,11 +2,11 @@
 
 import * as path from "path";
 import {
-  Change,
+  type Change,
   changedFiles,
   changeTitle,
   filesChangedBetween,
-} from "../changeWorkspace";
+} from "../changeDetails";
 import { branchOfConversation } from "../conversationName";
 import { git, gitOutput } from "../git";
 import type { PullRequestDescription } from "../github/client";
@@ -412,23 +412,36 @@ function describedAs(description: PullRequestDescription): string[] {
   ];
 }
 
-function leftOut(commits: { left: number }): string {
+/** Says how many commits a capped log left out, if any. */
+export function leftOut(commits: CommitsLog): string {
   if (commits.left === 0) return "";
   return `, cut off after ${maxCommitChars} characters with ${commits.left} later commit${commits.left === 1 ? "" : "s"} left out`;
 }
 
+export interface Commit {
+  sha: string;
+  author: string;
+  message: string;
+}
+
+export interface CommitsLog {
+  log: string;
+  /** How many commits there are, shown or not. */
+  count: number;
+  /** How many later commits didn't fit. */
+  left: number;
+}
+
 /**
- * The commits from `from` to `to`, oldest first, each with its sha, author
- * and full message, as `git log` shows them. Whole commits fill up to
- * `maxCommitChars`, and `left` counts those that didn't fit; a first commit
- * longer than that is cut off. Git runs with fixed options, so the
- * Reviewer's configuration adds no signatures, colours or pager.
+ * The commits from `from` to `to`, oldest first, as `commitsLog` gives
+ * them. Git runs with fixed options, so the Reviewer's configuration adds
+ * no signatures, colours or pager.
  */
 async function cappedLog(
   repository: string,
   from: string,
   to: string
-): Promise<{ log: string; count: number; left: number }> {
+): Promise<CommitsLog> {
   const output = await gitOutput(
     repository,
     "--no-pager",
@@ -442,37 +455,49 @@ async function cappedLog(
     "--format=%H%x1f%an%x1f%B",
     `${from}..${to}`
   );
-  const commits = output
-    .split("\0")
-    .filter(Boolean)
-    .map((record) => {
-      const [sha, author, ...message] = record.split("\x1f");
-      return [
-        `commit ${sha}`,
-        `Author: ${author}`,
-        "",
-        ...message
-          .join("\x1f")
-          .trimEnd()
-          .split("\n")
-          .map((line) => (line ? `    ${line}` : "")),
-      ].join("\n");
-    });
+  return commitsLog(
+    output
+      .split("\0")
+      .filter(Boolean)
+      .map((record) => {
+        const [sha, author, ...message] = record.split("\x1f");
+        return { sha, author, message: message.join("\x1f") };
+      })
+  );
+}
+
+/**
+ * The commits, each with its sha, author and full message, as `git log`
+ * shows them. Whole commits fill up to `maxCommitChars`, and `left` counts
+ * those that didn't fit; a first commit longer than that is cut off.
+ */
+export function commitsLog(commits: Commit[]): CommitsLog {
+  const shown = commits.map(({ sha, author, message }) =>
+    [
+      `commit ${sha}`,
+      `Author: ${author}`,
+      "",
+      ...message
+        .trimEnd()
+        .split("\n")
+        .map((line) => (line ? `    ${line}` : "")),
+    ].join("\n")
+  );
   let log = "";
-  let shown = 0;
-  for (const commit of commits) {
+  let fitted = 0;
+  for (const commit of shown) {
     const next = log ? `${log}\n\n${commit}` : commit;
     if (next.length > maxCommitChars) {
-      if (shown === 0) {
+      if (fitted === 0) {
         log = `${commit.slice(0, maxCommitChars)}\n[cut off]`;
-        shown = 1;
+        fitted = 1;
       }
       break;
     }
     log = next;
-    shown++;
+    fitted++;
   }
-  return { log, count: commits.length, left: commits.length - shown };
+  return { log, count: commits.length, left: commits.length - fitted };
 }
 
 /** The diff between two commits, cut off after `maxDiffChars`. */

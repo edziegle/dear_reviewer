@@ -5,8 +5,8 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import * as vscode from "vscode";
-import { assistantDir, type Change } from "../changeWorkspace";
+import type * as vscode from "vscode";
+import { assistantDir, type Change } from "../changeDetails";
 import type { ReviewThread } from "../github/client";
 import type { Selection } from "./prompts";
 

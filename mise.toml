@@ -22,7 +22,11 @@ run = "vale sync"
 [tasks.typecheck]
 description = "Type-check the extension and its tests"
 dir = "extension"
-run = ["npx tsc --noEmit", "npx tsc -p test --noEmit"]
+run = [
+  "npx tsc --noEmit",
+  "npx tsc -p test --noEmit",
+  "npx tsc -p test/unit --noEmit",
+]
 
 # No vscode:prepublish script: the package task builds first, so vsce has nothing to run.
 [tasks.build]
@@ -45,10 +49,24 @@ npx fantasticon "$glyphs" --config logo-font.json --output media --silent
 rm -r "$glyphs"
 """
 
-[tasks.test]
-description = "Run the extension tests in VS Code"
+# Unit tests run pure modules under plain Node, without VSCodium or a build:
+# those of src/ from test/unit/, and the runner's from test/. tsc compiles
+# only the tests and what they import; out/unit is cleared first so a
+# deleted test doesn't run on.
+[tasks.test-unit]
+description = "Run the unit tests under Node, without VSCodium"
 dir = "extension"
-depends = ["typecheck", "build"]
+usage = 'arg "[name]" help="One test file, such as prompts for test/unit/prompts.test.ts or runPlan for test/runPlan.test.ts; all without it"'
+run = [
+  "rm -rf out/unit",
+  "npx tsc -p test/unit",
+  'npx mocha "out/unit/test/{,unit/}${usage_name:-*}.test.js"',
+]
+
+[tasks.test]
+description = "Run the unit tests, then the extension tests in VS Code"
+dir = "extension"
+depends = ["typecheck", "build", "test-unit"]
 run = [
   "npx tsc -p test",
   'CODIUM_APP="$(mise where github:VSCodium/vscodium)/VSCodium.app" node out/test/run.js',

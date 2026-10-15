@@ -98,7 +98,7 @@
       },
       {
         "command": "dearReviewer.openChangeFile",
-        "title": "Open Diff",
+        "title": "Open File",
         "category": "Dear Reviewer"
       },
       {

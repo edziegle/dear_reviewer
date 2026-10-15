@@ -12,11 +12,7 @@ import {
   pullRequestName,
   showAllChanges,
 } from "./changeWorkspace";
-import {
-  ChangeFilesNode,
-  ChangeFilesView,
-  emptyFileScheme,
-} from "./changeFiles";
+import { ChangeFilesNode, ChangeFilesView } from "./changeFiles";
 import { Assistants } from "./assistant/assistant";
 import { Briefs } from "./briefs";
 import { Conversations } from "./assistant/conversations";
@@ -996,9 +992,6 @@ export function activate(context: vscode.ExtensionContext) {
       }
     }),
     vscode.window.registerFileDecorationProvider(changeFiles),
-    vscode.workspace.registerTextDocumentContentProvider(emptyFileScheme, {
-      provideTextDocumentContent: () => "",
-    }),
     vscode.workspace.registerTextDocumentContentProvider(
       commitFileScheme,
       new CommitFiles(() => changes.list().map((c) => c.repository))

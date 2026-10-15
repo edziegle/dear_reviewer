@@ -3,7 +3,7 @@
 // shows how many files are viewed and whether it has new commits since the
 // Reviewer's last Review, and holds the actions that finish its Review.
 // Files show their status and a viewed checkbox; selecting one opens its diff
-// between the base and head worktrees.
+// between the base and head worktrees, or an added or deleted file on its own.
 
 import * as fs from "fs";
 import * as path from "path";
@@ -72,8 +72,6 @@ export type ChangeFilesNode =
       signIn?: boolean;
     };
 
-/** Gives the empty side of an added or deleted file's diff. */
-export const emptyFileScheme = "dear-reviewer-empty";
 const fileScheme = "dear-reviewer-file";
 
 const statuses: Record<
@@ -284,35 +282,46 @@ export class ChangeFilesView
     };
   }
 
-  /** Opens the diff of one of the Change's files. */
+  /** Opens one of the Change's files, as `openDiff` does. */
   openFile(change: Change, file: ChangedFile): Promise<void> {
     return this.openDiff({ kind: "file", change, file, viewed: false });
   }
 
-  /** Opens the diff of the Change's file at this path, if it is one of its files. */
+  /** Opens the Change's file at this path, if it is one of its files. */
   async openPath(change: Change, filePath: string): Promise<void> {
     const file = (await this.filesOf(change)).find((f) => f.path === filePath);
     if (file) await this.openFile(change, file);
   }
 
+  /**
+   * Opens the file's diff in the Change's code column, or, for an added or
+   * deleted file, the one side it has, in a plain editor rather than a diff
+   * with an empty half.
+   */
   async openDiff(node: ChangeFilesNode): Promise<void> {
     if (node.kind !== "file") return;
     const { change, file } = node;
     const { original, modified } = fileSides(change, file);
-    const empty = vscode.Uri.from({
-      scheme: emptyFileScheme,
-      path: `/${file.path}`,
-    });
-    const viewColumn = await this.codeColumn(change);
     // Pinned, so going to a definition opens a new tab instead of replacing
-    // the diff, and Go Back returns to it.
-    await vscode.commands.executeCommand(
-      "vscode.diff",
-      original ?? empty,
-      modified ?? empty,
-      `${path.basename(file.path)} · ${changeName(change)}`,
-      { viewColumn, preview: false }
-    );
+    // the file, and Go Back returns to it.
+    const options = {
+      viewColumn: await this.codeColumn(change),
+      preview: false,
+    };
+    if (original && modified)
+      await vscode.commands.executeCommand(
+        "vscode.diff",
+        original,
+        modified,
+        `${path.basename(file.path)} · ${changeName(change)}`,
+        options
+      );
+    else
+      await vscode.commands.executeCommand(
+        "vscode.open",
+        original ?? modified,
+        options
+      );
   }
 
   async getChildren(node?: ChangeFilesNode): Promise<ChangeFilesNode[]> {
@@ -411,7 +420,7 @@ export class ChangeFilesView
         item.contextValue = node.viewed ? "file.viewed" : "file.unviewed";
         item.command = {
           command: "dearReviewer.openChangeFile",
-          title: "Open Diff",
+          title: "Open File",
           arguments: [node],
         };
         return item;

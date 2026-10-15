@@ -140,6 +140,25 @@ export function activeDiff(): { original: vscode.Uri; modified: vscode.Uri } {
   return { original: input.original, modified: input.modified };
 }
 
+/** The file the active tab shows in a plain editor, rather than a diff. */
+export function activeText(): vscode.Uri {
+  const input = vscode.window.tabGroups.activeTabGroup.activeTab?.input;
+  if (!(input instanceof vscode.TabInputText))
+    throw new Error(
+      `the active tab is not a plain editor: ${JSON.stringify(input)}`
+    );
+  return input.uri;
+}
+
+/** The files the tab shows: both sides of a diff, or a plain editor's one. */
+export function filesIn(tab: vscode.Tab | undefined): string[] {
+  const input = tab?.input;
+  if (input instanceof vscode.TabInputTextDiff)
+    return [input.original.fsPath, input.modified.fsPath];
+  if (input instanceof vscode.TabInputText) return [input.uri.fsPath];
+  return [];
+}
+
 async function changeFilesView(): Promise<ChangeFilesView> {
   const extension = vscode.extensions.getExtension<{
     changeFiles: ChangeFilesView;

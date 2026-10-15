@@ -18,6 +18,7 @@ import { leaveForReload } from "./handoff";
 import * as vscode from "vscode";
 import {
   activeDiff,
+  filesIn,
   changeFiles,
   entryAt,
   markViewed,
@@ -240,13 +241,13 @@ describe("The Reading Order", () => {
       entryAt(tree, title, `2. ${longLabel.slice(0, 79)}…`, "core.py")
     );
     await vscode.commands.executeCommand("workbench.action.closeAllEditors");
-    // The diff's head side is in the head worktree, so its path ends with the file's.
+    // A worktree file's path ends with the file's, whether in a diff or on its own.
     const shown = () => {
-      const file = activeDiff().modified.path;
+      const files = filesIn(vscode.window.tabGroups.activeTabGroup.activeTab);
       return (
         ["util.py", "main.py", "pkg/sub/new.py", "pkg/core.py"].find((f) =>
-          file.endsWith(`/${f}`)
-        ) ?? file
+          files.some((file) => file.endsWith(path.sep + path.normalize(f)))
+        ) ?? files.join(" ↔ ")
       );
     };
     const opened: string[] = [];

@@ -21,6 +21,7 @@ import {
   overviewTake,
   sentTimeline,
 } from "../timeline";
+import { filesIn } from "../changeFiles";
 import { buildFixtureRepo } from "../fixtures";
 import {
   activeTabLabel,
@@ -155,13 +156,13 @@ describe("The Assistant's summary when a Change opens", () => {
     );
 
     await clickOverview(title, "nextFile");
-    await eventually(() =>
+    await eventually(() => {
+      const shown = filesIn(vscode.window.tabGroups.activeTabGroup.activeTab);
       assert.ok(
-        vscode.window.tabGroups.activeTabGroup.activeTab?.input instanceof
-          vscode.TabInputTextDiff,
-        "a file's diff opens"
-      )
-    );
+        shown.length > 0 && !shown.includes(path.join(head.path, "util.py")),
+        `another of the Change's files opens: ${shown.join(" ↔ ")}`
+      );
+    });
 
     await clickOverview(title, "ask");
     await eventually(() =>

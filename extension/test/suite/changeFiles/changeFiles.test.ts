@@ -3,8 +3,10 @@ import * as path from "path";
 import * as vscode from "vscode";
 import {
   activeDiff,
+  activeText,
   changeFiles,
   entryAt,
+  filesIn,
   hideViewedFiles,
   markViewed,
   render,
@@ -14,6 +16,12 @@ import {
   unmarkViewed,
 } from "../changeFiles";
 import { buildFixtureRepo } from "../fixtures";
+import {
+  commentingLines,
+  commentThreads,
+  comment,
+  deleteComment,
+} from "../review";
 import { clickOverview, showTimeline } from "../timeline";
 import {
   activeTabLabel,
@@ -58,48 +66,55 @@ describe("The Change files view", () => {
     ]);
   });
 
-  it("opens a selected file's diff between its base and head worktree files", async () => {
-    const tree = await changeFiles();
-
-    await select(entryAt(tree, title, "pkg", "core.py"));
-    await eventually(() => {
-      const diff = activeDiff();
-      assert.strictEqual(diff.original.fsPath, path.join(base, "pkg/core.py"));
-      assert.strictEqual(diff.modified.fsPath, path.join(head, "pkg/core.py"));
-    });
+  const activeIsPinned = () =>
     assert.strictEqual(
       vscode.window.tabGroups.activeTabGroup.activeTab?.isPreview,
       false,
       "pinned, so going to a definition doesn't replace it"
     );
 
-    await select(entryAt(tree, title, "pkg", "sub", "new.py"));
+  it("opens a selected modified file's diff between its base and head worktree files", async () => {
+    await select(entryAt(await changeFiles(), title, "pkg", "core.py"));
+
+    await eventually(() => {
+      const diff = activeDiff();
+      assert.strictEqual(diff.original.fsPath, path.join(base, "pkg/core.py"));
+      assert.strictEqual(diff.modified.fsPath, path.join(head, "pkg/core.py"));
+    });
+    activeIsPinned();
+  });
+
+  it("opens a selected added file on its own, from the head worktree", async () => {
+    await select(entryAt(await changeFiles(), title, "pkg", "sub", "new.py"));
+
     await eventually(() =>
-      assert.strictEqual(
-        activeDiff().modified.fsPath,
-        path.join(head, "pkg/sub/new.py")
-      )
+      assert.strictEqual(activeText().fsPath, path.join(head, "pkg/sub/new.py"))
     );
-    const added = activeDiff().original;
-    assert.notStrictEqual(added.scheme, "file", "an added file has no base");
-    assert.strictEqual(
-      (await vscode.workspace.openTextDocument(added)).getText(),
-      ""
+    activeIsPinned();
+  });
+
+  it("opens a selected deleted file on its own, from the base worktree", async () => {
+    await select(entryAt(await changeFiles(), title, "pkg", "legacy.py"));
+
+    await eventually(() =>
+      assert.strictEqual(activeText().fsPath, path.join(base, "pkg/legacy.py"))
+    );
+    activeIsPinned();
+  });
+
+  it("offers Comments on every line of an added file opened on its own", async () => {
+    const file = path.join(head, "added.py");
+    await select(entryAt(await changeFiles(), title, "added.py"));
+    await eventually(() => assert.strictEqual(activeText().fsPath, file));
+
+    assert.deepStrictEqual(await commentingLines(file), [[0, 2]]);
+    const thread = await comment(file, 2, 2, "Why compute this on import?");
+    assert.deepStrictEqual(
+      (await commentThreads()).map((t) => [t.file, t.lines, t.comments]),
+      [[file, [2, 2], ["Why compute this on import?"]]]
     );
 
-    await select(entryAt(tree, title, "pkg", "legacy.py"));
-    await eventually(() =>
-      assert.strictEqual(
-        activeDiff().original.fsPath,
-        path.join(base, "pkg/legacy.py")
-      )
-    );
-    const deleted = activeDiff().modified;
-    assert.notStrictEqual(deleted.scheme, "file", "a deleted file has no head");
-    assert.strictEqual(
-      (await vscode.workspace.openTextDocument(deleted)).getText(),
-      ""
-    );
+    await deleteComment(thread.comments[0]);
   });
 
   it("marks files viewed and unviewed, one at a time or a directory at once", async () => {
@@ -146,13 +161,14 @@ describe("The Change files view", () => {
     );
   });
 
-  it("moves through the files not yet viewed, from the diff shown, marking it viewed on the way", async () => {
+  it("moves through the files not yet viewed, from the file shown, marking it viewed on the way", async () => {
     const shows = async (file: string, side: "base" | "head") =>
       eventually(() =>
-        assert.strictEqual(
-          (side === "base" ? activeDiff().original : activeDiff().modified)
-            .fsPath,
-          path.join(side === "base" ? base : head, file)
+        assert.ok(
+          filesIn(vscode.window.tabGroups.activeTabGroup.activeTab).includes(
+            path.join(side === "base" ? base : head, file)
+          ),
+          `${file} isn't shown`
         )
       );
     await select(entryAt(await changeFiles(), title, "main.py"));
@@ -161,6 +177,11 @@ describe("The Change files view", () => {
     await review("nextUnviewedFile");
     await shows("obsolete.py", "base");
     await review("previousUnviewedFile");
+    await shows("main.py", "head");
+    await review("previousUnviewedFile");
+    await shows("added.py", "head");
+    // From an added file, shown on its own, rather than from the first again.
+    await review("nextUnviewedFile");
     await shows("main.py", "head");
     await review("previousUnviewedFile");
     await shows("added.py", "head");
@@ -173,23 +194,19 @@ describe("The Change files view", () => {
   });
 
   /**
-   * Waits for the code column, beside the overview, to show the file's diff,
-   * on either side. The focus may stay on the overview.
+   * Waits for the code column, beside the overview, to show the file, in a
+   * diff or on its own. The focus may stay on the overview.
    */
   const shows = async (file: string) =>
     eventually(() => {
-      const input = vscode.window.tabGroups.all.find(
-        (g) => g.viewColumn === vscode.ViewColumn.Two
-      )?.activeTab?.input;
-      assert.ok(
-        input instanceof vscode.TabInputTextDiff,
-        `the code column shows no diff: ${JSON.stringify(input)}`
+      const shown = filesIn(
+        vscode.window.tabGroups.all.find(
+          (g) => g.viewColumn === vscode.ViewColumn.Two
+        )?.activeTab
       );
       assert.ok(
-        [input.original.fsPath, input.modified.fsPath].includes(
-          path.join(file === "pkg/legacy.py" ? base : head, file)
-        ),
-        `${file} shows: ${input.original.fsPath} ↔ ${input.modified.fsPath}`
+        shown.includes(path.join(file === "pkg/legacy.py" ? base : head, file)),
+        `${file} isn't shown: ${shown.join(" ↔ ")}`
       );
     });
 

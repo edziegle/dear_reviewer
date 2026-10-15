@@ -336,6 +336,112 @@ describe("The git tools on a repository", function () {
     }
   });
 
+  it("follows a commit's real parents, whatever replace refs or grafts say", async () => {
+    const commitOf = async (revision: string) =>
+      (await call("show", { revision })).match(/^commit ([0-9a-f]+)$/m)?.[1];
+    const grafts = path.join(repo.dir, ".git", "info", "grafts");
+    repo.git("replace", repo.changed, repo.elsewhere);
+    try {
+      assert.strictEqual(await commitOf("base"), repo.changed);
+      const shown = await call("show", { revision: repo.changed });
+      assert.ok(!shown.includes("secret side work"), shown);
+      assert.ok(shown.includes("return two"), shown);
+    } finally {
+      repo.git("replace", "-d", repo.changed);
+    }
+    fs.mkdirSync(path.dirname(grafts), { recursive: true });
+    fs.writeFileSync(grafts, `${repo.noted} ${repo.elsewhere}\n`);
+    try {
+      assert.strictEqual(await commitOf("head~1"), repo.changed);
+      assert.strictEqual(await commitOf(`${repo.noted}^`), repo.changed);
+      const log = await call("log", {});
+      assert.ok(!log.includes("secret side work"), log);
+    } finally {
+      fs.rmSync(grafts, { force: true });
+    }
+  });
+
+  it("takes as a full commit ID only one of the repository's hash length, and no ref with a hex name", async () => {
+    const long = "a".repeat(41);
+    repo.git("branch", long, repo.changed);
+    repo.git("branch", "b".repeat(64), repo.changed);
+    try {
+      for (const revision of [long, "b".repeat(64), `${repo.changed}0`]) {
+        const result = await tools.call("show", { revision });
+        assert.strictEqual(result.isError, true, revision);
+        assert.match(result.text, /isn't a commit in the Change's history/);
+      }
+    } finally {
+      repo.git("branch", "-D", long, "b".repeat(64));
+    }
+  });
+
+  it("takes no annotated tag's ID for the commit it names", async () => {
+    repo.git("tag", "-a", "-m", "a tag", "tagged", repo.changed);
+    try {
+      const tag = repo.git("rev-parse", "tagged");
+      for (const revision of [tag, tag.slice(0, 10)]) {
+        const result = await tools.call("show", { revision });
+        assert.strictEqual(result.isError, true, revision);
+        assert.match(result.text, /isn't a commit in the Change's history/);
+      }
+    } finally {
+      repo.git("tag", "-d", "tagged");
+    }
+  });
+
+  it("refuses every call, running nothing else, when git is older than 2.44", async () => {
+    for (const [version, shown] of [
+      ["git version 2.43.0", "2.43.0"],
+      ["git version 2.39.5 (Apple Git-154)", "2.39.5"],
+    ]) {
+      const old = path.join(
+        repo.dir,
+        "..",
+        `${path.basename(repo.dir)}-old-git`
+      );
+      const ran = `${old}-ran`;
+      fs.writeFileSync(
+        old,
+        `#!/bin/sh\nif [ "$1" = version ]; then echo '${version}'; exit 0; fi\necho "$@" >> '${ran}'\nexec git "$@"\n`,
+        { mode: 0o755 }
+      );
+      try {
+        const aged = new GitHistory(history, tools.limits, old);
+        for (const [tool, input] of [
+          ["log", {}],
+          ["show", { revision: "head" }],
+          ["blame", { path: "util.py" }],
+          ["diff", {}],
+        ] as const) {
+          const result = await aged.call(tool, input);
+          assert.deepStrictEqual(result, {
+            text: `Dear Reviewer's git tools need git 2.44 or later; this machine has ${shown}.`,
+            isError: true,
+          });
+        }
+        assert.ok(!fs.existsSync(ran), "nothing but git version ran");
+      } finally {
+        fs.rmSync(old, { force: true });
+        fs.rmSync(ran, { force: true });
+      }
+    }
+  });
+
+  it("says so when git can't be run at all", async () => {
+    const missing = new GitHistory(
+      history,
+      tools.limits,
+      path.join(repo.dir, "no-such-git")
+    );
+    const result = await missing.call("log", {});
+    assert.strictEqual(result.isError, true);
+    assert.match(
+      result.text,
+      /^Dear Reviewer's git tools need git 2\.44 or later, and couldn't run git/
+    );
+  });
+
   it("never fetches missing objects of a partial clone, nor runs its ssh command", async () => {
     const clone = path.join(
       repo.dir,
@@ -387,9 +493,13 @@ describe("The git tools on a repository", function () {
   it("never runs git with an argument that starts with a dash or a path outside the repository", async () => {
     const log = path.join(repo.dir, "..", `${path.basename(repo.dir)}-calls`);
     const spy = path.join(repo.dir, "..", `${path.basename(repo.dir)}-git`);
-    fs.writeFileSync(spy, `#!/bin/sh\necho "$@" >> '${log}'\nexec git "$@"\n`, {
-      mode: 0o755,
-    });
+    fs.writeFileSync(
+      spy,
+      `#!/bin/sh\n[ "$1" = version ] || echo "$@" >> '${log}'\nexec git "$@"\n`,
+      {
+        mode: 0o755,
+      }
+    );
     try {
       const spied = new GitHistory(history, tools.limits, spy);
       for (const [tool, input] of [
@@ -407,7 +517,7 @@ describe("The git tools on a repository", function () {
           `${tool} ${JSON.stringify(input)}`
         );
       }
-      assert.ok(!fs.existsSync(log), "git never ran");
+      assert.ok(!fs.existsSync(log), "git never ran, but for its version");
     } finally {
       fs.rmSync(spy, { force: true });
       fs.rmSync(log, { force: true });

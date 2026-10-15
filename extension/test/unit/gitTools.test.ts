@@ -7,12 +7,15 @@ import { describeToolUse } from "../../src/assistant/activity";
 import {
   allowedGitTools,
   capOutput,
+  commitIdKind,
   emptyTreeOf,
   failureText,
   checkPath,
   checkRevision,
   gitOptions,
   gitRuns,
+  gitTooOld,
+  parseGitVersion,
   outsideHistory,
   splitRevision,
   gitServerConfig,
@@ -209,8 +212,9 @@ describe("The git tools' command lines", () => {
   };
 
   it("starts every command with options that turn off pagers, hooks, attributes, colour and signature checks", () => {
-    assert.deepStrictEqual(options.slice(0, 3), [
+    assert.deepStrictEqual(options.slice(0, 4), [
       "--no-pager",
+      "--no-lazy-fetch",
       "--literal-pathspecs",
       `--attr-source=${emptyTree}`,
     ]);
@@ -219,6 +223,7 @@ describe("The git tools' command lines", () => {
       "core.pager=cat",
       "core.hooksPath=/dev/null",
       "core.fsmonitor=false",
+      "core.commitGraph=false",
       "core.attributesFile=/dev/null",
       "color.ui=never",
       "log.showSignature=false",
@@ -420,6 +425,57 @@ describe("What a failed git run says", () => {
       failureText(parseRequest("diff", {}), ""),
       /^git diff failed, and said nothing\.$/
     );
+  });
+});
+
+describe("The git the tools need", () => {
+  it("reads git's version from what git version prints", () => {
+    assert.deepStrictEqual(parseGitVersion("git version 2.44.0\n"), [2, 44, 0]);
+    assert.deepStrictEqual(
+      parseGitVersion("git version 2.39.5 (Apple Git-154)\n"),
+      [2, 39, 5]
+    );
+    assert.deepStrictEqual(
+      parseGitVersion("git version 2.45.2.windows.1"),
+      [2, 45, 2]
+    );
+    assert.deepStrictEqual(parseGitVersion("git version 3.0"), [3, 0, 0]);
+    assert.strictEqual(parseGitVersion("not git"), undefined);
+  });
+
+  it("takes git 2.44 or later, and refuses an older one by its version", () => {
+    for (const version of [
+      "git version 2.44.0",
+      "git version 2.56.0",
+      "git version 3.0.0",
+    ])
+      assert.strictEqual(gitTooOld(version), undefined, version);
+    assert.strictEqual(
+      gitTooOld("git version 2.43.0\n"),
+      "Dear Reviewer's git tools need git 2.44 or later; this machine has 2.43.0."
+    );
+    assert.strictEqual(
+      gitTooOld("git version 1.9.1"),
+      "Dear Reviewer's git tools need git 2.44 or later; this machine has 1.9.1."
+    );
+    assert.match(
+      gitTooOld("something else") ?? "",
+      /couldn't tell which git this machine has/
+    );
+  });
+});
+
+describe("Full and abbreviated commit IDs", () => {
+  it("takes a full ID only at the repository's hash length", () => {
+    const sha1 = "a".repeat(40);
+    const sha256 = "a".repeat(64);
+    assert.strictEqual(commitIdKind("abc1234", sha1), "abbreviated");
+    assert.strictEqual(commitIdKind("a".repeat(39), sha1), "abbreviated");
+    assert.strictEqual(commitIdKind("a".repeat(40), sha1), "full");
+    assert.strictEqual(commitIdKind("a".repeat(41), sha1), "tooLong");
+    assert.strictEqual(commitIdKind("a".repeat(64), sha1), "tooLong");
+    assert.strictEqual(commitIdKind("a".repeat(40), sha256), "abbreviated");
+    assert.strictEqual(commitIdKind("a".repeat(64), sha256), "full");
   });
 });
 

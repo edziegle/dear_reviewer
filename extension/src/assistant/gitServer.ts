@@ -10,12 +10,15 @@ import * as readline from "readline";
 import type { Readable, Writable } from "stream";
 import {
   type ChangeHistory,
+  commitIdKind,
   emptyTreeOf,
   failureText,
   type GitRequest,
   gitRuns,
+  gitMissingText,
   gitServerName,
   gitTimeoutMs,
+  gitTooOld,
   gitToolDefinitions,
   historyVariables,
   maxOutputChars,
@@ -44,8 +47,9 @@ export interface GitRun {
 }
 
 /**
- * Git's environment: never prompting, never fetching, and never taking a
- * lock or rewriting the index, even for a command that would refresh it.
+ * Git's environment: never prompting, never fetching, never replacing a
+ * commit's parents, and never taking a lock or rewriting the index, even for
+ * a command that would refresh it.
  */
 function gitEnvironment(): NodeJS.ProcessEnv {
   return {
@@ -55,6 +59,10 @@ function gitEnvironment(): NodeJS.ProcessEnv {
     // A partial clone would otherwise fetch missing objects, over the network
     // and through its own ssh command.
     GIT_NO_LAZY_FETCH: "1",
+    // Replace refs and grafts would give commits other parents, which could
+    // lead outside the Change's history.
+    GIT_NO_REPLACE_OBJECTS: "1",
+    GIT_GRAFT_FILE: "/dev/null",
   };
 }
 
@@ -121,6 +129,8 @@ const maxCandidates = 20;
 
 /** The git tools for one Change. */
 export class GitHistory {
+  private gitChecked?: Promise<string | undefined>;
+
   constructor(
     readonly history: ChangeHistory,
     readonly limits: GitLimits = {
@@ -131,6 +141,8 @@ export class GitHistory {
   ) {}
 
   async call(tool: string, input: unknown): Promise<ToolResult> {
+    const unusable = await this.checkGit();
+    if (unusable) return { text: unusable, isError: true };
     let request: GitRequest;
     try {
       request = parseRequest(tool, input);
@@ -191,16 +203,26 @@ export class GitHistory {
     let start: string;
     if (id === "base" || id === "head") start = this.history[id];
     else {
-      const candidates =
-        id.length >= 40
+      const kind = commitIdKind(id, this.history.head);
+      if (kind === "tooLong") throw refused;
+      const matches =
+        kind === "full"
           ? [id]
           : (await this.quiet(["rev-parse", `--disambiguate=${id}`])).stdout
               .split("\n")
               .filter(Boolean);
-      if (candidates.length > maxCandidates)
+      if (matches.length > maxCandidates)
         throw new Refusal(
           `\`${name}\` is too short to tell commits apart: give more of the commit ID.`
         );
+      // Only commits: a tag's ID would otherwise stand for the commit it names.
+      const candidates: string[] = [];
+      for (const match of matches)
+        if (
+          (await this.quiet(["cat-file", "-t", match])).stdout.trim() ===
+          "commit"
+        )
+          candidates.push(match);
       const found = new Set<string>();
       for (const candidate of candidates)
         if (await this.reaches(candidate)) {
@@ -219,6 +241,24 @@ export class GitHistory {
     // A commit's ancestors are in the history too; this only guards it.
     if (!commit || !(await this.reaches(commit))) throw refused;
     return commit;
+  }
+
+  /**
+   * Why this machine's git can't run the tools, if it can't: it runs
+   * `git version` once, with no other option, which an old git would fail on.
+   */
+  checkGit(): Promise<string | undefined> {
+    this.gitChecked ??= new Promise((resolve) => {
+      execFile(
+        this.git,
+        ["version"],
+        // Not the calls' own limit, which a caller may set short.
+        { env: gitEnvironment(), timeout: gitTimeoutMs },
+        (err, stdout) =>
+          resolve(err ? gitMissingText(err.message) : gitTooOld(stdout))
+      );
+    });
+    return this.gitChecked;
   }
 
   /** Whether the object is a commit the Change's head or base has. */
@@ -255,10 +295,13 @@ export class GitHistory {
         this.git,
         [
           "--no-pager",
+          "--no-lazy-fetch",
           "-c",
           "core.hooksPath=/dev/null",
           "-c",
           "core.fsmonitor=false",
+          "-c",
+          "core.commitGraph=false",
           ...args,
         ],
         {
@@ -412,9 +455,10 @@ function main(): void {
     );
     process.exit(2);
   }
-  void serve(process.stdin, process.stdout, new GitHistory(history)).then(() =>
-    process.exit(0)
-  );
+  const tools = new GitHistory(history);
+  // Learn once, at the start, whether this git can run the tools.
+  void tools.checkGit();
+  void serve(process.stdin, process.stdout, tools).then(() => process.exit(0));
 }
 
 if (require.main === module) main();

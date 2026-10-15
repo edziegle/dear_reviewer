@@ -75,6 +75,55 @@ const maxLogCount = 200;
 /** A tool call turned down, with a message for the Assistant saying why. */
 export class Refusal extends Error {}
 
+/** The oldest git the tools run on: the first with `--no-lazy-fetch`. */
+const minimumGit = [2, 44] as const;
+
+/** Git's version from what `git version` prints, such as "git version 2.44.0". */
+export function parseGitVersion(
+  output: string
+): [number, number, number] | undefined {
+  const match = /^git version (\d+)\.(\d+)(?:\.(\d+))?/.exec(output.trim());
+  if (!match) return undefined;
+  return [Number(match[1]), Number(match[2]), Number(match[3] ?? 0)];
+}
+
+/**
+ * Why the tools refuse to run on this git, from what `git version` printed,
+ * or undefined when it is new enough. An older git would ignore
+ * `GIT_NO_LAZY_FETCH` and fail on `--no-lazy-fetch`.
+ */
+export function gitTooOld(versionOutput: string): string | undefined {
+  const version = parseGitVersion(versionOutput);
+  const needed = `Dear Reviewer's git tools need git ${minimumGit.join(".")} or later`;
+  if (!version)
+    return `${needed}, and couldn't tell which git this machine has.`;
+  const [major, minor] = version;
+  if (
+    major > minimumGit[0] ||
+    (major === minimumGit[0] && minor >= minimumGit[1])
+  )
+    return undefined;
+  return `${needed}; this machine has ${version.join(".")}.`;
+}
+
+/** What a request gets when git couldn't be run to learn its version. */
+export function gitMissingText(error: string): string {
+  return `Dear Reviewer's git tools need git ${minimumGit.join(".")} or later, and couldn't run git: ${error}`;
+}
+
+/**
+ * How the tools read a commit ID, given one of the Change's: whole at the
+ * repository's hash length, as an abbreviation when shorter, and never when
+ * longer, which git would read as a ref name.
+ */
+export function commitIdKind(
+  id: string,
+  changeCommit: string
+): "full" | "abbreviated" | "tooLong" {
+  if (id.length === changeCommit.length) return "full";
+  return id.length < changeCommit.length ? "abbreviated" : "tooLong";
+}
+
 /**
  * The ID of the empty tree in a repository whose commit IDs are like
  * `commit`: SHA-1's 40 hex digits or SHA-256's 64.
@@ -89,7 +138,8 @@ export function emptyTreeOf(commit: string): string {
 /**
  * Options every git run starts with, before the subcommand. They turn off
  * whatever a repository's or the Reviewer's config could make a read run or
- * change: a pager, hooks, an fsmonitor, signature checks (which run gpg),
+ * change: a lazy fetch in a partial clone, a pager, hooks, an fsmonitor,
+ * parents from a commit-graph file, signature checks (which run gpg),
  * attributes from the working tree or the config (read from `emptyTree`
  * instead, so none apply), colour and ref names in the log. External diffs
  * and textconv drivers are turned off by each subcommand's own options.
@@ -97,6 +147,7 @@ export function emptyTreeOf(commit: string): string {
 export function gitOptions(emptyTree: string): string[] {
   return [
     "--no-pager",
+    "--no-lazy-fetch",
     "--literal-pathspecs",
     `--attr-source=${emptyTree}`,
     "-c",
@@ -105,6 +156,8 @@ export function gitOptions(emptyTree: string): string[] {
     "core.hooksPath=/dev/null",
     "-c",
     "core.fsmonitor=false",
+    "-c",
+    "core.commitGraph=false",
     "-c",
     "core.attributesFile=/dev/null",
     "-c",

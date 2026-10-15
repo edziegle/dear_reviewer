@@ -1,5 +1,5 @@
 // Unit tests for the runner's pure helpers. They need no VSCodium:
-// npx tsc -p test && npx mocha out/test/runPlan.test.js
+// mise run test-unit runPlan
 
 import * as assert from "assert";
 import { planLaunches, testWindowPids } from "./runPlan";

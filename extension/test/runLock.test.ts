@@ -1,5 +1,5 @@
 // Unit tests for the lock that serialises test runs. They need no VSCodium:
-// npx tsc -p test && npx mocha out/test/runLock.test.js
+// mise run test-unit runLock
 
 import * as assert from "assert";
 import * as cp from "child_process";

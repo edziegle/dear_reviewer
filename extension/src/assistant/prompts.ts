@@ -186,7 +186,7 @@ export async function summaryPrompt(
     "Don't go through the files one by one or list risks: the Reviewer reads the diff themselves, and asks for Findings when they want them.",
     "",
     ...(description ? [...describedAs(description), ""] : []),
-    `The Change's commits (${commits.count}), oldest first${leftOut(commits)}. ${othersText("them")}`,
+    commitsHeading("The Change's commits", commits),
     ...fenced(commits.log),
     "",
     `Changed files (${files.length}):`,
@@ -257,10 +257,7 @@ export async function sinceLastReviewPrompt(
     "Explain what changed since that Review in one short paragraph of plain prose: at most three sentences and about 60 words, with no headings, lists or code blocks. Say what the new commits do, then where to look first, as one `path:line` reference to a file they changed. Leave out what the Reviewer already reviewed.",
     "",
     ...(commits.count > 0
-      ? [
-          `Commits since (${commits.count}), oldest first${leftOut(commits)}. ${othersText("them")}`,
-          ...fenced(commits.log),
-        ]
+      ? [commitsHeading("Commits since", commits), ...fenced(commits.log)]
       : [
           "Commits since: none, since the history was rewritten, so compare the two commits.",
         ]),
@@ -412,8 +409,16 @@ function describedAs(description: PullRequestDescription): string[] {
   ];
 }
 
+/**
+ * The line before a capped log's fence: how many commits there are, how many
+ * it left out, and that their messages are others' text.
+ */
+export function commitsHeading(label: string, commits: CommitsLog): string {
+  return `${label} (${commits.count}), oldest first${leftOut(commits)}. ${othersText("them")}`;
+}
+
 /** Says how many commits a capped log left out, if any. */
-export function leftOut(commits: CommitsLog): string {
+function leftOut(commits: CommitsLog): string {
   if (commits.left === 0) return "";
   return `, cut off after ${maxCommitChars} characters with ${commits.left} later commit${commits.left === 1 ? "" : "s"} left out`;
 }

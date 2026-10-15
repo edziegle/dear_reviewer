@@ -103,14 +103,13 @@ describe("Which icon a Finding's lines show in the gutter", () => {
     assert.deepStrictEqual(icons(), []);
   });
 
-  it("takes no longer for Findings over many lines than over a few", () => {
-    const started = process.hrtime.bigint();
+  // A line-by-line walk would never finish over a trillion lines.
+  it("works by span, whatever the number of lines the Findings cover", () => {
     const result = icons(
       { first: 0, last: 1e12 },
       { first: 5e11, last: 5e11 },
       { first: 7e11, last: 9e11 }
     );
-    const ms = Number(process.hrtime.bigint() - started) / 1e6;
 
     assert.deepStrictEqual(result, [
       ["lightbulbWithBar", 0, 0],
@@ -120,6 +119,5 @@ describe("Which icon a Finding's lines show in the gutter", () => {
       ["lightbulbWithBar", 7e11, 7e11],
       ["bar", 7e11 + 1, 1e12],
     ]);
-    assert.ok(ms < 50, `took ${ms} ms`);
   });
 });

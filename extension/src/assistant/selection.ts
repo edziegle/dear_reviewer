@@ -1,6 +1,7 @@
 // Turns the Reviewer's selection in an editor into chat context: which open
 // Change, which side's worktree, or the reviewed commit of what changed since
-// the last Review, which file and which lines.
+// the last Review, which file and which lines. Tells where the Reviewer is
+// reading in the same terms: the lines on screen of the editor they used last.
 
 import * as path from "path";
 import * as vscode from "vscode";
@@ -33,6 +34,39 @@ export function selectionInChange(
       text: editor.document.getText(lines),
     },
   };
+}
+
+/**
+ * The file of a Change the Reviewer last had in front of them, with the
+ * lines on screen, if it is still on screen. Focusing a panel, such as the
+ * Assistant's, leaves the editor they used last on screen.
+ */
+export class ReadingTracker implements vscode.Disposable {
+  private last = vscode.window.activeTextEditor;
+  private readonly subscription = vscode.window.onDidChangeActiveTextEditor(
+    (editor) => {
+      if (editor) this.last = editor;
+    }
+  );
+
+  constructor(private readonly changes: () => Change[]) {}
+
+  readingIn(change: Change): Selection | undefined {
+    const editor = vscode.window.activeTextEditor ?? this.last;
+    if (!editor || !vscode.window.visibleTextEditors.includes(editor)) return;
+    const where = whereInChange(editor.document.uri, this.changes());
+    const ranges = editor.visibleRanges;
+    if (where?.change.id !== change.id || ranges.length === 0) return;
+    return {
+      ...where.file,
+      startLine: ranges[0].start.line + 1,
+      endLine: ranges[ranges.length - 1].end.line + 1,
+    };
+  }
+
+  dispose(): void {
+    this.subscription.dispose();
+  }
 }
 
 /**

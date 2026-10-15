@@ -1,8 +1,11 @@
 import * as assert from "assert";
 import * as fs from "fs";
+import * as path from "path";
 import { buildFixtureRepo } from "../fixtures";
+import { threadsFileOf } from "../review";
 import {
   closeChange,
+  eventually,
   foldersAddedSince,
   openChange,
   workspaceFolders,
@@ -20,6 +23,11 @@ describe("Close Change", () => {
     const before = workspaceFolders();
     await openChange(request);
     const opened = foldersAddedSince(before);
+    const [, head] = opened;
+    // The Change's Comments are written for its Assistant to read.
+    await eventually(() =>
+      assert.ok(fs.existsSync(threadsFileOf(head.path)), "the threads file")
+    );
 
     await closeChange(request);
 
@@ -31,5 +39,7 @@ describe("Close Change", () => {
     for (const folder of opened) {
       assert.ok(!fs.existsSync(folder.path), `${folder.path} was deleted`);
     }
+    const assistantDir = path.dirname(threadsFileOf(head.path));
+    assert.ok(!fs.existsSync(assistantDir), `${assistantDir} was deleted`);
   });
 });

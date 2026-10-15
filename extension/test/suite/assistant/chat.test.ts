@@ -1,5 +1,6 @@
 import * as assert from "assert";
 import * as path from "path";
+import * as vscode from "vscode";
 import {
   askAssistant,
   assistantRuns,
@@ -214,6 +215,59 @@ describe("Chatting with the Assistant about a Change", () => {
         `the prompt has ${expected}:\n${prompt}`
       );
 
+    await closeChange(request);
+  });
+
+  it("tells the Assistant which file of the Change the Reviewer is reading, and which lines", async () => {
+    scriptClaude({
+      turns: [
+        replyTurn("A summary."),
+        replyTurn("It returns 2."),
+        replyTurn("Nothing in front of you."),
+      ],
+    });
+    // A repository of its own, so the conversation is new.
+    const reading = buildFixtureRepo("chat-reading");
+    const request = {
+      repository: reading.path,
+      base: reading.commits.renamed,
+      head: reading.commits.documented,
+    };
+    const title = `${path.basename(reading.path)} ${short(request.base)}..${short(request.head)}`;
+    const before = workspaceFolders();
+    await openChange(request);
+    await showAssistant(request);
+    const [, head] = foldersAddedSince(before);
+    await eventually(async () =>
+      assert.strictEqual((await renderedPanel(title))?.busy, false)
+    );
+    await vscode.window.showTextDocument(
+      vscode.Uri.file(path.join(head.path, "util.py")),
+      { preview: false }
+    );
+
+    await askAssistant(title, "What does line 2 return?");
+    await eventually(async () =>
+      assert.strictEqual((await renderedPanel(title))?.messages.length, 3)
+    );
+    await vscode.window.showTextDocument(
+      await vscode.workspace.openTextDocument({ content: "Not the Change." })
+    );
+    await askAssistant(title, "And now?");
+    await eventually(async () =>
+      assert.strictEqual((await renderedPanel(title))?.messages.length, 5)
+    );
+
+    const [inFile, elsewhere] = userMessages(assistantRuns()[0]).slice(1);
+    assert.strictEqual(
+      inFile,
+      `The Reviewer is reading util.py on the head side (${path.join(head.path, "util.py")}), with lines 1–4 on screen.\n\nWhat does line 2 return?`
+    );
+    assert.strictEqual(elsewhere, "And now?");
+
+    await vscode.commands.executeCommand(
+      "workbench.action.revertAndCloseActiveEditor"
+    );
     await closeChange(request);
   });
 

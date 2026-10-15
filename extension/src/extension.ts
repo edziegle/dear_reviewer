@@ -17,7 +17,12 @@ import { Assistants } from "./assistant/assistant";
 import { Briefs } from "./briefs";
 import { Conversations } from "./assistant/conversations";
 import { Findings, FindingsNode } from "./findings";
-import { selectionInChange, whereInChange } from "./assistant/selection";
+import {
+  ReadingTracker,
+  selectionInChange,
+  whereInChange,
+} from "./assistant/selection";
+import { ThreadsFiles } from "./assistant/threads";
 import { GitHubAuth } from "./github/auth";
 import {
   GitHubClient,
@@ -88,6 +93,13 @@ export function activate(context: vscode.ExtensionContext) {
     new PendingReviewsBySource(localReviews, githubReviews),
     avatars
   );
+  // The Assistant reads the threads from a file, and learns where the Reviewer is reading.
+  const threadsFiles = new ThreadsFiles(
+    () => changes.shownHere(),
+    (change) => review.threadsOf(change),
+    review.onDidChange
+  );
+  const reading = new ReadingTracker(() => changes.shownHere());
   const changeFilesTree = vscode.window.createTreeView(
     "dearReviewer.changeFiles",
     {
@@ -113,7 +125,11 @@ export function activate(context: vscode.ExtensionContext) {
     conversations,
     (uri) => openLink(uri),
     (change) => reviews.lastReviewed(change),
-    (change) => timelines.codeColumn(change)
+    (change) => timelines.codeColumn(change),
+    {
+      threadsOf: (change) => review.threadsOf(change),
+      readingIn: (change) => reading.readingIn(change),
+    }
   );
   // Only the user's own setting counts: a workspace must not be able to
   // choose the repository Dear Reviewer runs git in.
@@ -753,6 +769,8 @@ export function activate(context: vscode.ExtensionContext) {
     changeFiles.onDidChangeTreeData(() => showStanding()),
     review.onDidChange(() => showStanding()),
     review,
+    threadsFiles,
+    reading,
     changes.onDidShowChange(() => void review.sync()),
     vscode.commands.registerCommand(
       "dearReviewer.addComment",

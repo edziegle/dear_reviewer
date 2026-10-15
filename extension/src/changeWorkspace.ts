@@ -173,7 +173,7 @@ export class ChangeWorkspace {
     if (wasInReviewWindow && !this.reviewWindow.isThisWindow()) {
       this.syncReviewWindow();
     }
-    for (const dir of [change.baseDir, change.headDir]) {
+    for (const dir of [change.baseDir, change.headDir, assistantDir(change)]) {
       fs.rmSync(dir, { recursive: true, force: true });
     }
     // A repository that was deleted has no records left to prune.
@@ -355,6 +355,15 @@ function changeFolders(change: Change): Folder[] {
       name: `${repo} head ${change.headSha.slice(0, 7)}`,
     },
   ];
+}
+
+/**
+ * The Change's folder of what Dear Reviewer writes for its Assistant to
+ * read, beside its worktrees. The Assistant may read this folder, and not
+ * the rest of the Change's.
+ */
+export function assistantDir(change: Change): string {
+  return path.join(path.dirname(change.headDir), "assistant");
 }
 
 export function changeTitle(change: Change): string {

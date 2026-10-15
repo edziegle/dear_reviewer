@@ -20,6 +20,7 @@ import {
   reviewThreads,
   submitReview,
   threadAt,
+  threadsForAssistant,
   unresolveThread,
 } from "../review";
 import {
@@ -239,6 +240,76 @@ describe("Existing review threads", () => {
     );
   });
 
+  it("gives the Assistant every thread in a file, with where each was written and who wrote what", async () => {
+    const thread = (
+      path: string,
+      side: "base" | "head",
+      lines: { start: number; end: number } | null,
+      originalLines: { start: number; end: number },
+      comments: [string, string, boolean][],
+      { outdated = false, resolved = false } = {}
+    ) => ({
+      path,
+      side,
+      lines,
+      originalLines,
+      outdated,
+      resolved,
+      comments: comments.map(([author, body, pending]) => ({
+        author,
+        body,
+        pending,
+      })),
+    });
+    await eventually(() =>
+      assert.deepStrictEqual(threadsForAssistant(head), [
+        thread(
+          "main.py",
+          "head",
+          null,
+          { start: 2, end: 3 },
+          [["alice", "This print should go.", false]],
+          { outdated: true }
+        ),
+        thread(
+          "pkg/core.py",
+          "head",
+          null,
+          { start: 4, end: 4 },
+          [["alice", "Is 2 right?", false]],
+          { outdated: true }
+        ),
+        thread(
+          "pkg/legacy.py",
+          "head",
+          null,
+          { start: 1, end: 1 },
+          [["alice", "Still needed?", false]],
+          { outdated: true }
+        ),
+        thread(
+          "pkg/sub/new.py",
+          "head",
+          { start: 1, end: 1 },
+          { start: 1, end: 1 },
+          [["reviewer", "Is NEW used?", true]]
+        ),
+        thread(
+          "util.py",
+          "base",
+          { start: 2, end: 2 },
+          { start: 2, end: 2 },
+          [["bob", "Keep the old name?", false]],
+          { resolved: true }
+        ),
+        thread("util.py", "head", { start: 1, end: 3 }, { start: 1, end: 3 }, [
+          ["alice", "Why the **docstring**?", false],
+          ["bob", "I asked for it.", false],
+        ]),
+      ])
+    );
+  });
+
   it("shows teammates' Comments as Markdown, with their avatars", async () => {
     const [first] = (await threadAt(path.join(head, "util.py"), 0)).comments;
 
@@ -288,6 +359,14 @@ describe("Existing review threads", () => {
     assert.ok(
       threads.every((t) => t.comments.every((c) => !c.pending)),
       "no Comment is pending"
+    );
+    await eventually(() =>
+      assert.ok(
+        threadsForAssistant(head)?.every((t) =>
+          t.comments.every((c) => !c.pending)
+        ),
+        "nor in the Assistant's file"
+      )
     );
     assert.deepStrictEqual(
       threads.find((t) => t.file === path.join(head, "pkg/sub/new.py")),
@@ -351,6 +430,15 @@ describe("Existing review threads", () => {
       true,
       "unresolve",
     ]);
+    await eventually(() =>
+      assert.strictEqual(
+        threadsForAssistant(head)?.find(
+          (t) => t.path === "util.py" && t.side === "head"
+        )?.resolved,
+        true,
+        "the Assistant's file has it resolved too"
+      )
+    );
   });
 
   it("unresolves a thread on GitHub", async () => {

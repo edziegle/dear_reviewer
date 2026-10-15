@@ -10,11 +10,15 @@
 // Comments into a Brief in the same conversation (ADR 0016), and when the
 // Reviewer asks, it raises Findings there too (ADR 0017). After the summary,
 // it suggests a Reading Order for the Change's files, out of the panel's
-// sight, and again when the Reviewer asks (ADR 0022).
+// sight, and again when the Reviewer asks (ADR 0022). It reads the Change's
+// review threads from a file, and each message tells it where the Reviewer
+// is reading (ADR 0023).
 
+import * as fs from "fs";
 import * as vscode from "vscode";
 import { inTreeOrder } from "../changeFiles";
 import {
+  assistantDir,
   Change,
   changedFiles,
   changeName,
@@ -48,6 +52,7 @@ import {
   sinceLastReviewPrompt,
   summaryPrompt,
 } from "./prompts";
+import { threadsOnLines, type ThreadInChange } from "./threads";
 import { messageOf } from "../errors";
 import { findReferences } from "../markdown";
 import {
@@ -59,6 +64,14 @@ import { openReference } from "../references";
 
 /** Gives the head commit the Reviewer's last Review of the Change covered, if any. */
 export type LastReview = (change: Change) => Promise<string | undefined>;
+
+/** What the Reviewer has in front of them, which each message tells the Assistant. */
+export interface ReviewerView {
+  /** The Change's review threads as they stand. */
+  threadsOf(change: Change): ThreadInChange[];
+  /** The file of the Change the Reviewer is reading, with the lines on screen, if any. */
+  readingIn(change: Change): Selection | undefined;
+}
 
 /** What the Change's overview shows from the Assistant. */
 export interface AssistantOverview {
@@ -104,7 +117,8 @@ export class Assistants implements vscode.Disposable {
     private readonly openLink: (uri: vscode.Uri) => Thenable<unknown>,
     private readonly lastReview: LastReview,
     /** The column a Change's code opens in, beside its overview. */
-    private readonly codeColumn: (change: Change) => vscode.ViewColumn
+    private readonly codeColumn: (change: Change) => vscode.ViewColumn,
+    private readonly reviewerView: ReviewerView
   ) {
     this.status = vscode.window.createStatusBarItem(
       "dearReviewer.claudeLogin",
@@ -135,7 +149,8 @@ export class Assistants implements vscode.Disposable {
       () => this.overviewChanged.fire(change.conversation),
       () => this.readingOrderChanged.fire(change.conversation),
       (current) => this.codeColumn(current),
-      () => this.retryStart(assistant)
+      () => this.retryStart(assistant),
+      this.reviewerView
     );
     this.byConversation.set(change.conversation, assistant);
     // Its overview may already be open, showing nothing from it yet.
@@ -392,7 +407,8 @@ class ChangeAssistant {
     /** The column the Change's code opens in. */
     private readonly codeColumn: (change: Change) => vscode.ViewColumn,
     /** Starts the Assistant again, once `claude` couldn't run. */
-    private readonly retry: () => void
+    private readonly retry: () => void,
+    private readonly reviewerView: ReviewerView
   ) {
     this.state = {
       ...namesOf(change),
@@ -687,7 +703,17 @@ class ChangeAssistant {
       ],
     });
     await this.enqueue(async () => {
-      const prompt = chatPrompt(this.change, question, context, this.note);
+      const threads = this.reviewerView.threadsOf(this.change);
+      const prompt = chatPrompt(
+        this.change,
+        question,
+        context.map((selection) => ({
+          ...selection,
+          threads: threadsOnLines(threads, selection),
+        })),
+        this.note,
+        this.reviewerView.readingIn(this.change)
+      );
       this.note = undefined;
       await this.turn(prompt);
     });
@@ -868,9 +894,15 @@ class ChangeAssistant {
   /** The running conversation, or a new `claude` that resumes the saved session. */
   private conversationNow(cli: ClaudeCli): ClaudeConversation {
     if (!this.conversation) {
+      // Its files may not be written yet, and `claude` reads only folders that exist.
+      fs.mkdirSync(assistantDir(this.change), { recursive: true, mode: 0o700 });
       this.conversation = cli.converse({
         cwd: this.conversations.workingDirectory(this.change.conversation),
-        addDirs: [this.change.headDir, this.change.baseDir],
+        addDirs: [
+          this.change.headDir,
+          this.change.baseDir,
+          assistantDir(this.change),
+        ],
         systemPrompt: assistantRole(this.change),
         resume: this.session?.id,
       });

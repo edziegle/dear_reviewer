@@ -202,7 +202,7 @@ export function describeLogin(status: Record<string, unknown>): ClaudeLogin {
 export interface ConversationOptions {
   /** The conversation's own folder, where Claude Code keeps its session. */
   cwd: string;
-  /** The folders the Assistant may read: the head and base worktrees. */
+  /** The folders the Assistant may read: the worktrees and the Change's Assistant folder. */
   addDirs: string[];
   /** Added to Claude Code's own system prompt. */
   systemPrompt: string;

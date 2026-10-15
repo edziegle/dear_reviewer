@@ -83,6 +83,8 @@ export interface ReviewThread extends ThreadPlace {
   pending: boolean;
   resolved: boolean;
   outdated: boolean;
+  /** The lines it was written on, when GitHub has since moved it to `line`. */
+  original?: { line: number; startLine?: number };
   comments: ReviewThreadComment[];
 }
 
@@ -376,6 +378,17 @@ ${paths
         side: thread.diffSide,
         line,
         ...(startLine !== null && startLine < line && { startLine }),
+        ...(thread.line !== null &&
+          thread.originalLine !== null &&
+          thread.originalLine !== thread.line && {
+            original: {
+              line: thread.originalLine,
+              ...(thread.originalStartLine !== null &&
+                thread.originalStartLine < thread.originalLine && {
+                  startLine: thread.originalStartLine,
+                }),
+            },
+          }),
         pending: comments[0]?.pending ?? false,
         resolved: thread.isResolved,
         outdated: thread.isOutdated || thread.line === null,

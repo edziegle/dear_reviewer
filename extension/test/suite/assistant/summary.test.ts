@@ -77,7 +77,12 @@ describe("The Assistant's summary when a Change opens", () => {
         !fs.realpathSync(run.cwd).startsWith(fs.realpathSync(worktree)),
         `claude runs outside the worktree ${worktree}`
       );
-    assert.deepStrictEqual(addedDirs(run), [head.path, base.path]);
+    // Its own folder of the Change, for the threads file, and not the whole Change's.
+    assert.deepStrictEqual(addedDirs(run), [
+      head.path,
+      base.path,
+      path.join(path.dirname(head.path), "assistant"),
+    ]);
     assert.ok(run.args.includes("-p"), run.args.join(" "));
     assert.strictEqual(flag(run, "--input-format"), "stream-json");
     assert.strictEqual(flag(run, "--output-format"), "stream-json");

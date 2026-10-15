@@ -7,7 +7,7 @@
 // a local Change, the Comments are kept in the extension's storage until a
 // Brief ends the Review (see ADR 0016). A Finding the Reviewer converts
 // becomes a draft Comment at its place, saved only when they save it (see
-// ADR 0017).
+// ADR 0017). The Assistant learns the threads as they stand (see ADR 0023).
 
 import * as fs from "fs";
 import * as path from "path";
@@ -21,6 +21,7 @@ import {
   type ReviewThread,
   type ThreadPlace,
 } from "./github/client";
+import type { ThreadInChange } from "./assistant/threads";
 import type { Avatars } from "./inbox";
 import type { PendingReviewsBySource } from "./pendingReview";
 import { hasFolder } from "./reviewWindow";
@@ -87,14 +88,11 @@ class PublishedComment implements vscode.Comment {
   }
 }
 
-/** What GitHub, or the extension's storage, says about a thread shown in the gutter. */
-interface ThreadState {
-  /** GitHub's node id for the thread, or the local thread's id. */
-  id: string;
-  pending: boolean;
-  resolved: boolean;
-  outdated: boolean;
-}
+/**
+ * What GitHub, or the extension's storage, says about a thread shown in the
+ * gutter, but its Comments, which the thread itself holds.
+ */
+type ThreadState = Omit<ReviewThread, "comments">;
 
 interface Place {
   change: Change;
@@ -141,6 +139,34 @@ export class ReviewComments implements vscode.Disposable {
   dispose(): void {
     this.controller.dispose();
     this.changed.dispose();
+  }
+
+  /**
+   * The Change's threads as they stand, with each Comment's saved text. A
+   * draft isn't in the Review until it is saved, so isn't one of them.
+   */
+  threadsOf(change: Change): ThreadInChange[] {
+    // Only the Reviewer's own Comments are pending; "You" would mean the Assistant.
+    const reviewer = { login: this.pending.viewer?.login ?? "Reviewer" };
+    return [...(this.shown.get(change.id) ?? [])].flatMap((thread) => {
+      const state = this.states.get(thread);
+      if (!state) return [];
+      const { id: _id, pending: _pending, ...place } = state;
+      const comments = thread.comments.flatMap((c) =>
+        c instanceof PendingComment
+          ? [{ author: reviewer, body: c.savedBody, pending: true }]
+          : c instanceof PublishedComment
+            ? [
+                {
+                  author: { login: c.author.name },
+                  body: c.body.value,
+                  pending: false,
+                },
+              ]
+            : []
+      );
+      return [{ ...place, comments }];
+    });
   }
 
   /** Every thread shown, for every Change. */
@@ -212,6 +238,7 @@ export class ReviewComments implements vscode.Disposable {
       new PendingComment(saved.commentId, text, this.author(), thread),
     ];
     this.track(place.change.id, thread, {
+      ...where,
       id: saved.threadId,
       pending: true,
       resolved: false,
@@ -270,6 +297,7 @@ export class ReviewComments implements vscode.Disposable {
       return;
     }
     this.style(thread, { ...state, resolved });
+    this.changed.fire();
   }
 
   /**
@@ -335,6 +363,7 @@ export class ReviewComments implements vscode.Disposable {
     comment.savedBody = text;
     comment.mode = vscode.CommentMode.Preview;
     refresh(comment.thread);
+    this.changed.fire();
   }
 
   cancelEdit(comment: vscode.Comment): void {
@@ -380,6 +409,7 @@ export class ReviewComments implements vscode.Disposable {
       new PendingComment(saved.commentId, text, this.author(), thread),
     ];
     this.track(place.change.id, thread, {
+      ...comment.place,
       id: saved.threadId,
       pending: true,
       resolved: false,
@@ -500,7 +530,8 @@ export class ReviewComments implements vscode.Disposable {
         ? new PendingComment(c.id, c.body, author, thread)
         : new PublishedComment(c.id, c.body, author, new Date(c.createdAt));
     });
-    this.track(change.id, thread, found);
+    const { comments: _, ...state } = found;
+    this.track(change.id, thread, state);
   }
 
   private track(

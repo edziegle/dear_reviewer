@@ -2,6 +2,8 @@
 // drives them: a new thread comes from the controller, and the comment
 // widget's buttons run the commands the extension contributes.
 
+import * as fs from "fs";
+import * as path from "path";
 import * as vscode from "vscode";
 import type { ChangeRequest } from "./reviewer";
 import type { RecordedReview } from "./github";
@@ -216,6 +218,43 @@ export async function reviewThreads(): Promise<ShownReviewThread[]> {
       }),
     }))
     .sort((a, b) => a.file.localeCompare(b.file) || a.lines[0] - b.lines[0]);
+}
+
+/** A thread as the Assistant reads it from its Change's threads file. */
+export interface ThreadForAssistant {
+  path: string;
+  side: "base" | "head";
+  lines: { start: number; end: number } | null;
+  originalLines: { start: number; end: number };
+  outdated: boolean;
+  resolved: boolean;
+  comments: { author: string; body: string; pending: boolean }[];
+}
+
+/** Where the Assistant reads the threads of the Change with this head worktree. */
+export function threadsFileOf(headDir: string): string {
+  return path.join(path.dirname(headDir), "assistant", "threads.json");
+}
+
+/**
+ * The threads the Assistant reads for the Change with this head worktree,
+ * sorted by path, side and line, or undefined before the file is written.
+ */
+export function threadsForAssistant(
+  headDir: string
+): ThreadForAssistant[] | undefined {
+  let text: string;
+  try {
+    text = fs.readFileSync(threadsFileOf(headDir), "utf8");
+  } catch {
+    return;
+  }
+  return (JSON.parse(text) as ThreadForAssistant[]).sort(
+    (a, b) =>
+      a.path.localeCompare(b.path) ||
+      a.side.localeCompare(b.side) ||
+      a.originalLines.start - b.originalLines.start
+  );
 }
 
 /** The thread Dear Reviewer shows on this file, starting at this line. */

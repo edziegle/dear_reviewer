@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.2.0](https://github.com/edziegle/dear_reviewer/compare/v0.1.1...v0.2.0) (2026-10-15)
+
+
+### Features
+
+* draw the Change's viewed progress as a bar, and show its overview from Change Files ([1690428](https://github.com/edziegle/dear_reviewer/commit/1690428bfdd727401851c983a8b8da8eea265b86)), closes [#49](https://github.com/edziegle/dear_reviewer/issues/49)
+* give the Assistant read-only git history through its own MCP server ([9f55d40](https://github.com/edziegle/dear_reviewer/commit/9f55d40d38fe5bb237eb37d59546b6c1bdcff81f)), closes [#39](https://github.com/edziegle/dear_reviewer/issues/39)
+* mark a long Finding with one lightbulb and a bar down its lines ([34246ca](https://github.com/edziegle/dear_reviewer/commit/34246ca54707d22fe9cc3a960fd102cca5ea2a5c)), closes [#40](https://github.com/edziegle/dear_reviewer/issues/40)
+* show whether my own pull requests need me or are ready to merge ([1cdb32d](https://github.com/edziegle/dear_reviewer/commit/1cdb32da0e925206db1a56a358c2f08f3f9e16d3)), closes [#51](https://github.com/edziegle/dear_reviewer/issues/51)
+
+
+### Bug Fixes
+
+* check git's version again after a failed check ([c8b0cc5](https://github.com/edziegle/dear_reviewer/commit/c8b0cc5d51de8e204bcb52264c6b23d9d78d4d51)), closes [#39](https://github.com/edziegle/dear_reviewer/issues/39)
+* close several Changes in one write, and wait only for folders on their way ([0c5ee87](https://github.com/edziegle/dear_reviewer/commit/0c5ee875f558110bcc46da09f6ed0d306cab86a0)), closes [#35](https://github.com/edziegle/dear_reviewer/issues/35)
+* follow the open Changes another window changes in the review window ([e386cf6](https://github.com/edziegle/dear_reviewer/commit/e386cf6ec307bb39521554de6ad6407fd8421f60)), closes [#35](https://github.com/edziegle/dear_reviewer/issues/35)
+* judge my pull requests by reviewers' latest opinions, and recheck mergeability ([31f8675](https://github.com/edziegle/dear_reviewer/commit/31f8675fc8d65020147880d6a72a91a83c437de5)), closes [#51](https://github.com/edziegle/dear_reviewer/issues/51)
+* keep a Change opened earlier behind one shown, when its folders arrive later ([#60](https://github.com/edziegle/dear_reviewer/issues/60)) ([3afad3b](https://github.com/edziegle/dear_reviewer/commit/3afad3b183649e9a444cdc8b30880bc559c4116b)), closes [#35](https://github.com/edziegle/dear_reviewer/issues/35)
+* keep the git tools from fetching, and from telling of refs outside the Change ([2df9882](https://github.com/edziegle/dear_reviewer/commit/2df98824455a11f58efa18a0e7b44dd5ab1eedcf)), closes [#39](https://github.com/edziegle/dear_reviewer/issues/39)
+* leave out a reviewer whose latest opinion was dismissed ([b9404d3](https://github.com/edziegle/dear_reviewer/commit/b9404d3910e56d284d8663b92c340a3fcaa2c85c)), closes [#51](https://github.com/edziegle/dear_reviewer/issues/51)
+* list only the Change in front in Change Files and Findings ([f9ad59d](https://github.com/edziegle/dear_reviewer/commit/f9ad59d93981c07e49dbb6eff0e2062beb5321fe)), closes [#35](https://github.com/edziegle/dear_reviewer/issues/35)
+* need git 2.44 for the git tools, and follow only real parents ([2a8e8b6](https://github.com/edziegle/dear_reviewer/commit/2a8e8b6c7445cddedd0657aeee11e3050986f616)), closes [#39](https://github.com/edziegle/dear_reviewer/issues/39)
+* say no Change is in front, rather than open, when a command finds none ([85905f0](https://github.com/edziegle/dear_reviewer/commit/85905f0b9f9cb02147095e7547c080bd9284a865)), closes [#35](https://github.com/edziegle/dear_reviewer/issues/35)
+* show the Change now in front once the one in front closes ([5b4f693](https://github.com/edziegle/dear_reviewer/commit/5b4f6938e2ad1000956777e4a0ae2384ce6d4c84)), closes [#35](https://github.com/edziegle/dear_reviewer/issues/35)
+* wait for the open Changes to settle before showing the one in front ([5b34108](https://github.com/edziegle/dear_reviewer/commit/5b34108271be65ace6d7168e773bfb9558da392e)), closes [#35](https://github.com/edziegle/dear_reviewer/issues/35)
+
+
+### Performance Improvements
+
+* work out a Finding's gutter icons by span, not line by line ([4a8ba64](https://github.com/edziegle/dear_reviewer/commit/4a8ba64694fb8858649b13fb2ce646c79a51c75f)), closes [#40](https://github.com/edziegle/dear_reviewer/issues/40)
+
 ## [0.1.1](https://github.com/edziegle/dear_reviewer/compare/v0.1.0...v0.1.1) (2026-10-15)
 
 

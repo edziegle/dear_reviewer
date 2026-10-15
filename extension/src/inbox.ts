@@ -59,6 +59,8 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
    */
   private readonly mergeabilityRechecked = new Set<string>();
   private laterRefresh: NodeJS.Timeout | undefined;
+  /** What the latest load said about the Reviewer's setup. */
+  private welcome: Welcome = "none";
 
   constructor(
     private readonly github: GitHubClient,
@@ -160,6 +162,16 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
     const loading = this.startLoad();
     this.changed.fire();
     await loading;
+  }
+
+  /**
+   * The groups as the Inbox shows them once the latest load is in, and
+   * whether it found the Reviewer signed out or without repositories. Home
+   * lists them from here, so it and the Inbox never disagree.
+   */
+  async contents(): Promise<{ groups: InboxNode[]; welcome: Welcome }> {
+    const groups = await this.getChildren();
+    return { groups, welcome: this.welcome };
   }
 
   async getChildren(node?: InboxNode): Promise<InboxNode[]> {
@@ -275,7 +287,7 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
   }
 
   /** "opening…" while the node's Change opens, "open" once it is. */
-  private openState(node: InboxNode): string[] {
+  openState(node: InboxNode): string[] {
     const key = keyOf(node);
     if (!key) return [];
     if (this.opening.has(key)) return ["opening…"];
@@ -307,6 +319,7 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
     if (loaded.authoredByMe) this.recheckMergeability(loaded.authoredByMe);
     if (loaded.signedIn !== undefined)
       await setContext("dearReviewer.signedIn", loaded.signedIn);
+    this.welcome = loaded.welcome;
     // VS Code only shows the welcome message while the view is empty.
     await showWelcome(loaded.welcome);
     return loaded.nodes;
@@ -321,7 +334,7 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
       return {
         nodes: [
           pullRequestGroup(awaitingMyReview, inbox.awaitingMyReview),
-          pullRequestGroup("Authored by me", inbox.authoredByMe, {
+          pullRequestGroup(authoredByMe, inbox.authoredByMe, {
             authoredByMe: true,
           }),
           pullRequestGroup(reviewedByMe, inbox.reviewedByMe),
@@ -452,7 +465,8 @@ const refreshForMergeability = 10_000;
 /** How long the Inbox at most shows a reviewed pull request as reviewed against search. */
 const keepReviewed = 120_000;
 
-const awaitingMyReview = "Awaiting my review";
+export const awaitingMyReview = "Awaiting my review";
+export const authoredByMe = "Authored by me";
 const reviewedByMe = "Reviewed by me";
 
 function pullRequestKey(pullRequest: {
@@ -494,7 +508,7 @@ function pullRequestGroup(
   };
 }
 
-type Welcome = "signedOut" | "noRepositories" | "none";
+export type Welcome = "signedOut" | "noRepositories" | "none";
 
 /** Which welcome message the empty Inbox view shows (see package.json). */
 function showWelcome(welcome: Welcome): Thenable<unknown> {

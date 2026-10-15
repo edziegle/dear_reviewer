@@ -21,6 +21,8 @@ function pr({
     title: "Mine",
     url: "https://github.com/acme/api/pull/1",
     updatedAt: "2026-10-01T00:00:00Z",
+    createdAt: "2026-10-01T00:00:00Z",
+    size: { files: 1, additions: 1, deletions: 0 },
     author: { login: "reviewer", avatarUrl: "" },
     headRefName: "feature",
     headSha: head,

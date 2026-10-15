@@ -50,6 +50,10 @@ export interface Standing {
   notes: string[];
   viewed: number;
   total: number;
+  /** Whether their last Review covers the Change's head, so nothing is new since. */
+  reviewed: boolean;
+  /** How many of their Comments are pending. */
+  pending: number;
 }
 
 /** What the overview learns from the rest of Dear Reviewer, and how it acts. */

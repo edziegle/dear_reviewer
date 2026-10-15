@@ -54,6 +54,8 @@ import { messageOf } from "./errors";
 import { ReviewWindowTrust } from "./trust";
 import { LanguageOffer } from "./highlighting";
 import { conversationFolder } from "./conversationName";
+import { Home } from "./home/home";
+import type { FromHome } from "./home/panel";
 
 export function activate(context: vscode.ExtensionContext) {
   const changes = new ChangeWorkspace(context.globalStorageUri.fsPath);
@@ -185,6 +187,11 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
   const reviewWindow = new ReviewWindow(context.globalStorageUri.fsPath);
+  // Home takes the Inbox's place in the review window (ADR 0025); tests,
+  // which can't run there, stand in for it.
+  let inReviewWindow = () => reviewWindow.isThisWindow();
+  const showInReviewWindow = () =>
+    setContext("dearReviewer.inReviewWindow", inReviewWindow());
   const trust = new ReviewWindowTrust(
     context.globalStorageUri.fsPath,
     () => reviewWindow.isThisWindow(),
@@ -219,6 +226,40 @@ export function activate(context: vscode.ExtensionContext) {
     },
   });
 
+  const home = new Home(inbox, avatars, {
+    inProgress: () => changes.shownHere(),
+    standing: (change) => standingOf(change),
+    resume: (change) => void changes.bringToFront(change),
+    finish: (change) =>
+      void vscode.commands.executeCommand(
+        "dearReviewer.finishReview",
+        requestOf(change)
+      ),
+    open: (node) =>
+      void vscode.commands.executeCommand(
+        node.kind === "localBranch"
+          ? "dearReviewer.openLocalBranch"
+          : "dearReviewer.openPullRequest",
+        node
+      ),
+    refresh: () =>
+      void vscode.commands.executeCommand("dearReviewer.refreshInbox"),
+  });
+  context.subscriptions.push(home);
+
+  /** Shows Home in the review window while no Change is in front there, or on its way. */
+  function showHomeIfNothingInFront(): void {
+    if (
+      inReviewWindow() &&
+      !changes.inFront() &&
+      !changes.busy &&
+      !changes.waitingHere()
+    )
+      void home.show();
+  }
+  /** Whether the Change shown last closed, leaving none in front, so Home is due once things settle. */
+  let homeDue = false;
+
   /** Where the Reviewer stands on the Change, for its overview. */
   async function standingOf(change: Change): Promise<Standing> {
     const standing: string[] = [];
@@ -232,7 +273,14 @@ export function activate(context: vscode.ExtensionContext) {
     if (pending > 0) standing.push(countOf(pending, "pending Comment"));
     const { viewed, total } = await changeFiles.viewedCount(change);
     standing.push(`${viewed} of ${total} viewed`);
-    return { review: lastReview, notes: standing, viewed, total };
+    return {
+      review: lastReview,
+      notes: standing,
+      viewed,
+      total,
+      reviewed: !!since && !since.newCommits,
+      pending,
+    };
   }
   context.subscriptions.push(trust.onDidChangeNavigation(() => showStanding()));
   context.subscriptions.push(
@@ -243,7 +291,10 @@ export function activate(context: vscode.ExtensionContext) {
   let standingTimer: NodeJS.Timeout | undefined;
   function showStanding(): void {
     clearTimeout(standingTimer);
-    standingTimer = setTimeout(() => void timelines.refreshStanding(), 50);
+    standingTimer = setTimeout(() => {
+      void timelines.refreshStanding();
+      home.refresh();
+    }, 50);
   }
   const findings = new Findings(
     context.extensionUri,
@@ -298,6 +349,7 @@ export function activate(context: vscode.ExtensionContext) {
       .catch(() => undefined)
       .then(async () => {
         await vscode.commands.executeCommand("workbench.action.closePanel");
+        home.close();
         await closeOtherChangesEditors(change);
         timelines.closeOthers(change);
         assistants.closePanelsExcept(change);
@@ -388,6 +440,7 @@ export function activate(context: vscode.ExtensionContext) {
     changeFiles.refresh();
     findings.refresh();
     inbox.redraw();
+    home.refresh();
     void setContext("dearReviewer.hasOpenChange", !!changes.inFront());
   }
 
@@ -402,8 +455,14 @@ export function activate(context: vscode.ExtensionContext) {
   function syncOpenChanges(): Promise<void> {
     showOpenChanges();
     const front = changes.inFront();
-    if (!front) shownLast = undefined;
-    else if (
+    if (!front) {
+      if (shownLast) homeDue = true;
+      shownLast = undefined;
+      if (homeDue && !changes.busy && !changes.waitingHere()) {
+        homeDue = false;
+        showHomeIfNothingInFront();
+      }
+    } else if (
       !changes.busy &&
       !changes.waitingHere() &&
       shownLast &&
@@ -793,6 +852,7 @@ export function activate(context: vscode.ExtensionContext) {
         });
       }
     ),
+    vscode.commands.registerCommand("dearReviewer.showHome", () => home.show()),
     vscode.commands.registerCommand(
       "dearReviewer.openLocalBranch",
       async (node?: InboxNode) => {
@@ -1332,6 +1392,7 @@ export function activate(context: vscode.ExtensionContext) {
   );
   void repositories.scanWindow();
   void showSignedIn();
+  void showInReviewWindow();
   showOpenChanges();
   void lifecycle.tidy();
   void changes.showPendingDiffs();
@@ -1339,6 +1400,7 @@ export function activate(context: vscode.ExtensionContext) {
   // After a reload, the review starts quiet again, at the Change opened last.
   const latest = changes.shownHere().at(-1);
   if (latest) void showChange(latest);
+  else showHomeIfNothingInFront();
   // The views are how the Reviewer sees the Inbox, a Change's files, the
   // Assistant and their Comments; tests read them the same way.
   return {
@@ -1369,6 +1431,23 @@ export function activate(context: vscode.ExtensionContext) {
           rendered: panel.rendered,
           receive: (message: FromWebview) => panel.receive(message),
         })),
+    },
+    home: {
+      panels: () =>
+        home.panels().map((panel) => ({
+          title: panel.title,
+          active: panel.active,
+          sent: panel.sent,
+          rendered: panel.rendered,
+          receive: (message: FromHome) => panel.receive(message),
+        })),
+      /** Stands in for the review window, which the tests can't run in, or stops. */
+      actAsReviewWindow: async (acting: boolean) => {
+        inReviewWindow = acting
+          ? () => true
+          : () => reviewWindow.isThisWindow();
+        await showInReviewWindow();
+      },
     },
     /** Every Change shown the way a review starts, oldest first, by name. */
     shownChanges: (): readonly string[] => [...shownChanges],

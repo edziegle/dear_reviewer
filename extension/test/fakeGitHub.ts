@@ -33,6 +33,11 @@ export interface FakePullRequest {
   state?: "OPEN" | "CLOSED" | "MERGED";
   /** Logins whose review is requested. */
   reviewRequested?: string[];
+  /** When their reviews were requested, on the timeline; when it was created if absent. */
+  reviewRequestedAt?: string;
+  /** Lines added and removed; none if absent. */
+  additions?: number;
+  deletions?: number;
   /** The latest commit's combined check status; absent when it has no checks. */
   checks?: CheckState;
   headRefName?: string;
@@ -875,6 +880,10 @@ export async function startFakeGitHub(): Promise<{
       title: pr.title,
       url: `https://github.com/${pr.repository}/pull/${pr.number}`,
       updatedAt: pr.updatedAt ?? "2026-10-01T00:00:00Z",
+      createdAt: pr.createdAt ?? "2026-10-01T00:00:00Z",
+      additions: pr.additions ?? 0,
+      deletions: pr.deletions ?? 0,
+      changedFiles: pr.files?.length ?? 0,
       isDraft: pr.isDraft ?? false,
       mergeable: pr.mergeable ?? "MERGEABLE",
       reviewDecision: pr.reviewDecision ?? null,
@@ -897,6 +906,15 @@ export async function startFakeGitHub(): Promise<{
       },
       ...(/\breviews\(/.test(query) && {
         reviews: reviewsField(pr, query, vars),
+      }),
+      ...(/\breviewRequests: timelineItems\(/.test(query) && {
+        reviewRequests: {
+          nodes: (pr.reviewRequested ?? []).map((login) => ({
+            createdAt:
+              pr.reviewRequestedAt ?? pr.createdAt ?? "2026-10-01T00:00:00Z",
+            requestedReviewer: { __typename: "User", login },
+          })),
+        },
       }),
       ...(/\blatestReviews\(/.test(query) && {
         latestReviews: latestReviewsField(pr, (r) => r.state !== "PENDING", {

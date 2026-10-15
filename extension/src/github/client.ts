@@ -2,6 +2,7 @@
 // against a configurable API base URL.
 
 import { GitHubAuth, trustedOrigin } from "./auth";
+import { requestedOfReviewerAt, type ReviewRequest } from "./reviewRequests";
 
 export type CheckStatus = "passed" | "failed" | "running";
 
@@ -12,6 +13,11 @@ export interface PullRequestSummary {
   title: string;
   url: string;
   updatedAt: string;
+  createdAt: string;
+  /** When it last asked me for a review, personally or through a team; undefined when it never did. */
+  reviewRequestedAt?: string;
+  /** How big it is: its changed files and lines. */
+  size: { files: number; additions: number; deletions: number };
   author: { login: string; avatarUrl: string };
   headRefName: string;
   headSha: string;
@@ -248,7 +254,7 @@ ${INBOX_PULL_REQUEST}`;
         .filter((s) => s.alias.startsWith(prefix))
         .flatMap((s) => data[s.alias]?.nodes ?? [])
         .filter((node) => node.__typename === "PullRequest")
-        .map(summaryOf)
+        .map((node) => summaryOf(node, reviewer))
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     const awaitingMyReview = collect("awaiting");
     const awaiting = new Set(
@@ -1056,6 +1062,10 @@ const INBOX_PULL_REQUEST = `fragment InboxPullRequest on PullRequest {
   title
   url
   updatedAt
+  createdAt
+  additions
+  deletions
+  changedFiles
   headRefName
   headRefOid
   baseRefName
@@ -1068,6 +1078,9 @@ const INBOX_PULL_REQUEST = `fragment InboxPullRequest on PullRequest {
   reviews(last: 1, author: $reviewer, states: ${SUBMITTED_REVIEWS}) { nodes { commit { oid } } }
   latestReviews(first: 100) { nodes { ...InboxReview } }
   latestOpinionatedReviews(first: 100) { nodes { ...InboxReview } }
+  reviewRequests: timelineItems(last: 50, itemTypes: [REVIEW_REQUESTED_EVENT]) {
+    nodes { ... on ReviewRequestedEvent { createdAt requestedReviewer { __typename ... on User { login } } } }
+  }
 }
 
 fragment InboxReview on PullRequestReview {
@@ -1082,11 +1095,16 @@ interface PullRequestNode {
   title: string;
   url: string;
   updatedAt: string;
+  createdAt: string;
+  additions: number;
+  deletions: number;
+  changedFiles: number;
   headRefName: string;
   headRefOid: string;
   baseRefName: string;
   repository: { nameWithOwner: string };
   author: { login: string; avatarUrl: string } | null;
+  reviewRequests: { nodes: (ReviewRequestedNode | null)[] };
   commits: {
     nodes: { commit: { statusCheckRollup: { state: string } | null } }[];
   };
@@ -1098,19 +1116,35 @@ interface PullRequestNode {
   latestOpinionatedReviews: { nodes: (InboxReviewNode | null)[] };
 }
 
+interface ReviewRequestedNode {
+  createdAt?: string;
+  requestedReviewer: { __typename: string; login?: string } | null;
+}
+
 interface InboxReviewNode {
   state: string;
   author: { login: string } | null;
   commit: { oid: string } | null;
 }
 
-function summaryOf(node: PullRequestNode): PullRequestSummary {
+function summaryOf(node: PullRequestNode, viewer: string): PullRequestSummary {
+  const reviewRequestedAt = requestedOfReviewerAt(
+    reviewRequestsOf(node.reviewRequests),
+    viewer
+  );
   return {
     repository: node.repository.nameWithOwner,
     number: node.number,
     title: node.title,
     url: node.url,
     updatedAt: node.updatedAt,
+    createdAt: node.createdAt,
+    ...(reviewRequestedAt && { reviewRequestedAt }),
+    size: {
+      files: node.changedFiles,
+      additions: node.additions,
+      deletions: node.deletions,
+    },
     // A deleted account shows as "ghost" on github.com.
     author: node.author ?? { login: "ghost", avatarUrl: "" },
     headRefName: node.headRefName,
@@ -1137,6 +1171,26 @@ const reviewDecisions: Record<string, ReviewDecision> = {
   CHANGES_REQUESTED: "changesRequested",
   REVIEW_REQUIRED: "reviewRequired",
 };
+
+/** The review requests on the timeline, with whom each asked where GitHub says. */
+function reviewRequestsOf(
+  requests: { nodes: (ReviewRequestedNode | null)[] } | undefined
+): ReviewRequest[] {
+  return (requests?.nodes ?? []).flatMap((node) => {
+    if (!node?.createdAt) return [];
+    const reviewer = node.requestedReviewer;
+    return [
+      {
+        createdAt: node.createdAt,
+        ...(reviewer?.__typename === "User" && reviewer.login
+          ? { reviewer: { kind: "user" as const, login: reviewer.login } }
+          : reviewer?.__typename === "Team"
+            ? { reviewer: { kind: "team" as const } }
+            : {}),
+      },
+    ];
+  });
+}
 
 /** The submitted ones of the latest reviews; a pending review has no verdict. */
 function latestReviewsOf(

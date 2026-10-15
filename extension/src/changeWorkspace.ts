@@ -148,6 +148,19 @@ export class ChangeWorkspace implements vscode.Disposable {
     return change;
   }
 
+  /**
+   * Brings a Change this window shows to the front again, as opening it
+   * again would, without fetching anything: it becomes the one shown last.
+   */
+  bringToFront(change: Change): Promise<void> {
+    return this.serially(async () => {
+      const open = this.openChanges.all().find((c) => c.id === change.id);
+      if (!open || open.diffPending) return;
+      this.openChanges.put(open);
+      this.shown.fire(change);
+    });
+  }
+
   /** Opens (or focuses) the review window, with the Changes it holds. */
   showReviewWindow(): Promise<void> {
     return this.serially(async () => {

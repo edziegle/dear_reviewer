@@ -72,6 +72,18 @@ export async function releaseNotifications(): Promise<void> {
   (await linkApi()).answerNotificationsWith(undefined);
 }
 
+/**
+ * Every Change Dear Reviewer has shown the way a review starts in this
+ * window, oldest first, by name: a branch's name, or else its title.
+ */
+export async function shownChanges(): Promise<readonly string[]> {
+  const extension = vscode.extensions.getExtension<{
+    shownChanges(): readonly string[];
+  }>("edziegle.dear-reviewer");
+  if (!extension) throw new Error("Dear Reviewer is not installed");
+  return (await extension.activate()).shownChanges();
+}
+
 export function closeChange(request: ChangeRequest): Thenable<unknown> {
   return vscode.commands.executeCommand("dearReviewer.closeChange", request);
 }

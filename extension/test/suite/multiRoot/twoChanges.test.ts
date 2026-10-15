@@ -21,6 +21,7 @@ import {
   gitIn,
   openChange,
   short,
+  shownChanges,
   workspaceFolders,
   worktreesOf,
 } from "../reviewer";
@@ -246,6 +247,43 @@ describe("Two open Changes", () => {
       await vscode.commands.executeCommand("workbench.action.closeAllEditors");
       await closeChange(second);
       await closeChange(first);
+    }
+  });
+
+  it("shows only the newer head when it replaces the Change in front, never the Change behind on the way", async () => {
+    const repo = buildFixtureRepo("newerHead");
+    const behind = {
+      repository: repo.path,
+      base: repo.commits.initial,
+      head: repo.commits.renamed,
+    };
+    repo.git("branch", "feature", repo.commits.documented);
+    const feature = {
+      repository: repo.path,
+      base: repo.commits.renamed,
+      head: "refs/heads/feature",
+    };
+    await openChange(behind);
+    await openChange(feature);
+    const shownBefore = (await shownChanges()).length;
+    repo.git("branch", "-f", "feature", repo.commits.restructured);
+
+    await openChange(feature);
+
+    try {
+      await eventually(async () =>
+        assert.deepStrictEqual((await shownChanges()).slice(shownBefore), [
+          "feature",
+        ])
+      );
+      // Give a late showing of the Change behind the time to show up.
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+      assert.deepStrictEqual((await shownChanges()).slice(shownBefore), [
+        "feature",
+      ]);
+    } finally {
+      await closeChange(feature);
+      await closeChange(behind);
     }
   });
 });

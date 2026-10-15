@@ -291,6 +291,7 @@ export function activate(context: vscode.ExtensionContext) {
    */
   function showChange(change: Change): Promise<void> {
     shownLast = change.id;
+    shownChanges.push(changeName(change));
     // A failed showing doesn't hold up the next.
     showingChange = showingChange
       .catch(() => undefined)
@@ -307,6 +308,8 @@ export function activate(context: vscode.ExtensionContext) {
   }
   /** The id of the Change shown last, as a review starts. */
   let shownLast: string | undefined;
+  /** Every Change shown as a review starts, by name, for the tests. */
+  const shownChanges: string[] = [];
   /** Settles once the Change being shown is in front, so a diff can open after it. */
   let showingChange = Promise.resolve();
 
@@ -1358,6 +1361,8 @@ export function activate(context: vscode.ExtensionContext) {
           receive: (message: FromWebview) => panel.receive(message),
         })),
     },
+    /** Every Change shown the way a review starts, oldest first, by name. */
+    shownChanges: (): readonly string[] => [...shownChanges],
     /** A stand-in for the Extensions view's search. */
     languages: {
       searchWith: (search?: (query: string) => void) =>

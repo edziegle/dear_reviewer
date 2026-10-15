@@ -11,6 +11,7 @@ import {
   activeTabLabel,
   eventually,
   multiDiffFiles,
+  shownChanges,
   workspaceFolders,
 } from "./reviewer";
 
@@ -31,13 +32,15 @@ export interface ReviewWindowReport {
   files: { original?: string; modified?: string }[];
   /** The Changes Change Files lists, by label. */
   changeFiles: string[];
+  /** Every Change shown the way a review starts, oldest first, by name. */
+  shown: readonly string[];
 }
 
 /**
  * Writes what the review window shows now, and again whenever its editors,
  * tabs, folders or Change Files change, and every half second, for as long
- * as the run goes on: its folders, the active tab, every tab, any diff's
- * files, and the Changes Change Files lists.
+ * as the run's fixtures last: its folders, the active tab, every tab, any
+ * diff's files, the Changes Change Files lists, and every Change shown.
  */
 export async function observeReviewWindow(): Promise<never> {
   const file = reviewWindowReportFile();
@@ -45,21 +48,30 @@ export async function observeReviewWindow(): Promise<never> {
   // One write at a time, so a slower, older report never lands last.
   let writing = Promise.resolve();
   const write = () => {
-    writing = writing.then(async () => {
-      const listed = await changeFiles().catch(() => []);
-      const report: ReviewWindowReport = {
-        folders: workspaceFolders(),
-        tab: activeTabLabel(),
-        tabs: vscode.window.tabGroups.all.flatMap((group) =>
-          group.tabs.map((tab) => tab.label)
-        ),
-        files: multiDiffFiles(),
-        changeFiles: listed.map((entry) => entry.label),
-      };
-      // Renamed into place, so the test never reads a half-written report.
-      fs.writeFileSync(`${file}.tmp`, JSON.stringify(report, null, 2));
-      fs.renameSync(`${file}.tmp`, file);
-    });
+    writing = writing
+      .then(async () => {
+        // The run is over once its fixtures are gone.
+        if (!fs.existsSync(path.dirname(file))) {
+          clearInterval(polling);
+          return;
+        }
+        const listed = await changeFiles().catch(() => []);
+        const report: ReviewWindowReport = {
+          folders: workspaceFolders(),
+          tab: activeTabLabel(),
+          tabs: vscode.window.tabGroups.all.flatMap((group) =>
+            group.tabs.map((tab) => tab.label)
+          ),
+          files: multiDiffFiles(),
+          changeFiles: listed.map((entry) => entry.label),
+          shown: await shownChanges(),
+        };
+        // Renamed into place, so the test never reads a half-written report.
+        fs.writeFileSync(`${file}.tmp`, JSON.stringify(report, null, 2));
+        fs.renameSync(`${file}.tmp`, file);
+      })
+      // One failed write leaves the next ones to try again.
+      .catch(() => undefined);
   };
   vscode.window.onDidChangeVisibleTextEditors(write);
   vscode.window.tabGroups.onDidChangeTabs(write);
@@ -67,7 +79,7 @@ export async function observeReviewWindow(): Promise<never> {
   (await changeFilesTreeChanged())(write);
   // Also now and then, as the review window may change state without any of
   // those events, such as when a Change it already lists is opened again.
-  setInterval(write, 500);
+  const polling = setInterval(write, 500);
   await eventually(() => {
     const overview = vscode.window.tabGroups.all
       .flatMap((group) => group.tabs)

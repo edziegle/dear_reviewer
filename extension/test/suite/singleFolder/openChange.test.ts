@@ -184,4 +184,42 @@ describe("Open Change from a single-folder window", () => {
       await closeChange(first);
     }
   });
+
+  it("shows only the newer head in the review window when it replaces the Change in front there", async () => {
+    const repo = buildFixtureRepo("newerHeadElsewhere");
+    const behind = {
+      repository: repo.path,
+      base: repo.commits.initial,
+      head: repo.commits.renamed,
+    };
+    repo.git("branch", "feature", repo.commits.documented);
+    const feature = {
+      repository: repo.path,
+      base: repo.commits.renamed,
+      head: "refs/heads/feature",
+    };
+    await openChange(behind);
+    await openChange(feature);
+    let shownBefore = 0;
+    await inReviewWindow((report) => {
+      assert.strictEqual(report.shown.at(-1), "feature");
+      shownBefore = report.shown.length;
+    });
+    repo.git("branch", "-f", "feature", repo.commits.restructured);
+
+    await openChange(feature);
+
+    try {
+      await inReviewWindow((report) =>
+        assert.deepStrictEqual(report.shown.slice(shownBefore), ["feature"])
+      );
+      await new Promise((resolve) => setTimeout(resolve, 2_000));
+      await inReviewWindow((report) =>
+        assert.deepStrictEqual(report.shown.slice(shownBefore), ["feature"])
+      );
+    } finally {
+      await closeChange(feature);
+      await closeChange(behind);
+    }
+  });
 });

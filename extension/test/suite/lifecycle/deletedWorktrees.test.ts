@@ -13,6 +13,7 @@ import {
   gitIn,
   openChange,
   short,
+  shownChanges,
   workspaceFolders,
   worktreesOf,
 } from "../reviewer";
@@ -212,6 +213,48 @@ describe("A Change whose worktrees were deleted outside Dear Reviewer", () => {
       });
     } finally {
       await closeChange(behind);
+    }
+  });
+
+  it("shows only the Change left in front when it closes several at once, never one it is closing", async () => {
+    const repo = buildFixtureRepo("deletedTogether");
+    const left = {
+      repository: repo.path,
+      base: repo.commits.initial,
+      head: repo.commits.renamed,
+    };
+    const title = `${path.basename(repo.path)} ${short(left.base)}..${short(left.head)}`;
+    await openChange(left);
+    const before = workspaceFolders();
+    for (const [base, head] of [
+      [repo.commits.renamed, repo.commits.documented],
+      [repo.commits.documented, repo.commits.restructured],
+      [repo.commits.renamed, repo.commits.restructured],
+    ])
+      await openChange({ repository: repo.path, base, head });
+    // The first of them again, so the Changes closing aren't in the order shown.
+    await openChange({
+      repository: repo.path,
+      base: repo.commits.renamed,
+      head: repo.commits.documented,
+    });
+    deleteOutsideDearReviewer(foldersAddedSince(before));
+    const shownBefore = (await shownChanges()).length;
+
+    await refreshInbox();
+
+    try {
+      await eventually(async () =>
+        assert.deepStrictEqual((await shownChanges()).slice(shownBefore), [
+          title,
+        ])
+      );
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+      assert.deepStrictEqual((await shownChanges()).slice(shownBefore), [
+        title,
+      ]);
+    } finally {
+      await closeChange(left);
     }
   });
 });

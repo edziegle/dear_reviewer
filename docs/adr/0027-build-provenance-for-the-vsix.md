@@ -19,7 +19,7 @@ The release workflow builds `dear-reviewer.vsix` and attaches it to a GitHub Rel
 
 Chosen option: `actions/attest`, because it's one step and two job permissions, with no keys or secrets, and it lets anyone verify a downloaded .vsix with `gh attestation verify dear-reviewer.vsix -R edziegle/dear_reviewer`. Build L3 hardens the build against a tampered workflow run, which matters less than letting people verify the file at all, and it moves the build into a reusable workflow the project would have to maintain.
 
-- The `vsix` job attests the .vsix before uploading it, so a failed attestation leaves the release without an unattested file.
+- The `vsix` job builds the .vsix with read-only permissions. A separate `publish` job, which runs no dependency code, attests it and then attaches it to the release, so no install script can sign a file of its own, and a failed attestation leaves the release without an unattested file.
 - Every action in both workflows is pinned to a full commit SHA, with its version in a comment, which Dependabot keeps up to date.
 - When the extension goes to the marketplaces, the same attested .vsix goes to each registry, not a rebuild, and Build L3 is worth a second look.
 

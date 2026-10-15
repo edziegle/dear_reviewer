@@ -36,6 +36,10 @@ _Avoid_: File order, review plan, story
 The list of Changes waiting for the Reviewer: pull requests that await their review or that they authored, across the repositories they have open in VSCodium, have opened before, or listed, plus local branches ahead of main.
 _Avoid_: Queue, dashboard
 
+**Home**:
+The review window's page of where the Reviewer stands across their Changes, shown when no Change is in front. Unlike the Inbox, which lists Changes, Home shows their state.
+_Avoid_: Dashboard, start page, landing page
+
 **Brief**:
 The Reviewer's comments on a local Change, packaged as instructions for an agent to act on. The local counterpart of posting a review to GitHub.
 _Avoid_: Fix-up prompt, task list

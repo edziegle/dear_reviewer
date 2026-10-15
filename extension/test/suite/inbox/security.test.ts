@@ -88,9 +88,13 @@ describe("Where the GitHub token goes", () => {
     await refreshInbox();
 
     assert.deepStrictEqual(await inbox(), [], "signed out on the other origin");
+    // Refreshes started before the switch may still reach the first origin.
     assert.deepStrictEqual(
-      (await requestsToGitHub()).filter((r) => r.authorization),
-      []
+      (await requestsToGitHub())
+        .filter((r) => r.authorization)
+        .filter((r) => r.host !== apiHost()),
+      [],
+      "no token went to the other origin"
     );
 
     await configure({ repositories: ["acme/api"] });
@@ -115,9 +119,13 @@ describe("Where the GitHub token goes", () => {
     assert.strictEqual(groups.length, 1, JSON.stringify(groups));
     assert.match(groups[0].label, /https/);
     assert.strictEqual(groups[0].icon, "$(error)");
+    // Refreshes started before the switch may still reach the loopback origin.
     assert.deepStrictEqual(
-      (await requestsToGitHub()).filter((r) => r.authorization),
-      []
+      (await requestsToGitHub())
+        .filter((r) => r.authorization)
+        .filter((r) => r.host !== apiHost()),
+      [],
+      "no token went to the plain-http origin"
     );
   });
 

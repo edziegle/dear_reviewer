@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/edziegle/dear_reviewer/compare/v0.2.0...v0.2.1) (2026-10-15)
+
+
+### Bug Fixes
+
+* keep the focus clear of Home's header and name each row's buttons ([#62](https://github.com/edziegle/dear_reviewer/issues/62)) ([fb0e4c3](https://github.com/edziegle/dear_reviewer/commit/fb0e4c3b376ed624c5e95d5491ff5d7aa2518563))
+
 ## [0.2.0](https://github.com/edziegle/dear_reviewer/compare/v0.1.1...v0.2.0) (2026-10-15)
 
 ### Features

@@ -4,7 +4,7 @@
   "description": "A workbench for reviewing Changes, with real code navigation on both sides of the diff.",
   "private": true,
   "license": "MIT",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "publisher": "edziegle",
   "engines": {
     "vscode": "^1.135.0"

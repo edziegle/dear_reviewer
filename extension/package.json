@@ -365,6 +365,18 @@
         }
       }
     },
+    "colors": [
+      {
+        "id": "dearReviewer.assistantForeground",
+        "description": "The Assistant's color: the rule down its replies, its take and its Reading Order, its mark, and its Findings in the editor.",
+        "defaults": {
+          "dark": "charts.purple",
+          "light": "charts.purple",
+          "highContrast": "charts.purple",
+          "highContrastLight": "charts.purple"
+        }
+      }
+    ],
     "icons": {
       "dear-reviewer-logo": {
         "description": "The Dear Reviewer logo",

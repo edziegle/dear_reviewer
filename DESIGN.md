@@ -26,7 +26,8 @@ colors:
   check-passed: "var(--vscode-testing-iconPassed)"
   check-failed: "var(--vscode-testing-iconFailed)"
   check-running: "var(--vscode-testing-iconQueued)"
-  finding: "var(--vscode-editorWarning-foreground)"
+  assistant: "var(--vscode-dearReviewer-assistantForeground)"
+  finding: "{colors.assistant}"
 typography:
   title:
     fontFamily: "var(--vscode-font-family)"
@@ -128,11 +129,11 @@ The Change's code is the page, and the code lives only in the editor. Dear Revie
 
 The system has almost nothing of its own on purpose. Native UI comes first: tree views, comment threads, gutter decorations, codicons, quick picks and the status bar. The three webviews, each Change's overview, Home and the Assistant panel, exist only where no native view fits, and they behave like editor panels: compact, text-led, flat, divided by hairlines, readable for a whole working day. Density is the editor's density. A Reviewer who glances from the diff to the margin should notice the content, not the change of world.
 
-Rejected on sight: the GitHub Pull Requests extension's webviews, which are slow, custom-styled review pages that look wrong next to VSCodium, and branded AI chat panels with gradients, glows, sparkle motifs or a face for the bot. The Assistant is a plain panel of prose, not a character.
+Rejected on sight: the GitHub Pull Requests extension's webviews, which are slow, custom-styled review pages that look wrong next to VSCodium, and branded AI chat panels with gradients, glows, sparkle motifs or a face for the bot. The Assistant is not a character, but it writes in a hand of its own: a rule down the margin of what it says, headed by the reading cat and its name, in the one color the extension adds (ADR 0031).
 
 **Key Characteristics:**
 
-- Every color is a `--vscode-*` theme variable; the extension defines no palette.
+- Every color is a `--vscode-*` theme variable; the extension adds one, the Assistant's, which a theme can set.
 - Type is the workbench font for prose and the editor font for anything code-shaped.
 - Flat surfaces, 1px hairlines and sticky bars on the editor background.
 - Controls copy VS Code's own: 2px corners, theme button colors, no flourish.
@@ -154,7 +155,8 @@ The palette is borrowed whole from the active theme; Dear Reviewer chooses roles
 ### Tertiary
 
 - **Check Signals** (`check-passed`, `check-failed`, `check-running`): the outline of a check's status. The word inside stays in `foreground`: these are icon colors, meant for 3:1, and too faint for small text in light themes. Skipped and neutral checks use `muted-foreground`.
-- **Finding** (`finding`): the Assistant's Findings: the tree icon, the overview-ruler mark and the gutter marker. A one-line Finding's marker is the lightbulb. A longer one's first line shows the lightbulb with a bar down its left edge, and its other lines the bar alone, so the bar runs unbroken to its last line. A gutter icon can't take a theme color, so each icon is two SVGs in VS Code's default `editorWarning.foreground` for each theme kind: `#cca700` in `extension/media/finding.svg`, `finding-start.svg` and `finding-bar.svg` for dark themes, and `#bf8803` in `finding-light.svg`, `finding-start-light.svg` and `finding-bar-light.svg` for light ones. These are the only literal colors in the system; change them only if VS Code's defaults change.
+- **Assistant** (`assistant`): the extension's one color, `dearReviewer.assistantForeground`, which defaults to the theme's `charts.purple` in every theme kind and which a theme or `workbench.colorCustomizations` can set. It marks whatever the Assistant says and nothing else: the rule and the cat of the Assistant's Hand, and its Findings in the editor. It is an icon and rule color, not a text color: the name beside the cat stays in `foreground`.
+- **Finding** (`finding`, which is `assistant`): the Assistant's Findings: the tree icon, the overview-ruler mark and the gutter marker. A one-line Finding's marker is the lightbulb. A longer one's first line shows the lightbulb with a bar down its left edge, and its other lines the bar alone, so the bar runs unbroken to its last line. A gutter icon can't take a theme color, so each icon is two SVGs in `charts.purple`'s default for each theme kind: `#b180d7` in `extension/media/finding.svg`, `finding-start.svg` and `finding-bar.svg` for dark themes, and `#652d90` in `finding-light.svg`, `finding-start-light.svg` and `finding-bar-light.svg` for light ones. These are the only literal colors in the system; change them only if VS Code's defaults change. A theme that sets the Assistant's color moves the overview-ruler mark and the tree icon, but not the gutter.
 - **Problem** (`problem-background` with a `problem-border` outline): the banner that says what went wrong, in words for the Reviewer.
 
 ### Neutral
@@ -171,7 +173,7 @@ The palette is borrowed whole from the active theme; Dear Reviewer chooses roles
 
 **The Borrowed Ink Rule.** No literal color values in any surface. If a role has no `--vscode-*` variable, pick the nearest semantic one and give it a fallback inside `var()`; never write a hex value. The one exception is an image the editor draws that can't take a theme color, such as a gutter icon: give it light and dark variants in the theme color's default values.
 
-**The Semantic Hue Rule.** Hue means state, never decoration: green for passed, red for failed or a problem, the warning color for Findings and for a Claude login billed per token. Nothing is colored only to look nice.
+**The Semantic Hue Rule.** Hue means state, never decoration: green for passed, red for failed or a problem, the Assistant's color for what the Assistant says, Findings included, and the warning color for a Claude login billed per token. Nothing is colored only to look nice.
 
 ## Typography
 
@@ -205,7 +207,7 @@ Plain text keeps its line breaks (`pre-wrap`); rendered Markdown flows normally.
 
 ## Elevation & Depth
 
-Flat. Nothing has a shadow. Depth comes from three things only: 1px `hairline` rules, sticky header and footer bars on `editor-background` that cover content as it scrolls past, and tinted blocks (Quiet Tint, Code Ground, Problem) that set content apart from the ground.
+Flat. Nothing has a shadow. Depth comes from three things only: 1px `hairline` rules, the Assistant's rule, sticky header and footer bars on `editor-background` that cover content as it scrolls past, and tinted blocks (Quiet Tint, Code Ground, Problem) that set content apart from the ground.
 
 ### Named Rules
 
@@ -215,7 +217,7 @@ Flat. Nothing has a shadow. Depth comes from three things only: 1px `hairline` r
 
 Corners are the editor's: nearly square. Buttons and the message box use 2px corners, the editor's control radius. Inline code, fenced blocks, quotes and selection chips use 3px. The Reviewer's message block uses 4px. Two shapes are fully round and mean something: check status pills (8px, outlined in their own state color) and avatars (circles, 24px). Banners and timeline rows have square corners.
 
-Borders are 1px, used for hairline dividers, status-pill outlines, Markdown table cells and the problem banner. Icons are codicons in native UI; the extension's own SVGs are the activity-bar reading cat (`extension/media/dear-reviewer.svg`, a monochrome mask the theme colors) and the Finding lightbulb.
+Borders are 1px, used for hairline dividers, status-pill outlines, Markdown table cells and the problem banner. The one exception is the Assistant's rule, 2px so it carries its color, the same weight as a Finding's gutter bar. Icons are codicons in native UI; the extension's own SVGs are the activity-bar reading cat (`extension/media/dear-reviewer.svg`, a monochrome mask the theme colors), which the webviews also draw as the Assistant's mark (`extension/src/assistantMark.ts`, its coordinates rounded), and the Finding lightbulb.
 
 ## Components
 
@@ -241,10 +243,12 @@ The feel of every control is quiet and editor-plain. If a control looks custom, 
 
 - **Timeline row:** avatar, then author in bold, verb and muted date on one line, then the body; a hairline below. No card chrome.
 - **Reviewer message:** the only filled message, in `quiet-tint` with 4px corners and 8px padding, so the Reviewer's words stand out from the Assistant's without either resembling a chat bubble app.
-- **Assistant reply:** plain rendered Markdown on the ground, with no fill, no avatar and no visible name. Every message starts with a visually hidden speaker ("You:", "Assistant:", "Dear Reviewer:") so a screen reader can tell them apart.
+- **Assistant reply:** rendered Markdown on the ground in the Assistant's Hand: no fill, the cat and "Assistant" over it, and its rule down the left. The Reviewer's and Dear Reviewer's messages start with a visually hidden speaker ("You:", "Dear Reviewer:") so a screen reader can tell them apart; the Assistant's name is visible, and the cat beside it is hidden from screen readers.
 - **Note:** Dear Reviewer's own remarks (new commits arrived, for example) in italic `muted-foreground`.
 - **Problem banner:** the Assistant panel's alone. `problem-background` with a 1px `problem-border` outline, 8px padding, the message in plain words with backticked words in the editor font, and below it the button that helps, with Retry as a secondary beside it when `claude` couldn't start. While `claude` can't run, Send is off and the message box's placeholder says why.
-- **Working line:** while the Assistant writes, its latest step in muted italic, the steps so far behind a disclosure, and a Stop link that ends the reply; the conversation goes on with the next message.
+- **Working line:** in the Assistant's rule, without the cat, while the Assistant writes: its latest step in muted italic, the steps so far behind a disclosure, and a Stop link that ends the reply; the conversation goes on with the next message.
+
+**The Assistant's Hand Rule.** Wherever the Assistant speaks in a webview, its words sit behind a 2px rule in the Assistant's color, headed by the reading cat in that color and "Assistant" in `foreground`, at label size and semibold. The hand has no fill, so the Reviewer's filled messages stay the main flow. Nothing else uses the rule or the color, so a Reviewer can tell the Assistant's words from the Reviewer's own, from GitHub's and from Dear Reviewer's at a glance. In the editor, the Finding's gutter bar is the same rule.
 
 ### Inputs / Fields
 
@@ -267,7 +271,7 @@ The only thing that opens when a Change opens: alone in the main column, with th
 - **How big, and is it healthy:** `12 files · +340 −58 · checks failed`, with tabular numerals, additions and deletions in the git decoration colors mixed 60% with `foreground` (`color-mix`), which keeps the hue and lifts small text past 4.5:1.
 - **Your place:** a muted line, `New commits since your Review · 2 pending Comments · 3 of 12 viewed`. While no new commits came since the Reviewer's last Review, the line opens with it in `foreground`: `✓ You approved at 14:32 · 3 Comments published`, `✗ You requested changes at 14:32` or `• You commented at 14:32`. Only the mark takes a hue: `check-passed` for approved, `check-failed` for changes requested, `muted-foreground` for commented. In an untrusted review window it ends `Navigation off: Trust the review window…`, a link that shows Workspace Trust. That says why go to definition does nothing, where the Reviewer is looking; it informs rather than asks, so ADR 0021's one prompt stays the only one.
 - **Will its syntax highlight:** while some changed files have a file extension no installed language covers, a muted line under where the Reviewer stands, `No syntax highlighting for .tofu files. Find an Extension · Don't ask again`. Find an Extension opens the Extensions view with a search for the bare extension, `tofu`; with more than one, each extension is its own link. The Reviewer picks and installs; Dear Reviewer keeps no list of extensions to suggest. Don't ask again drops those extensions for good, in every Change. The line drops what an installed extension or `files.associations` comes to cover. Files without an extension, binary files and plain ones such as `.txt` or `.lock` never count.
-- **The Assistant's take:** a small "Assistant" heading (or "Since your Review at `3f9c2a1`") over one paragraph of rendered Markdown, capped at 72ch. While it is written, a muted italic "Reading the Change…"; when `claude` can't run, a muted line with a link that helps and, when trying again can mend it, Retry. Both sit in one status region that screen readers hear only when its words change. Never a red banner: the overview works without the Assistant.
+- **The Assistant's take:** in the Assistant's Hand, which holds the Reading Order too: the cat and "Assistant" as its heading, followed by a muted "· Since your Review at `3f9c2a1`" when it explains new commits, over one paragraph of rendered Markdown, capped at 72ch. While it is written, a muted italic "Reading the Change…"; when `claude` can't run, a muted line with a link that helps and, when trying again can mend it, Retry. Both sit in one status region that screen readers hear only when its words change. Never a red banner: the overview works without the Assistant.
 - **The Reading Order:** under the take, a small "Reading Order" heading over a numbered list of steps, each a semibold label with its files beneath: the path, a link in the editor font that opens its diff, then its reason, muted. A viewed file has a ✓ in `foreground` and a muted path; hue would claim it passed. While the order is written, a muted italic "Choosing an order to read the files in…"; once new commits make it out of date, a muted line says so with a Suggest again link (ADR 0022). A Change without one shows nothing here.
 
 The take shows at most three sentences, with a Show all link (with `aria-expanded`) for the rest. Under it is one row of buttons: Start at `session.ts:42` (the take's first reference to a changed file, by file name, with the full path in its tooltip), Next unviewed file once the files are counted, and Ask the Assistant. The reference also stays a link inside the take's sentence, where its reason is. Refresh is an icon button beside the finishing button in the header. A hairline closes the overview, and the history follows: the pull request's timeline, or a local Change's commits, as a list. If the history can't load, a muted line under its heading says so in plain words with Retry; the rest of the overview is fine, so it doesn't shout.
@@ -320,6 +324,6 @@ The shared reading style for timeline bodies and Assistant replies: tight margin
 - **Don't** show the Change's code as code in a webview: no files, diffs, hunks, line numbers or syntax highlighting (ADR 0012).
 - **Don't** write a literal color, except in an editor-drawn image that can't take a theme color, and then only the theme color's default values.
 - **Don't** use shadows, gradients, blur or glow.
-- **Don't** brand the Assistant: no avatar, mascot, gradient, sparkle motif or accent color for the bot in its panel. The status bar item, with Dear Reviewer's logo and a short state, is the only mark it gets.
+- **Don't** brand the Assistant beyond its Hand: no avatar, mascot, face, fill, gradient, glow or sparkle motif. Its marks are the reading cat, its name, its rule and its color, and nothing else.
 - **Don't** build custom-styled review pages in the manner of the GitHub Pull Requests extension's webviews.
 - **Don't** load web fonts or set absolute font sizes.

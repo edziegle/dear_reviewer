@@ -7,6 +7,7 @@
 
 import * as crypto from "crypto";
 import * as vscode from "vscode";
+import { catMark, catSymbol } from "../assistantMark";
 import {
   Handshake,
   MarkdownPanel,
@@ -205,7 +206,7 @@ function html(): string {
   .chip button { display: inline-flex; align-items: center; justify-content: center; flex: none; min-width: 20px; min-height: 20px; margin: -2px -5px -2px 2px; padding: 0; background: none; border: none; border-radius: 2px; color: inherit; cursor: pointer; }
   .chip button:hover { background: var(--vscode-toolbar-hoverBackground); }
   .chip button svg { width: 12px; height: 12px; }
-  .busy { color: var(--vscode-descriptionForeground); margin: 8px 0; }
+  .busy { color: var(--vscode-descriptionForeground); margin: 12px 0; }
   .busy .now { font-style: italic; }
   .busy code { font-family: var(--vscode-editor-font-family); font-style: normal; }
   .busy details { margin-top: 2px; font-size: 0.9em; }
@@ -230,8 +231,9 @@ function html(): string {
 </head>
 <body>
 <header><h1 id="title"></h1><div class="muted" id="range"></div><div class="muted" id="login"></div></header>
+${catSymbol}
 <main id="messages"></main>
-<div class="busy" id="busy" hidden><div class="now" id="now"></div><details id="steps" hidden><summary id="stepCount"></summary><ol id="stepList"></ol></details><button class="stop" id="stop" type="button" title="Stop this reply; the conversation goes on with your next message" hidden>Stop</button></div>
+<div class="busy hand" id="busy" hidden><div class="now" id="now"></div><details id="steps" hidden><summary id="stepCount"></summary><ol id="stepList"></ol></details><button class="stop" id="stop" type="button" title="Stop this reply; the conversation goes on with your next message" hidden>Stop</button></div>
 <div class="problem" id="problem" role="alert" hidden></div>
 <div class="visually-hidden" id="announce" role="status"></div>
 <footer>
@@ -272,14 +274,22 @@ function html(): string {
     nodes.push(end);
     return nodes;
   };
-  // Who said it, for screen readers; the look already tells.
-  const speakers = { reviewer: "You: ", assistant: "Assistant: ", note: "Dear Reviewer: " };
+  // Who said it: the Assistant's name shows, in its hand; the others' are
+  // for screen readers, as the look already tells.
+  const speakers = { reviewer: "You: ", note: "Dear Reviewer: " };
   const messageNode = (m) => {
     const div = document.createElement("div");
     div.className = "message " + m.from;
-    const speaker = document.createElement("span");
-    speaker.className = "visually-hidden";
-    speaker.textContent = speakers[m.from] || "";
+    const speaker = document.createElement("div");
+    if (m.from === "assistant") {
+      div.classList.add("hand");
+      speaker.className = "speaker";
+      speaker.innerHTML = ${JSON.stringify(catMark)};
+      speaker.append("Assistant");
+    } else {
+      speaker.className = "visually-hidden";
+      speaker.textContent = speakers[m.from] || "";
+    }
     div.append(speaker);
     if (m.context && m.context.length) {
       const context = document.createElement("div");

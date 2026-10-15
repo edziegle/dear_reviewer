@@ -84,7 +84,7 @@ export class Findings
   ) {
     // A gutter marker and a mark on the scroll bar: nothing in the text. A
     // gutter icon can't take a theme color, so each theme kind gets an icon
-    // in its default editorWarning.foreground.
+    // in the Assistant color's default, charts.purple's.
     const icon = (name: string) =>
       vscode.window.createTextEditorDecorationType({
         light: {
@@ -109,7 +109,9 @@ export class Findings
       bar: icon("finding-bar"),
     };
     this.decoration = vscode.window.createTextEditorDecorationType({
-      overviewRulerColor: new vscode.ThemeColor("editorWarning.foreground"),
+      overviewRulerColor: new vscode.ThemeColor(
+        "dearReviewer.assistantForeground"
+      ),
       overviewRulerLane: vscode.OverviewRulerLane.Right,
     });
     this.subscriptions.push(
@@ -289,7 +291,7 @@ export class Findings
     item.tooltip = finding.message;
     item.iconPath = new vscode.ThemeIcon(
       "lightbulb",
-      new vscode.ThemeColor("editorWarning.foreground")
+      new vscode.ThemeColor("dearReviewer.assistantForeground")
     );
     item.contextValue = "finding";
     item.command = {

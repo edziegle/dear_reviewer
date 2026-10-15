@@ -244,11 +244,13 @@ export class GitHistory {
   }
 
   /**
-   * Why this machine's git can't run the tools, if it can't: it runs
-   * `git version` once, with no other option, which an old git would fail on.
+   * Why this machine's git can't run the tools, if it can't, from
+   * `git version` with no other option, which an old git would fail on. Only
+   * a git that can is remembered: after a failure, such as a slow first run
+   * or git not yet installed or updated, the next call checks again.
    */
   checkGit(): Promise<string | undefined> {
-    this.gitChecked ??= new Promise((resolve) => {
+    this.gitChecked ??= new Promise<string | undefined>((resolve) => {
       execFile(
         this.git,
         ["version"],
@@ -257,6 +259,9 @@ export class GitHistory {
         (err, stdout) =>
           resolve(err ? gitMissingText(err.message) : gitTooOld(stdout))
       );
+    }).then((unusable) => {
+      if (unusable) this.gitChecked = undefined;
+      return unusable;
     });
     return this.gitChecked;
   }

@@ -428,6 +428,32 @@ describe("The git tools on a repository", function () {
     }
   });
 
+  it("checks git's version again on the next call after a check fails", async () => {
+    const flaky = path.join(
+      repo.dir,
+      "..",
+      `${path.basename(repo.dir)}-flaky-git`
+    );
+    const failed = `${flaky}-failed`;
+    fs.writeFileSync(
+      flaky,
+      `#!/bin/sh\nif [ "$1" = version ] && [ ! -e '${failed}' ]; then : > '${failed}'; exit 1; fi\nexec git "$@"\n`,
+      { mode: 0o755 }
+    );
+    try {
+      const tools = new GitHistory(history, undefined, flaky);
+      const first = await tools.call("log", { maxCount: 1 });
+      assert.strictEqual(first.isError, true);
+      assert.match(first.text, /couldn't run git/);
+      const second = await tools.call("log", { maxCount: 1 });
+      assert.strictEqual(second.isError, false, second.text);
+      assert.ok(second.text.includes("add notes"), second.text);
+    } finally {
+      fs.rmSync(flaky, { force: true });
+      fs.rmSync(failed, { force: true });
+    }
+  });
+
   it("says so when git can't be run at all", async () => {
     const missing = new GitHistory(
       history,

@@ -396,25 +396,27 @@ export class ReviewComments implements vscode.Disposable {
   /**
    * Submits the pending review with the verdict and summary. That ends the
    * Review: its Comments are published, and stay in the gutter as such, and
-   * GitHub records the head commit it covered (see ADR 0015).
+   * GitHub records the head commit it covered (see ADR 0015). Gives the
+   * submitted review's page on GitHub, or undefined if it wasn't submitted.
    */
   async submit(
     change: Change,
     verdict: Verdict,
     summary: string
-  ): Promise<boolean> {
+  ): Promise<{ url?: string } | undefined> {
     const pullRequest = change.pullRequest;
-    if (!pullRequest) return false;
+    if (!pullRequest) return;
+    let submitted: { url?: string };
     try {
-      await this.pending.submit(change, events[verdict], summary);
+      submitted = await this.pending.submit(change, events[verdict], summary);
     } catch (err) {
       void vscode.window.showErrorMessage(
         `Couldn't submit your Review of ${pullRequest.repository} #${pullRequest.number}: ${messageOf(err)}`
       );
-      return false;
+      return;
     }
     await this.reload(change);
-    return true;
+    return submitted;
   }
 
   /** How many of the Change's Comments are in the Review under way, as last loaded. */

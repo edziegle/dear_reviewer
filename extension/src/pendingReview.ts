@@ -94,7 +94,11 @@ export class PendingReviewsBySource implements PendingReviews {
   }
 
   /** Submits a pull request's pending review; see `GitHubPendingReviews.submit`. */
-  submit(change: Change, event: ReviewEvent, summary: string): Promise<void> {
+  submit(
+    change: Change,
+    event: ReviewEvent,
+    summary: string
+  ): Promise<{ url?: string }> {
     return this.github.submit(change, event, summary);
   }
 
@@ -222,17 +226,18 @@ export class GitHubPendingReviews implements PendingReviews {
 
   /**
    * Submits the pending review, starting an empty one at the Change's head
-   * if there is none, which ends the Review.
+   * if there is none, which ends the Review. Gives the review's page on
+   * GitHub.
    */
   async submit(
     change: Change,
     event: ReviewEvent,
     summary: string
-  ): Promise<void> {
+  ): Promise<{ url?: string }> {
     const pullRequest = pullRequestOf(change);
     const key = keyOf(pullRequest);
     try {
-      await this.github.submitReview(
+      return await this.github.submitReview(
         await this.reviewId(pullRequest, change.headSha),
         event,
         summary

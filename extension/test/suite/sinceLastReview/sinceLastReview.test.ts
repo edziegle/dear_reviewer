@@ -16,10 +16,12 @@ import {
 } from "../assistant";
 import { buildPullRequestFixture, pushToPullRequest } from "../fixtures";
 import {
+  awaitingSearches,
   configure,
   fakePullRequestId,
   inbox,
   inboxEntry,
+  inboxRefreshesAfterReview,
   openFromInbox,
   refreshInbox,
   requestsToGitHub,
@@ -31,12 +33,17 @@ import {
 import { showChangesSinceLastReview, submitReview } from "../review";
 import {
   activeTabLabel,
+  catchLinks,
+  catchNotifications,
   closeChange,
   eventually,
   multiDiffSides,
+  releaseLinks,
+  releaseNotifications,
   short,
   workspaceFolders,
 } from "../reviewer";
+import { sentTimeline } from "../timeline";
 
 const viewer = { login: "reviewer", token: "test-token" };
 const settingKeys = ["githubApiUrl", "repositories", "localClones"];
@@ -104,6 +111,19 @@ describe("What changed since my last Review", () => {
     return inboxEntry(await inbox(), title);
   }
 
+  /** The titles of the Inbox group's entries, as the Inbox shows it now. */
+  async function group(label: string): Promise<string[]> {
+    const found = (await inbox()).find((g) => g.label === label);
+    return found?.entries.map((e) => e.label) ?? [];
+  }
+
+  /** The Change's row in Change Files. */
+  async function changeRow(head: string) {
+    const row = (await changeFiles()).find((c) => c.label === titleAt(head));
+    assert.ok(row, `a row for ${titleAt(head)}`);
+    return row;
+  }
+
   before(async () => {
     const config = vscode.workspace.getConfiguration("dearReviewer");
     for (const key of settingKeys)
@@ -124,6 +144,8 @@ describe("What changed since my last Review", () => {
   });
 
   after(async () => {
+    await releaseNotifications();
+    await releaseLinks();
     await closeChange(requestAt(pr.head));
     if (newHead) await closeChange(requestAt(newHead));
     const config = vscode.workspace.getConfiguration("dearReviewer");
@@ -152,6 +174,9 @@ describe("What changed since my last Review", () => {
     await openFromInbox(await entry("Restructure pkg"));
     await summaryWritten(titleAt(pr.head));
 
+    const notifications = await catchNotifications("View on GitHub");
+    const links = await catchLinks();
+
     await submitReview(requestAt(pr.head), "approve", "Looks good.");
 
     const started = (await requestsToGitHub()).flatMap((r) => {
@@ -174,19 +199,89 @@ describe("What changed since my last Review", () => {
         ["COMMENTED", elsewhere.base],
       ]
     );
+    const [submitted] = (await reviewsOnGitHub()).filter(
+      (r) =>
+        r.author === "reviewer" && r.pullRequestId === fakePullRequestId(pr)
+    );
+    assert.deepStrictEqual(notifications, [
+      { message: "Approved acme/since #41.", actions: ["View on GitHub"] },
+    ]);
+    await eventually(() =>
+      assert.deepStrictEqual(links, [
+        `https://github.com/acme/since/pull/41#pullrequestreview-${submitted.id}`,
+      ])
+    );
     assert.strictEqual(
       (await entry("Restructure pkg")).description,
       "acme/since #41 · open",
       "reviewed at its head"
     );
     await eventually(async () => {
-      const [change] = await changeFiles();
-      assert.match(
-        change.description ?? "",
-        / viewed · no new commits since my Review$/
-      );
+      const change = await changeRow(pr.head);
+      assert.match(change.description ?? "", / viewed · Approved$/);
       assert.strictEqual(change.contextValue, "change.pullRequest");
     });
+    await eventually(async () => {
+      const overview = await sentTimeline("acme/since #41");
+      assert.strictEqual(overview.review?.verdict, "approved");
+      assert.match(overview.review?.text ?? "", /^You approved at \d/);
+      assert.ok(
+        !overview.standing.some((note) => note.includes("since your Review")),
+        `${JSON.stringify(overview.standing)}`
+      );
+    });
+  });
+
+  it("moves the pull request to Reviewed by me while GitHub's search still says it awaits review", async () => {
+    // The fake's search still lists the review request, as GitHub's lags.
+    for (const refreshed of [false, true]) {
+      if (refreshed) await refreshInbox();
+      assert.ok(
+        !(await group("Awaiting my review")).includes("Restructure pkg"),
+        `not awaiting my review${refreshed ? " after a refresh" : ""}`
+      );
+      assert.ok(
+        (await group("Reviewed by me")).includes("Restructure pkg"),
+        `reviewed by me${refreshed ? " after a refresh" : ""}`
+      );
+    }
+  });
+
+  it("names the verdict of each Review in the Change's row and its overview", async () => {
+    for (const [verdict, row, standing, shown] of [
+      [
+        "requestChanges",
+        "Changes requested",
+        "You requested changes",
+        "changesRequested",
+      ],
+      ["comment", "Commented", "You commented", "commented"],
+    ] as const) {
+      await submitReview(requestAt(pr.head), verdict, "Again.");
+
+      await eventually(async () => {
+        const change = await changeRow(pr.head);
+        assert.match(change.description ?? "", new RegExp(` viewed · ${row}$`));
+        const overview = await sentTimeline("acme/since #41");
+        assert.strictEqual(overview.review?.verdict, shown);
+        assert.match(
+          overview.review?.text ?? "",
+          new RegExp(`^${standing} at \\d`)
+        );
+      });
+    }
+  });
+
+  it("loads the Inbox again a while after a Review, once GitHub's search has caught up", async () => {
+    await inboxRefreshesAfterReview(1500);
+    const before = (await awaitingSearches()).length;
+
+    await submitReview(requestAt(pr.head), "approve", "Once more.");
+
+    // Once straight away, and once more later, with no refresh in between.
+    await eventually(async () =>
+      assert.ok((await awaitingSearches()).length >= before + 2)
+    );
   });
 
   it("has no changes to show while the Change is at the reviewed commit", async () => {
@@ -268,6 +363,22 @@ describe("What changed since my last Review", () => {
     await new Promise((resolve) => setTimeout(resolve, 1000));
     assert.deepStrictEqual(assistantRuns(), []);
     assert.deepStrictEqual(await assistantTake(title), before);
+  });
+
+  it("says there are new commits, not the verdict, once the Change is at a newer head", async () => {
+    await eventually(async () => {
+      const change = await changeRow(newHead);
+      assert.match(
+        change.description ?? "",
+        / viewed · new commits since my Review$/
+      );
+      const overview = await sentTimeline("acme/since #41");
+      assert.strictEqual(overview.review, undefined);
+      assert.ok(
+        overview.standing.includes("New commits since your Review"),
+        JSON.stringify(overview.standing)
+      );
+    });
   });
 
   it("opens a diff of only what changed since the last Review", async () => {

@@ -10,7 +10,7 @@ import * as path from "path";
 import * as vscode from "vscode";
 import { Change, filesChangedBetween, remoteFor } from "./changeWorkspace";
 import { git, gitOutput } from "./git";
-import type { GitHubClient } from "./github/client";
+import type { GitHubClient, LastReview } from "./github/client";
 import type { LocalPendingReviews } from "./localReviews";
 
 /** Gives a file's text at a commit, for the old side of what changed since a Review. */
@@ -29,23 +29,40 @@ export class Reviews {
    * still has it.
    */
   async lastReviewed(change: Change): Promise<string | undefined> {
+    return (await this.lastReview(change))?.commit;
+  }
+
+  /**
+   * The Reviewer's last Review of the Change, if one has ended: the commit it
+   * covered, as for `lastReviewed`, and for a pull request what GitHub
+   * records of it, such as its verdict.
+   */
+  async lastReview(change: Change): Promise<LastReview | undefined> {
     const pullRequest = change.pullRequest;
     if (!pullRequest) {
       const commit = this.local.lastBriefed(change.conversation);
-      if (commit && (await hasCommit(change.repository, commit))) return commit;
+      if (commit && (await hasCommit(change.repository, commit)))
+        return { commit };
       return;
     }
-    const commit = await this.github.lastReviewedCommit(
+    const review = await this.github.lastReview(
       pullRequest.repository,
       pullRequest.number
     );
-    if (!commit) return;
-    if (!(await hasCommit(change.repository, commit))) {
+    if (!review) return;
+    if (!(await hasCommit(change.repository, review.commit))) {
       // Such as a Review submitted from another machine, before a force push.
       const remote = await remoteFor(change.repository, pullRequest.repository);
-      await git(change.repository, "fetch", "--no-tags", "--", remote, commit);
+      await git(
+        change.repository,
+        "fetch",
+        "--no-tags",
+        "--",
+        remote,
+        review.commit
+      );
     }
-    return commit;
+    return review;
   }
 }
 

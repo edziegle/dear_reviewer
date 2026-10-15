@@ -158,9 +158,27 @@ export async function inbox(): Promise<InboxGroup[]> {
   return groups;
 }
 
-async function inboxProvider(): Promise<vscode.TreeDataProvider<unknown>> {
+/** Shortens how long the Inbox waits after a Review before it loads again. */
+export async function inboxRefreshesAfterReview(ms: number): Promise<void> {
+  (await inboxProvider()).forTests({ refreshAfterReview: ms });
+}
+
+/** The searches for pull requests awaiting the Reviewer's review that the Inbox sent, oldest first. */
+export async function awaitingSearches(): Promise<RecordedRequest[]> {
+  return (await requestsToGitHub()).filter((request) =>
+    JSON.stringify(request.body ?? "").includes("review-requested:@me")
+  );
+}
+
+async function inboxProvider(): Promise<
+  vscode.TreeDataProvider<unknown> & {
+    forTests(timing: { refreshAfterReview?: number }): void;
+  }
+> {
   const extension = vscode.extensions.getExtension<{
-    inbox: vscode.TreeDataProvider<unknown>;
+    inbox: vscode.TreeDataProvider<unknown> & {
+      forTests(timing: { refreshAfterReview?: number }): void;
+    };
   }>("edziegle.dear-reviewer");
   if (!extension) throw new Error("Dear Reviewer is not installed");
   return (await extension.activate()).inbox;

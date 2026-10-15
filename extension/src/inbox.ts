@@ -32,6 +32,19 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
   private loading: Promise<InboxNode[]> | undefined;
   /** The pull requests and branches being opened, by their conversation name. */
   private readonly opening = new Set<string>();
+  /**
+   * The pull requests the Reviewer just reviewed, by `pullRequestKey`, and
+   * until when the Inbox shows them as reviewed while GitHub's search still
+   * lists them as awaiting review, since its index lags behind.
+   */
+  private readonly justReviewed = new Map<string, number>();
+  private laterRefresh: NodeJS.Timeout | undefined;
+  private timing = {
+    /** How long after a Review the Inbox loads again, once search has caught up. */
+    refreshAfterReview: 20_000,
+    /** How long the Inbox at most shows a reviewed pull request as reviewed against search. */
+    keepReviewed: 120_000,
+  };
 
   constructor(
     private readonly github: GitHubClient,
@@ -67,6 +80,33 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
     }
   }
 
+  /**
+   * Moves the pull request from Awaiting my review to Reviewed by me straight
+   * away, once the Reviewer submitted a Review, and loads the Inbox again
+   * later, once GitHub's search has caught up with the Review.
+   */
+  reviewed(pullRequest: { repository: string; number: number }): void {
+    this.justReviewed.set(
+      pullRequestKey(pullRequest),
+      Date.now() + this.timing.keepReviewed
+    );
+    this.changed.fire();
+    clearTimeout(this.laterRefresh);
+    this.laterRefresh = setTimeout(
+      () => void this.refresh(),
+      this.timing.refreshAfterReview
+    );
+  }
+
+  /** Shortens the waits after a Review, for tests. */
+  forTests(timing: Partial<InboxTree["timing"]>): void {
+    this.timing = { ...this.timing, ...timing };
+  }
+
+  dispose(): void {
+    clearTimeout(this.laterRefresh);
+  }
+
   /** Shows afresh which pull requests and branches are open, without reloading. */
   redraw(): void {
     this.changed.fire();
@@ -80,7 +120,8 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
   }
 
   async getChildren(node?: InboxNode): Promise<InboxNode[]> {
-    if (!node) return (this.loading ??= this.load());
+    if (!node)
+      return this.withJustReviewed(await (this.loading ??= this.load()));
     if (node.kind === "group") return node.children;
     return [];
   }
@@ -198,12 +239,13 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
     const localBranches = this.loadLocalBranches();
     try {
       const inbox = await this.github.inbox(repositories);
+      this.forgetReviewedOnceSearchHasCaughtUp(inbox.awaitingMyReview);
       await setContext("dearReviewer.signedIn", true);
       await showWelcome("none");
       return [
-        pullRequestGroup("Awaiting my review", inbox.awaitingMyReview),
+        pullRequestGroup(awaitingMyReview, inbox.awaitingMyReview),
         pullRequestGroup("Authored by me", inbox.authoredByMe),
-        pullRequestGroup("Reviewed by me", inbox.reviewedByMe),
+        pullRequestGroup(reviewedByMe, inbox.reviewedByMe),
         ...(await localBranches),
       ];
     } catch (err) {
@@ -230,6 +272,40 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
         ...(await localBranches),
       ];
     }
+  }
+
+  private forgetReviewedOnceSearchHasCaughtUp(
+    awaiting: PullRequestSummary[]
+  ): void {
+    const listed = new Set(awaiting.map(pullRequestKey));
+    for (const [key, until] of this.justReviewed)
+      if (!listed.has(key) || until < Date.now()) this.justReviewed.delete(key);
+  }
+
+  /** The groups, with the pull requests just reviewed moved from Awaiting my review to Reviewed by me. */
+  private withJustReviewed(nodes: InboxNode[]): InboxNode[] {
+    const reviewed = (node: InboxNode) =>
+      node.kind === "pullRequest" &&
+      (this.justReviewed.get(pullRequestKey(node.pullRequest)) ?? 0) >=
+        Date.now();
+    const awaiting = nodes.find(
+      (n) => n.kind === "group" && n.label === awaitingMyReview
+    );
+    const moved =
+      awaiting?.kind === "group" ? awaiting.children.filter(reviewed) : [];
+    if (moved.length === 0) return nodes;
+    return nodes.map((node) => {
+      if (node.kind !== "group") return node;
+      if (node.label === awaitingMyReview) {
+        const children = node.children.filter((child) => !reviewed(child));
+        return { ...node, children, count: children.length };
+      }
+      if (node.label === reviewedByMe) {
+        const children = [...moved, ...node.children];
+        return { ...node, children, count: children.length };
+      }
+      return node;
+    });
   }
 
   /** The "Local branches" group, if any Inbox repository has a local clone. */
@@ -270,6 +346,16 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
     }
     return [{ kind: "group", label: "Local branches", children, count }];
   }
+}
+
+const awaitingMyReview = "Awaiting my review";
+const reviewedByMe = "Reviewed by me";
+
+function pullRequestKey(pullRequest: {
+  repository: string;
+  number: number;
+}): string {
+  return `${pullRequest.repository.toLowerCase()}#${pullRequest.number}`;
 }
 
 /** The conversation name of the Change a pull request or branch opens as. */

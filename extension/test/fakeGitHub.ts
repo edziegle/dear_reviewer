@@ -406,8 +406,30 @@ export async function startFakeGitHub(): Promise<{
         state: r.state,
         viewerDidAuthor: r.author === me,
         commit: r.commit ? { oid: r.commit } : null,
+        submittedAt: r.submittedAt ?? null,
+        url: reviewUrl(pr, r),
+        comments: { totalCount: commentsIn(pr, r) },
       })),
     };
+  }
+
+  /** How many Comments on the diff the review holds, of those in these reviews' threads. */
+  function commentsIn(
+    pr: FakePullRequest,
+    review: FakeReview,
+    reviews = pr.reviews ?? []
+  ): number {
+    return reviews
+      .flatMap((r) => r.threads)
+      .flatMap((t) =>
+        t.comments.filter(
+          (c) => (c.reviewId ?? reviewOfThread(pr, t)?.id) === review.id
+        )
+      ).length;
+  }
+
+  function reviewUrl(pr: FakePullRequest, review: FakeReview): string {
+    return `https://github.com/${pr.repository}/pull/${pr.number}#pullrequestreview-${review.id}`;
   }
 
   function reviewOfThread(
@@ -499,15 +521,7 @@ export async function startFakeGitHub(): Promise<{
           submittedAt: review.submittedAt ?? null,
           createdAt: date,
           author: actor(review.author),
-          comments: {
-            totalCount: reviews
-              .flatMap((r) => r.threads)
-              .flatMap((t) =>
-                t.comments.filter(
-                  (c) => (c.reviewId ?? reviewOfThread(pr, t)?.id) === review.id
-                )
-              ).length,
-          },
+          comments: { totalCount: commentsIn(pr, review, reviews) },
         },
       });
     }
@@ -782,7 +796,7 @@ export async function startFakeGitHub(): Promise<{
         return { pullRequestReview: { id: review.id } };
       }
       case "submitPullRequestReview": {
-        const { review } = myPendingReview(input.pullRequestReviewId);
+        const { pr, review } = myPendingReview(input.pullRequestReviewId);
         const states: Record<string, ReviewState> = {
           APPROVE: "APPROVED",
           REQUEST_CHANGES: "CHANGES_REQUESTED",
@@ -794,7 +808,13 @@ export async function startFakeGitHub(): Promise<{
         review.submittedAt = new Date().toISOString();
         if (typeof input.body === "string" && input.body)
           review.body = input.body;
-        return { pullRequestReview: { id: review.id, state: submitted } };
+        return {
+          pullRequestReview: {
+            id: review.id,
+            state: submitted,
+            url: reviewUrl(pr, review),
+          },
+        };
       }
     }
     throw new Error(`The fake GitHub does not know ${mutation}`);

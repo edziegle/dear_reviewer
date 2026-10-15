@@ -22,6 +22,18 @@ export interface PullRequestSummary {
   lastReviewedSha?: string;
 }
 
+/** The Reviewer's last submitted review of a pull request. */
+export interface LastReview {
+  /** The head commit it covered. */
+  commit: string;
+  verdict?: ReviewVerdict;
+  submittedAt?: string;
+  /** Its page on GitHub. */
+  url?: string;
+  /** How many Comments on the diff it published. */
+  comments?: number;
+}
+
 export interface InboxPullRequests {
   awaitingMyReview: PullRequestSummary[];
   authoredByMe: PullRequestSummary[];
@@ -250,20 +262,29 @@ ${INBOX_PULL_REQUEST}`;
   }
 
   /**
-   * The head commit the signed-in user's last submitted review of the pull
-   * request covered: the commit GitHub records for it. Undefined if they
-   * haven't submitted one.
+   * The signed-in user's last submitted review of the pull request, with the
+   * head commit GitHub records it covered. Undefined if they haven't
+   * submitted one.
    */
-  async lastReviewedCommit(
+  async lastReview(
     repository: string,
     number: number
-  ): Promise<string | undefined> {
+  ): Promise<LastReview | undefined> {
     const [owner, name] = repository.split("/");
     const reviewer = await this.viewerLogin();
     const data = await this.graphql<{
       repository: { pullRequest: { reviews: ReviewsNode } | null } | null;
     }>(LAST_REVIEW, { owner, name, number, reviewer });
-    return lastReviewedSha(data.repository?.pullRequest?.reviews);
+    const review = data.repository?.pullRequest?.reviews.nodes.at(-1);
+    const commit = lastReviewedSha(data.repository?.pullRequest?.reviews);
+    if (!review || !commit) return;
+    return {
+      commit,
+      verdict: verdicts[review.state ?? ""],
+      submittedAt: review.submittedAt ?? undefined,
+      url: review.url,
+      comments: review.comments?.totalCount,
+    };
   }
 
   /** Whether the pull request is open, merged or closed; undefined if GitHub has no such pull request. */
@@ -526,18 +547,24 @@ ${paths
     );
   }
 
-  /** Submits the pending review with a verdict and a summary, which publishes its Comments. */
+  /**
+   * Submits the pending review with a verdict and a summary, which publishes
+   * its Comments. Gives the submitted review's page on GitHub.
+   */
   async submitReview(
     reviewId: string,
     event: ReviewEvent,
     body: string
-  ): Promise<void> {
-    await this.graphql(
+  ): Promise<{ url?: string }> {
+    const data = await this.graphql<{
+      submitPullRequestReview: { pullRequestReview: { url?: string } | null };
+    }>(
       `mutation SubmitReview($input: SubmitPullRequestReviewInput!) {
-  submitPullRequestReview(input: $input) { pullRequestReview { id } }
+  submitPullRequestReview(input: $input) { pullRequestReview { id url } }
 }`,
       { input: { pullRequestReviewId: reviewId, event, body } }
     );
+    return { url: data.submitPullRequestReview.pullRequestReview?.url };
   }
 
   /**
@@ -619,13 +646,21 @@ const SUBMITTED_REVIEWS = "[APPROVED, CHANGES_REQUESTED, COMMENTED, DISMISSED]";
 const LAST_REVIEW = `query LastReview($owner: String!, $name: String!, $number: Int!, $reviewer: String!) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
-      reviews(last: 1, author: $reviewer, states: ${SUBMITTED_REVIEWS}) { nodes { commit { oid } } }
+      reviews(last: 1, author: $reviewer, states: ${SUBMITTED_REVIEWS}) {
+        nodes { commit { oid } state submittedAt url comments { totalCount } }
+      }
     }
   }
 }`;
 
 interface ReviewsNode {
-  nodes: ({ commit: { oid: string } | null } | null)[];
+  nodes: ({
+    commit: { oid: string } | null;
+    state?: string;
+    submittedAt?: string | null;
+    url?: string;
+    comments?: { totalCount: number };
+  } | null)[];
 }
 
 function lastReviewedSha(reviews: ReviewsNode | undefined): string | undefined {

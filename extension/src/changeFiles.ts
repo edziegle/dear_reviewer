@@ -19,7 +19,11 @@ import {
 } from "./changeWorkspace";
 import { setContext } from "./context";
 import { messageOf } from "./errors";
-import { SignInRejectedError } from "./github/client";
+import {
+  SignInRejectedError,
+  type LastReview,
+  type ReviewVerdict,
+} from "./github/client";
 import {
   stepsAt,
   type ReadingOrderState,
@@ -37,6 +41,8 @@ export type ChangeFilesNode =
       viewedCount: number;
       /** Whether the Change has new commits since the last Review, if one ended. */
       sinceReview?: "newCommits" | "noNewCommits";
+      /** The last Review's verdict, while no new commits came since. */
+      verdict?: ReviewVerdict;
       children: ChangeFilesNode[];
     }
   | {
@@ -112,8 +118,11 @@ export class ChangeFilesView
   readonly onDidChangeTreeData = this.changed.event;
   // A Change's files never change: its base and head are fixed commits.
   private readonly files = new Map<string, Promise<ChangedFile[]>>();
-  /** The commit each Change's last Review covered, until a Review ends. */
-  private readonly reviewed = new Map<string, Promise<string | undefined>>();
+  /** Each Change's last Review, until a Review ends. */
+  private readonly reviewed = new Map<
+    string,
+    Promise<LastReview | undefined>
+  >();
   private viewedPathsShown: readonly string[] = [];
   private viewedPathsLoads = 0;
 
@@ -122,10 +131,10 @@ export class ChangeFilesView
     private readonly viewedFiles: ViewedFiles,
     /** Keeps the view's settings, so every window and the next session share them. */
     private readonly settingsFile: string,
-    /** The head commit the Reviewer's last Review of a Change covered, if one ended. */
-    private readonly lastReviewed: (
+    /** The Reviewer's last Review of a Change, if one ended. */
+    private readonly lastReview: (
       change: Change
-    ) => Promise<string | undefined>,
+    ) => Promise<LastReview | undefined>,
     /** The column a diff of the Change opens in: beside its overview. */
     private readonly codeColumn: (change: Change) => Promise<vscode.ViewColumn>,
     /** The Change's Reading Order, and whether the Assistant is writing one. */
@@ -273,13 +282,13 @@ export class ChangeFilesView
     return { total: files.length };
   }
 
-  /** Whether the Change has new commits since the last Review, if one ended. */
+  /** The Change's last Review, if one ended, and whether new commits came since. */
   async sinceReview(
     change: Change
-  ): Promise<"newCommits" | "noNewCommits" | undefined> {
-    const reviewed = await this.reviewedOf(change);
-    if (!reviewed) return;
-    return reviewed === change.headSha ? "noNewCommits" : "newCommits";
+  ): Promise<{ review: LastReview; newCommits: boolean } | undefined> {
+    const review = await this.reviewedOf(change);
+    if (!review) return;
+    return { review, newCommits: review.commit !== change.headSha };
   }
 
   /** How many of the Change's files are viewed, of how many. */
@@ -366,7 +375,9 @@ export class ChangeFilesView
         item.id = node.change.id;
         const since = {
           newCommits: "new commits since my Review",
-          noNewCommits: "no new commits since my Review",
+          noNewCommits:
+            (node.verdict && verdictLabels[node.verdict]) ??
+            "no new commits since my Review",
         };
         item.description = [
           `${node.viewedCount} of ${node.files.length} viewed`,
@@ -472,14 +483,15 @@ export class ChangeFilesView
     }
     const reviewed = await this.reviewedOf(change);
     const steps = await this.stepsOf(change, files);
+    const newCommits = reviewed && reviewed.commit !== change.headSha;
     return {
       kind: "change",
       change,
       files,
       viewedCount: files.filter((f) => viewed.has(f.path)).length,
       ...(reviewed && {
-        sinceReview:
-          reviewed === change.headSha ? "noNewCommits" : "newCommits",
+        sinceReview: newCommits ? "newCommits" : "noNewCommits",
+        ...(!newCommits && { verdict: reviewed.verdict }),
       }),
       children: steps
         ? stepNodes(change, files, steps, viewed, this.hidesViewed)
@@ -516,11 +528,11 @@ export class ChangeFilesView
     this.refresh();
   }
 
-  /** The commit the Change's last Review covered; unknown counts as none. */
-  private reviewedOf(change: Change): Promise<string | undefined> {
+  /** The Change's last Review; unknown counts as none. */
+  private reviewedOf(change: Change): Promise<LastReview | undefined> {
     let reviewed = this.reviewed.get(change.id);
     if (!reviewed) {
-      reviewed = this.lastReviewed(change).catch(() => {
+      reviewed = this.lastReview(change).catch(() => {
         this.reviewed.delete(change.id);
         return undefined;
       });
@@ -569,6 +581,13 @@ export class ChangeFilesView
     await setContext("dearReviewer.changeFilesSortBy", this.sortBy);
   }
 }
+
+/** What a Change's row says of its last Review's verdict, while no new commits came since. */
+const verdictLabels: Partial<Record<ReviewVerdict, string>> = {
+  approved: "Approved",
+  changesRequested: "Changes requested",
+  commented: "Commented",
+};
 
 /** The Change's files in the order the view lists them as a tree. */
 export function inTreeOrder(

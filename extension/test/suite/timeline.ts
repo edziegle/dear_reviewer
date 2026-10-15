@@ -79,6 +79,11 @@ export interface Timeline {
   byline: string;
   url?: string;
   size?: { files: number; additions: number; deletions: number };
+  /** The Reviewer's last Review, while no new commits came since. */
+  review?: {
+    verdict: "approved" | "changesRequested" | "commented";
+    text: string;
+  };
   standing: string[];
   progress?: { viewed: number; total: number };
   navigationOff?: boolean;

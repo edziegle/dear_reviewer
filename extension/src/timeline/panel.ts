@@ -49,6 +49,13 @@ export type TimelineItem =
       comments: number;
     };
 
+/** The Reviewer's last Review, as the overview's standing line opens with it. */
+export interface ReviewStanding {
+  verdict: "approved" | "changesRequested" | "commented";
+  /** Such as "You approved at 14:32 · 3 Comments published". */
+  text: string;
+}
+
 /** What the overview shows from the Change's Assistant. */
 export interface OverviewTake {
   /** "Assistant", or which Review an explanation of new commits is since. */
@@ -74,6 +81,8 @@ export interface TimelineState {
   url?: string;
   /** How big the Change is, such as `12 files · +340 −58`, once counted. */
   size?: { files: number; additions: number; deletions: number };
+  /** The Reviewer's last Review, while no new commits came since. */
+  review?: ReviewStanding;
   /** Where the Reviewer stands: new commits since their Review, pending Comments, files viewed. */
   standing: string[];
   /** How many of the Change's files the Reviewer has viewed, once counted. */
@@ -356,6 +365,10 @@ function html(cspSource: string): string {
   .status.passed { border-color: var(--vscode-testing-iconPassed); }
   .status.failed { border-color: var(--vscode-testing-iconFailed); }
   .status.running { border-color: var(--vscode-testing-iconQueued); }
+  #standing .review { color: var(--vscode-foreground); }
+  #standing .review.approved .mark { color: var(--vscode-testing-iconPassed); }
+  #standing .review.changesRequested .mark { color: var(--vscode-testing-iconFailed); }
+  #standing .review.commented .mark { color: var(--vscode-descriptionForeground); }
   .status.skipped, .status.neutral { color: var(--vscode-descriptionForeground); }
   .item { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--vscode-panel-border); }
   .item img, .item .no-avatar { width: 24px; height: 24px; border-radius: 50%; flex: none; background: var(--vscode-editor-inactiveSelectionBackground); outline: 1px solid var(--vscode-contrastBorder, transparent); outline-offset: -1px; }
@@ -516,12 +529,22 @@ function html(cspSource: string): string {
     parts.forEach((part, i) => node.append(...(i ? [" · ", part] : [part])));
   }
 
+  const reviewMarks = { approved: "✓", changesRequested: "✗", commented: "•" };
   function standing(state) {
     const node = byId("standing");
-    node.hidden = state.standing.length === 0 && !state.navigationOff;
-    node.replaceChildren(state.standing.join(" · "));
+    const notes = state.standing;
+    node.hidden = notes.length === 0 && !state.review && !state.navigationOff;
+    node.replaceChildren();
+    if (state.review) {
+      const review = el("span", "review " + state.review.verdict);
+      const mark = el("span", "mark", reviewMarks[state.review.verdict]);
+      mark.setAttribute("aria-hidden", "true");
+      review.append(mark, " ", state.review.text);
+      node.append(review, ...(notes.length ? [" · "] : []));
+    }
+    node.append(notes.join(" · "));
     if (state.navigationOff) {
-      node.append(state.standing.length ? " · " : "", "Navigation off: ", textButton("Trust the review window…", () => vscode.postMessage({ type: "trust" })));
+      node.append(notes.length || state.review ? " · " : "", "Navigation off: ", textButton("Trust the review window…", () => vscode.postMessage({ type: "trust" })));
       node.lastChild.title = "The review window is in Restricted Mode, so go to definition and other code navigation are off";
     }
   }

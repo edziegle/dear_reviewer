@@ -20,6 +20,9 @@ export function openChange(request: ChangeRequest): Thenable<unknown> {
 
 interface LinkApi {
   openLinksWith(open?: (url: string) => void): void;
+  answerNotificationsWith(
+    answer?: (message: string, actions: string[]) => string | undefined
+  ): void;
 }
 
 async function linkApi(): Promise<LinkApi> {
@@ -42,6 +45,31 @@ export async function catchLinks(): Promise<string[]> {
 
 export async function releaseLinks(): Promise<void> {
   (await linkApi()).openLinksWith(undefined);
+}
+
+export interface Notification {
+  message: string;
+  /** The buttons it offers. */
+  actions: string[];
+}
+
+/**
+ * Catches the information notifications Dear Reviewer shows, answering each
+ * with the button `pick` names, if it offers it, until `releaseNotifications`.
+ */
+export async function catchNotifications(
+  pick?: string
+): Promise<Notification[]> {
+  const shown: Notification[] = [];
+  (await linkApi()).answerNotificationsWith((message, actions) => {
+    shown.push({ message, actions });
+    return pick && actions.includes(pick) ? pick : undefined;
+  });
+  return shown;
+}
+
+export async function releaseNotifications(): Promise<void> {
+  (await linkApi()).answerNotificationsWith(undefined);
 }
 
 export function closeChange(request: ChangeRequest): Thenable<unknown> {

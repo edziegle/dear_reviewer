@@ -30,6 +30,7 @@ import {
   TimelinePanel,
   type OverviewAction,
   type OverviewTake,
+  type ReviewStanding,
   type TimelineItem,
   type TimelineState,
 } from "./panel";
@@ -42,6 +43,8 @@ export type LinkOpener = (uri: vscode.Uri) => Thenable<unknown>;
 
 /** Where the Reviewer stands on a Change. */
 export interface Standing {
+  /** Their last Review's verdict, while no new commits came since. */
+  review?: ReviewStanding;
   /** New commits since their Review, pending Comments, files viewed, in words. */
   notes: string[];
   viewed: number;
@@ -246,6 +249,7 @@ class ChangeTimeline {
     this.update({
       readingOrder,
       standing: found?.notes ?? [],
+      review: found?.review,
       navigationOff: this.sources.navigationOff(),
       ...(found && { progress: { viewed: found.viewed, total: found.total } }),
     });

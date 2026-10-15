@@ -19,7 +19,11 @@ import { Conversations } from "./assistant/conversations";
 import { Findings, FindingsNode } from "./findings";
 import { selectionInChange, whereInChange } from "./assistant/selection";
 import { GitHubAuth } from "./github/auth";
-import { GitHubClient, PullRequestSummary } from "./github/client";
+import {
+  GitHubClient,
+  type LastReview,
+  PullRequestSummary,
+} from "./github/client";
 import { setContext } from "./context";
 import { Avatars, InboxNode, InboxTree } from "./inbox";
 import { Lifecycle } from "./lifecycle";
@@ -35,7 +39,7 @@ import {
   Reviews,
   showChangesSince,
 } from "./reviews";
-import type { FromWebview } from "./timeline/panel";
+import type { FromWebview, ReviewStanding } from "./timeline/panel";
 import { LinkOpener, Standing, Timelines } from "./timeline/timelines";
 import {
   GitHubViewedFiles,
@@ -66,7 +70,7 @@ export function activate(context: vscode.ExtensionContext) {
     () => changes.list(),
     viewedFiles,
     path.join(context.globalStorageUri.fsPath, "change-files-view.json"),
-    (change) => reviews.lastReviewed(change),
+    (change) => reviews.lastReview(change),
     (change) => codeColumnOf(change),
     (change) => assistants.readingOrderOf(change)
   );
@@ -97,6 +101,10 @@ export function activate(context: vscode.ExtensionContext) {
   // Links leave VS Code through the extension; the tests catch them instead.
   const openExternal: LinkOpener = (uri) => vscode.env.openExternal(uri);
   let openLink = openExternal;
+  // Notifications with buttons; the tests answer them instead.
+  const showInformation = (message: string, ...actions: string[]) =>
+    vscode.window.showInformationMessage(message, ...actions);
+  let notify = showInformation;
   const conversations = new Conversations(context.globalStorageUri.fsPath);
   const reviews = new Reviews(github, localReviews);
   const assistants = new Assistants(
@@ -180,14 +188,16 @@ export function activate(context: vscode.ExtensionContext) {
   async function standingOf(change: Change): Promise<Standing> {
     const standing: string[] = [];
     const since = await changeFiles.sinceReview(change);
-    if (since === "newCommits") standing.push("New commits since your Review");
-    if (since === "noNewCommits")
+    const lastReview =
+      since && !since.newCommits ? reviewStanding(since.review) : undefined;
+    if (since?.newCommits) standing.push("New commits since your Review");
+    else if (since && !lastReview)
       standing.push("Nothing new since your Review");
     const pending = review.pendingCount(change);
     if (pending > 0) standing.push(countOf(pending, "pending Comment"));
     const { viewed, total } = await changeFiles.viewedCount(change);
     standing.push(`${viewed} of ${total} viewed`);
-    return { notes: standing, viewed, total };
+    return { review: lastReview, notes: standing, viewed, total };
   }
   context.subscriptions.push(trust.onDidChangeNavigation(() => showStanding()));
 
@@ -824,13 +834,21 @@ export function activate(context: vscode.ExtensionContext) {
         if (!submitted) return;
         void timelines.refresh(change);
         changeFiles.reviewEnded(change);
+        // GitHub's search lists it as awaiting review for a while yet.
+        inbox.reviewed(change.pullRequest);
         // The Inbox shows which pull requests changed since a Review.
         void inbox.refresh();
-        void vscode.window.showInformationMessage(
+        const viewOnGitHub = "View on GitHub";
+        const url = submitted.url && vscode.Uri.parse(submitted.url);
+        const web = url && (url.scheme === "https" || url.scheme === "http");
+        void notify(
           comments === "no Comments"
             ? `${verdicts[chosen].done} ${name}.`
-            : `${verdicts[chosen].done} ${name} and published ${comments}.`
-        );
+            : `${verdicts[chosen].done} ${name} and published ${comments}.`,
+          ...(web ? [viewOnGitHub] : [])
+        ).then((picked) => {
+          if (picked === viewOnGitHub && url) return openLink(url);
+        });
       }
     ),
     vscode.commands.registerCommand(
@@ -1149,6 +1167,7 @@ export function activate(context: vscode.ExtensionContext) {
       }
     ),
     trust,
+    inbox,
     vscode.commands.registerCommand("dearReviewer.trustReviewWindow", () =>
       trust.trust()
     ),
@@ -1220,6 +1239,14 @@ export function activate(context: vscode.ExtensionContext) {
       forTests: (stand: Parameters<ReviewWindowTrust["forTests"]>[0]) =>
         trust.forTests(stand),
       hint: () => trust.hint(),
+    },
+    /** Hands information notifications to `answer`, which picks a button or none, or back to the Reviewer. */
+    answerNotificationsWith: (
+      answer?: (message: string, actions: string[]) => string | undefined
+    ) => {
+      notify = answer
+        ? async (message, ...actions) => answer(message, actions)
+        : showInformation;
     },
     /** Hands the links the Reviewer opens, from any panel, to `open` instead, or back to the browser. */
     openLinksWith: (open?: (url: string) => void) => {
@@ -1344,6 +1371,36 @@ function requestOf(change: Change): ChangeRequest {
 function countOf(count: number, noun: string): string {
   if (count === 0) return `no ${noun}s`;
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
+/** The last Review as the overview's standing line opens with it, for the verdicts it names. */
+function reviewStanding(review: LastReview): ReviewStanding | undefined {
+  const { verdict } = review;
+  if (
+    verdict !== "approved" &&
+    verdict !== "changesRequested" &&
+    verdict !== "commented"
+  )
+    return;
+  const did = {
+    approved: "You approved",
+    changesRequested: "You requested changes",
+    commented: "You commented",
+  }[verdict];
+  const at = review.submittedAt ? ` ${timeOf(review.submittedAt)}` : "";
+  const published = review.comments
+    ? ` · ${countOf(review.comments, "Comment")} published`
+    : "";
+  return { verdict, text: `${did}${at}${published}` };
+}
+
+/** "at 14:32" today, or "on 3 Oct 2026, 14:32" before. */
+function timeOf(iso: string): string {
+  const date = new Date(iso);
+  if (isNaN(date.getTime())) return "";
+  if (date.toDateString() === new Date().toDateString())
+    return `at ${date.toLocaleTimeString(undefined, { timeStyle: "short" })}`;
+  return `on ${date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}`;
 }
 
 const verdicts: Record<

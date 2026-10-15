@@ -53,6 +53,7 @@ function withoutAvatars(
   const {
     take: _take,
     standing: _standing,
+    review: _review,
     progress: _progress,
     navigationOff: _navigationOff,
     size: _size,

@@ -1,11 +1,21 @@
 [tools]
 node = "24"
 vale = "3.24.0"
+
 # The tests' VSCodium, pinned at engines.vscode's floor: raise both together.
 # Kept out of /Applications, so the tests and your own VSCodium don't share an
-# install, and downloaded by mise, so macOS never quarantines it.
+# install, and downloaded by mise, so macOS never quarantines it. CI runs it
+# on Linux too (docs/adr/0029-ci-tests-on-linux.md).
+[tools."github:VSCodium/vscodium"]
+version = "1.135.06055"
+os = ["macos", "linux"]
+
 # strip_components = 0 keeps VSCodium.app, which `open -a` needs.
-"github:VSCodium/vscodium" = { version = "1.135.06055", asset_pattern = "VSCodium-darwin-{arch}-*.zip", strip_components = 0, os = ["macos"] }
+[tools."github:VSCodium/vscodium".platforms]
+macos-arm64 = { asset_pattern = "VSCodium-darwin-arm64-*.zip", strip_components = 0 }
+macos-x64 = { asset_pattern = "VSCodium-darwin-x64-*.zip", strip_components = 0 }
+linux-x64 = { asset_pattern = "VSCodium-linux-x64-*.tar.gz", strip_components = 0 }
+linux-arm64 = { asset_pattern = "VSCodium-linux-arm64-*.tar.gz", strip_components = 0 }
 
 [tasks.setup]
 description = "Install dependencies and Vale styles"
@@ -63,14 +73,19 @@ run = [
   'npx mocha "out/unit/test/{,unit/}${usage_name:-*}.test.js"',
 ]
 
-[tasks.test]
-description = "Run the unit tests, then the extension tests in VS Code"
+[tasks.test-integration]
+description = "Run the integration tests in VSCodium"
 dir = "extension"
-depends = ["typecheck", "build", "test-unit"]
+depends = ["typecheck", "build"]
 run = [
   "npx tsc -p test",
-  'CODIUM_APP="$(mise where github:VSCodium/vscodium)/VSCodium.app" node out/test/run.js',
+  'CODIUM_DIR="$(mise where github:VSCodium/vscodium)" node out/test/run.js',
 ]
+
+[tasks.test]
+description = "Run the unit tests, then the integration tests in VSCodium"
+depends = ["test-unit"]
+run = [{ task = "test-integration" }]
 
 [tasks.lint-docs]
 description = "Check prose with Vale"

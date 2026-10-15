@@ -1,7 +1,7 @@
-// Runs the suites inside VSCodium with isolated user data and extensions, in
-// the background (see backgroundCodium.ts). `mise run test` sets
-// CODIUM_APP=/path/to/VSCodium.app to the VSCodium that mise.toml pins; without
-// it, the suites run in /Applications/VSCodium.app.
+// Runs the suites inside VSCodium with isolated user data and extensions, on
+// macOS in the background (see backgroundCodium.ts). `mise run test` sets
+// CODIUM_DIR to the folder of the VSCodium that mise.toml pins; without it,
+// the suites run in /Applications/VSCodium.app, or /usr/share/codium on Linux.
 // DEAR_REVIEWER_SUITES, DEAR_REVIEWER_FILES and DEAR_REVIEWER_GREP pick what
 // runs; see AGENTS.md.
 
@@ -13,18 +13,16 @@ import * as path from "path";
 import { runTests } from "@vscode/test-electron";
 import { startFakeGitHub } from "./fakeGitHub";
 import { acquireRunLock } from "./runLock";
-import { Launch, planLaunches, suiteOf, testWindowPids } from "./runPlan";
+import {
+  codiumInstall,
+  Launch,
+  planLaunches,
+  suiteOf,
+  testWindowPids,
+} from "./runPlan";
 
 const root = path.resolve(__dirname, "..", "..");
-const codiumApp = process.env.CODIUM_APP ?? "/Applications/VSCodium.app";
-const codiumCli = path.join(
-  codiumApp,
-  "Contents",
-  "Resources",
-  "app",
-  "bin",
-  "codium"
-);
+const codium = codiumInstall(process.platform, process.env.CODIUM_DIR);
 const testRoot = path.join(root, ".vscode-test");
 const extensionsDir = path.join(testRoot, "extensions");
 // VSCodium puts its IPC socket in the user data folder, and macOS caps a
@@ -42,6 +40,7 @@ const fakeClaudeDir = path.join(work, "fake-claude");
 const fakeClaude = path.join(fakeClaudeDir, "bin", "claude");
 const backgroundCodium = path.join(testRoot, "background-codium");
 const codiumOutput = path.join(testRoot, "codium-output");
+const suiteResult = path.join(codiumOutput, "result");
 // One run at a time on this machine: see docs/adr/0028-one-test-run-at-a-time.md.
 const runLock = path.join(os.tmpdir(), "dear-reviewer-test-run.lock");
 
@@ -53,7 +52,7 @@ function installLanguageServers() {
   // basedpyright refuses to activate without the Python extension.
   for (const extension of ["ms-python.python", "detachhead.basedpyright"]) {
     const install = cp.spawnSync(
-      codiumCli,
+      codium.cli,
       [
         "--extensions-dir",
         extensionsDir,
@@ -93,16 +92,20 @@ function freshWorkFolder() {
 const quote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 
 /**
- * Puts the executable runTests launches on disk: a wrapper that runs
- * test/backgroundCodium.ts with this node, so VSCodium opens without focus.
+ * Gives the executable runTests launches. On macOS it puts a wrapper on disk
+ * that runs test/backgroundCodium.ts with this node, so VSCodium opens without
+ * focus; Linux, which runs the tests on CI only, launches VSCodium itself.
  */
-function installBackgroundCodium() {
+function codiumExecutable(): string {
   fs.rmSync(codiumOutput, { recursive: true, force: true });
+  fs.mkdirSync(codiumOutput, { recursive: true });
+  if (!codium.app) return codium.executable;
   fs.writeFileSync(
     backgroundCodium,
-    `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(path.join(__dirname, "backgroundCodium.js"))} ${quote(codiumApp)} ${quote(codiumOutput)} "$@"\n`,
+    `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(path.join(__dirname, "backgroundCodium.js"))} ${quote(codium.app)} ${quote(codiumOutput)} "$@"\n`,
     { mode: 0o755 }
   );
+  return backgroundCodium;
 }
 
 /**
@@ -241,7 +244,7 @@ function plannedLaunches(): Launch[] {
 async function killTestWindows() {
   const running = () =>
     testWindowPids(
-      cp.execFileSync("ps", ["-axo", "pid=,args="], { encoding: "utf8" }),
+      cp.execFileSync("ps", ["-A", "-o", "pid=,args="], { encoding: "utf8" }),
       userDataDir
     );
   const signal = (pids: number[], name: NodeJS.Signals) => {
@@ -265,13 +268,12 @@ async function killTestWindows() {
 }
 
 let fakeGitHubUrl = "";
+let executable = "";
 
 /** The full titles of the tests that failed, from the suite's result file. */
 function failedTests(): string[] {
   try {
-    const [, ...titles] = fs
-      .readFileSync(path.join(codiumOutput, "result"), "utf8")
-      .split("\n");
+    const [, ...titles] = fs.readFileSync(suiteResult, "utf8").split("\n");
     return titles.filter(Boolean);
   } catch {
     return [];
@@ -282,9 +284,10 @@ function failedTests(): string[] {
 async function launch({ phase, files }: Launch): Promise<string[]> {
   const openPath = phases.find(([p]) => p === phase)![1]();
   console.log(`\n=== ${phase} suite, opening ${path.basename(openPath)} ===`);
+  fs.rmSync(suiteResult, { force: true });
   try {
     await runTests({
-      vscodeExecutablePath: backgroundCodium,
+      vscodeExecutablePath: executable,
       extensionDevelopmentPath: root,
       extensionTestsPath: path.join(__dirname, "suite", "index.js"),
       extensionTestsEnv: {
@@ -295,6 +298,7 @@ async function launch({ phase, files }: Launch): Promise<string[]> {
         DEAR_REVIEWER_FAKE_GITHUB: fakeGitHubUrl,
         DEAR_REVIEWER_FAKE_CLAUDE: fakeClaude,
         DEAR_REVIEWER_FAKE_CLAUDE_DIR: fakeClaudeDir,
+        DEAR_REVIEWER_RESULT: suiteResult,
       },
       // --force-disable-user-env keeps the launching PATH instead of
       // re-resolving it from the login shell, which the sandbox blocks.
@@ -356,7 +360,7 @@ async function main() {
     linkUserData();
     installLanguageServers();
     freshWorkFolder();
-    installBackgroundCodium();
+    executable = codiumExecutable();
     installFakeClaude();
     writeUserSettings();
     const fakeGitHub = await startFakeGitHub();

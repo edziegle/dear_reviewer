@@ -4,7 +4,15 @@ vale = "3.24.0"
 
 [tasks.setup]
 description = "Install dependencies and Vale styles"
-run = ["npm ci", "npm ci --prefix extension", "vale sync"]
+depends = ["deps", "vale-sync"]
+
+[tasks.deps]
+description = "Install npm dependencies"
+run = ["npm ci", "npm ci --prefix extension"]
+
+[tasks.vale-sync]
+description = "Download the Vale packages .vale.ini names"
+run = "vale sync"
 
 [tasks.typecheck]
 description = "Type-check the extension"
@@ -36,7 +44,7 @@ run = "npx prettier --write '**/*.md'"
 [tasks.package]
 description = "Package the extension as a .vsix"
 dir = "extension"
-depends = ["build"]
+depends = ["typecheck", "build"]
 run = "npx vsce package --allow-missing-repository --skip-license -o dist/dear-reviewer.vsix"
 
 # Installs the build into VSCodium rather than launching an Extension Development

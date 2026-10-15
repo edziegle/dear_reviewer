@@ -25,11 +25,11 @@ A spot in a Change the Assistant thinks deserves attention. It is never publishe
 _Avoid_: AI comment, flag, suggestion (GitHub uses that for proposed code edits)
 
 **Change**:
-The code under review: the difference between two points in a repository's history. A GitHub pull request is one source of a Change; a local range of commits is another. A Change stays open across Reviews until it is merged or closed, and its conversation with the Assistant lasts as long as it does.
+The code under review: the difference between two points in a repository's history. A GitHub pull request is one source of a Change; a local range of commits is another. A Change stays open across Reviews until it is merged or closed, and its conversation with the Assistant lasts while the Change does.
 _Avoid_: Diff (that's the rendering), Change Set, Review Target, PR (only one source)
 
 **Reading Order**:
-The order the Assistant suggests for reading a Change's files, in a few labelled steps, starting where its summary says to start. A suggestion the Reviewer can follow or set aside for tree order.
+The order the Assistant suggests for reading a Change's files, in a few labeled steps, starting where its summary says to start. A suggestion the Reviewer can follow or set aside for tree order.
 _Avoid_: File order, review plan, story
 
 **Inbox**:

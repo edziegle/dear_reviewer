@@ -21,7 +21,7 @@ import {
   fakePullRequestId,
   inbox,
   inboxEntry,
-  inboxRefreshesAfterReview,
+  inboxSettled,
   openFromInbox,
   refreshInbox,
   requestsToGitHub,
@@ -275,15 +275,13 @@ describe("What changed since my last Review", () => {
   });
 
   it("loads the Inbox again a while after a Review, once GitHub's search has caught up", async () => {
-    await inboxRefreshesAfterReview(1500);
     const before = (await awaitingSearches()).length;
 
     await submitReview(requestAt(pr.head), "approve", "Once more.");
+    await inboxSettled();
 
     // Once straight away, and once more later, with no refresh in between.
-    await eventually(async () =>
-      assert.ok((await awaitingSearches()).length >= before + 2)
-    );
+    assert.strictEqual((await awaitingSearches()).length, before + 2);
   });
 
   it("has no changes to show while the Change is at the reviewed commit", async () => {

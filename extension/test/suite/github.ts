@@ -27,8 +27,9 @@ export function fakeGitHubUrl(): string {
   return url;
 }
 
-/** Replaces what the fake GitHub serves, and forgets the requests it saw. */
+/** Replaces what the fake GitHub serves, and forgets the requests it saw once the Inbox settles. */
 export async function serveGitHub(state: FakeGitHubState): Promise<void> {
+  await inboxSettled();
   const res = await fetch(`${fakeGitHubUrl()}/_fake/state`, {
     method: "PUT",
     body: JSON.stringify(state),
@@ -36,7 +37,9 @@ export async function serveGitHub(state: FakeGitHubState): Promise<void> {
   if (!res.ok) throw new Error(`fake GitHub refused the state: ${res.status}`);
 }
 
+/** The requests the fake GitHub saw, once the Inbox's refreshes have landed. */
 export async function requestsToGitHub(): Promise<RecordedRequest[]> {
+  await inboxSettled();
   const res = await fetch(`${fakeGitHubUrl()}/_fake/requests`);
   return (await res.json()) as RecordedRequest[];
 }
@@ -158,9 +161,10 @@ export async function inbox(): Promise<InboxGroup[]> {
   return groups;
 }
 
-/** Shortens how long the Inbox waits after a Review before it loads again. */
-export async function inboxRefreshesAfterReview(ms: number): Promise<void> {
-  (await inboxProvider()).forTests({ refreshAfterReview: ms });
+/** Waits for the Inbox's refreshes, running the one due after a Review now. */
+export async function inboxSettled(): Promise<void> {
+  const extension = dearReviewer();
+  if (extension.isActive) await extension.exports.inbox.settled();
 }
 
 /** The searches for pull requests awaiting the Reviewer's review that the Inbox sent, oldest first. */
@@ -170,18 +174,20 @@ export async function awaitingSearches(): Promise<RecordedRequest[]> {
   );
 }
 
-async function inboxProvider(): Promise<
-  vscode.TreeDataProvider<unknown> & {
-    forTests(timing: { refreshAfterReview?: number }): void;
-  }
-> {
-  const extension = vscode.extensions.getExtension<{
-    inbox: vscode.TreeDataProvider<unknown> & {
-      forTests(timing: { refreshAfterReview?: number }): void;
-    };
-  }>("edziegle.dear-reviewer");
+type InboxProvider = vscode.TreeDataProvider<unknown> & {
+  settled(): Promise<void>;
+};
+
+function dearReviewer(): vscode.Extension<{ inbox: InboxProvider }> {
+  const extension = vscode.extensions.getExtension<{ inbox: InboxProvider }>(
+    "edziegle.dear-reviewer"
+  );
   if (!extension) throw new Error("Dear Reviewer is not installed");
-  return (await extension.activate()).inbox;
+  return extension;
+}
+
+async function inboxProvider(): Promise<InboxProvider> {
+  return (await dearReviewer().activate()).inbox;
 }
 
 function entryOf(item: vscode.TreeItem): InboxEntry {

@@ -29,7 +29,12 @@ export type InboxNode =
 export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
   private readonly changed = new vscode.EventEmitter<void>();
   readonly onDidChangeTreeData = this.changed.event;
+  /** The latest load, which the tree shows. */
   private loading: Promise<InboxNode[]> | undefined;
+  /** The number of the load started last; earlier loads are superseded. */
+  private latestLoad = 0;
+  /** The loads not finished yet, the latest and any it superseded. */
+  private readonly inFlight = new Set<Promise<InboxNode[]>>();
   /** The pull requests and branches being opened, by their conversation name. */
   private readonly opening = new Set<string>();
   /**
@@ -39,12 +44,6 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
    */
   private readonly justReviewed = new Map<string, number>();
   private laterRefresh: NodeJS.Timeout | undefined;
-  private timing = {
-    /** How long after a Review the Inbox loads again, once search has caught up. */
-    refreshAfterReview: 20_000,
-    /** How long the Inbox at most shows a reviewed pull request as reviewed against search. */
-    keepReviewed: 120_000,
-  };
 
   constructor(
     private readonly github: GitHubClient,
@@ -88,19 +87,24 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
   reviewed(pullRequest: { repository: string; number: number }): void {
     this.justReviewed.set(
       pullRequestKey(pullRequest),
-      Date.now() + this.timing.keepReviewed
+      Date.now() + keepReviewed
     );
     this.changed.fire();
     clearTimeout(this.laterRefresh);
-    this.laterRefresh = setTimeout(
-      () => void this.refresh(),
-      this.timing.refreshAfterReview
-    );
+    this.laterRefresh = setTimeout(() => {
+      this.laterRefresh = undefined;
+      void this.refresh();
+    }, refreshAfterReview);
   }
 
-  /** Shortens the waits after a Review, for tests. */
-  forTests(timing: Partial<InboxTree["timing"]>): void {
-    this.timing = { ...this.timing, ...timing };
+  /** Runs the refresh due after a Review now, and waits until no load is in flight. */
+  async settled(): Promise<void> {
+    if (this.laterRefresh) {
+      clearTimeout(this.laterRefresh);
+      this.laterRefresh = undefined;
+      void this.refresh();
+    }
+    while (this.inFlight.size > 0) await Promise.allSettled(this.inFlight);
   }
 
   dispose(): void {
@@ -114,14 +118,14 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
 
   /** Reloads the Inbox from GitHub and the local clones. */
   async refresh(): Promise<void> {
-    this.loading = this.load();
+    const loading = this.startLoad();
     this.changed.fire();
-    await this.loading;
+    await loading;
   }
 
   async getChildren(node?: InboxNode): Promise<InboxNode[]> {
     if (!node)
-      return this.withJustReviewed(await (this.loading ??= this.load()));
+      return this.withJustReviewed(await (this.loading ?? this.startLoad()));
     if (node.kind === "group") return node.children;
     return [];
   }
@@ -228,33 +232,57 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
       : [];
   }
 
+  private startLoad(): Promise<InboxNode[]> {
+    const loading = this.load();
+    this.loading = loading;
+    this.inFlight.add(loading);
+    const done = () => void this.inFlight.delete(loading);
+    loading.then(done, done);
+    return loading;
+  }
+
+  /** Loads the Inbox, and sets its context keys unless a later load superseded this one. */
   private async load(): Promise<InboxNode[]> {
+    const thisLoad = ++this.latestLoad;
+    const superseded = () => thisLoad !== this.latestLoad;
     const repositories = await this.repositories();
-    await setContext("dearReviewer.hasRepositories", repositories.length > 0);
+    if (!superseded())
+      await setContext("dearReviewer.hasRepositories", repositories.length > 0);
+    const loaded = await this.fetch(repositories);
+    if (superseded()) return loaded.nodes;
+    if (loaded.awaitingMyReview)
+      this.forgetReviewedOnceSearchHasCaughtUp(loaded.awaitingMyReview);
+    if (loaded.signedIn !== undefined)
+      await setContext("dearReviewer.signedIn", loaded.signedIn);
     // VS Code only shows the welcome message while the view is empty.
-    if (repositories.length === 0) {
-      await showWelcome("noRepositories");
-      return [];
-    }
+    await showWelcome(loaded.welcome);
+    return loaded.nodes;
+  }
+
+  private async fetch(repositories: string[]): Promise<InboxLoad> {
+    if (repositories.length === 0)
+      return { nodes: [], welcome: "noRepositories" };
     const localBranches = this.loadLocalBranches();
     try {
       const inbox = await this.github.inbox(repositories);
-      this.forgetReviewedOnceSearchHasCaughtUp(inbox.awaitingMyReview);
-      await setContext("dearReviewer.signedIn", true);
-      await showWelcome("none");
-      return [
-        pullRequestGroup(awaitingMyReview, inbox.awaitingMyReview),
-        pullRequestGroup("Authored by me", inbox.authoredByMe),
-        pullRequestGroup(reviewedByMe, inbox.reviewedByMe),
-        ...(await localBranches),
-      ];
+      return {
+        nodes: [
+          pullRequestGroup(awaitingMyReview, inbox.awaitingMyReview),
+          pullRequestGroup("Authored by me", inbox.authoredByMe),
+          pullRequestGroup(reviewedByMe, inbox.reviewedByMe),
+          ...(await localBranches),
+        ],
+        signedIn: true,
+        welcome: "none",
+        awaitingMyReview: inbox.awaitingMyReview,
+      };
     } catch (err) {
-      if (err instanceof NotSignedInError) {
-        await setContext("dearReviewer.signedIn", false);
-        await showWelcome("signedOut");
-        return [];
-      }
-      await showWelcome("none");
+      if (err instanceof NotSignedInError)
+        return {
+          nodes: [],
+          signedIn: false,
+          welcome: "signedOut",
+        };
       const message = messageOf(err);
       const action: vscode.Command =
         err instanceof SignInRejectedError
@@ -263,14 +291,17 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
               title: "Refresh the Inbox",
               command: "dearReviewer.refreshInbox",
             };
-      return [
-        {
-          kind: "problem",
-          message: `Couldn't load the Inbox: ${message}`,
-          action,
-        },
-        ...(await localBranches),
-      ];
+      return {
+        nodes: [
+          {
+            kind: "problem",
+            message: `Couldn't load the Inbox: ${message}`,
+            action,
+          },
+          ...(await localBranches),
+        ],
+        welcome: "none",
+      };
     }
   }
 
@@ -348,6 +379,20 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
   }
 }
 
+/** A load of the Inbox, and what it says about the Reviewer's setup. */
+interface InboxLoad {
+  nodes: InboxNode[];
+  /** Unknown when GitHub failed otherwise than for want of a sign-in. */
+  signedIn?: boolean;
+  welcome: Welcome;
+  awaitingMyReview?: PullRequestSummary[];
+}
+
+/** How long after a Review the Inbox loads again, once search has caught up. */
+const refreshAfterReview = 20_000;
+/** How long the Inbox at most shows a reviewed pull request as reviewed against search. */
+const keepReviewed = 120_000;
+
 const awaitingMyReview = "Awaiting my review";
 const reviewedByMe = "Reviewed by me";
 
@@ -388,10 +433,10 @@ function pullRequestGroup(
   };
 }
 
+type Welcome = "signedOut" | "noRepositories" | "none";
+
 /** Which welcome message the empty Inbox view shows (see package.json). */
-function showWelcome(
-  welcome: "signedOut" | "noRepositories" | "none"
-): Thenable<unknown> {
+function showWelcome(welcome: Welcome): Thenable<unknown> {
   return setContext("dearReviewer.inboxWelcome", welcome);
 }
 

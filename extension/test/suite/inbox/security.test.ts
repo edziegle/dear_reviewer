@@ -77,22 +77,20 @@ describe("Where the GitHub token goes", () => {
   });
 
   it("doesn't send a token saved for one GitHub to another", async () => {
+    await configure({ repositories: ["acme/api"] });
+    await setToken(viewer.token);
+    // Forgets the requests that rightly sent the token to its own GitHub.
     await serveGitHub({
       viewer,
       pullRequests: [awaitingMyReview("acme/api", "In api")],
     });
-    await configure({ repositories: ["acme/api"] });
-    await setToken(viewer.token);
 
     await configure({ repositories: ["acme/api"], apiUrl: otherOrigin() });
     await refreshInbox();
 
     assert.deepStrictEqual(await inbox(), [], "signed out on the other origin");
-    // Refreshes started before the switch may still reach the first origin.
     assert.deepStrictEqual(
-      (await requestsToGitHub())
-        .filter((r) => r.authorization)
-        .filter((r) => r.host !== apiHost()),
+      (await requestsToGitHub()).filter((r) => r.authorization),
       [],
       "no token went to the other origin"
     );
@@ -119,11 +117,8 @@ describe("Where the GitHub token goes", () => {
     assert.strictEqual(groups.length, 1, JSON.stringify(groups));
     assert.match(groups[0].label, /https/);
     assert.strictEqual(groups[0].icon, "$(error)");
-    // Refreshes started before the switch may still reach the loopback origin.
     assert.deepStrictEqual(
-      (await requestsToGitHub())
-        .filter((r) => r.authorization)
-        .filter((r) => r.host !== apiHost()),
+      (await requestsToGitHub()).filter((r) => r.authorization),
       [],
       "no token went to the plain-http origin"
     );

@@ -29,6 +29,10 @@ run = ["npx tsc -p test", "node out/test/run.js"]
 description = "Check prose with Vale"
 run = "vale docs GLOSSARY.md AGENTS.md"
 
+[tasks.fmt-docs]
+description = "Format Markdown with Prettier"
+run = "npx prettier --write '**/*.md'"
+
 [tasks.package]
 description = "Package the extension as a .vsix"
 dir = "extension"

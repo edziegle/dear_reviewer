@@ -1,0 +1,4 @@
+# Prettier reads only the root .gitignore; these are ignored in nested ones
+**/.vscode-test/
+**/dist/
+**/out/

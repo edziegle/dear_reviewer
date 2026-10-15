@@ -91,7 +91,7 @@ describe("Two open Changes", () => {
     try {
       await eventually(async () =>
         assert.deepStrictEqual(render(await changeFiles()), [
-          `${title} — 0 of 1 viewed`,
+          `${title} — □□□□□□□ 0/1`,
           "  util.py [M]",
         ])
       );
@@ -133,14 +133,14 @@ describe("Two open Changes", () => {
 
     try {
       await eventually(async () =>
-        assert.deepStrictEqual(await listed(), [`${titles[1]} — 0 of 1 viewed`])
+        assert.deepStrictEqual(await listed(), [`${titles[1]} — □□□□□□□ 0/1`])
       );
       assert.deepStrictEqual(await viewedFilesKey(), []);
 
       await openChange(first);
 
       await eventually(async () =>
-        assert.deepStrictEqual(await listed(), [`${titles[0]} — 1 of 4 viewed`])
+        assert.deepStrictEqual(await listed(), [`${titles[0]} — ■■□□□□□ 1/4`])
       );
       assert.strictEqual(
         entryAt(await changeFiles(), titles[0], "util.py").viewed,
@@ -193,7 +193,7 @@ describe("Two open Changes", () => {
 
     try {
       await eventually(async () =>
-        assert.deepStrictEqual(await listed(), [`${titles[1]} — 0 of 1 viewed`])
+        assert.deepStrictEqual(await listed(), [`${titles[1]} — □□□□□□□ 0/1`])
       );
     } finally {
       await closeChange(second);

@@ -175,7 +175,7 @@ describe("The Reading Order", () => {
     });
     await eventually(async () =>
       assert.deepStrictEqual(render(await changeFiles()), [
-        `${otherTitle} — 0 of 4 viewed`,
+        `${otherTitle} — □□□□□□□ 0/4`,
         "  added.py [A]",
         "  main.py [M]",
         "  obsolete.py [D]",
@@ -195,7 +195,7 @@ describe("The Reading Order", () => {
     const cutLabel = `${longLabel.slice(0, 79)}…`;
     const cutWhy = `${longWhy.slice(0, 79)}…`;
     const inReadingOrder = [
-      `${title} — 0 of 7 viewed`,
+      `${title} — □□□□□□□ 0/7`,
       "  1. The rename",
       "    util.py [M] — defines it",
       "    main.py [M] — calls the new name",
@@ -218,7 +218,7 @@ describe("The Reading Order", () => {
     await vscode.commands.executeCommand("dearReviewer.sortByTree");
 
     assert.deepStrictEqual(render(await changeFiles()), [
-      `${title} — 0 of 7 viewed`,
+      `${title} — □□□□□□□ 0/7`,
       "  pkg",
       "    sub",
       "      new.py [A]",

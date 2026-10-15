@@ -181,6 +181,12 @@
         "icon": "$(info)"
       },
       {
+        "command": "dearReviewer.showHome",
+        "title": "Show Home",
+        "category": "Dear Reviewer",
+        "icon": "$(home)"
+      },
+      {
         "command": "dearReviewer.openAllChanges",
         "title": "Open All Changes",
         "category": "Dear Reviewer",
@@ -381,7 +387,8 @@
       "dearReviewer": [
         {
           "id": "dearReviewer.inbox",
-          "name": "Inbox"
+          "name": "Inbox",
+          "when": "!dearReviewer.inReviewWindow"
         },
         {
           "id": "dearReviewer.changeFiles",
@@ -395,6 +402,11 @@
     },
     "menus": {
       "view/title": [
+        {
+          "command": "dearReviewer.showHome",
+          "when": "(view == dearReviewer.changeFiles || view == dearReviewer.findings) && dearReviewer.inReviewWindow",
+          "group": "navigation@0"
+        },
         {
           "command": "dearReviewer.refreshInbox",
           "when": "view == dearReviewer.inbox",
@@ -592,6 +604,10 @@
         {
           "command": "dearReviewer.openAllChanges",
           "when": "dearReviewer.hasOpenChange"
+        },
+        {
+          "command": "dearReviewer.showHome",
+          "when": "dearReviewer.inReviewWindow"
         }
       ],
       "editor/title": [
@@ -871,6 +887,11 @@
         "command": "dearReviewer.showTimeline",
         "key": "ctrl+alt+r o",
         "when": "dearReviewer.hasOpenChange"
+      },
+      {
+        "command": "dearReviewer.showHome",
+        "key": "ctrl+alt+r h",
+        "when": "dearReviewer.inReviewWindow"
       },
       {
         "command": "dearReviewer.openAllChanges",

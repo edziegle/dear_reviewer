@@ -316,22 +316,18 @@ function sentencesOf(text: string): string[] {
     .filter(Boolean);
 }
 
-function html(cspSource: string): string {
-  const nonce = crypto.randomBytes(16).toString("base64");
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${cspSource}; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}';">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<style nonce="${nonce}">${sharedStyles}
+/**
+ * The styles of a page in the main column, which the overview and Home
+ * share: a centred column under a sticky header, the theme's buttons, the
+ * facts line, status pills, and rows with an avatar and a hairline below.
+ */
+export const pageStyles = `
   body { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); padding: 0 24px 24px; max-width: 64em; margin: 0 auto; }
   header { position: sticky; top: 0; z-index: 1; background: var(--vscode-editor-background); padding: 12px 0 8px; border-bottom: 1px solid var(--vscode-panel-border); display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
   header .heading { flex: 1 1 16em; min-width: 0; }
   h1 { font-size: 1.1em; margin: 0 0 4px; overflow-wrap: anywhere; }
   h2 { font-size: 1em; margin: 16px 0 8px; }
   .muted { color: var(--vscode-descriptionForeground); font-size: 0.9em; }
-  #byline span { display: inline-block; max-width: 100%; overflow-wrap: anywhere; }
   button.icon { background: none; border: none; padding: 4px; border-radius: 2px; color: var(--vscode-icon-foreground, var(--vscode-foreground)); cursor: pointer; display: inline-flex; }
   button.icon:hover { background: var(--vscode-toolbar-hoverBackground); }
   button.icon svg { width: 16px; height: 16px; }
@@ -343,21 +339,46 @@ function html(cspSource: string): string {
   button.secondary:hover { background: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-secondaryBackground)); }
   button.primary { background: var(--vscode-button-background); color: var(--vscode-button-foreground); padding: 2px 8px; border-radius: 2px; cursor: pointer; font: inherit; }
   button.primary:hover { background: var(--vscode-button-hoverBackground); }
-  .overview .actions button.primary { padding: 4px 12px; }
-  .overview .actions button { max-width: 100%; overflow-wrap: anywhere; text-align: start; }
-  #highlighting code { font-family: var(--vscode-editor-font-family); }
-  #start code { font-family: var(--vscode-editor-font-family); color: inherit; background: none; padding: 0; }
-  .overview { padding: 12px 0 14px; border-bottom: 1px solid var(--vscode-panel-border); }
-  .overview p { margin: 0 0 4px; }
   .facts { font-variant-numeric: tabular-nums; }
   .facts .added { color: var(--vscode-gitDecoration-addedResourceForeground); color: color-mix(in srgb, var(--vscode-gitDecoration-addedResourceForeground) 60%, var(--vscode-foreground)); }
   .facts .deleted { color: var(--vscode-gitDecoration-deletedResourceForeground); color: color-mix(in srgb, var(--vscode-gitDecoration-deletedResourceForeground) 60%, var(--vscode-foreground)); }
+  ul { list-style: none; padding: 0; margin: 0; }
+  .status { font-size: 0.85em; padding: 0 6px; border-radius: 8px; border: 1px solid var(--vscode-descriptionForeground); }
+  .status.passed { border-color: var(--vscode-testing-iconPassed); }
+  .status.failed { border-color: var(--vscode-testing-iconFailed); }
+  .status.running { border-color: var(--vscode-testing-iconQueued); }
+  .status.skipped, .status.neutral { color: var(--vscode-descriptionForeground); }
+  .item { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--vscode-panel-border); }
+  .item img, .item .no-avatar { width: 24px; height: 24px; border-radius: 50%; flex: none; background: var(--vscode-editor-inactiveSelectionBackground); outline: 1px solid var(--vscode-contrastBorder, transparent); outline-offset: -1px; }
+  .item .content { flex: 1; min-width: 0; }
+  .item .author { font-weight: 600; }
+  #byline span { display: inline-block; max-width: 100%; overflow-wrap: anywhere; }
+  .overview .actions button.primary { padding: 4px 12px; }
+  .overview .actions button { max-width: 100%; overflow-wrap: anywhere; text-align: start; }
+  .overview { padding: 12px 0 14px; border-bottom: 1px solid var(--vscode-panel-border); }
+  .overview p { margin: 0 0 4px; }
+  .overview .actions { margin-top: 12px; }
+  .review { color: var(--vscode-foreground); }
+  .review.approved .mark { color: var(--vscode-testing-iconPassed); }
+  .review.changesRequested .mark { color: var(--vscode-testing-iconFailed); }
+  .review.commented .mark { color: var(--vscode-descriptionForeground); }`;
+
+function html(cspSource: string): string {
+  const nonce = crypto.randomBytes(16).toString("base64");
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${cspSource}; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}';">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style nonce="${nonce}">${sharedStyles}${pageStyles}
+  #highlighting code { font-family: var(--vscode-editor-font-family); }
+  #start code { font-family: var(--vscode-editor-font-family); color: inherit; background: none; padding: 0; }
   .take h2 { margin-top: 14px; margin-bottom: 4px; }
   .take .markdown { line-height: 1.5; max-width: 40em; }
   .take .more { margin-top: 4px; font-size: 0.9em; }
   .take .reading { font-style: italic; }
   .problem-line .link { margin-left: 4px; text-decoration: underline; }
-  .overview .actions { margin-top: 12px; }
   .order h2 { margin-top: 14px; margin-bottom: 4px; }
   .order ol { margin: 0; padding-left: 1.6em; }
   .order ol > li { margin: 6px 0 0; }
@@ -367,22 +388,8 @@ function html(cspSource: string): string {
   .order .file { font-family: var(--vscode-editor-font-family); overflow-wrap: anywhere; }
   .order .viewed .file { color: var(--vscode-descriptionForeground); }
   .order .reading { font-style: italic; }
-  ul { list-style: none; padding: 0; margin: 0; }
   .checks li { display: flex; flex-wrap: wrap; gap: 0 8px; align-items: baseline; padding: 2px 0; }
   .checks .name { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; }
-  .status { font-size: 0.85em; padding: 0 6px; border-radius: 8px; border: 1px solid var(--vscode-descriptionForeground); }
-  .status.passed { border-color: var(--vscode-testing-iconPassed); }
-  .status.failed { border-color: var(--vscode-testing-iconFailed); }
-  .status.running { border-color: var(--vscode-testing-iconQueued); }
-  #standing .review { color: var(--vscode-foreground); }
-  #standing .review.approved .mark { color: var(--vscode-testing-iconPassed); }
-  #standing .review.changesRequested .mark { color: var(--vscode-testing-iconFailed); }
-  #standing .review.commented .mark { color: var(--vscode-descriptionForeground); }
-  .status.skipped, .status.neutral { color: var(--vscode-descriptionForeground); }
-  .item { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--vscode-panel-border); }
-  .item img, .item .no-avatar { width: 24px; height: 24px; border-radius: 50%; flex: none; background: var(--vscode-editor-inactiveSelectionBackground); outline: 1px solid var(--vscode-contrastBorder, transparent); outline-offset: -1px; }
-  .item .content { flex: 1; min-width: 0; }
-  .item .author { font-weight: 600; }
   .item .body { white-space: pre-wrap; line-height: 1.5; margin-top: 6px; overflow-wrap: anywhere; }
   .item .body.markdown { white-space: normal; }
   .item.commit .sha { font-family: var(--vscode-editor-font-family); }

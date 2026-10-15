@@ -9,17 +9,21 @@ import { execFile, spawn } from "child_process";
 import * as readline from "readline";
 import type { Readable, Writable } from "stream";
 import {
-  capOutput,
   type ChangeHistory,
-  gitArgs,
+  emptyTreeOf,
+  failureText,
+  type GitRequest,
+  gitRuns,
   gitServerName,
   gitTimeoutMs,
   gitToolDefinitions,
   historyVariables,
   maxOutputChars,
+  outsideHistory,
   parseRequest,
   Refusal,
   revisionsOf,
+  splitRevision,
   timeoutText,
   toolText,
 } from "./gitTools";
@@ -40,11 +44,18 @@ export interface GitRun {
 }
 
 /**
- * Git's environment: never prompting, and never taking a lock or rewriting
- * the index, even for a command that would refresh it.
+ * Git's environment: never prompting, never fetching, and never taking a
+ * lock or rewriting the index, even for a command that would refresh it.
  */
 function gitEnvironment(): NodeJS.ProcessEnv {
-  return { ...process.env, GIT_OPTIONAL_LOCKS: "0", GIT_TERMINAL_PROMPT: "0" };
+  return {
+    ...process.env,
+    GIT_OPTIONAL_LOCKS: "0",
+    GIT_TERMINAL_PROMPT: "0",
+    // A partial clone would otherwise fetch missing objects, over the network
+    // and through its own ssh command.
+    GIT_NO_LAZY_FETCH: "1",
+  };
 }
 
 /**
@@ -102,6 +113,12 @@ export interface ToolResult {
   isError: boolean;
 }
 
+/** A git run that took too long, while a revision was being resolved. */
+class Stopped extends Error {}
+
+/** The most objects an abbreviated commit ID may match before it is too short to look through. */
+const maxCandidates = 20;
+
 /** The git tools for one Change. */
 export class GitHistory {
   constructor(
@@ -114,71 +131,127 @@ export class GitHistory {
   ) {}
 
   async call(tool: string, input: unknown): Promise<ToolResult> {
-    let request;
-    const resolved: Record<string, string> = {};
+    let request: GitRequest;
     try {
       request = parseRequest(tool, input);
-      for (const revision of revisionsOf(request))
-        resolved[revision] = await this.inHistory(revision);
     } catch (err) {
       if (err instanceof Refusal) return { text: err.message, isError: true };
       throw err;
     }
-    const run = await runCapped(
-      this.git,
-      gitArgs(request, resolved, this.history),
-      this.history.repository,
-      this.limits
-    );
-    if (run.timedOut)
-      return {
-        text: timeoutText(request, this.limits.timeoutMs),
-        isError: true,
-      };
-    if (run.code !== 0 && !run.cut)
-      return {
-        text: `git ${tool} failed: ${run.stderr.trim() || `exit code ${run.code}`}`,
-        isError: true,
-      };
+    const resolved = new Map<string, string>();
+    try {
+      for (const [name, revision] of revisionsOf(request))
+        resolved.set(revision, await this.inHistory(revision, name));
+    } catch (err) {
+      if (err instanceof Refusal) return { text: err.message, isError: true };
+      if (err instanceof Stopped)
+        return {
+          text: timeoutText(request, this.limits.timeoutMs),
+          isError: true,
+        };
+      throw err;
+    }
+    const emptyTree = emptyTreeOf(this.history.head);
+    let output = "";
+    let cut = false;
+    for (const args of gitRuns(request, resolved, this.history, emptyTree)) {
+      const run = await runCapped(this.git, args, this.history.repository, {
+        ...this.limits,
+        maxChars: this.limits.maxChars - output.length,
+      });
+      if (run.timedOut)
+        return {
+          text: timeoutText(request, this.limits.timeoutMs),
+          isError: true,
+        };
+      if (run.code !== 0 && !run.cut)
+        return { text: failureText(request, run.stderr), isError: true };
+      output += run.output;
+      if (run.cut) {
+        cut = true;
+        break;
+      }
+    }
     return {
-      text: toolText(request, run.output, run.cut, this.limits.maxChars),
+      text: toolText(request, output, cut, this.limits.maxChars),
       isError: false,
     };
   }
 
   /**
-   * The commit the revision names, if the Change's base or head reaches it;
-   * otherwise a Refusal, the same whether the commit is elsewhere or nowhere,
-   * so nothing outside the Change's history reaches the conversation.
+   * The commit the revision names, if it is the Change's base or head or
+   * one of their ancestors; otherwise a Refusal, the same whether the commit
+   * is elsewhere or nowhere. Its commit ID is checked before its `~N` and
+   * `^N` are applied, and only commits in the Change's history are looked at,
+   * so nothing outside it changes the answer.
    */
-  private async inHistory(revision: string): Promise<string> {
-    const refused = new Refusal(
-      `${revision} isn't a commit in the Change's history: the tools reach only commits that the Change's base (${this.history.base}) or head (${this.history.head}) has, them included.`
-    );
+  private async inHistory(revision: string, name: string): Promise<string> {
+    const refused = new Refusal(outsideHistory(name));
+    const { id, suffix } = splitRevision(revision);
+    let start: string;
+    if (id === "base" || id === "head") start = this.history[id];
+    else {
+      const candidates =
+        id.length >= 40
+          ? [id]
+          : (await this.quiet(["rev-parse", `--disambiguate=${id}`])).stdout
+              .split("\n")
+              .filter(Boolean);
+      if (candidates.length > maxCandidates)
+        throw new Refusal(
+          `\`${name}\` is too short to tell commits apart: give more of the commit ID.`
+        );
+      const found = new Set<string>();
+      for (const candidate of candidates)
+        if (await this.reaches(candidate)) {
+          const commit = await this.commitOf(candidate);
+          if (commit) found.add(commit);
+        }
+      if (found.size > 1)
+        throw new Refusal(
+          `\`${name}\` matches more than one commit in the Change's history: give more of the commit ID.`
+        );
+      if (found.size === 0) throw refused;
+      start = [...found][0];
+    }
+    if (!suffix) return start;
+    const commit = await this.commitOf(`${start}${suffix}`);
+    // A commit's ancestors are in the history too; this only guards it.
+    if (!commit || !(await this.reaches(commit))) throw refused;
+    return commit;
+  }
+
+  /** Whether the object is a commit the Change's head or base has. */
+  private async reaches(object: string): Promise<boolean> {
+    for (const tip of [this.history.head, this.history.base])
+      if (
+        (await this.quiet(["merge-base", "--is-ancestor", object, tip]))
+          .code === 0
+      )
+        return true;
+    return false;
+  }
+
+  /** The full commit ID of a commit ID, or of one with `~N` and `^N` after it. */
+  private async commitOf(expression: string): Promise<string | undefined> {
     const parsed = await this.quiet([
       "rev-parse",
       "--verify",
       "--quiet",
       "--end-of-options",
-      `${revision}^{commit}`,
+      `${expression}^{commit}`,
     ]);
-    const commit = parsed.code === 0 ? parsed.stdout.trim() : "";
-    if (!/^[0-9a-f]{40,64}$/.test(commit)) throw refused;
-    for (const tip of [this.history.head, this.history.base]) {
-      const ancestor = await this.quiet([
-        "merge-base",
-        "--is-ancestor",
-        commit,
-        tip,
-      ]);
-      if (ancestor.code === 0) return commit;
-    }
-    throw refused;
+    const commit = parsed.stdout.trim();
+    return parsed.code === 0 && /^[0-9a-f]{40,64}$/.test(commit)
+      ? commit
+      : undefined;
   }
 
-  private quiet(args: string[]): Promise<{ code: number; stdout: string }> {
-    return new Promise((resolve) => {
-      execFile(
+  private quiet(
+    args: string[]
+  ): Promise<{ code: number; stdout: string; stderr: string }> {
+    return new Promise((resolve, reject) => {
+      const child = execFile(
         this.git,
         [
           "--no-pager",
@@ -192,16 +265,22 @@ export class GitHistory {
           cwd: this.history.repository,
           env: gitEnvironment(),
           timeout: this.limits.timeoutMs,
+          killSignal: "SIGKILL",
         },
-        (err, stdout) => {
+        (err, stdout, stderr) => {
+          if ((err as { killed?: boolean } | null)?.killed)
+            return reject(new Stopped());
           // Its code is git's exit code, or a string when git didn't run.
           const code = (err as { code?: unknown } | null)?.code;
           resolve({
             code: !err ? 0 : typeof code === "number" ? code : -1,
             stdout,
+            stderr,
           });
         }
       );
+      // Nothing for git to read.
+      child.stdin?.end();
     });
   }
 }
@@ -236,13 +315,22 @@ export function serve(
   const lines = readline.createInterface({ input });
   lines.on("line", (line) => {
     if (!line.trim()) return;
-    let message: JsonRpcMessage;
+    let parsed: unknown;
     try {
-      message = JSON.parse(line) as JsonRpcMessage;
+      parsed = JSON.parse(line);
     } catch {
-      send({ id: null, error: { code: -32700, message: "Parse error" } });
+      queue = queue.then(() => {
+        send({ id: null, error: { code: -32700, message: "Parse error" } });
+      });
       return;
     }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      queue = queue.then(() => {
+        send({ id: null, error: { code: -32600, message: "Invalid Request" } });
+      });
+      return;
+    }
+    const message = parsed as JsonRpcMessage;
     queue = queue.then(async () => {
       const answer = await answerTo(message, tools);
       if (answer && message.id !== undefined && message.id !== null)
@@ -256,7 +344,12 @@ async function answerTo(
   message: JsonRpcMessage,
   tools: GitHistory
 ): Promise<Record<string, unknown> | undefined> {
-  const params = message.params ?? {};
+  const params =
+    message.params &&
+    typeof message.params === "object" &&
+    !Array.isArray(message.params)
+      ? message.params
+      : {};
   switch (message.method) {
     case "initialize": {
       const asked = params.protocolVersion;

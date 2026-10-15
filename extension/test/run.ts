@@ -1,5 +1,6 @@
 // Runs the suites inside the locally installed VSCodium with isolated user
-// data and extensions. Override the install with CODIUM_APP=/path/to/VSCodium.app.
+// data and extensions, in the background (see backgroundCodium.ts). Override the
+// install with CODIUM_APP=/path/to/VSCodium.app.
 
 import * as cp from "child_process";
 import * as fs from "fs";
@@ -9,7 +10,6 @@ import { startFakeGitHub } from "./fakeGitHub";
 
 const root = path.resolve(__dirname, "..", "..");
 const codiumApp = process.env.CODIUM_APP ?? "/Applications/VSCodium.app";
-const codiumExecutable = path.join(codiumApp, "Contents", "MacOS", "VSCodium");
 const codiumCli = path.join(
   codiumApp,
   "Contents",
@@ -24,6 +24,7 @@ const userDataDir = path.join(testRoot, "user-data");
 const work = path.join(testRoot, "work");
 const fakeClaudeDir = path.join(work, "fake-claude");
 const fakeClaude = path.join(fakeClaudeDir, "bin", "claude");
+const backgroundCodium = path.join(testRoot, "background-codium");
 
 function installLanguageServers() {
   // basedpyright refuses to activate without the Python extension.
@@ -55,13 +56,26 @@ function freshWorkFolder() {
   fs.mkdirSync(work, { recursive: true });
 }
 
+const quote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
+
+/**
+ * Puts the executable runTests launches on disk: a wrapper that runs
+ * test/backgroundCodium.ts with this node, so VSCodium opens without focus.
+ */
+function installBackgroundCodium() {
+  fs.writeFileSync(
+    backgroundCodium,
+    `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(path.join(__dirname, "backgroundCodium.js"))} ${quote(codiumApp)} "$@"\n`,
+    { mode: 0o755 }
+  );
+}
+
 /**
  * Puts the fake `claude` on disk: a wrapper that runs test/fakeClaude.ts with
  * this node, so the tests never reach a real Claude Code.
  */
 function installFakeClaude() {
   fs.mkdirSync(path.dirname(fakeClaude), { recursive: true });
-  const quote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
   fs.writeFileSync(
     fakeClaude,
     `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(path.join(__dirname, "fakeClaude.js"))} ${quote(fakeClaudeDir)} "$@"\n`,
@@ -120,7 +134,7 @@ async function runSuite(suite: string, openPath: string) {
   if (only && !only.includes(name)) return;
   console.log(`\n=== ${suite} suite, opening ${path.basename(openPath)} ===`);
   await runTests({
-    vscodeExecutablePath: codiumExecutable,
+    vscodeExecutablePath: backgroundCodium,
     extensionDevelopmentPath: root,
     extensionTestsPath: path.join(__dirname, "suite", "index.js"),
     extensionTestsEnv: {
@@ -150,6 +164,7 @@ async function runSuite(suite: string, openPath: string) {
 async function main() {
   installLanguageServers();
   freshWorkFolder();
+  installBackgroundCodium();
   installFakeClaude();
   writeUserSettings();
   const fakeGitHub = await startFakeGitHub();

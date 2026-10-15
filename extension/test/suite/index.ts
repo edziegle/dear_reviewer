@@ -15,8 +15,12 @@ export function run(): Promise<void> {
     if (file.endsWith(".test.js")) mocha.addFile(path.join(folder, file));
   }
   return new Promise((resolve, reject) => {
-    mocha.run((failures) =>
-      failures ? reject(new Error(`${failures} tests failed`)) : resolve()
-    );
+    mocha.run((failures) => {
+      // test/backgroundCodium.ts can't see VSCodium's exit code.
+      const result = process.env.DEAR_REVIEWER_RESULT;
+      if (result) fs.writeFileSync(result, failures ? "failed" : "passed");
+      if (failures) reject(new Error(`${failures} tests failed`));
+      else resolve();
+    });
   });
 }

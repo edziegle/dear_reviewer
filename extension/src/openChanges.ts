@@ -1,5 +1,6 @@
 // The Changes that are open, kept in a file in the extension's storage so
-// every window, and the next session, sees the same list.
+// every window, and the next session, sees the same list. The list runs in
+// the order the Changes were last shown: putting one again moves it last.
 
 import * as fs from "fs";
 import * as path from "path";
@@ -54,6 +55,7 @@ export class OpenChanges {
     return this.all().find((change) => change.id === id);
   }
 
+  /** Adds the Change, or updates it, as the one shown last. */
   put(change: OpenChange): void {
     this.write([...this.all().filter((c) => c.id !== change.id), change]);
   }
@@ -66,4 +68,18 @@ export class OpenChanges {
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
     fs.writeFileSync(this.file, JSON.stringify(changes, null, 2));
   }
+}
+
+/**
+ * The Change in front (ADR 0025): of those whose folders are here and whose
+ * diff has been shown, the one shown last. When it closes, the one shown
+ * before it comes to the front.
+ */
+export function changeInFront<T extends OpenChange>(
+  changes: readonly T[],
+  isHere: (change: T) => boolean
+): T | undefined {
+  return changes
+    .filter((change) => !change.diffPending && isHere(change))
+    .at(-1);
 }

@@ -418,7 +418,22 @@ describe("The Change files view", () => {
     ]);
     assert.strictEqual(shown.length, 10);
     assert.deepStrictEqual(render(await changeFiles()), hidden);
+  });
 
-    leaveForReload({ ...request, title });
+  it("leaves another Change open behind this one for the reload", async () => {
+    const behind = {
+      repository: repo.path,
+      base: repo.commits.initial,
+      head: repo.commits.renamed,
+    };
+    await openChange(behind);
+    await openChange(request);
+
+    assert.deepStrictEqual(
+      (await changeFiles()).map((entry) => entry.label),
+      [title]
+    );
+
+    leaveForReload({ ...request, title, behind });
   });
 });

@@ -4,9 +4,24 @@ import { closeChange, openChange } from "../../reviewer";
 import { pickUpAfterReload } from "../handoff";
 
 // A second launch of the workspace the first changeFiles launch left with a
-// Change open, two files viewed and viewed files hidden.
+// Change in front, two of its files viewed and viewed files hidden, and
+// another Change open behind it.
 describe("The Change files view after a reload", () => {
-  const { title, ...request } = pickUpAfterReload();
+  const { title, behind, ...request } = pickUpAfterReload();
+
+  it("still lists only the Change that was in front", async () => {
+    assert.deepStrictEqual(
+      (await changeFiles()).map((entry) => entry.label),
+      [title]
+    );
+
+    await closeChange(behind);
+
+    assert.deepStrictEqual(
+      (await changeFiles()).map((entry) => entry.label),
+      [title]
+    );
+  });
 
   it("still hides viewed files", async () => {
     assert.deepStrictEqual(render(await changeFiles()), [

@@ -17,7 +17,12 @@ import {
 } from "./changeDetails";
 import { conversationName } from "./conversationName";
 import { git } from "./git";
-import { Change, OpenChanges, PullRequestRef } from "./openChanges";
+import {
+  Change,
+  changeInFront,
+  OpenChanges,
+  PullRequestRef,
+} from "./openChanges";
 import {
   appendFolders,
   Folder,
@@ -147,6 +152,17 @@ export class ChangeWorkspace {
 
   list(): Change[] {
     return this.openChanges.all();
+  }
+
+  /**
+   * The Change in front in this window: of those it has shown, the one
+   * shown last. Change Files, Findings and the review keybindings follow it.
+   */
+  inFront(): Change | undefined {
+    return changeInFront(
+      this.openChanges.all(),
+      (c) => hasFolder(c.baseDir) && hasFolder(c.headDir)
+    );
   }
 
   /** The Changes whose diff this window has shown, such as before a reload. */

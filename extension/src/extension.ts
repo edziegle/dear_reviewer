@@ -72,7 +72,7 @@ export function activate(context: vscode.ExtensionContext) {
     new GitHubViewedFiles(github)
   );
   const changeFiles = new ChangeFilesView(
-    () => changes.list(),
+    () => changes.inFront(),
     viewedFiles,
     path.join(context.globalStorageUri.fsPath, "change-files-view.json"),
     (change) => reviews.lastReview(change),
@@ -246,6 +246,7 @@ export function activate(context: vscode.ExtensionContext) {
   }
   const findings = new Findings(
     context.extensionUri,
+    () => changes.inFront(),
     (change) => assistants.findIssues(change),
     (change, note) => assistants.addNote(change, note),
     (change, place) => review.onDiff(change, place),
@@ -372,16 +373,15 @@ export function activate(context: vscode.ExtensionContext) {
   }
 
   /**
-   * Shows which Changes are open: in Change Files, in the Inbox, and to the
-   * review keybindings, which work while one is open in this window.
+   * Shows which Changes are open: the one in front in Change Files and
+   * Findings, and to the review keybindings, which work while one is in
+   * front in this window; and every one in the Inbox.
    */
   function showOpenChanges(): void {
     changeFiles.refresh();
+    findings.refresh();
     inbox.redraw();
-    void setContext(
-      "dearReviewer.hasOpenChange",
-      changes.shownHere().length > 0
-    );
+    void setContext("dearReviewer.hasOpenChange", !!changes.inFront());
   }
 
   /**
@@ -483,8 +483,7 @@ export function activate(context: vscode.ExtensionContext) {
    * The Change a command acts on: the one given, by a Change Files menu or
    * a test, or the one of the file given, by an editor's title bar (none if
    * that one isn't open here), or else the one the Reviewer is looking at,
-   * or else the only one open in this window that fits, or else one they
-   * pick. `none` says why there is none.
+   * or else the Change in front, if it fits. `none` says why there is none.
    */
   async function changeFor(
     target: ChangeTarget | vscode.Uri | undefined,
@@ -512,7 +511,8 @@ export function activate(context: vscode.ExtensionContext) {
     }
     const looking = activeChange();
     if (looking && fits(looking)) return looking;
-    return pickChange(changes.shownHere().filter(fits), title, none);
+    const front = changes.inFront();
+    return pickChange(front && fits(front) ? [front] : [], title, none);
   }
 
   /** The file of the Change shown in front of its code column. */
@@ -813,7 +813,10 @@ export function activate(context: vscode.ExtensionContext) {
     // it, writing the overview's summary, and its panel opens when the
     // Reviewer asks (ADR 0019, ADR 0020).
     timelines,
-    changes.onDidShowChange((change) => void showChange(change)),
+    changes.onDidShowChange((change) => {
+      showOpenChanges();
+      void showChange(change);
+    }),
     assistants,
     changes.onDidReplaceChange(async (older) => {
       await letGo(older);

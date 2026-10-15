@@ -1,5 +1,6 @@
-// The Change files view: each open Change in this window, with its files as a
-// directory tree, or in the steps of its Reading Order (ADR 0022). A Change
+// The Change files view: the Change in front in this window (ADR 0025), with
+// its files as a directory tree, or in the steps of its Reading Order (ADR
+// 0022). The other open Changes stay open behind it, unlisted. A Change
 // shows how many files are viewed and whether it has new commits since the
 // Reviewer's last Review, and holds the actions that finish its Review.
 // Files show their status and a viewed checkbox; selecting one opens its diff
@@ -30,7 +31,6 @@ import {
   type ReadingStep,
   type ShownReadingOrder,
 } from "./readingOrder";
-import { hasFolder } from "./reviewWindow";
 import { ViewedFiles } from "./viewedFiles";
 
 export type ChangeFilesNode =
@@ -127,7 +127,8 @@ export class ChangeFilesView
   private viewedPathsLoads = 0;
 
   constructor(
-    private readonly openChanges: () => Change[],
+    /** The Change in front, the only one the view lists. */
+    private readonly inFront: () => Change | undefined,
     private readonly viewedFiles: ViewedFiles,
     /** Keeps the view's settings, so every window and the next session share them. */
     private readonly settingsFile: string,
@@ -151,8 +152,8 @@ export class ChangeFilesView
   }
 
   /**
-   * Both worktree files of every viewed file of the Changes open in this
-   * window, as `resourcePath` gives them: the `dearReviewer.viewedFiles`
+   * Both worktree files of every viewed file of the Change in front, as
+   * `resourcePath` gives them: the `dearReviewer.viewedFiles`
    * context key, which picks a file's title bar buttons.
    */
   get viewedPaths(): readonly string[] {
@@ -352,7 +353,7 @@ export class ChangeFilesView
 
   async getChildren(node?: ChangeFilesNode): Promise<ChangeFilesNode[]> {
     if (node) return "children" in node ? node.children : [];
-    const open = this.openHere();
+    const open = this.listed();
     void setContext(
       "dearReviewer.hasReadingOrder",
       open.some((change) => this.readingOrderOf(change)?.order)
@@ -546,16 +547,15 @@ export class ChangeFilesView
     return reviewed;
   }
 
-  private openHere(): Change[] {
-    return this.openChanges().filter(
-      (change) => hasFolder(change.baseDir) && hasFolder(change.headDir)
-    );
+  private listed(): Change[] {
+    const change = this.inFront();
+    return change ? [change] : [];
   }
 
   private async showViewedPaths(): Promise<void> {
     const load = ++this.viewedPathsLoads;
     const paths = await Promise.all(
-      this.openHere().map(async (change) => {
+      this.listed().map(async (change) => {
         // The view shows why a Change's viewed state didn't load.
         const viewed = await this.viewedFiles
           .viewed(change)

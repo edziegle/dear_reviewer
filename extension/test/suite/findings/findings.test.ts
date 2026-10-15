@@ -19,7 +19,7 @@ import {
   findingsView,
   gutterMarkers,
 } from "../findings";
-import { buildPullRequestFixture } from "../fixtures";
+import { buildFixtureRepo, buildPullRequestFixture } from "../fixtures";
 import {
   configure,
   inbox,
@@ -37,6 +37,7 @@ import {
   closeChange,
   eventually,
   foldersAddedSince,
+  openChange,
   short,
   workspaceFolders,
 } from "../reviewer";
@@ -180,6 +181,8 @@ describe("Findings on request", () => {
         replyTurn("A summary."),
         replyTurn(findingsReply),
         replyTurn("Sorry, I would rather chat about it."),
+        replyTurn(findingsReply),
+        replyTurn("A summary of the Change opened behind it."),
         replyTurn(findingsReply),
         replyTurn('{"findings": []}'),
         replyTurn(longFindingsReply),
@@ -465,6 +468,43 @@ describe("Findings on request", () => {
       1
     );
     assert.deepStrictEqual(await findingsView(), []);
+  });
+
+  it("lists only the Change in front's Findings, and a Change's come back when it's shown again", async () => {
+    await findIssues(change);
+    const listed = async () =>
+      (await findingsView()).map(({ change, where }) => `${change} ${where}`);
+    const raised = [
+      "acme/api #31 util.py:2",
+      "acme/api #31 pkg/legacy.py:1 (base)",
+      "acme/api #31 pkg/sub/new.py:1",
+    ];
+    assert.deepStrictEqual(await listed(), raised);
+    const repo = buildFixtureRepo("behind-findings");
+    const other = {
+      repository: repo.path,
+      base: repo.commits.initial,
+      head: repo.commits.renamed,
+    };
+
+    await openChange(other);
+    try {
+      // Its summary takes its turn of the script before the next request for Findings.
+      await summaryWritten(
+        `${path.basename(repo.path)} ${short(other.base)}..${short(other.head)}`
+      );
+      assert.deepStrictEqual(await findingsView(), []);
+
+      await openFromInbox(
+        inboxEntry(await inbox(), "Restructure pkg, with Findings")
+      );
+
+      assert.deepStrictEqual(await listed(), raised);
+    } finally {
+      await closeChange(other);
+      // Showing the other Change closed this one's Assistant panel.
+      await showAssistant(change);
+    }
   });
 
   it("replaces the Findings each time the Reviewer asks", async () => {

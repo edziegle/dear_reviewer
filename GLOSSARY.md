@@ -28,6 +28,10 @@ _Avoid_: AI comment, flag, suggestion (GitHub uses that for proposed code edits)
 The code under review: the difference between two points in a repository's history. A GitHub pull request is one source of a Change; a local range of commits is another. A Change stays open across Reviews until it is merged or closed, and its conversation with the Assistant lasts while the Change does.
 _Avoid_: Diff (that's the rendering), Change Set, Review Target, PR (only one source)
 
+**Change in front**:
+The open Change the Reviewer opened or came back to last, which a window's side bar shows: Change Files, Findings and the review keys follow it. The other open Changes wait behind it, as the Reviewer left them, until the Reviewer shows one again.
+_Avoid_: Active Change, current Change
+
 **Reading Order**:
 The order the Assistant suggests for reading a Change's files, in a few labeled steps, starting where its summary says to start. A suggestion the Reviewer can follow or set aside for tree order.
 _Avoid_: File order, review plan, story

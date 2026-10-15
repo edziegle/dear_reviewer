@@ -5,6 +5,8 @@
 // Findings view, never inline in the diff. The Reviewer dismisses a Finding,
 // or converts it into a draft Comment at the same place; nothing reaches
 // GitHub until they save that Comment into their pending review and submit.
+// The view, and stepping through Findings, follow the Change in front (ADR
+// 0025); a Change behind it keeps its Findings until it comes back.
 
 import * as crypto from "crypto";
 import * as fs from "fs";
@@ -63,9 +65,11 @@ export class Findings
    * `ask` has the Change's Assistant reply to a request for Findings, and
    * `tell` adds a note to its panel. `onDiff` says whether lines take a
    * Comment, and `draft` opens a draft Comment for the Reviewer to edit.
+   * `inFront` gives the Change in front, whose Findings the view lists.
    */
   constructor(
     extensionUri: vscode.Uri,
+    private readonly inFront: () => Change | undefined,
     private readonly ask: (change: Change) => Promise<string>,
     private readonly tell: (change: Change, note: string) => void,
     private readonly onDiff: (
@@ -208,14 +212,14 @@ export class Findings
   }
 
   /**
-   * Opens the next Finding after the active editor's cursor, or the one
-   * before it, across every Change, by file and line, going round at the
+   * Opens the next Finding of the Change in front after the active
+   * editor's cursor, or the one before it, by file and line, going round at the
    * end. Gives the Finding opened, if there is one.
    */
   async step(direction: 1 | -1): Promise<Finding | undefined> {
     const keyOf = (uri: string, line: number) =>
       `${uri}\0${String(line).padStart(9, "0")}`;
-    const ordered = this.all()
+    const ordered = this.ofFront()
       .map((finding) => ({
         finding,
         key: keyOf(
@@ -241,6 +245,12 @@ export class Findings
     if (!next) return;
     await this.reveal(next.finding);
     return next.finding;
+  }
+
+  /** Lists the Findings of the Change in front afresh, such as after another came to the front. */
+  refresh(): void {
+    this.changed.fire();
+    this.showHasFindings();
   }
 
   /** Forgets the Findings of a Change that was closed. */
@@ -296,11 +306,11 @@ export class Findings
         ? node.findings.map((finding) => ({ kind: "finding", finding }))
         : [];
     }
-    return [...this.byChange.values()].map(({ change, findings }) => ({
-      kind: "change",
-      change,
-      findings,
-    }));
+    const front = this.inFront();
+    const entry = front && this.byChange.get(front.id);
+    return entry
+      ? [{ kind: "change", change: entry.change, findings: entry.findings }]
+      : [];
   }
 
   /**
@@ -341,10 +351,19 @@ export class Findings
     return [...this.byChange.values()].flatMap((entry) => entry.findings);
   }
 
+  /** The Findings of the Change in front. */
+  private ofFront(): Finding[] {
+    const front = this.inFront();
+    return (front && this.byChange.get(front.id)?.findings) ?? [];
+  }
+
   private update(): void {
-    this.changed.fire();
+    this.refresh();
     this.render();
-    void setContext("dearReviewer.hasFindings", this.all().length > 0);
+  }
+
+  private showHasFindings(): void {
+    void setContext("dearReviewer.hasFindings", this.ofFront().length > 0);
   }
 
   /** Puts each Finding's marker in the gutter of every visible editor of its file. */

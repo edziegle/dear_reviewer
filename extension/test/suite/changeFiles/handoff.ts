@@ -1,5 +1,6 @@
-// The Change the first launch of the changeFiles suite leaves open for the
-// second launch, which checks what survived the reload.
+// The Changes the first launch of the changeFiles suite leaves open for the
+// second launch, which checks what survived the reload: one in front, and
+// one behind it.
 
 import * as fs from "fs";
 import * as path from "path";
@@ -10,6 +11,8 @@ export interface Handoff {
   head: string;
   /** The Change's label in the files view. */
   title: string;
+  /** A Change of the same repository, open behind the one in front. */
+  behind: { repository: string; base: string; head: string };
 }
 
 function file(): string {

@@ -613,11 +613,14 @@ describe("A pull request's timeline", () => {
     folders: [] as string[],
   };
 
-  /** Opens the other Change, once, and puts one of its files in front. */
+  /**
+   * Opens the other Change, or shows it again, as the Change in front, and
+   * puts one of its files in front.
+   */
   async function inFrontOfOtherChange(): Promise<void> {
+    const before = workspaceFolders();
+    await openChange(other.request);
     if (!other.opened) {
-      const before = workspaceFolders();
-      await openChange(other.request);
       other.opened = true;
       other.folders = foldersAddedSince(before).map((f) => f.path);
     }
@@ -735,6 +738,8 @@ describe("A pull request's timeline", () => {
   });
 
   it("offers to finish the Review once stepping finds every file viewed", async () => {
+    // Change Files lists only the Change in front.
+    await openChange(change);
     await markViewed(
       entryAt(
         await changeFiles(),

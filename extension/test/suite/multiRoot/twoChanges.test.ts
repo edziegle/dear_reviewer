@@ -13,6 +13,7 @@ import {
 } from "../changeFiles";
 import { buildFixtureRepo } from "../fixtures";
 import {
+  activeTabLabel,
   closeChange,
   eventually,
   foldersAddedSince,
@@ -166,6 +167,31 @@ describe("Two open Changes", () => {
       await closeChange(second);
     }
     assert.deepStrictEqual(await changeFiles(), []);
+  });
+
+  it("shows the Change shown before as a review starts, its overview alone, once the one in front closes", async () => {
+    const { first, second, titles } = twoChangesOf("showing");
+    await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+
+    await openChange(first);
+    await openChange(second);
+    await openChange(first);
+    await eventually(() => assert.strictEqual(activeTabLabel(), titles[0]));
+    await closeChange(first);
+
+    try {
+      await eventually(() => {
+        assert.strictEqual(activeTabLabel(), titles[1]);
+        assert.deepStrictEqual(
+          vscode.window.tabGroups.all.flatMap((g) =>
+            g.tabs.map((t) => t.label)
+          ),
+          [titles[1]]
+        );
+      });
+    } finally {
+      await closeChange(second);
+    }
   });
 
   it("moves through the Change in front's files with the review keys, without asking which Change", async () => {

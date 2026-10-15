@@ -31,11 +31,10 @@ GitHub shares one number space across issues and PRs, so a bare `#42` may be eit
 Used by `/implement-next` and by any agent taking a `ready-for-agent` issue. The tracker has no labels for these states; they're marked as follows.
 
 - **Implementing**: `gh issue edit <n> --add-assignee @me`.
-- **Awaiting verification**: a comment naming the commit(s) on `main`, then `gh issue edit <n> --remove-label ready-for-agent`. The issue stays open; the maintainer verifies and closes it.
+- **Awaiting verification**: `gh issue edit <n> --remove-label ready-for-agent` once the work is on `main`. The issue stays open, assigned; the maintainer verifies and closes it. Don't comment on the issue: the commits' `Refs #<n>` link them to it.
 - **Branch**: work in a worktree named `i<n>`: `wt switch --create i<n> --no-cd`, then work in `.worktrees/i<n>`. Never `git switch -c`. Keep the name short: a longer worktree path pushes the test window's socket over macOS's limit.
 - **Commits**: Conventional Commits, ending `Refs #<n>`, never `Closes #<n>`, so landing doesn't close the issue before verification. Commits are signed; never disable signing. If signing fails, stop and ask the maintainer to unlock 1Password.
 - **Landing**: after the full test suite passes, `wt merge main --no-squash` from the worktree. Agents never push; the maintainer pushes `main`.
-- **Comments in the agent sandbox**: the sandbox doesn't allow `gh issue comment`. Hand the comment's text to the maintainer (or the coordinating session) to post, rather than putting it in the issue body.
 
 ## When a skill says "publish to the issue tracker"
 

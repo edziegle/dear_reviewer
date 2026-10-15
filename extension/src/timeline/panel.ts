@@ -9,6 +9,7 @@
 
 import * as crypto from "crypto";
 import * as vscode from "vscode";
+import { catMark, catSymbol } from "../assistantMark";
 import { findReferences, type FileReference } from "../markdown";
 import {
   Handshake,
@@ -374,7 +375,8 @@ function html(cspSource: string): string {
 <style nonce="${nonce}">${sharedStyles}${pageStyles}
   #highlighting code { font-family: var(--vscode-editor-font-family); }
   #start code { font-family: var(--vscode-editor-font-family); color: inherit; background: none; padding: 0; }
-  .take h2 { margin-top: 14px; margin-bottom: 4px; }
+  .overview .hand { margin-top: 14px; }
+  .take .speaker .label { font-weight: 400; color: var(--vscode-descriptionForeground); }
   .take .markdown { line-height: 1.5; max-width: 40em; }
   .take .more { margin-top: 4px; font-size: 0.9em; }
   .take .reading { font-style: italic; }
@@ -397,6 +399,7 @@ function html(cspSource: string): string {
 </style>
 </head>
 <body>
+${catSymbol}
 <header>
   <div class="heading"><h1 id="title"></h1><div class="muted" id="byline"></div></div>
   <div class="actions">
@@ -408,19 +411,21 @@ function html(cspSource: string): string {
   <p class="facts" id="facts" hidden></p>
   <p class="muted" id="standing" hidden></p>
   <p class="muted" id="highlighting" hidden></p>
-  <div class="take">
-    <h2 id="takeLabel"></h2>
-    <div class="markdown" id="take"></div>
-    <button class="link more" id="more" type="button" aria-controls="take" aria-expanded="false" hidden>Show all</button>
-    <div role="status" id="takeStatus">
-      <div class="muted reading" id="reading"></div>
-      <div class="muted problem-line" id="takeProblem" hidden></div>
+  <div class="hand">
+    <div class="take">
+      <h2 class="speaker">${catMark}Assistant<span class="label" id="takeLabel"></span></h2>
+      <div class="markdown" id="take"></div>
+      <button class="link more" id="more" type="button" aria-controls="take" aria-expanded="false" hidden>Show all</button>
+      <div role="status" id="takeStatus">
+        <div class="muted reading" id="reading"></div>
+        <div class="muted problem-line" id="takeProblem" hidden></div>
+      </div>
     </div>
-  </div>
-  <div class="order" id="order" hidden>
-    <h2>Reading Order</h2>
-    <div class="muted" id="orderNote" role="status"></div>
-    <ol id="orderSteps"></ol>
+    <div class="order" id="order" hidden>
+      <h2>Reading Order</h2>
+      <div class="muted" id="orderNote" role="status"></div>
+      <ol id="orderSteps"></ol>
+    </div>
   </div>
   <div class="actions" id="ways">
     <button class="primary" id="start" type="button" hidden></button>
@@ -611,7 +616,8 @@ function html(cspSource: string): string {
   function take(state) {
     lastTake = state;
     const t = state.take;
-    setText(byId("takeLabel"), t.label);
+    // The heading names the Assistant; a take since a Review says so after.
+    setText(byId("takeLabel"), t.label === "Assistant" ? "" : "· " + t.label);
     const body = byId("take");
     const html = showAll && t.fullHtml !== undefined ? t.fullHtml : t.html;
     if (html === undefined) body.replaceChildren();

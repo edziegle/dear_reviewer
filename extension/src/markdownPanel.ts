@@ -9,8 +9,9 @@ import { renderMarkdown, type RenderOptions } from "./markdown";
 
 /**
  * The styles both webviews share: rendered Markdown, the problem banner and
- * its button, the focus outline on every button, link and summary, and the
- * theme's button border, which only high-contrast themes draw (DESIGN.md).
+ * its button, the Assistant's hand, the focus outline on every button, link
+ * and summary, and the theme's button border, which only high-contrast
+ * themes draw (DESIGN.md).
  */
 export const sharedStyles = `
   button:focus-visible, a:focus-visible, summary:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
@@ -34,7 +35,10 @@ export const sharedStyles = `
   .problem { margin: 12px 0; padding: 8px; border: 1px solid var(--vscode-inputValidation-errorBorder); background: var(--vscode-inputValidation-errorBackground); white-space: pre-wrap; }
   .problem code { font-family: var(--vscode-editor-font-family); }
   .problem button { display: block; margin-top: 8px; padding: 4px 10px; border-radius: 2px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); cursor: pointer; font: inherit; }
-  .problem button:hover { background: var(--vscode-button-hoverBackground); }`;
+  .problem button:hover { background: var(--vscode-button-hoverBackground); }
+  .hand { border-left: 2px solid var(--vscode-dearReviewer-assistantForeground); padding-left: 12px; }
+  .speaker { display: flex; flex-wrap: wrap; align-items: center; gap: 0 6px; font-size: 0.9em; font-weight: 600; margin: 0 0 4px; }
+  .speaker .cat { width: 1.4em; height: 1.4em; flex: none; color: var(--vscode-dearReviewer-assistantForeground); }`;
 
 /**
  * The script both webviews share: `keepFocus` runs a render and puts the

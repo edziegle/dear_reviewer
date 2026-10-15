@@ -100,11 +100,12 @@ describe("Repositories remembered from other windows", () => {
 
     assert.deepStrictEqual(await showInbox(), []);
     // Refreshing also asks for the state of pull requests with a saved
-    // conversation, which earlier suites left; the Inbox itself asks nothing.
+    // conversation, which earlier suites left, and the Change the last test
+    // closed can still load its viewed files; the Inbox itself asks nothing.
     assert.deepStrictEqual(
       (await requestsToGitHub()).filter(
         (r) =>
-          !/\bquery PullRequestState\b/.test(
+          !/\bquery (PullRequestState|PullRequestFiles)\b/.test(
             String((r.body as { query?: string })?.query)
           )
       ),

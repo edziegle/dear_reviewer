@@ -1,6 +1,7 @@
-// Runs the suites inside the locally installed VSCodium with isolated user
-// data and extensions, in the background (see backgroundCodium.ts). Override the
-// install with CODIUM_APP=/path/to/VSCodium.app.
+// Runs the suites inside VSCodium with isolated user data and extensions, in
+// the background (see backgroundCodium.ts). `mise run test` sets
+// CODIUM_APP=/path/to/VSCodium.app to the VSCodium that mise.toml pins; without
+// it, the suites run in /Applications/VSCodium.app.
 
 import * as cp from "child_process";
 import * as fs from "fs";

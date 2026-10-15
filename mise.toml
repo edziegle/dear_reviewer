@@ -1,6 +1,11 @@
 [tools]
 node = "24"
 vale = "3.24.0"
+# The tests' VSCodium, pinned at engines.vscode's floor: raise both together.
+# Kept out of /Applications, so the tests and your own VSCodium don't share an
+# install, and downloaded by mise, so macOS never quarantines it.
+# strip_components = 0 keeps VSCodium.app, which `open -a` needs.
+"github:VSCodium/vscodium" = { version = "1.135.06055", asset_pattern = "VSCodium-darwin-{arch}-*.zip", strip_components = 0, os = ["macos"] }
 
 [tasks.setup]
 description = "Install dependencies and Vale styles"
@@ -44,7 +49,10 @@ rm -r "$glyphs"
 description = "Run the extension tests in VS Code"
 dir = "extension"
 depends = ["typecheck", "build"]
-run = ["npx tsc -p test", "node out/test/run.js"]
+run = [
+  "npx tsc -p test",
+  'CODIUM_APP="$(mise where github:VSCodium/vscodium)/VSCodium.app" node out/test/run.js',
+]
 
 [tasks.lint-docs]
 description = "Check prose with Vale"
@@ -87,17 +95,6 @@ fi
 description = "Print the ISO week, like 2026-W42, for cache keys that rotate weekly"
 run = 'echo "week=$(date -u +%G-W%V)" >> "${GITHUB_OUTPUT:-/dev/stdout}"'
 
-# CI runners' Homebrew doesn't update itself, and its stale casks install a
-# VSCodium older than engines.vscode. Homebrew quarantines the app, so its first
-# launch through `open` waits on macOS's "downloaded from the Internet" prompt,
-# which no one answers in CI.
-[tasks.install-vscodium]
-description = "Install VSCodium with Homebrew, for the tests"
-run = [
-  "brew update --quiet",
-  "brew install --cask vscodium",
-  "xattr -dr com.apple.quarantine /Applications/VSCodium.app",
-]
 
 [tasks.fmt-docs]
 description = "Format Markdown with Prettier"

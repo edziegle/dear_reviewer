@@ -318,10 +318,12 @@ function sentencesOf(text: string): string[] {
 
 /**
  * The styles of a page in the main column, which the overview and Home
- * share: a centred column under a sticky header, the theme's buttons, the
+ * share: a centred column under a sticky header, which scrolling to the
+ * focus keeps clear of (WCAG 2.4.11), the theme's buttons, the
  * facts line, status pills, and rows with an avatar and a hairline below.
  */
 export const pageStyles = `
+  html { scroll-padding-top: 6em; }
   body { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); padding: 0 24px 24px; max-width: 64em; margin: 0 auto; }
   header { position: sticky; top: 0; z-index: 1; background: var(--vscode-editor-background); padding: 12px 0 8px; border-bottom: 1px solid var(--vscode-panel-border); display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
   header .heading { flex: 1 1 16em; min-width: 0; }

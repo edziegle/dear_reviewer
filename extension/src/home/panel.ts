@@ -225,10 +225,13 @@ function html(cspSource: string): string {
     if (text !== undefined) node.textContent = text;
     return node;
   };
-  const button = (className, text, message, title) => {
+  // A name, when given, starts with the text, so a row's buttons can say
+  // which row they act on.
+  const button = (className, text, message, title, name) => {
     const node = el("button", className, text);
     node.type = "button";
     if (title) node.title = title;
+    if (name) node.setAttribute("aria-label", name);
     node.addEventListener("click", () => vscode.postMessage(message));
     return node;
   };
@@ -257,8 +260,8 @@ function html(cspSource: string): string {
     content.append(line("muted", [review, ...entry.standing]));
     const actions = el("div", "actions");
     actions.append(
-      button("secondary", "Resume", { type: "resume", id: entry.id }, "Show the overview of " + entry.byline),
-      button("secondary", entry.finish, { type: "finish", id: entry.id }, entry.finish.startsWith("Submit") ? "Submit your Review to GitHub" : "Write a Brief of your Comments for an agent")
+      button("secondary", "Resume", { type: "resume", id: entry.id }, "Show the overview of " + entry.byline, "Resume " + entry.title),
+      button("secondary", entry.finish, { type: "finish", id: entry.id }, entry.finish.startsWith("Submit") ? "Submit your Review to GitHub" : "Write a Brief of your Comments for an agent", entry.finish.replace("…", "") + " of " + entry.title + "…")
     );
     row.append(content, actions);
     return row;
@@ -268,7 +271,7 @@ function html(cspSource: string): string {
     const { files, additions, deletions } = entry.size;
     const node = el("span", "facts");
     node.append(files + (files === 1 ? " file · " : " files · "), el("span", "added", "+" + additions), " ", el("span", "deleted", "−" + deletions));
-    node.setAttribute("aria-label", files + " files, " + additions + " lines added, " + deletions + " removed");
+    node.setAttribute("aria-label", files + (files === 1 ? " file, " : " files, ") + additions + " lines added, " + deletions + " removed");
     return node;
   }
 

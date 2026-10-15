@@ -126,7 +126,7 @@ components:
 
 The Change's code is the page, and the code lives only in the editor. Dear Reviewer writes in the margin beside it: the timeline, the Assistant's replies and the Findings list are notes about the code, never a second copy of it (ADR 0012). A margin note is in the reader's own hand and the book's own ink. Every surface takes its color, type and controls from the active VS Code theme, and must look right in light, dark and high-contrast themes without a single theme-specific rule.
 
-The system has almost nothing of its own on purpose. Native UI comes first: tree views, comment threads, gutter decorations, codicons, quick picks and the status bar. The two webviews, each Change's overview and the Assistant panel, exist only where no native view fits, and they behave like editor panels: compact, text-led, flat, divided by hairlines, readable for a whole working day. Density is the editor's density. A Reviewer who glances from the diff to the margin should notice the content, not the change of world.
+The system has almost nothing of its own on purpose. Native UI comes first: tree views, comment threads, gutter decorations, codicons, quick picks and the status bar. The three webviews, each Change's overview, Home and the Assistant panel, exist only where no native view fits, and they behave like editor panels: compact, text-led, flat, divided by hairlines, readable for a whole working day. Density is the editor's density. A Reviewer who glances from the diff to the margin should notice the content, not the change of world.
 
 Rejected on sight: the GitHub Pull Requests extension's webviews, which are slow, custom-styled review pages that look wrong next to VSCodium, and branded AI chat panels with gradients, glows, sparkle motifs or a face for the bot. The Assistant is a plain panel of prose, not a character.
 
@@ -257,6 +257,8 @@ Navigation is native: the activity-bar container holds the Inbox, Change Files a
 
 Each Change in Change Files carries its finishing actions as inline codicon buttons (`check-all` Submit Review or `note` Write Brief, `history` Show Timeline, `comment-discussion` Show Assistant), with the rest in its context menu, and says in its description whether there are new commits since the Reviewer's last Review, or, while there are none, that Review's verdict: `Approved`, `Changes requested` or `Commented`. Each file of a Change carries `comment-discussion` Ask the Assistant in its title bar, which hands the Assistant the selection, or else the lines on screen, and leaves the question to the Reviewer. The Inbox marks a pull request or branch `opening…` and then `open`. Review keys sit under one chord, `Ctrl+Alt+R`, so they don't take over keys the editor already uses.
 
+In the review window, Home takes the Inbox's place (ADR 0025): the side bar there holds Change Files and Findings only, for the Change in front, while the Reviewer's other windows keep the Inbox. Show Home brings Home back: the `home` codicon in the title bar of Change Files and Findings, `Ctrl+Alt+R H` and the command palette, all only in the review window.
+
 ### Change Overview (signature)
 
 The only thing that opens when a Change opens: alone in the main column, with the focus, while the bottom panel closes and other Changes' editors go (ADR 0019, ADR 0020). Once the Reviewer starts, code opens in the column beside it, and the overview stays put. It reads top to bottom as four answers, each one line or one paragraph, and the Reading Order, then the history:
@@ -270,13 +272,29 @@ The only thing that opens when a Change opens: alone in the main column, with th
 
 The take shows at most three sentences, with a Show all link (with `aria-expanded`) for the rest. Under it is one row of buttons: Start at `session.ts:42` (the take's first reference to a changed file, by file name, with the full path in its tooltip), Next unviewed file once the files are counted, and Ask the Assistant. The reference also stays a link inside the take's sentence, where its reason is. Refresh is an icon button beside the finishing button in the header. A hairline closes the overview, and the history follows: the pull request's timeline, or a local Change's commits, as a list. If the history can't load, a muted line under its heading says so in plain words with Retry; the rest of the overview is fine, so it doesn't shout.
 
-**The Next Step Rule.** The overview fills only the button for what comes next. While files are unviewed, that is the way in: Start at, or Next unviewed file when the take names no file. Once every file is viewed, it is Submit Review… or Write Brief…, which stays in the same place in the sticky header throughout and is secondary until then. Tooltips give each button's `Ctrl+Alt+R` key.
+**The Next Step Rule.** The overview fills only the button for what comes next. While files are unviewed, that is the way in: Start at, or Next unviewed file when the take names no file. Once every file is viewed, it is Submit Review… or Write Brief…, which stays in the same place in the sticky header throughout and is secondary until then. Tooltips give each button's `Ctrl+Alt+R` key. Home follows the same rule across all the Reviewer's Changes (see Home).
 
 **The Steady Focus Rule.** An update never moves the Reviewer's focus. The webviews rebuild only what changed, such as the reply being written or a history that loaded again, and if a rebuilt element had the focus, it goes to the element in the same place.
 
 **The One Paragraph Rule.** The Assistant's take is at most three sentences and ends by naming where to start. The overview enforces it: anything longer waits behind Show all.
 
 **The Breathing Room Rule.** Opening a Change shows one thing. Nothing opens beside the overview, below it or behind it until the Reviewer asks.
+
+### Home
+
+The review window's page of where the Reviewer stands across their Changes, a Change overview for every Change at once. It opens alone in the main column, with the focus, when no Change is in front in the review window, when the last Change closes, and from Show Home. It closes as a Change comes to the front, so the Breathing Room Rule holds. It reads top to bottom as the overview does, answer lines first and the lists after:
+
+- **Header:** the title "Home" and a Refresh icon button, which loads the pull requests and branches again.
+- **The facts line:** `2 in progress · 3 waiting on you · oldest 6 days`, with tabular numerals. With nothing to count, it says `Nothing in progress` or `nothing waiting on you`.
+- **The place line:** a muted line saying where the Reviewer left off, such as `You were last in acme/api #482 · 9 of 12 viewed · 2 pending Comments`.
+- **The next step:** one filled button, under the Next Step Rule. It resumes the Change shown last that still needs the Reviewer (`Resume acme/api #482`), or shows its finishing label, Submit Review… or Write Brief…, once every file is viewed. With no such Change, it is `Review acme/billing #19`, the pull request that has waited longest and isn't open yet. A Change whose last Review covers its head, with no Comments pending, needs nothing. With no next step, the place line and the button don't show. A hairline closes this part.
+- **In progress:** a row for each open Change: the title in semibold, the muted byline (`acme/web #77 · bob → main`), and its standing line as on the overview, with the review mark (`✓ You approved at 14:32 · 3 Comments published · 4 of 4 viewed`). On the right, two secondary buttons: Resume, and Submit Review… or Write Brief…. The section shows only when a Change is open.
+- **Waiting on you:** the pull requests that wait on the Reviewer, the longest wait first. The wait counts from the review request: a personal one, else a Team request, else the pull request's creation. Each row has the 24px avatar, the title as a link that opens it as a Change, a muted `acme/billing #19 · carol · waiting 6 days`, and then its size (`31 files · +120 −2204`, the numbers tinted as on the overview), a check status pill and notes such as `new commits since your Review` or `open`. When nothing waits, the section hides, since the facts line already says so.
+- **Your pull requests:** the same rows without an avatar, author or wait, with the authored states as words, such as `changes requested`.
+- **Local branches:** the branch name as a link in the editor font, over a muted `acme/web · 3 commits ahead of main`.
+- **Setup and problems:** signed out, or with no repository, Waiting on you holds a muted problem line with the link that helps, such as `Sign in to GitHub to list the pull requests waiting on you. Sign In to GitHub` or `Add a repository to list its pull requests and branches here. Add Repository…`. A list that can't load says so the same way. Never a red banner.
+
+Home has no data of its own. It shows the Inbox's pull requests and branches and the overview's standing, from the same load, so Home, the Inbox and the overview never disagree. Each list is built again only when it changed, so the focus stays put (the Steady Focus Rule).
 
 ### Rendered Markdown
 
@@ -288,7 +306,7 @@ The shared reading style for timeline bodies and Assistant replies: tight margin
 
 - **Do** take every color from a `--vscode-*` variable, with a fallback inside `var()` when the theme might not define it, as in `var(--vscode-input-border, transparent)`.
 - **Do** reach for native UI first (tree views, comment threads, decorations, quick picks, status bar) and add a webview only when an ADR says why none fits.
-- **Do** put styles both webviews use in `sharedStyles` in `extension/src/markdownPanel.ts`, never a copy in each panel.
+- **Do** put styles every webview uses in `sharedStyles` in `extension/src/markdownPanel.ts`, and the page styles the overview and Home share (header, buttons, facts line, status pills, rows) in `pageStyles` in `extension/src/timeline/panel.ts`, never a copy in each panel.
 - **Do** give every interactive element a visible `:focus-visible` outline in `focus`, and make links in rendered Markdown reachable with Tab and Enter.
 - **Do** announce status to screen readers: `role="status"` for loading and working lines, `role="alert"` for the problem banner, and a visually hidden status line for changes that are otherwise only visual, such as a reply finishing. Set a live region's text only when it changes (`setText` in `sharedScript`), or every update speaks it again.
 - **Do** keep the focus through updates with `keepFocus` in `sharedScript`, and build only the parts of a webview that changed.

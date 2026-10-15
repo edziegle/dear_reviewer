@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-14T17:30:00Z",
+  "generatedAt": "2026-10-15T12:00:00Z",
   "title": "Design System: Dear Reviewer",
   "extensions": {
     "colorMeta": {
@@ -263,7 +263,7 @@
   ],
   "narrative": {
     "northStar": "The Margin Note",
-    "overview": "The Change's code is the page, and the code lives only in the editor. Dear Reviewer writes in the margin beside it: the timeline, the Assistant's replies and the Findings list are notes about the code, never a second copy of it (ADR 0012). A margin note is in the reader's own hand and the book's own ink. Every surface takes its color, type and controls from the active VS Code theme, and must look right in light, dark and high-contrast themes without a single theme-specific rule.\n\nThe system has almost nothing of its own on purpose. Native UI comes first: tree views, comment threads, gutter decorations, codicons, quick picks and the status bar. The two webviews, the pull-request timeline and the Assistant panel, exist only where no native view fits, and they behave like editor panels: compact, text-led, flat, divided by hairlines, readable for a whole working day. Density is the editor's density. A Reviewer who glances from the diff to the margin should notice the content, not the change of world.\n\nRejected on sight: the GitHub Pull Requests extension's webviews, which are slow, custom-styled review pages that look wrong next to VSCodium, and branded AI chat panels with gradients, glows, sparkle motifs or a face for the bot. The Assistant is a plain panel of prose, not a character.",
+    "overview": "The Change's code is the page, and the code lives only in the editor. Dear Reviewer writes in the margin beside it: the timeline, the Assistant's replies and the Findings list are notes about the code, never a second copy of it (ADR 0012). A margin note is in the reader's own hand and the book's own ink. Every surface takes its color, type and controls from the active VS Code theme, and must look right in light, dark and high-contrast themes without a single theme-specific rule.\n\nThe system has almost nothing of its own on purpose. Native UI comes first: tree views, comment threads, gutter decorations, codicons, quick picks and the status bar. The three webviews, each Change's overview, Home and the Assistant panel, exist only where no native view fits, and they behave like editor panels: compact, text-led, flat, divided by hairlines, readable for a whole working day. Density is the editor's density. A Reviewer who glances from the diff to the margin should notice the content, not the change of world.\n\nRejected on sight: the GitHub Pull Requests extension's webviews, which are slow, custom-styled review pages that look wrong next to VSCodium, and branded AI chat panels with gradients, glows, sparkle motifs or a face for the bot. The Assistant is a plain panel of prose, not a character.",
     "keyCharacteristics": [
       "Every color is a `--vscode-*` theme variable; the extension defines no palette.",
       "Type is the workbench font for prose and the editor font for anything code-shaped.",
@@ -311,7 +311,7 @@
     "dos": [
       "**Do** take every color from a `--vscode-*` variable, with a fallback inside `var()` when the theme may not define it, like `var(--vscode-input-border, transparent)`.",
       "**Do** reach for native UI first (tree views, comment threads, decorations, quick picks, status bar) and add a webview only when an ADR says why none fits.",
-      "**Do** put styles both webviews use in `sharedStyles` in `extension/src/markdownPanel.ts`, never a copy in each panel.",
+      "**Do** put styles every webview uses in `sharedStyles` in `extension/src/markdownPanel.ts`, and the page styles the overview and Home share (header, buttons, facts line, status pills, rows) in `pageStyles` in `extension/src/timeline/panel.ts`, never a copy in each panel.",
       "**Do** give every interactive element a visible `:focus-visible` outline in `focus`, and make links in rendered Markdown reachable with Tab and Enter.",
       "**Do** announce status to screen readers: `role=\"status\"` for loading and working lines, `role=\"alert\"` for the problem banner, and a visually hidden status line for changes that are otherwise only visual, such as a reply finishing.",
       "**Do** color placeholders with `--vscode-input-placeholderForeground`; the browser's default gray fails contrast on dark themes.",

@@ -19,7 +19,7 @@ jobs:
       release_created: ${{ steps.release.outputs['extension--release_created'] }}
       tag_name: ${{ steps.release.outputs['extension--tag_name'] }}
     steps:
-      - uses: googleapis/release-please-action@v5
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         id: release
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -30,20 +30,28 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      # Signs and stores the .vsix's build provenance attestation.
+      id-token: write
+      attestations: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: jdx/mise-action@v5
+      - uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
         with:
           install_args: node
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.npm
           key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json', 'extension/package-lock.json') }}
           restore-keys: npm-${{ runner.os }}-
       - run: mise run deps
       - run: mise run package
+      # Verify a download with:
+      # gh attestation verify dear-reviewer.vsix -R edziegle/dear_reviewer
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: extension/dist/dear-reviewer.vsix
       - run: mise run upload-vsix "$TAG"
         env:
           GH_TOKEN: ${{ github.token }}

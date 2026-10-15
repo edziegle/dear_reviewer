@@ -26,10 +26,14 @@ const fakeClaudeDir = path.join(work, "fake-claude");
 const fakeClaude = path.join(fakeClaudeDir, "bin", "claude");
 const backgroundCodium = path.join(testRoot, "background-codium");
 
+/**
+ * Only the basedpyright suite needs these, so a failed install stops a CI run
+ * but only warns locally, where the developer may be offline.
+ */
 function installLanguageServers() {
   // basedpyright refuses to activate without the Python extension.
   for (const extension of ["ms-python.python", "detachhead.basedpyright"]) {
-    cp.spawnSync(
+    const install = cp.spawnSync(
       codiumCli,
       [
         "--extensions-dir",
@@ -41,6 +45,10 @@ function installLanguageServers() {
       ],
       { stdio: "inherit" }
     );
+    if (install.status === 0) continue;
+    const failure = `Installing ${extension} failed (${install.error?.message ?? `exit code ${install.status}`})`;
+    if (process.env.CI) throw new Error(failure);
+    console.warn(`${failure}; continuing without it.`);
   }
 }
 

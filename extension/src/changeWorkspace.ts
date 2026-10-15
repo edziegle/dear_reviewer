@@ -59,6 +59,11 @@ export class ChangeWorkspace implements vscode.Disposable {
   readonly onDidReplaceChange = this.replaced.event;
   /** Opening, closing and tidying run one after another. */
   private queue: Promise<unknown> = Promise.resolve();
+  /** How many of them are queued or running. */
+  private operations = 0;
+  private readonly settled = new vscode.EventEmitter<void>();
+  /** Fires when the last opening, closing or tidying queued finishes. */
+  readonly onDidSettle = this.settled.event;
 
   constructor(private readonly storageDir: string) {
     this.openChanges = new OpenChanges(storageDir);
@@ -80,6 +85,23 @@ export class ChangeWorkspace implements vscode.Disposable {
 
   dispose(): void {
     this.watcher.dispose();
+    this.settled.dispose();
+  }
+
+  /**
+   * Whether an opening, closing or tidying is under way, such as a newer
+   * head taking an older one's place, so the open Changes are still moving.
+   */
+  get busy(): boolean {
+    return this.operations > 0;
+  }
+
+  /** Whether this is the review window and a Change sent here still waits to show. */
+  waitingHere(): boolean {
+    return (
+      this.reviewWindow.isThisWindow() &&
+      this.openChanges.all().some((c) => c.inReviewWindow && c.diffPending)
+    );
   }
 
   open(request: ChangeRequest): Promise<Change> {
@@ -93,29 +115,28 @@ export class ChangeWorkspace implements vscode.Disposable {
         `${request.head} has no commits that ${request.base} doesn't have, so there is nothing to review.`
       );
     await createWorktrees(change);
-    // A newer head of the same pull request or branch takes the older one's place.
+    // A newer head of the same pull request or branch takes the older one's
+    // place. It is listed first, so no window, seeing the older one go,
+    // takes another Change for the one in front on the way.
     const older = this.openChanges
       .all()
       .filter(
         (c) => c.conversation === change.conversation && c.id !== change.id
       );
+    const here = ReviewWindow.canAddFoldersHere();
+    this.openChanges.put(
+      here
+        ? { ...change, inReviewWindow: this.reviewWindow.isThisWindow() }
+        : { ...change, inReviewWindow: true, diffPending: true }
+    );
     for (const old of older) {
       await this.remove(old);
       this.replaced.fire(old);
     }
-    if (ReviewWindow.canAddFoldersHere()) {
-      this.openChanges.put({
-        ...change,
-        inReviewWindow: this.reviewWindow.isThisWindow(),
-      });
+    if (here) {
       await appendFolders(changeFolders(change));
       this.shown.fire(change);
     } else {
-      this.openChanges.put({
-        ...change,
-        inReviewWindow: true,
-        diffPending: true,
-      });
       this.syncReviewWindow();
       await this.reviewWindow.open();
     }
@@ -228,7 +249,10 @@ export class ChangeWorkspace implements vscode.Disposable {
   }
 
   private serially<T>(work: () => Promise<T>): Promise<T> {
-    const result = this.queue.then(work);
+    this.operations++;
+    const result = this.queue.then(work).finally(() => {
+      if (--this.operations === 0) this.settled.fire();
+    });
     this.queue = result.catch(() => undefined);
     return result;
   }

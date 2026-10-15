@@ -394,13 +394,17 @@ export function activate(context: vscode.ExtensionContext) {
    * Catches up with the open Changes, which any window may have changed:
    * shows them, and, if the Change shown last closed, shows the one now in
    * front the way a review starts; in the review window, also shows the
-   * Changes sent here from another window.
+   * Changes sent here from another window. While this window is opening or
+   * closing Changes, or a Change sent here still waits to show, the one in
+   * front may be passing, so it waits to show it until they settle.
    */
   function syncOpenChanges(): Promise<void> {
     showOpenChanges();
     const front = changes.inFront();
     if (!front) shownLast = undefined;
     else if (
+      !changes.busy &&
+      !changes.waitingHere() &&
       shownLast &&
       front.id !== shownLast &&
       !changes.list().some((change) => change.id === shownLast)
@@ -1189,6 +1193,7 @@ export function activate(context: vscode.ExtensionContext) {
     // Another window may change the open Changes without changing this
     // window's folders, such as by opening again a Change it shows.
     changes.onDidChangeOpenChanges(() => syncOpenChanges()),
+    changes.onDidSettle(() => syncOpenChanges()),
     changes,
     changeFilesTree,
     changeFilesTree.onDidChangeCheckboxState(async (e) => {

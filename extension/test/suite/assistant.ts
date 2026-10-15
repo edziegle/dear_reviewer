@@ -167,8 +167,8 @@ interface AssistantApi {
   }[];
   /** What each running Assistant has for its Change's overview, by the Change's title. */
   overviews(): { title: string; take: Take }[];
-  /** The Claude login status bar item, once a login has been checked. */
-  loginStatus(): { text: string; tooltip?: string } | undefined;
+  /** The Assistant's status bar item, once a login has been checked. */
+  loginStatus(): LoginStatus | undefined;
 }
 
 async function assistantApi(): Promise<AssistantApi> {
@@ -299,9 +299,15 @@ export async function askAboutFile(
   await vscode.commands.executeCommand("dearReviewer.askAssistant");
 }
 
-export async function loginStatus(): Promise<
-  { text: string; tooltip?: string } | undefined
-> {
+export interface LoginStatus {
+  name: string;
+  text: string;
+  tooltip?: string;
+  /** Whether the item has the warning background. */
+  warning: boolean;
+}
+
+export async function loginStatus(): Promise<LoginStatus | undefined> {
   return (await assistantApi()).loginStatus();
 }
 

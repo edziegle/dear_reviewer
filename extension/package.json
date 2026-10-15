@@ -359,6 +359,15 @@
         }
       }
     },
+    "icons": {
+      "dear-reviewer-logo": {
+        "description": "The Dear Reviewer logo",
+        "default": {
+          "fontPath": "media/dear-reviewer-logo.woff",
+          "fontCharacter": "\\E000"
+        }
+      }
+    },
     "viewsContainers": {
       "activitybar": [
         {
@@ -963,6 +972,7 @@
     "@vscode/test-electron": "^3.1.0",
     "@vscode/vsce": "^4.0.0",
     "esbuild": "^0.28.2",
+    "fantasticon": "^4.1.0",
     "mocha": "^12.0.3",
     "typescript": "^7.0.2"
   },

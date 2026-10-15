@@ -5,6 +5,7 @@ import * as vscode from "vscode";
 import {
   assistantRuns,
   callsToClaude,
+  fakeClaudePath,
   flag,
   loginStatus,
   renderedPanel,
@@ -212,13 +213,69 @@ describe("The Assistant's summary when a Change opens", () => {
       assert.strictEqual(panel?.busy, false);
     });
     const status = await loginStatus();
-    assert.match(status?.text ?? "", /Claude: API key, billed per token/);
+    assert.strictEqual(
+      status?.text,
+      "$(dear-reviewer-logo) Assistant: billed per token"
+    );
+    assert.strictEqual(status.warning, true);
+    assert.match(status.tooltip ?? "", /^\**Dear Reviewer Assistant\**/);
+    for (const detail of [
+      "API key, billed per token",
+      "`api_key`",
+      fakeClaudePath(),
+      "Click to check again.",
+    ])
+      assert.ok(status.tooltip?.includes(detail), `the tooltip has ${detail}`);
     assert.ok(
       callsToClaude().some((c) => c.args.join(" ") === "auth status"),
       "asked claude auth status"
     );
 
     await closeChange(request);
+  });
+
+  it("shows the Assistant ready in the status bar on a Claude subscription, with the login in the tooltip", async () => {
+    scriptClaude({});
+
+    await vscode.commands.executeCommand("dearReviewer.checkClaudeLogin");
+
+    const status = await loginStatus();
+    assert.strictEqual(status?.name, "Dear Reviewer: Assistant");
+    assert.strictEqual(status.text, "$(dear-reviewer-logo) Assistant ready");
+    assert.strictEqual(status.warning, false);
+    assert.match(status.tooltip ?? "", /^\**Dear Reviewer Assistant\**/);
+    for (const detail of [
+      "Claude subscription (Max)",
+      "`claude.ai`",
+      fakeClaudePath(),
+      "Click to check again.",
+    ])
+      assert.ok(status.tooltip?.includes(detail), `the tooltip has ${detail}`);
+  });
+
+  it("warns in the status bar when a cloud provider bills the Assistant", async () => {
+    scriptClaude({
+      authStatus: {
+        loggedIn: true,
+        authMethod: "third_party",
+        apiProvider: "bedrock",
+      },
+    });
+
+    await vscode.commands.executeCommand("dearReviewer.checkClaudeLogin");
+
+    const status = await loginStatus();
+    assert.strictEqual(
+      status?.text,
+      "$(dear-reviewer-logo) Assistant: billed per token"
+    );
+    assert.strictEqual(status.warning, true);
+    assert.ok(
+      status.tooltip?.includes(
+        "Cloud provider (bedrock), billed by the provider"
+      ),
+      status.tooltip
+    );
   });
 
   it("runs claude without credential variables, with only read-only tools, in a mode that never prompts", async () => {

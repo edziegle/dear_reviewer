@@ -27,6 +27,19 @@ run = "node esbuild.mjs"
 sources = ["src/**/*.ts", "esbuild.mjs", "package.json", "package-lock.json"]
 outputs = ["dist/extension.js"]
 
+# A status bar item can show only an icon font's glyph, not an SVG, so the
+# logo is also built as a one-glyph font. The font is committed, so
+# packaging doesn't need this task; run it after changing the logo.
+[tasks.logo-font]
+description = "Build the logo's icon font from media/dear-reviewer.svg"
+dir = "extension"
+run = """
+glyphs=$(mktemp -d)
+cp media/dear-reviewer.svg "$glyphs/dear-reviewer-logo.svg"
+npx fantasticon "$glyphs" --config logo-font.json --output media --silent
+rm -r "$glyphs"
+"""
+
 [tasks.test]
 description = "Run the extension tests in VS Code"
 dir = "extension"

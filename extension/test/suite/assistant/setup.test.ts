@@ -58,7 +58,14 @@ describe("Setting up the Assistant", () => {
         assert.strictEqual(panel.busy, false);
         assert.deepStrictEqual(panel.messages, []);
       });
-      assert.match((await loginStatus())?.text ?? "", /Claude: not found/);
+      const status = await loginStatus();
+      assert.strictEqual(
+        status?.text,
+        "$(dear-reviewer-logo) Assistant: Claude not found"
+      );
+      assert.strictEqual(status.warning, true);
+      assert.match(status.tooltip ?? "", /^\**Dear Reviewer Assistant\**/);
+      assert.ok(status.tooltip?.includes(missing), "the tooltip has the error");
       assert.deepStrictEqual(callsToClaude(), []);
       const take = await overviewTake(title);
       assert.ok(take?.problem?.includes(missing), "the overview says so too");
@@ -94,7 +101,12 @@ describe("Setting up the Assistant", () => {
       assert.strictEqual(panel?.problemAction, "Open a Terminal");
       assert.strictEqual(panel?.busy, false);
     });
-    assert.match((await loginStatus())?.text ?? "", /Claude: not signed in/);
+    const status = await loginStatus();
+    assert.strictEqual(
+      status?.text,
+      "$(dear-reviewer-logo) Assistant: not signed in"
+    );
+    assert.strictEqual(status.warning, true);
     assert.deepStrictEqual(assistantRuns(), [], "the Assistant didn't start");
 
     await closeChange(request);

@@ -134,7 +134,7 @@ export class Assistants implements vscode.Disposable {
       "dearReviewer.claudeLogin",
       vscode.StatusBarAlignment.Right
     );
-    this.status.name = "Dear Reviewer: Claude login";
+    this.status.name = "Dear Reviewer: Assistant";
     this.status.command = "dearReviewer.checkClaudeLogin";
   }
 
@@ -245,7 +245,7 @@ export class Assistants implements vscode.Disposable {
       await assistant.start(cli);
     } catch (err) {
       if (err instanceof ClaudeProblem && err.kind === "notFound")
-        this.showStatus("$(error) Claude: not found", err.message, true);
+        this.showStatus("Assistant: Claude not found", err.message, true);
       assistant.fail(err);
     }
   }
@@ -314,7 +314,7 @@ export class Assistants implements vscode.Disposable {
       return await this.showLogin(new ClaudeCli(findClaude(this.claudePath())));
     } catch (err) {
       const message = messageOf(err);
-      this.showStatus("$(error) Claude: not found", message, true);
+      this.showStatus("Assistant: Claude not found", message, true);
       void vscode.window.showErrorMessage(message);
     }
   }
@@ -338,12 +338,16 @@ export class Assistants implements vscode.Disposable {
     return [...this.byConversation.values()].flatMap((a) => a.panelStates());
   }
 
-  loginStatus(): { text: string; tooltip?: string } | undefined {
+  loginStatus():
+    | { name: string; text: string; tooltip?: string; warning: boolean }
+    | undefined {
     if (!this.status.text) return;
     const tooltip = this.status.tooltip;
     return {
+      name: this.status.name ?? "",
       text: this.status.text,
       tooltip: typeof tooltip === "string" ? tooltip : tooltip?.value,
+      warning: !!this.status.backgroundColor,
     };
   }
 
@@ -357,19 +361,24 @@ export class Assistants implements vscode.Disposable {
 
   private async showLogin(cli: ClaudeCli): Promise<ClaudeLogin> {
     const login = await cli.login();
-    const icon =
-      !login.signedIn || login.billedPerToken ? "$(warning)" : "$(sparkle)";
+    const text = !login.signedIn
+      ? "Assistant: not signed in"
+      : login.billedPerToken
+        ? "Assistant: billed per token"
+        : "Assistant ready";
     this.showStatus(
-      `${icon} Claude: ${login.label}`,
-      `The Assistant runs on this Claude login (\`${login.method}\`), as \`claude auth status\` reports it for ${cli.executable}. Click to check again.`,
+      text,
+      `Runs on this Claude login: ${login.label} (\`${login.method}\`), as \`claude auth status\` reports it for \`${cli.executable}\`.`,
       !login.signedIn || login.billedPerToken
     );
     return login;
   }
 
-  private showStatus(text: string, tooltip: string, warn: boolean): void {
-    this.status.text = text;
-    this.status.tooltip = new vscode.MarkdownString(tooltip);
+  private showStatus(text: string, detail: string, warn: boolean): void {
+    this.status.text = `$(dear-reviewer-logo) ${text}`;
+    this.status.tooltip = new vscode.MarkdownString(
+      `**Dear Reviewer Assistant**\n\n${detail}\n\nClick to check again.`
+    );
     this.status.backgroundColor = warn
       ? new vscode.ThemeColor("statusBarItem.warningBackground")
       : undefined;

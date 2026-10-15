@@ -447,16 +447,21 @@ export function activate(context: vscode.ExtensionContext) {
 
   /**
    * The Change a command acts on: the one given, by a Change Files menu or
-   * a test, or else the one the Reviewer is looking at, or else the only one
-   * open in this window that fits, or else one they pick. `none` says why
-   * there is none.
+   * a test, or the one of the file given, by an editor's title bar, or else
+   * the one the Reviewer is looking at, or else the only one open in this
+   * window that fits, or else one they pick. `none` says why there is none.
    */
   async function changeFor(
-    target: ChangeTarget | undefined,
+    target: ChangeTarget | vscode.Uri | undefined,
     title: string,
     fits: (change: Change) => boolean = () => true,
     none = "No Change is open in this window."
   ): Promise<Change | undefined> {
+    if (target instanceof vscode.Uri) {
+      const ofFile = whereInChange(target, changes.shownHere())?.change;
+      if (ofFile) return ofFile;
+      target = undefined;
+    }
     if (target && "kind" in target)
       return target.kind === "change" ? target.change : undefined;
     if (target) {
@@ -530,10 +535,25 @@ export function activate(context: vscode.ExtensionContext) {
       direction
     );
     if (file) await changeFiles.openFile(change, file);
-    else
-      void vscode.window.showInformationMessage(
-        `Every file of ${changeName(change)} is viewed.`
-      );
+    else void offerToFinish(change);
+  }
+
+  /** Says every file of the Change is viewed, with ways to finish its Review. */
+  async function offerToFinish(change: Change): Promise<void> {
+    const finish = "Finish Review…";
+    const overview = "Show Overview";
+    const picked = await vscode.window.showInformationMessage(
+      `Every file of ${changeName(change)} is viewed.`,
+      finish,
+      overview
+    );
+    if (!picked) return;
+    await vscode.commands.executeCommand(
+      picked === finish
+        ? "dearReviewer.finishReview"
+        : "dearReviewer.showTimeline",
+      requestOf(change)
+    );
   }
 
   /**
@@ -922,7 +942,7 @@ export function activate(context: vscode.ExtensionContext) {
     ),
     vscode.commands.registerCommand(
       "dearReviewer.finishReview",
-      async (target?: ChangeTarget) => {
+      async (target?: ChangeTarget | vscode.Uri) => {
         const change = await changeFor(target, "Finish Review");
         if (!change) return;
         await vscode.commands.executeCommand(
@@ -1038,7 +1058,7 @@ export function activate(context: vscode.ExtensionContext) {
     ),
     vscode.commands.registerCommand(
       "dearReviewer.showTimeline",
-      async (target?: ChangeTarget) => {
+      async (target?: ChangeTarget | vscode.Uri) => {
         const change = await changeFor(target, "Show Overview");
         if (!change) return;
         void assistants.start(change);

@@ -1,13 +1,23 @@
 import * as assert from "assert";
+import * as path from "path";
 import * as vscode from "vscode";
-import { buildPullRequestFixture } from "../fixtures";
+import {
+  changeFiles,
+  entryAt,
+  markViewed,
+  onTab,
+  select,
+} from "../changeFiles";
+import { buildFixtureRepo, buildPullRequestFixture } from "../fixtures";
 import {
   avatarServedFor,
   configure,
+  fakePullRequestId,
   inbox,
   inboxEntry,
   openFromInbox,
   refreshInbox,
+  reviewsOnGitHub,
   serveGitHub,
   setToken,
   type FakePullRequest,
@@ -17,8 +27,10 @@ import {
   activeTabLabel,
   closeChange,
   eventually,
+  foldersAddedSince,
   openChange,
   short,
+  workspaceFolders,
 } from "../reviewer";
 import {
   avatarBytes,
@@ -290,6 +302,7 @@ describe("A pull request's timeline", () => {
   });
 
   after(async () => {
+    if (other.opened) await closeChange(other.request);
     await releaseLinks();
     const config = vscode.workspace.getConfiguration("dearReviewer");
     for (const key of settingKeys)
@@ -585,6 +598,148 @@ describe("A pull request's timeline", () => {
       assert.strictEqual(timeline?.title, "Restructure pkg");
     });
     assert.strictEqual(activeTabLabel(), title, "it comes back in front");
+  });
+
+  /** A local Change opened beside the pull request's, so a command can't just take the only one. */
+  const otherRepo = buildFixtureRepo("timelineOther");
+  const other = {
+    request: {
+      repository: otherRepo.path,
+      base: otherRepo.commits.initial,
+      head: otherRepo.commits.restructured,
+    },
+    title: `${path.basename(otherRepo.path)} ${short(otherRepo.commits.initial)}..${short(otherRepo.commits.restructured)}`,
+    opened: false,
+    folders: [] as string[],
+  };
+
+  /** Opens the other Change, once, and puts one of its files in front. */
+  async function inFrontOfOtherChange(): Promise<void> {
+    if (!other.opened) {
+      const before = workspaceFolders();
+      await openChange(other.request);
+      other.opened = true;
+      other.folders = foldersAddedSince(before).map((f) => f.path);
+    }
+    await select(entryAt(await changeFiles(), other.title, "main.py"));
+    await eventually(() =>
+      assert.ok(activeTabLabel()?.startsWith("main.py"), activeTabLabel())
+    );
+  }
+
+  /** A file of the pull request's Change, in its head worktree. */
+  function pullRequestFile(file: string): vscode.Uri {
+    const head = workspaceFolders().find(
+      (f) =>
+        f.name.endsWith(`head ${short(pr.head)}`) &&
+        !other.folders.includes(f.path)
+    );
+    assert.ok(head, "the pull request's head worktree is open");
+    return vscode.Uri.file(path.join(head.path, file));
+  }
+
+  /**
+   * Answers Submit Review…'s questions with their first choice and an empty
+   * summary, until GitHub has one more Review of the pull request.
+   */
+  async function acceptSubmitReview(reviewsBefore: number): Promise<void> {
+    await eventually(async () => {
+      await vscode.commands.executeCommand(
+        "workbench.action.acceptSelectedQuickOpenItem"
+      );
+      const reviews = (await reviewsOnGitHub()).filter(
+        (r) => r.author === "reviewer" && r.state !== "PENDING"
+      );
+      assert.strictEqual(reviews.length, reviewsBefore + 1);
+      assert.strictEqual(reviews.at(-1)?.pullRequestId, fakePullRequestId(pr));
+    }, 20_000);
+  }
+
+  async function submittedReviews(): Promise<number> {
+    return (await reviewsOnGitHub()).filter(
+      (r) => r.author === "reviewer" && r.state !== "PENDING"
+    ).length;
+  }
+
+  it("offers Show Overview and Finish Review… on a Change's files, the palette and Change Files", () => {
+    const menus = vscode.extensions.getExtension("edziegle.dear-reviewer")!
+      .packageJSON.contributes.menus as Record<
+      string,
+      { command: string; when?: string; group?: string }[]
+    >;
+    const entries = (menu: string, ...commands: string[]) =>
+      menus[menu]
+        .filter((m) => commands.includes(m.command))
+        .map((m) => [m.command, m.when, m.group]);
+    const onChangeFile =
+      "resourcePath =~ /edziegle\\.dear-reviewer\\/changes\\// || resourceScheme == dear-reviewer-commit";
+    assert.deepStrictEqual(
+      entries(
+        "editor/title",
+        "dearReviewer.showTimeline",
+        "dearReviewer.finishReview"
+      ),
+      [
+        // Off the navigation group, in the editor's … menu.
+        ["dearReviewer.showTimeline", onChangeFile, "1_dearReviewer@1"],
+        ["dearReviewer.finishReview", onChangeFile, "1_dearReviewer@2"],
+      ]
+    );
+    assert.deepStrictEqual(
+      entries("commandPalette", "dearReviewer.finishReview"),
+      [["dearReviewer.finishReview", "dearReviewer.hasOpenChange", undefined]]
+    );
+    assert.deepStrictEqual(entries("view/title", "dearReviewer.finishReview"), [
+      [
+        "dearReviewer.finishReview",
+        "view == dearReviewer.changeFiles && dearReviewer.hasOpenChange",
+        "navigation@1",
+      ],
+    ]);
+  });
+
+  it("comes back from a file's title bar for that file's Change, with another Change's file in front", async () => {
+    const tab = timelineTab(title);
+    if (tab) await vscode.window.tabGroups.close(tab);
+    await inFrontOfOtherChange();
+
+    await onTab("showTimeline", pullRequestFile("util.py"));
+
+    await eventually(() => assert.strictEqual(activeTabLabel(), title));
+  });
+
+  it("finishes the Review of a file's Change from its title bar, not the Change in front", async () => {
+    await inFrontOfOtherChange();
+    const before = await submittedReviews();
+
+    void onTab("finishReview", pullRequestFile("util.py"));
+
+    await acceptSubmitReview(before);
+  });
+
+  it("offers to finish the Review once stepping finds every file viewed", async () => {
+    await markViewed(
+      entryAt(
+        await changeFiles(),
+        `${path.basename(pr.clone)} ${short(pr.base)}..${short(pr.head)}`
+      )
+    );
+    await inFrontOfOtherChange();
+    const before = await submittedReviews();
+
+    await vscode.commands.executeCommand(
+      "dearReviewer.nextUnviewedFile",
+      change
+    );
+    // Finish Review… is the message's first button.
+    await eventually(async () => {
+      await vscode.commands.executeCommand("notification.acceptPrimaryAction");
+      await vscode.commands.executeCommand(
+        "workbench.action.acceptSelectedQuickOpenItem"
+      );
+      assert.ok((await submittedReviews()) > before, "no Review submitted");
+    }, 20_000);
+    await acceptSubmitReview(before);
   });
 
   it("closes with the Change", async () => {

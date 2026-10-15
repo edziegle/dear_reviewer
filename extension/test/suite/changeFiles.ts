@@ -124,7 +124,12 @@ export function unmarkViewed(...entries: FileEntry[]): Thenable<unknown> {
  * does: on the file the tab shows.
  */
 export function onTab(
-  command: "markViewed" | "markViewedAndClose" | "unmarkViewed",
+  command:
+    | "markViewed"
+    | "markViewedAndClose"
+    | "unmarkViewed"
+    | "showTimeline"
+    | "finishReview",
   file: vscode.Uri
 ): Thenable<unknown> {
   return vscode.commands.executeCommand(`dearReviewer.${command}`, file, {

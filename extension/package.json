@@ -259,8 +259,9 @@
       },
       {
         "command": "dearReviewer.finishReview",
-        "title": "Finish Review",
-        "category": "Dear Reviewer"
+        "title": "Finish Review…",
+        "category": "Dear Reviewer",
+        "icon": "$(check-all)"
       },
       {
         "command": "dearReviewer.copyBrief",
@@ -388,6 +389,11 @@
           "command": "dearReviewer.openSetup",
           "when": "view == dearReviewer.inbox",
           "group": "setup@1"
+        },
+        {
+          "command": "dearReviewer.finishReview",
+          "when": "view == dearReviewer.changeFiles && dearReviewer.hasOpenChange",
+          "group": "navigation@1"
         },
         {
           "command": "dearReviewer.refreshChangeFiles",
@@ -519,7 +525,7 @@
         },
         {
           "command": "dearReviewer.finishReview",
-          "when": "false"
+          "when": "dearReviewer.hasOpenChange"
         },
         {
           "command": "dearReviewer.nextUnviewedFile",
@@ -561,6 +567,16 @@
           "command": "dearReviewer.unmarkViewed",
           "when": "resourceScheme == file && resourcePath =~ /edziegle\\.dear-reviewer\\/changes\\// && resourcePath in dearReviewer.viewedFiles",
           "group": "navigation"
+        },
+        {
+          "command": "dearReviewer.showTimeline",
+          "when": "resourcePath =~ /edziegle\\.dear-reviewer\\/changes\\// || resourceScheme == dear-reviewer-commit",
+          "group": "1_dearReviewer@1"
+        },
+        {
+          "command": "dearReviewer.finishReview",
+          "when": "resourcePath =~ /edziegle\\.dear-reviewer\\/changes\\// || resourceScheme == dear-reviewer-commit",
+          "group": "1_dearReviewer@2"
         }
       ],
       "editor/title/context": [

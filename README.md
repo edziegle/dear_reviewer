@@ -1,4 +1,6 @@
-# Dear Reviewer
+<h1 align="center">
+  <img alt="Dear Reviewer" src="https://raw.githubusercontent.com/edziegle/dear_reviewer/main/docs/images/logo.png" width="500">
+</h1>
 
 Dear Reviewer is an extension for [VSCodium](https://vscodium.com/) and [VS Code](https://code.visualstudio.com/) to
 organize a human code reviewer's workflow.

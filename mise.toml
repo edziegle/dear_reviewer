@@ -15,9 +15,9 @@ description = "Download the Vale packages .vale.ini names"
 run = "vale sync"
 
 [tasks.typecheck]
-description = "Type-check the extension"
+description = "Type-check the extension and its tests"
 dir = "extension"
-run = "npx tsc --noEmit"
+run = ["npx tsc --noEmit", "npx tsc -p test --noEmit"]
 
 # No vscode:prepublish script: the package task builds first, so vsce has nothing to run.
 [tasks.build]

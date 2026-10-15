@@ -172,7 +172,9 @@ describe("What changed since my last Review", () => {
   });
 
   it("records the head commit a submitted Review covered", async () => {
-    scriptClaude(requestAt(pr.head), { turns: [replyTurn("A summary.")] });
+    await scriptClaude(requestAt(pr.head), {
+      turns: [replyTurn("A summary.")],
+    });
     await openFromInbox(await entry("Restructure pkg"));
     await summaryWritten(titleAt(pr.head));
 
@@ -326,7 +328,7 @@ describe("What changed since my last Review", () => {
 
   it("has the Assistant explain in the overview what changed since the last Review", async () => {
     // A new head carries on the pull request's conversation.
-    scriptClaude(requestAt(pr.head), {
+    await scriptClaude(requestAt(pr.head), {
       turns: [replyTurn("new_helper now returns 3, and since.py is new.")],
     });
 
@@ -340,7 +342,7 @@ describe("What changed since my last Review", () => {
         text: "new_helper now returns 3, and since.py is new.",
       })
     );
-    const [run, ...others] = assistantRuns(requestAt(newHead));
+    const [run, ...others] = await assistantRuns(requestAt(newHead));
     assert.deepStrictEqual(others, [], "one explanation");
     assert.ok(flag(run, "--resume"), "the Change's conversation carries on");
     const [prompt] = userMessages(run);
@@ -364,7 +366,7 @@ describe("What changed since my last Review", () => {
   it("doesn't explain the same commits again when the Change opens again", async () => {
     const title = titleAt(newHead);
     const before = await assistantTake(title);
-    scriptClaude(requestAt(newHead), { turns: [replyTurn("Again?")] });
+    await scriptClaude(requestAt(newHead), { turns: [replyTurn("Again?")] });
     await closeChange(requestAt(newHead));
 
     await openFromInbox(await entry("Restructure pkg"));
@@ -374,7 +376,7 @@ describe("What changed since my last Review", () => {
     );
     // Long enough for an explanation to have started.
     await new Promise((resolve) => setTimeout(resolve, 1000));
-    assert.deepStrictEqual(assistantRuns(requestAt(newHead)), []);
+    assert.deepStrictEqual(await assistantRuns(requestAt(newHead)), []);
     assert.deepStrictEqual(await assistantTake(title), before);
   });
 
@@ -440,7 +442,9 @@ describe("What changed since my last Review", () => {
       (editor) => editor.document.uri.scheme === "dear-reviewer-commit"
     )?.document.uri;
     assert.ok(reviewed, "the diff since the last Review is still open");
-    scriptClaude(requestAt(newHead), { turns: [replyTurn("It returned 2.")] });
+    await scriptClaude(requestAt(newHead), {
+      turns: [replyTurn("It returned 2.")],
+    });
     // The last test closed every editor, the Assistant panel included.
     await vscode.commands.executeCommand(
       "dearReviewer.showAssistant",
@@ -470,7 +474,7 @@ describe("What changed since my last Review", () => {
         text: "It returned 2.",
       })
     );
-    const [prompt] = userMessages(assistantRuns(requestAt(newHead))[0]);
+    const [prompt] = userMessages((await assistantRuns(requestAt(newHead)))[0]);
     assert.ok(
       prompt.includes(`lines 1–3 of util.py at commit ${pr.head}`),
       prompt

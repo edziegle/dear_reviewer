@@ -53,7 +53,7 @@ describe("The Assistant's work and replies in its panel", () => {
       repo.commits.initial,
       repo.commits.renamed
     );
-    scriptClaude(request, {
+    await scriptClaude(request, {
       turns: [
         replyTurn("A summary."),
         [
@@ -128,7 +128,7 @@ describe("The Assistant's work and replies in its panel", () => {
       repo.commits.initial,
       repo.commits.documented
     );
-    scriptClaude(request, {
+    await scriptClaude(request, {
       turns: [replyTurn("A summary."), replyTurn(reply)],
     });
     await openChange(request);
@@ -179,7 +179,7 @@ describe("The Assistant's work and replies in its panel", () => {
       repo.commits.initial,
       repo.commits.restructured
     );
-    scriptClaude(request, {
+    await scriptClaude(request, {
       turns: [replyTurn("A summary."), replyTurn(reply)],
     });
     const before = workspaceFolders();

@@ -26,6 +26,8 @@ describe("Setting up the Assistant", () => {
     request: { repository: repo.path, base, head },
     title: `${path.basename(repo.path)} ${short(base)}..${short(head)}`,
   });
+  // Even after a failing test, the next starts signed in.
+  afterEach(() => scriptClaudeLogin());
 
   it("finds claude on its own unless the Reviewer gives a path", () => {
     const setting = vscode.workspace
@@ -45,7 +47,7 @@ describe("Setting up the Assistant", () => {
       repo.commits.documented
     );
     scriptClaudeLogin();
-    scriptClaude(request, {});
+    await scriptClaude(request, {});
     await setClaudePath(missing);
     try {
       await openChange(request);
@@ -69,7 +71,7 @@ describe("Setting up the Assistant", () => {
       assert.match(status.tooltip ?? "", /^\**Dear Reviewer Assistant\**/);
       assert.ok(status.tooltip?.includes(missing), "the tooltip has the error");
       assert.deepStrictEqual(loginChecks(), []);
-      assert.deepStrictEqual(assistantRuns(request), []);
+      assert.deepStrictEqual(await assistantRuns(request), []);
       const take = await overviewTake(title);
       assert.ok(take?.problem?.includes(missing), "the overview says so too");
       assert.strictEqual(take?.problemAction, "Set Claude Path");
@@ -92,7 +94,7 @@ describe("Setting up the Assistant", () => {
       repo.commits.renamed,
       repo.commits.restructured
     );
-    scriptClaude(request, {});
+    await scriptClaude(request, {});
     try {
       await openChange(request);
 
@@ -112,12 +114,11 @@ describe("Setting up the Assistant", () => {
       );
       assert.strictEqual(status.warning, true);
       assert.deepStrictEqual(
-        assistantRuns(request),
+        await assistantRuns(request),
         [],
         "the Assistant didn't start"
       );
     } finally {
-      scriptClaudeLogin();
       await closeChange(request);
     }
   });
@@ -134,7 +135,7 @@ describe("Setting up the Assistant", () => {
       repo.commits.initial,
       repo.commits.restructured
     );
-    scriptClaude(request, { turns: [replyTurn("A summary.")] });
+    await scriptClaude(request, { turns: [replyTurn("A summary.")] });
     await openChange(request);
     await showAssistant(request);
     await eventually(async () => {
@@ -156,7 +157,7 @@ describe("Setting up the Assistant", () => {
       assert.strictEqual(take?.text, "A summary.");
     });
     assert.strictEqual(
-      assistantRuns(request).length,
+      (await assistantRuns(request)).length,
       1,
       "the Assistant started"
     );
@@ -196,7 +197,7 @@ describe("Setting up the Assistant", () => {
       repo.commits.documented,
       repo.commits.restructured
     );
-    scriptClaude(request, {});
+    await scriptClaude(request, {});
     try {
       await eventually(() =>
         assert.deepStrictEqual(config().get("repositories"), ["acme/planted"])
@@ -210,7 +211,10 @@ describe("Setting up the Assistant", () => {
         assert.strictEqual((await renderedPanel(title))?.messages.length, 1)
       );
       assert.ok(!fs.existsSync(marker), "the workspace's claude never ran");
-      assert.ok(assistantRuns(request).length > 0, "the Reviewer's claude ran");
+      assert.ok(
+        (await assistantRuns(request)).length > 0,
+        "the Reviewer's claude ran"
+      );
     } finally {
       await closeChange(request);
       const workspace = JSON.parse(fs.readFileSync(workspaceFile, "utf8"));

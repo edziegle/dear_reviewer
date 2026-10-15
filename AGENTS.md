@@ -20,7 +20,7 @@ Rules for tests, which reviewers enforce:
 
 - A test waits for what it checks, with `eventually` or a helper's own wait, and asserts nothing about elapsed time: a loaded machine runs every test slower.
 - Each integration test that talks to the Assistant opens a Change of its own, with its own pull request, branch or commit range. The Assistant keeps one conversation for each (ADR 0009), so tests sharing one resume each other's conversation.
-- A test scripts the Assistant's replies for the Change it opened with `scriptClaude(change, script)`, before the turns it scripts begin. The script's turns answer that conversation's next messages in order, starting with the summary of a new conversation, whatever other Changes ask. `assistantRuns(change)` gives back that conversation's runs since. A Change the Inbox opened from a branch has the branch's conversation, so name the branch as the request's head.
+- A test scripts the Assistant's replies for the Change it opened with `await scriptClaude(change, script)`, before the turns it scripts begin. The script's turns answer that conversation's next messages in order, starting with the summary of a new conversation, whatever other Changes ask. `await assistantRuns(change)` gives back that conversation's runs since. A Change the Inbox opened from a branch has the branch's conversation, so name the branch as the request's head.
 - A test that changes the Claude login with `scriptClaudeLogin` puts the default back when it ends.
 - The fake `claude` (`extension/test/fakeClaude.ts`) and the helpers in `extension/test/suite/` name their traps in their doc comments: read them before scripting the Assistant or serving GitHub.
 

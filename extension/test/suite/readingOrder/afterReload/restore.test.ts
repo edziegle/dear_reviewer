@@ -27,6 +27,6 @@ describe("The Reading Order after a reload", () => {
         handoff.readingOrder
       )
     );
-    assert.deepStrictEqual(assistantRuns(handoff.branch), []);
+    assert.deepStrictEqual(await assistantRuns(handoff.branch), []);
   });
 });

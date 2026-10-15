@@ -1,7 +1,6 @@
 // Scripts the fake `claude`, reads back what it received, and reads the
 // Assistant panel and the Claude login the way the Reviewer sees them.
 
-import * as cp from "child_process";
 import * as crypto from "crypto";
 import * as fs from "fs";
 import * as path from "path";
@@ -11,6 +10,7 @@ import type {
   FakeClaudeScript,
   McpResult,
   RecordedClaudeCall,
+  ScriptedTurns,
 } from "../fakeClaude";
 import { mcpCall, readingOrderRequest, toolUse, waitFor } from "../fakeClaude";
 import { eventually, type ChangeRequest } from "./reviewer";
@@ -37,48 +37,14 @@ function fakeClaudeDir(): string {
 }
 
 /**
- * The name of the conversation a Change opened by this request has, as
- * ADR 0009 names it: its pull request, or else the local branch the request
- * names (`HEAD` names the checked-out branch), or else its commits. A Change
- * the Inbox opened from a branch has the branch's conversation, so name the
- * branch as the request's head. It follows `conversationOf` in
- * src/changeWorkspace.ts, which a test can't import.
+ * The fake's state for the conversation of the Change the request opens, or
+ * opened while it is open, under the name of the folder Dear Reviewer runs
+ * the conversation's `claude` in. A Change the Inbox opened from a branch
+ * has the branch's conversation, so name the branch as the request's head
+ * before it opens.
  */
-function conversationName(change: ChangeRequest): string {
-  if (change.pullRequest)
-    return `pull request ${change.pullRequest.repository.toLowerCase()}#${change.pullRequest.number}`;
-  const repository = path.resolve(change.repository);
-  const git = (...args: string[]) =>
-    cp
-      .execFileSync("git", args, {
-        cwd: repository,
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "ignore"],
-      })
-      .trim();
-  let ref = "";
-  try {
-    ref = git("rev-parse", "--symbolic-full-name", change.head);
-  } catch {
-    // Not a name git knows, so the Change is its commits.
-  }
-  if (ref.startsWith("refs/heads/"))
-    return `branch ${ref.slice("refs/heads/".length)} in ${repository}`;
-  const mergeBase = git("merge-base", change.base, change.head);
-  const headSha = git("rev-parse", `${change.head}^{commit}`);
-  return `range ${mergeBase}..${headSha} in ${repository}`;
-}
-
-/**
- * The fake's state for the Change's conversation, under the name of the
- * folder Dear Reviewer runs the conversation's `claude` in.
- */
-function conversationDir(change: ChangeRequest): string {
-  const folder = crypto
-    .createHash("sha256")
-    .update(conversationName(change))
-    .digest("hex")
-    .slice(0, 16);
+async function conversationDir(change: ChangeRequest): Promise<string> {
+  const folder = await (await assistantApi()).conversationFolder(change);
   return path.join(fakeClaudeDir(), "conversations", folder);
 }
 
@@ -92,15 +58,19 @@ function conversationDir(change: ChangeRequest): string {
  * Other Changes' conversations keep their own scripts, and a conversation no
  * test scripted gets a short summary for every turn.
  */
-export function scriptClaude(
+export async function scriptClaude(
   change: ChangeRequest,
   script: FakeClaudeScript
-): void {
-  const dir = conversationDir(change);
+): Promise<void> {
+  const dir = await conversationDir(change);
   fs.rmSync(path.join(dir, "calls"), { recursive: true, force: true });
-  fs.rmSync(path.join(dir, "turns-taken"), { force: true });
   fs.mkdirSync(dir, { recursive: true });
-  writeAtOnce(path.join(dir, "script.json"), script);
+  // A new generation starts the turns again, even for a turn already counting.
+  const scripted: ScriptedTurns = {
+    ...script,
+    generation: crypto.randomUUID(),
+  };
+  writeAtOnce(path.join(dir, "script.json"), scripted);
 }
 
 /**
@@ -158,8 +128,10 @@ export function loginChecks(): RecordedClaudeCall[] {
  * going on then comes back once it receives a message, with everything it
  * received.
  */
-export function assistantRuns(change: ChangeRequest): RecordedClaudeCall[] {
-  return callsIn(path.join(conversationDir(change), "calls"));
+export async function assistantRuns(
+  change: ChangeRequest
+): Promise<RecordedClaudeCall[]> {
+  return callsIn(path.join(await conversationDir(change), "calls"));
 }
 
 /** The value after a flag, such as `--tools`. */
@@ -265,6 +237,8 @@ interface AssistantApi {
   overviews(): { title: string; take: Take }[];
   /** The Assistant's status bar item, once a login has been checked. */
   loginStatus(): LoginStatus | undefined;
+  /** The name of the folder the request's Change's conversation runs `claude` in. */
+  conversationFolder(request: ChangeRequest): Promise<string>;
 }
 
 async function assistantApi(): Promise<AssistantApi> {

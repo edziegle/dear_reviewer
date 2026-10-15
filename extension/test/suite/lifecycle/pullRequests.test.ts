@@ -108,7 +108,7 @@ describe("Pull requests that are merged or closed", () => {
 
   it("lose their worktrees and folders when the Inbox refreshes, while open ones keep theirs", async () => {
     for (const pr of titles.keys())
-      scriptClaude(requestFor(pr), { turns: [replyTurn("A summary.")] });
+      await scriptClaude(requestFor(pr), { turns: [replyTurn("A summary.")] });
     const before = workspaceFolders();
     const added = new Map<
       PullRequestFixture,
@@ -159,13 +159,13 @@ describe("Pull requests that are merged or closed", () => {
   it("forget their Assistant conversation, so a reopened pull request starts a new one", async () => {
     states.set(closed, "OPEN");
     await serve();
-    scriptClaude(requestFor(closed), {
+    await scriptClaude(requestFor(closed), {
       turns: [replyTurn("A new summary.")],
     });
 
     await openFromTheInbox(closed);
 
-    const [run] = assistantRuns(requestFor(closed));
+    const [run] = await assistantRuns(requestFor(closed));
     assert.ok(run, "the Assistant ran");
     assert.strictEqual(flag(run, "--resume"), undefined);
     assert.strictEqual(
@@ -181,13 +181,13 @@ describe("Pull requests that are merged or closed", () => {
     await refreshInbox();
     states.set(open, "OPEN");
     await serve();
-    scriptClaude(requestFor(open), {
+    await scriptClaude(requestFor(open), {
       turns: [replyTurn("Another new summary.")],
     });
 
     await openFromTheInbox(open);
 
-    const [run] = assistantRuns(requestFor(open));
+    const [run] = await assistantRuns(requestFor(open));
     assert.ok(run, "the Assistant ran");
     assert.strictEqual(flag(run, "--resume"), undefined);
     assert.strictEqual(

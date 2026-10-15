@@ -175,7 +175,7 @@ describe("Findings on request", () => {
       vscode.ConfigurationTarget.Global
     );
     await setToken(viewer.token);
-    scriptClaude(change, { turns: [replyTurn("A summary.")] });
+    await scriptClaude(change, { turns: [replyTurn("A summary.")] });
     await refreshInbox();
     const before = workspaceFolders();
     await openFromInbox(
@@ -202,7 +202,7 @@ describe("Findings on request", () => {
   it("raises no Findings until the Reviewer asks", async () => {
     assert.deepStrictEqual(await findingsView(), []);
     assert.deepStrictEqual(await gutterMarkers(), []);
-    const [run] = assistantRuns(change);
+    const [run] = await assistantRuns(change);
     assert.deepStrictEqual(
       userMessages(run).length,
       1,
@@ -211,11 +211,11 @@ describe("Findings on request", () => {
   });
 
   it("asks the Assistant for Findings as JSON, in the Change's own conversation", async () => {
-    scriptClaude(change, { turns: [replyTurn(findingsReply)] });
+    await scriptClaude(change, { turns: [replyTurn(findingsReply)] });
 
     await findIssues(change);
 
-    const [run, ...others] = assistantRuns(change);
+    const [run, ...others] = await assistantRuns(change);
     assert.deepStrictEqual(others, [], "one run of claude");
     const prompt = userMessages(run)[1];
     for (const expected of [
@@ -374,7 +374,7 @@ describe("Findings on request", () => {
   });
 
   it("keeps the Findings when the Assistant's reply holds none", async () => {
-    scriptClaude(change, {
+    await scriptClaude(change, {
       turns: [replyTurn("Sorry, I would rather chat about it.")],
     });
 
@@ -465,7 +465,7 @@ describe("Findings on request", () => {
   });
 
   it("lists only the Change in front's Findings, and a Change's come back when it's shown again", async () => {
-    scriptClaude(change, { turns: [replyTurn(findingsReply)] });
+    await scriptClaude(change, { turns: [replyTurn(findingsReply)] });
     await findIssues(change);
     const listed = async () =>
       (await findingsView()).map(({ change, where }) => `${change} ${where}`);
@@ -484,6 +484,10 @@ describe("Findings on request", () => {
 
     await openChange(other);
     try {
+      // Once its summary is in, so a refresh then can't bring back the wrong Findings.
+      await summaryWritten(
+        `${path.basename(repo.path)} ${short(other.base)}..${short(other.head)}`
+      );
       assert.deepStrictEqual(await findingsView(), []);
 
       await openFromInbox(
@@ -499,7 +503,7 @@ describe("Findings on request", () => {
   });
 
   it("replaces the Findings each time the Reviewer asks", async () => {
-    scriptClaude(change, {
+    await scriptClaude(change, {
       turns: [replyTurn(findingsReply), replyTurn('{"findings": []}')],
     });
     await findIssues(change);
@@ -529,7 +533,7 @@ describe("Findings on request", () => {
       viewColumn: vscode.ViewColumn.Two,
       preview: false,
     });
-    scriptClaude(change, { turns: [replyTurn(longFindingsReply)] });
+    await scriptClaude(change, { turns: [replyTurn(longFindingsReply)] });
 
     await findIssues(change);
 

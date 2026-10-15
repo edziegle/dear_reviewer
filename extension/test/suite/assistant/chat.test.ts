@@ -46,7 +46,7 @@ describe("Chatting with the Assistant about a Change", () => {
       repo.commits.initial,
       repo.commits.renamed
     );
-    scriptClaude(request, {
+    await scriptClaude(request, {
       turns: [
         replyTurn("A summary."),
         [
@@ -82,7 +82,7 @@ describe("Chatting with the Assistant about a Change", () => {
         { from: "assistant", text: answer },
       ]);
     });
-    const runs = assistantRuns(request);
+    const runs = await assistantRuns(request);
     assert.strictEqual(runs.length, 1, "both turns went to one claude");
     assert.strictEqual(userMessages(runs[0])[1], "What does util.py do?");
 
@@ -95,7 +95,7 @@ describe("Chatting with the Assistant about a Change", () => {
       repo.commits.initial,
       repo.commits.restructured
     );
-    scriptClaude(request, {
+    await scriptClaude(request, {
       turns: [
         replyTurn("A summary."),
         [...replyTurn(answer).slice(0, 2), waitFor("chat-never")],
@@ -136,7 +136,7 @@ describe("Chatting with the Assistant about a Change", () => {
         text: "Picked up.",
       })
     );
-    const runs = assistantRuns(request);
+    const runs = await assistantRuns(request);
     assert.strictEqual(runs.length, 2, "the next message started claude again");
     assert.ok(flag(runs[1], "--resume"), "and resumed the conversation");
 
@@ -148,7 +148,7 @@ describe("Chatting with the Assistant about a Change", () => {
       repo.commits.initial,
       repo.commits.documented
     );
-    scriptClaude(request, {
+    await scriptClaude(request, {
       turns: [replyTurn("A summary."), replyTurn("Because.")],
     });
     const before = workspaceFolders();
@@ -204,7 +204,7 @@ describe("Chatting with the Assistant about a Change", () => {
         { from: "assistant", text: "Because." },
       ]);
     });
-    const prompt = userMessages(assistantRuns(request)[0])[1];
+    const prompt = userMessages((await assistantRuns(request))[0])[1];
     for (const expected of [
       "lines 1–2 of util.py on the base side",
       path.join(base.path, "util.py"),
@@ -255,7 +255,7 @@ describe("Chatting with the Assistant about a Change", () => {
       base: asking.commits.renamed,
       head: asking.commits.documented,
     };
-    scriptClaude(request, { turns: [replyTurn("A summary.")] });
+    await scriptClaude(request, { turns: [replyTurn("A summary.")] });
     const title = `${path.basename(asking.path)} ${short(request.base)}..${short(request.head)}`;
     const before = workspaceFolders();
     await openChange(request);
@@ -294,7 +294,7 @@ describe("Chatting with the Assistant about a Change", () => {
       assert.strictEqual((await renderedPanel(title))?.busy, false)
     );
     assert.strictEqual(
-      userMessages(assistantRuns(request)[0]).length,
+      userMessages((await assistantRuns(request))[0]).length,
       1,
       "nothing went to the Assistant but the summary"
     );
@@ -310,7 +310,7 @@ describe("Chatting with the Assistant about a Change", () => {
       base: asking.commits.renamed,
       head: asking.commits.documented,
     };
-    scriptClaude(request, { turns: [replyTurn("A summary.")] });
+    await scriptClaude(request, { turns: [replyTurn("A summary.")] });
     const title = `${path.basename(asking.path)} ${short(request.base)}..${short(request.head)}`;
     await openChange(request);
     const elsewhere = await vscode.workspace.openTextDocument({
@@ -339,7 +339,7 @@ describe("Chatting with the Assistant about a Change", () => {
       base: reading.commits.renamed,
       head: reading.commits.documented,
     };
-    scriptClaude(request, {
+    await scriptClaude(request, {
       turns: [
         replyTurn("A summary."),
         replyTurn("It returns 2."),
@@ -371,9 +371,9 @@ describe("Chatting with the Assistant about a Change", () => {
       assert.strictEqual((await renderedPanel(title))?.messages.length, 5)
     );
 
-    const [inFile, elsewhere] = userMessages(assistantRuns(request)[0]).slice(
-      1
-    );
+    const [inFile, elsewhere] = userMessages(
+      (await assistantRuns(request))[0]
+    ).slice(1);
     assert.strictEqual(
       inFile,
       `The Reviewer is reading util.py on the head side (${path.join(head.path, "util.py")}), with lines 1–4 on screen.\n\nWhat does line 2 return?`
@@ -389,8 +389,10 @@ describe("Chatting with the Assistant about a Change", () => {
   it("gives each Change its own conversation", async () => {
     const first = changeOf(repo.commits.renamed, repo.commits.documented);
     const second = changeOf(repo.commits.renamed, repo.commits.restructured);
-    scriptClaude(first.request, { turns: [replyTurn("The first summary.")] });
-    scriptClaude(second.request, {
+    await scriptClaude(first.request, {
+      turns: [replyTurn("The first summary.")],
+    });
+    await scriptClaude(second.request, {
       turns: [replyTurn("The second summary."), replyTurn("An answer.")],
     });
     try {
@@ -428,8 +430,8 @@ describe("Chatting with the Assistant about a Change", () => {
       await closeChange(first.request);
       await closeChange(second.request);
     }
-    const [firstRun, ...moreFirst] = assistantRuns(first.request);
-    const [secondRun, ...moreSecond] = assistantRuns(second.request);
+    const [firstRun, ...moreFirst] = await assistantRuns(first.request);
+    const [secondRun, ...moreSecond] = await assistantRuns(second.request);
     assert.deepStrictEqual([moreFirst, moreSecond], [[], []]);
     assert.notStrictEqual(firstRun.sessionId, secondRun.sessionId);
     assert.notStrictEqual(firstRun.cwd, secondRun.cwd);
@@ -446,7 +448,7 @@ describe("Chatting with the Assistant about a Change", () => {
       base: repo.commits.initial,
       head: "refs/heads/chat-feature",
     };
-    scriptClaude(request, {
+    await scriptClaude(request, {
       turns: [replyTurn("A summary."), replyTurn("First answer.")],
     });
     const before = workspaceFolders();
@@ -461,11 +463,11 @@ describe("Chatting with the Assistant about a Change", () => {
     await eventually(async () =>
       assert.strictEqual((await renderedPanel(oldTitle))?.messages.length, 3)
     );
-    const [firstRun] = assistantRuns(request);
+    const [firstRun] = await assistantRuns(request);
     await closeChange(request);
 
     repo.git("branch", "-f", "chat-feature", repo.commits.documented);
-    scriptClaude(request, { turns: [replyTurn("Second answer.")] });
+    await scriptClaude(request, { turns: [replyTurn("Second answer.")] });
     await openChange(request);
     await showAssistant(request);
     const newTitle = changeOf(
@@ -487,7 +489,7 @@ describe("Chatting with the Assistant about a Change", () => {
         ],
       })
     );
-    assert.deepStrictEqual(assistantRuns(request), [], "no new summary");
+    assert.deepStrictEqual(await assistantRuns(request), [], "no new summary");
     assert.deepStrictEqual(assistantTabs(), ["Assistant · chat-feature"]);
 
     await askAssistant(newTitle, "Second question?");
@@ -498,7 +500,7 @@ describe("Chatting with the Assistant about a Change", () => {
         "Second answer."
       )
     );
-    const [run] = assistantRuns(request);
+    const [run] = await assistantRuns(request);
     assert.strictEqual(flag(run, "--resume"), firstRun.sessionId);
     assert.strictEqual(run.cwd, firstRun.cwd);
     assert.ok(
@@ -523,7 +525,7 @@ describe("Chatting with the Assistant about a Change", () => {
     const olderRequest = { ...older.request, pullRequest };
     const newerRequest = { ...newer.request, pullRequest };
     // Both heads carry on the pull request's one conversation.
-    scriptClaude(olderRequest, {
+    await scriptClaude(olderRequest, {
       turns: [
         replyTurn("A summary."),
         replyTurn("First answer."),
@@ -564,7 +566,7 @@ describe("Chatting with the Assistant about a Change", () => {
         "Second answer."
       )
     );
-    const runs = assistantRuns(newerRequest);
+    const runs = await assistantRuns(newerRequest);
     assert.strictEqual(runs.length, 2);
     assert.strictEqual(flag(runs[1], "--resume"), runs[0].sessionId);
     assert.ok(runs[1].resumed?.includes("First question?"));
@@ -584,7 +586,7 @@ describe("Chatting with the Assistant about a Change", () => {
       repo.commits.documented,
       repo.commits.restructured
     );
-    scriptClaude(request, { turns: [replyTurn("A summary.")] });
+    await scriptClaude(request, { turns: [replyTurn("A summary.")] });
     await openChange(request);
     await showAssistant(request);
     await eventually(async () =>
@@ -592,7 +594,7 @@ describe("Chatting with the Assistant about a Change", () => {
     );
     await closeChange(request);
     forgetClaudeSessions();
-    scriptClaude(request, { turns: [replyTurn("A fresh answer.")] });
+    await scriptClaude(request, { turns: [replyTurn("A fresh answer.")] });
     await openChange(request);
     await showAssistant(request);
     await eventually(async () =>
@@ -612,7 +614,7 @@ describe("Chatting with the Assistant about a Change", () => {
         { from: "assistant", text: "A fresh answer." },
       ])
     );
-    const runs = assistantRuns(request);
+    const runs = await assistantRuns(request);
     assert.strictEqual(runs.length, 2);
     assert.ok(flag(runs[0], "--resume"), "it tried to resume");
     assert.strictEqual(flag(runs[1], "--resume"), undefined);

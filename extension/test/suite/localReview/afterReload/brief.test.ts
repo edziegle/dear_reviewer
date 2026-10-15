@@ -105,7 +105,7 @@ describe("Ending a local Review with a Brief", () => {
     await eventually(async () =>
       assert.strictEqual((await renderedPanel(title))?.busy, false)
     );
-    scriptClaude(branch, {
+    await scriptClaude(branch, {
       turns: [
         [
           {
@@ -135,11 +135,11 @@ describe("Ending a local Review with a Brief", () => {
   });
 
   it("asks the Assistant for a Brief built from the Comments, with file and line references", async () => {
-    scriptClaude(branch, { turns: [replyTurn(brief)] });
+    await scriptClaude(branch, { turns: [replyTurn(brief)] });
 
     await writeBrief(change);
 
-    const [run, ...others] = assistantRuns(branch);
+    const [run, ...others] = await assistantRuns(branch);
     assert.deepStrictEqual(others, [], "one run of claude");
     assert.ok(flag(run, "--resume"), "in the Change's own conversation");
     const [prompt] = userMessages(run);
@@ -248,11 +248,11 @@ describe("Ending a local Review with a Brief", () => {
   });
 
   it("writes no Brief without Comments", async () => {
-    scriptClaude(branch, { turns: [replyTurn("An empty Brief.")] });
+    await scriptClaude(branch, { turns: [replyTurn("An empty Brief.")] });
 
     await writeBrief(change);
 
-    assert.deepStrictEqual(assistantRuns(branch), []);
+    assert.deepStrictEqual(await assistantRuns(branch), []);
   });
 
   it("marks the branch in the Inbox once the agent adds commits", async () => {
@@ -275,7 +275,7 @@ describe("Ending a local Review with a Brief", () => {
   });
 
   it("has the Assistant explain what changed since the Brief", async () => {
-    scriptClaude(branch, { turns: [replyTurn("since.py is new.")] });
+    await scriptClaude(branch, { turns: [replyTurn("since.py is new.")] });
 
     await openBranchFromInbox(inboxEntry(await inbox(), "agent/docs"));
 
@@ -287,7 +287,7 @@ describe("Ending a local Review with a Brief", () => {
         text: "since.py is new.",
       })
     );
-    const [run] = assistantRuns(branch);
+    const [run] = await assistantRuns(branch);
     const [prompt] = userMessages(run);
     for (const expected of [change.head, newHead, "since.py"])
       assert.ok(prompt.includes(expected), `${expected} in ${prompt}`);

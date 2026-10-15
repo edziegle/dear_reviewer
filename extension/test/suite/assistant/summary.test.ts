@@ -51,7 +51,7 @@ async function summaryPromptOf(
   title: string
 ): Promise<string> {
   await summaryWritten(title);
-  const [run] = assistantRuns(request);
+  const [run] = await assistantRuns(request);
   return userMessages(run)[0];
 }
 
@@ -61,6 +61,8 @@ describe("The Assistant's summary when a Change opens", () => {
     request: { repository: repo.path, base, head },
     title: `${path.basename(repo.path)} ${short(base)}..${short(head)}`,
   });
+  // Even after a failing test, the next starts signed in.
+  afterEach(() => scriptClaudeLogin());
 
   it("shows the Assistant's short summary in the overview, which opens alone, and opens no Assistant panel", async () => {
     const summary =
@@ -69,7 +71,7 @@ describe("The Assistant's summary when a Change opens", () => {
       repo.commits.initial,
       repo.commits.renamed
     );
-    scriptClaude(request, { turns: [replyTurn(summary)] });
+    await scriptClaude(request, { turns: [replyTurn(summary)] });
     const before = workspaceFolders();
 
     await openChange(request);
@@ -86,7 +88,7 @@ describe("The Assistant's summary when a Change opens", () => {
     assert.strictEqual(activeTabLabel(), title, "the overview is in front");
     assert.deepStrictEqual(webviewTabs(), [title]);
 
-    const [run] = assistantRuns(request);
+    const [run] = await assistantRuns(request);
     // The session lives in a folder of its own, which outlasts the worktrees.
     for (const worktree of [head.path, base.path])
       assert.ok(
@@ -126,7 +128,7 @@ describe("The Assistant's summary when a Change opens", () => {
       repo.commits.initial,
       repo.commits.documented
     );
-    scriptClaude(request, {
+    await scriptClaude(request, {
       turns: [
         replyTurn(
           "Adds a docstring. Start with util.py:2, not elsewhere.py:1."
@@ -208,7 +210,7 @@ describe("The Assistant's summary when a Change opens", () => {
       repo.commits.initial,
       repo.commits.documented
     );
-    scriptClaude(request, {});
+    await scriptClaude(request, {});
 
     await openChange(request);
     await showAssistant(request);
@@ -237,7 +239,6 @@ describe("The Assistant's summary when a Change opens", () => {
       "asked claude auth status"
     );
 
-    scriptClaudeLogin();
     await closeChange(request);
   });
 
@@ -268,24 +269,21 @@ describe("The Assistant's summary when a Change opens", () => {
         apiProvider: "bedrock",
       },
     });
-    try {
-      await vscode.commands.executeCommand("dearReviewer.checkClaudeLogin");
 
-      const status = await loginStatus();
-      assert.strictEqual(
-        status?.text,
-        "$(dear-reviewer-logo) Assistant: billed per token"
-      );
-      assert.strictEqual(status.warning, true);
-      assert.ok(
-        status.tooltip?.includes(
-          "Cloud provider (bedrock), billed by the provider"
-        ),
-        status.tooltip
-      );
-    } finally {
-      scriptClaudeLogin();
-    }
+    await vscode.commands.executeCommand("dearReviewer.checkClaudeLogin");
+
+    const status = await loginStatus();
+    assert.strictEqual(
+      status?.text,
+      "$(dear-reviewer-logo) Assistant: billed per token"
+    );
+    assert.strictEqual(status.warning, true);
+    assert.ok(
+      status.tooltip?.includes(
+        "Cloud provider (bedrock), billed by the provider"
+      ),
+      status.tooltip
+    );
   });
 
   it("runs claude without credential variables, with only read-only tools, in a mode that never prompts", async () => {
@@ -303,14 +301,14 @@ describe("The Assistant's summary when a Change opens", () => {
       repo.commits.restructured
     );
     scriptClaudeLogin();
-    scriptClaude(request, {});
+    await scriptClaude(request, {});
     try {
       await openChange(request);
 
       await eventually(async () =>
         assert.strictEqual((await overviewTake(title))?.reading, false)
       );
-      const calls = [...loginChecks(), ...assistantRuns(request)];
+      const calls = [...loginChecks(), ...(await assistantRuns(request))];
       assert.ok(calls.length >= 2, "auth status and the Assistant both ran");
       for (const call of calls) {
         assert.deepStrictEqual(
@@ -324,7 +322,7 @@ describe("The Assistant's summary when a Change opens", () => {
           `claude ${call.args.join(" ")} got no credential variables`
         );
       }
-      const [run] = assistantRuns(request);
+      const [run] = await assistantRuns(request);
       assert.strictEqual(flag(run, "--tools"), "Read,Grep,Glob");
       assert.strictEqual(
         flag(run, "--allowedTools"),
@@ -359,14 +357,14 @@ describe("The Assistant's summary when a Change opens", () => {
       repo.commits.restructured
     );
     scriptClaudeLogin();
-    scriptClaude(request, {});
+    await scriptClaude(request, {});
     try {
       await openChange(request);
 
       await eventually(async () =>
         assert.strictEqual((await overviewTake(title))?.reading, false)
       );
-      const calls = [...loginChecks(), ...assistantRuns(request)];
+      const calls = [...loginChecks(), ...(await assistantRuns(request))];
       assert.ok(calls.length >= 2, "auth status and the Assistant both ran");
       for (const call of calls) {
         const what = `claude ${call.args.join(" ")}`;
@@ -403,7 +401,7 @@ describe("The Assistant's summary when a Change opens", () => {
       base: commits.commits.restructured,
       head: second,
     };
-    scriptClaude(request, { turns: [replyTurn("A summary.")] });
+    await scriptClaude(request, { turns: [replyTurn("A summary.")] });
     const title = `${path.basename(commits.path)} ${short(request.base)}..${short(second)}`;
 
     await openChange(request);
@@ -506,7 +504,9 @@ describe("The Assistant's summary of a pull request", () => {
     });
     await configure({ repositories: [described.repository] });
     await setToken(viewer.token);
-    scriptClaude(requestOf(described), { turns: [replyTurn("A summary.")] });
+    await scriptClaude(requestOf(described), {
+      turns: [replyTurn("A summary.")],
+    });
 
     await openChange(requestOf(described));
 
@@ -537,7 +537,9 @@ describe("The Assistant's summary of a pull request", () => {
     });
     await configure({ repositories: [undescribed.repository] });
     await setToken(viewer.token);
-    scriptClaude(requestOf(undescribed), { turns: [replyTurn("A summary.")] });
+    await scriptClaude(requestOf(undescribed), {
+      turns: [replyTurn("A summary.")],
+    });
 
     await openChange(requestOf(undescribed));
 

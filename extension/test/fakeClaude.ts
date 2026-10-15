@@ -22,9 +22,9 @@
 //   calls/        one JSON file (RecordedClaudeCall) per run outside a
 //                 conversation, such as `claude auth status`
 //   conversations/<folder>/
-//     script.json   what the conversation's turns answer (FakeClaudeScript);
+//     script.json   what the conversation's turns answer (ScriptedTurns);
 //                   absent means the defaults
-//     turns-taken   how many of the script's turns it has answered
+//     turns-taken   how many turns of which script it has answered
 //     calls/        one JSON file per run of the conversation, kept up to date
 //   sessions/     each session's working directory and user messages
 //   <name>        a file a turn waits for (see waitFor), written by the test
@@ -75,6 +75,20 @@ export interface FakeClaudeScript {
    * which take no turn. Defaults to a reply with no order in it.
    */
   readingOrder?: Record<string, unknown>[];
+}
+
+/**
+ * A conversation's script as the test wrote it, with a new `generation` each
+ * time, so a turn counted under the last script starts the new one afresh.
+ */
+export interface ScriptedTurns extends FakeClaudeScript {
+  generation?: string;
+}
+
+/** How many of a script's turns the conversation has answered. */
+interface TurnsTaken {
+  generation?: string;
+  taken: number;
 }
 
 /** What a request for a Reading Order says, which the fake answers on the side. */
@@ -278,8 +292,7 @@ function main(): void {
       args[i - 1] === "--add-dir" ? [arg] : []
     );
     const script =
-      readJson<FakeClaudeScript>(path.join(conversationDir, "script.json")) ??
-      {};
+      readJson<ScriptedTurns>(path.join(conversationDir, "script.json")) ?? {};
     if (text.includes(readingOrderRequest)) {
       const events =
         script.readingOrder ?? defaultTurn("No Reading Order, sorry.");
@@ -290,9 +303,16 @@ function main(): void {
     }
     const turns = script.turns?.length ? script.turns : [defaultTurn()];
     const turnCounter = path.join(conversationDir, "turns-taken");
-    const taken = Number(readText(turnCounter) ?? "0");
+    const counted = readJson<TurnsTaken>(turnCounter);
+    const taken =
+      counted && counted.generation === script.generation ? counted.taken : 0;
     fs.mkdirSync(conversationDir, { recursive: true });
-    fs.writeFileSync(turnCounter, String(taken + 1));
+    const next: TurnsTaken = {
+      generation: script.generation,
+      taken: taken + 1,
+    };
+    fs.writeFileSync(`${turnCounter}.tmp`, JSON.stringify(next));
+    fs.renameSync(`${turnCounter}.tmp`, turnCounter);
     const events = turns[Math.min(taken, turns.length - 1)];
     replying = replying.then(() =>
       reply(stateDir, events, sessionId, worktrees, mcp)

@@ -23,7 +23,7 @@ describe("A conversation before a window reload", () => {
       base: repo.commits.initial,
       head: repo.commits.renamed,
     };
-    scriptClaude(change, {
+    await scriptClaude(change, {
       turns: [replyTurn("A summary."), replyTurn("It returns 2.")],
     });
     const title = `${path.basename(repo.path)} ${short(change.base)}..${short(change.head)}`;
@@ -41,7 +41,7 @@ describe("A conversation before a window reload", () => {
         "It returns 2."
       )
     );
-    const [run] = assistantRuns(change);
+    const [run] = await assistantRuns(change);
     leaveForReload({ change, title, sessionId: run.sessionId! });
   });
 });

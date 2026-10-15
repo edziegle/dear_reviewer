@@ -1,4 +1,5 @@
 import * as assert from "assert";
+import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 import {
@@ -336,6 +337,27 @@ describe("The Change files view", () => {
     await onTab("unmarkViewed", vscode.Uri.file(path.join(head, "main.py")));
     tree = await changeFiles();
     assert.strictEqual(entryAt(tree, title, "main.py").viewed, false);
+  });
+
+  it("leaves a worktree file the Change doesn't change unmarked and open", async () => {
+    const file = path.join(head, "notes.txt");
+    fs.writeFileSync(file, "Not part of the Change.\n");
+    await vscode.window.showTextDocument(vscode.Uri.file(file));
+
+    await onTab("markViewed", vscode.Uri.file(file));
+    await onTab("markViewedAndClose", vscode.Uri.file(file));
+
+    assert.strictEqual(activeText().fsPath, file);
+    // Marking a Change file afterwards shows the key once it has caught up.
+    await markViewed(entryAt(await changeFiles(), title, "main.py"));
+    await eventually(async () => {
+      const key = await viewedFilesKey();
+      assert.ok(key.includes(path.join(head, "main.py")));
+      assert.ok(!key.includes(file));
+    });
+    await unmarkViewed(entryAt(await changeFiles(), title, "main.py"));
+    await vscode.commands.executeCommand("workbench.action.closeActiveEditor");
+    fs.rmSync(file);
   });
 
   it("marks a deleted file viewed from its tab's menu and closes the tab", async () => {

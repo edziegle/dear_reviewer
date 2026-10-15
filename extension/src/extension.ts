@@ -418,7 +418,7 @@ export function activate(context: vscode.ExtensionContext) {
     selected?: unknown
   ): Promise<void> {
     if (target instanceof vscode.Uri) {
-      const where = worktreeFile(target);
+      const where = await worktreeFile(target);
       if (!where) return;
       return changeFiles.setFilesViewed(
         where.change,
@@ -436,10 +436,23 @@ export function activate(context: vscode.ExtensionContext) {
     );
   }
 
-  /** The Change file in one of its worktrees, which has a viewed state, unlike the commit side. */
-  function worktreeFile(uri: vscode.Uri): ReturnType<typeof whereInChange> {
-    const where = whereInChange(uri, changes.shownHere());
-    return where?.file.side === "commit" ? undefined : where;
+  /**
+   * The Change file in one of its worktrees, which has a viewed state, unlike
+   * the commit side or a file of the worktree the Change doesn't change.
+   */
+  async function worktreeFile(
+    uri: vscode.Uri
+  ): Promise<ReturnType<typeof whereInChange>> {
+    return viewable(whereInChange(uri, changes.shownHere()));
+  }
+
+  async function viewable(
+    where: ReturnType<typeof whereInChange>
+  ): Promise<ReturnType<typeof whereInChange>> {
+    if (!where || where.file.side === "commit") return;
+    return (await changeFiles.changesFile(where.change, where.file.path))
+      ? where
+      : undefined;
   }
 
   /** Closes the tabs that show the file, on its own or as a side of a diff. */
@@ -530,7 +543,7 @@ export function activate(context: vscode.ExtensionContext) {
       where?.file.side === "commit" || (given && where?.change.id !== given.id)
         ? undefined
         : where;
-    if (markShown && !here) {
+    if (markShown && !(await viewable(here))) {
       void vscode.window.showInformationMessage(
         "Open a file's diff from Change Files to mark it viewed."
       );
@@ -1156,7 +1169,7 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand(
       "dearReviewer.markViewedAndClose",
       async (file?: vscode.Uri) => {
-        if (!file || !worktreeFile(file)) return;
+        if (!file || !(await worktreeFile(file))) return;
         await setViewed(true, file);
         await closeTabsOf(file);
       }

@@ -236,6 +236,11 @@ export class ChangeFilesView
     }
   }
 
+  /** Whether the Change changes the file, so it has a viewed state. */
+  async changesFile(change: Change, filePath: string): Promise<boolean> {
+    return (await this.filesOf(change)).some((f) => f.path === filePath);
+  }
+
   /** Marks these files of the Change viewed or not. */
   async setFilesViewed(
     change: Change,

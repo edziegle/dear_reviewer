@@ -11,6 +11,8 @@ type ChangeFilesView = vscode.TreeDataProvider<unknown> &
 export interface FileEntry {
   label: string;
   description?: string;
+  /** What a screen reader says for the element, where it isn't the label and description. */
+  accessibilityLabel?: string;
   /** The status badge: A, M or D. */
   status?: string;
   /** The viewed checkbox, on files only. */
@@ -39,6 +41,8 @@ export async function changeFiles(): Promise<FileEntry[]> {
           node,
         };
         if (item.description) entry.description = String(item.description);
+        if (item.accessibilityInformation)
+          entry.accessibilityLabel = item.accessibilityInformation.label;
         if (item.resourceUri) {
           const decoration = await view.provideFileDecoration(
             item.resourceUri,

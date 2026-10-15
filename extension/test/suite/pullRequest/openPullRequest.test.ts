@@ -183,7 +183,7 @@ describe("Opening a pull request from the Inbox", () => {
 
   it("reads viewed state from GitHub", async () => {
     assert.deepStrictEqual(render(await changeFiles()), [
-      `${title} — 1 of 4 viewed`,
+      `${title} — ▰▰▱▱▱▱▱ 1/4`,
       "  pkg",
       "    sub",
       "      new.py [A]",
@@ -215,7 +215,7 @@ describe("Opening a pull request from the Inbox", () => {
       { mutation: "markFileAsViewed", pullRequestId: id, path: "util.py" },
     ]);
     assert.deepStrictEqual(render(await changeFiles()), [
-      `${title} — 2 of 4 viewed`,
+      `${title} — ▰▰▰▰▱▱▱ 2/4`,
       "  pkg",
       "    sub",
       "      new.py [A] (viewed)",
@@ -244,7 +244,7 @@ describe("Opening a pull request from the Inbox", () => {
     );
     assert.strictEqual(
       render(await changeFiles())[0],
-      `${title} — 3 of 4 viewed`
+      `${title} — ▰▰▰▰▰▱▱ 3/4`
     );
   });
 

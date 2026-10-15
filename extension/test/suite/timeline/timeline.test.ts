@@ -692,13 +692,30 @@ describe("A pull request's timeline", () => {
       entries("commandPalette", "dearReviewer.finishReview"),
       [["dearReviewer.finishReview", "dearReviewer.hasOpenChange", undefined]]
     );
-    assert.deepStrictEqual(entries("view/title", "dearReviewer.finishReview"), [
-      [
+    const onChangeFiles =
+      "view == dearReviewer.changeFiles && dearReviewer.hasOpenChange";
+    assert.deepStrictEqual(
+      entries(
+        "view/title",
         "dearReviewer.finishReview",
-        "view == dearReviewer.changeFiles && dearReviewer.hasOpenChange",
-        "navigation@1",
-      ],
-    ]);
+        "dearReviewer.showTimeline"
+      ),
+      [
+        ["dearReviewer.finishReview", onChangeFiles, "navigation@1"],
+        ["dearReviewer.showTimeline", onChangeFiles, "navigation@2"],
+      ]
+    );
+  });
+
+  it("shows the overview of the Change in front from Change Files' title bar", async () => {
+    await inFrontOfOtherChange();
+    const tab = timelineTab(other.title);
+    if (tab) await vscode.window.tabGroups.close(tab);
+
+    // A view's title bar runs the command with no argument.
+    await vscode.commands.executeCommand("dearReviewer.showTimeline");
+
+    await eventually(() => assert.strictEqual(activeTabLabel(), other.title));
   });
 
   it("comes back from a file's title bar for that file's Change, with another Change's file in front", async () => {

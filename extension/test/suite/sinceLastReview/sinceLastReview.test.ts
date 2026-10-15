@@ -220,7 +220,7 @@ describe("What changed since my last Review", () => {
     );
     await eventually(async () => {
       const change = await changeRow(pr.head);
-      assert.match(change.description ?? "", / viewed · Approved$/);
+      assert.match(change.description ?? "", / \d+\/\d+ · Approved$/);
       assert.strictEqual(change.contextValue, "change.pullRequest");
     });
     await eventually(async () => {
@@ -263,7 +263,10 @@ describe("What changed since my last Review", () => {
 
       await eventually(async () => {
         const change = await changeRow(pr.head);
-        assert.match(change.description ?? "", new RegExp(` viewed · ${row}$`));
+        assert.match(
+          change.description ?? "",
+          new RegExp(` \\d+/\\d+ · ${row}$`)
+        );
         const overview = await sentTimeline("acme/since #41");
         assert.strictEqual(overview.review?.verdict, shown);
         assert.match(
@@ -379,7 +382,11 @@ describe("What changed since my last Review", () => {
       const change = await changeRow(newHead);
       assert.match(
         change.description ?? "",
-        / viewed · new commits since my Review$/
+        / \d+\/\d+ · new commits since my Review$/
+      );
+      assert.match(
+        change.accessibilityLabel ?? "",
+        /, \d+ of \d+ files viewed, new commits since my Review$/
       );
       const overview = await sentTimeline("acme/since #41");
       assert.strictEqual(overview.review, undefined);

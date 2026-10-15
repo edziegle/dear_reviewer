@@ -12,12 +12,14 @@ The release workflow builds `dear-reviewer.vsix` and attaches it to a GitHub Rel
 ## Considered Options
 
 - Nothing beyond GitHub Releases
-- SLSA build provenance from GitHub's `actions/attest`, about SLSA Build L2
+- Supply-chain Levels for Software Artifacts (SLSA) build provenance from GitHub's `actions/attest`, about SLSA Build L2
 - SLSA Build L3 from `slsa-github-generator`'s isolated reusable workflows
 
 ## Decision Outcome
 
+<!-- vale RedHat.Slash = NO -->
 Chosen option: `actions/attest`, because it's one step and two job permissions, with no keys or secrets, and it lets anyone verify a downloaded .vsix with `gh attestation verify dear-reviewer.vsix -R edziegle/dear_reviewer`. Build L3 hardens the build against a tampered workflow run, which matters less than letting people verify the file at all, and it moves the build into a reusable workflow the project would have to maintain.
+<!-- vale RedHat.Slash = YES -->
 
 - The `vsix` job builds the .vsix with read-only permissions. A separate `publish` job, which runs no dependency code, attests it and then attaches it to the release, so no install script can sign a file of its own, and a failed attestation leaves the release without an unattested file.
 - Every action in both workflows is pinned to a full commit SHA, with its version in a comment, which Dependabot keeps up to date.

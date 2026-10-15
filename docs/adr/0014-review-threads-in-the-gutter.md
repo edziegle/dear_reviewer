@@ -19,7 +19,7 @@ ADR 0007 shows only the threads the Reviewer started in their pending review, so
 
 ## Decision Outcome
 
-Chosen option: every thread, outdated ones included, with replies into the pending review only when one is open. Replying to a teammate is usually one answer that they're waiting for, and starting a pending review for it would hide the answer until the Reviewer remembers to submit. When a Review is under way, the reply waits with its other Comments and reaches the author in the same notification (ADR 0007). Dropping outdated threads would hide discussions that are still open.
+Chosen option: every thread, outdated ones included, with replies into the pending review only when one is open. Replying to a teammate is typically one answer that they're waiting for, and starting a pending review for it would hide the answer until the Reviewer remembers to submit. When a Review is under way, the reply waits with its other Comments and reaches the author in the same notification (ADR 0007). Dropping outdated threads would hide discussions that are still open.
 
 - One GraphQL query reads the Reviewer's pending review and every review thread the Reviewer can see (`reviewThreads`, 100 to a page), with each thread's side, lines, original lines, `isOutdated`, `isResolved` and its first 100 Comments, with their authors. It replaces ADR 0007's query of the pending review, and runs at the same moments, and again after the Reviewer submits a Review.
 - Threads on a whole file, which have no line, are left out.

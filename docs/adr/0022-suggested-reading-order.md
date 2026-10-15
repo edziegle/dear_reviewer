@@ -12,7 +12,7 @@ Change Files lists a Change's files as a directory tree, and Next unviewed file 
 ## Considered Options
 
 - Suggest the order with the summary when a Change opens, in steps, shown in the overview and as a sort mode of Change Files
-- Suggest it only on request, like Findings (ADR 0017)
+- Suggest it only on request, as with Findings (ADR 0017)
 - Show it in the overview only, leaving Change Files and stepping in tree order
 
 ## Decision Outcome

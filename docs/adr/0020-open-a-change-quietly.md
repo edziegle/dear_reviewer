@@ -35,5 +35,5 @@ Chosen option: the overview alone, because a Reviewer needs their bearings befor
 - Good, because a Reviewer opening a Change sees one thing: what it is, how big, where they stand and where to start.
 - Good, because nobody reviews a head that a newer one has replaced.
 - Bad, because a Reviewer who wanted two heads of one pull request side by side can't keep both open; Show Changes Since My Last Review covers the usual reason for wanting it.
-- Bad, because opening a Change closes editors the Reviewer may have arranged; files of their own folders, outside Dear Reviewer's storage, are left alone.
+- Bad, because opening a Change closes editors the Reviewer might have arranged; files of their own folders, outside Dear Reviewer's storage, are left alone.
 - Bad, because whether VS Code honours the terminal settings at workspace scope depends on its version; closing the bottom panel on open works either way.

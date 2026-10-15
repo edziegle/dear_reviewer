@@ -11,9 +11,9 @@ Amended by [ADR 0021](0021-ask-once-to-trust-the-review-window.md): instead of a
 
 ADRs 0005 and 0006 made two settings the only way into the Inbox. Repositories lists each `owner/name`, and Local Clones maps each one to a path. In the first real run (#18), the Inbox showed empty groups, and opening a pull request failed with an error that asked for a Local Clones entry. The repository was the folder open in that window. The Reviewer expected Dear Reviewer to use the folders already open in VSCodium.
 
-Changes open in the review window (ADR 0002), which never holds the Reviewer's own folders, so the folders of the current window aren't enough. Running git in a folder reads that repository's own config, which can name programs for git to run. The answer therefore also decides where a workspace can make Dear Reviewer run git.
+Changes open in the review window (ADR 0002), which never holds the Reviewer's own folders, so the folders of the current window aren't enough. Running git in a folder reads that repository's own config, which can name programs for git to run. The answer also decides where a workspace can make Dear Reviewer run git.
 
-Where do the Inbox's repositories and their clones come from, and what may a workspace decide?
+Where do the Inbox's repositories and their clones come from, and what can a workspace decide?
 
 ## Considered Options
 
@@ -54,17 +54,17 @@ When none has a clone, opening a pull request offers Locate Clone… and Open Se
 
 Open Change asks for a local Change's repository by offering the window's own folders, then each remembered clone that still exists and isn't one of them, then Browse…. The review window, which holds none of the Reviewer's folders, offers the remembered clones.
 
-### What a workspace may decide
+### What a workspace can decide
 
-- A workspace may decide which `owner/name` the Inbox lists: through the Repositories setting at any scope, and through the remotes of the folders it opens.
+- A workspace can decide which `owner/name` the Inbox lists: through the Repositories setting at any scope, and through the remotes of the folders it opens.
 - A workspace never decides the GitHub API base URL, where the token goes, the path to `claude`, or Local Clones. They stay user-level only, and are restricted settings in untrusted workspaces.
 - Dear Reviewer runs git only in folders the Reviewer opened in a trusted window, folders the Reviewer picked, and the user-level Local Clones. A workspace that lists a repository gets no clone for it this way. An untrusted window's folders aren't read at all, because git can run programs that a repository's own config names, such as `core.fsmonitor` and `core.sshCommand`.
 
 ### Trusting the review window
 
-The review window's folders, the Change worktrees, live in the extension's global storage, which the Reviewer has never trusted. The review window therefore opens in Restricted Mode, and language servers and navigation, the reason Dear Reviewer exists, are off. An extension can't grant trust.
+The review window's folders, the Change worktrees, live in the extension's global storage, which the Reviewer has never trusted. The review window opens in Restricted Mode, and language servers and navigation, the reason Dear Reviewer exists, are off. An extension can't grant trust.
 
-When the review window opens untrusted, Dear Reviewer explains this and offers Manage Workspace Trust. That button copies the storage folder's path and opens VS Code's trust editor, so the Reviewer can trust that folder once for every later Change. Trusting it also lets the workspace settings and tasks of the reviewed code apply in that window, and lets other extensions act on that code as on any trusted folder. That code may be a teammate's or an agent's. Dear Reviewer's own behaviour doesn't change, because it reads only user-level settings. Leaving the review window in Restricted Mode was rejected, because it turns off navigation. Asking for trust per Change was rejected, because every Change is a new folder, and that would mean a prompt per Change.
+When the review window opens untrusted, Dear Reviewer explains this and offers Manage Workspace Trust. That button copies the storage folder's path and opens VS Code's trust editor, so the Reviewer can trust that folder once for every later Change. Trusting it also lets the workspace settings and tasks of the reviewed code apply in that window, and lets other extensions act on that code as on any trusted folder. That code might be a teammate's or an agent's. Dear Reviewer's own behaviour doesn't change, because it reads only user-level settings. Leaving the review window in Restricted Mode was rejected, because it turns off navigation. Asking for trust per Change was rejected, because every Change is a new folder, and that would mean a prompt per Change.
 
 ### Empty Changes
 

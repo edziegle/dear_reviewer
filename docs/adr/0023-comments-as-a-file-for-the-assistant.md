@@ -13,11 +13,11 @@ The Reviewer sees review threads in the diff's gutter: teammates' and their own 
 
 - Write the Change's threads to a file the Assistant can read, kept current, and send a short note of where the Reviewer is with each message
 - Put the threads in the prompt of every message
-- Serve them through a tool, from a small MCP server
+- Serve them through a tool, from a small Model Context Protocol (MCP) server
 
 ## Decision Outcome
 
-Chosen option: a file, plus a note of where the Reviewer is. A file costs nothing on turns that don't need it, holds every thread however many there are, and uses the read access the Assistant already has. Threads in every prompt grow each turn and go stale in the conversation's history. An MCP server is a new process to start, secure and keep alive for a list the Assistant can read from a file.
+Chosen option: a file, plus a note of where the Reviewer is. A file costs nothing on turns that don't need it, holds every thread, no matter how many there are, and uses the read access the Assistant already has. Threads in every prompt grow each turn and go stale in the conversation's history. An MCP server is a new process to start, secure and keep alive for a list the Assistant can read from a file.
 
 - Dear Reviewer writes the Change's threads to a JSON file in a directory of the Change's own, beside its worktrees, and gives the Assistant read access to that directory alone. It rewrites the file whenever the threads load or change: a Comment added, edited, replied to, resolved or deleted, and a refresh.
 - The file holds every thread of the Change: published ones from GitHub, the Reviewer's pending Comments and a local Change's Comments, each marked as the Reviewer's own and unpublished where it is. Each thread has its path, side, current and original lines, whether it is outdated or resolved, and each Comment's author and body.

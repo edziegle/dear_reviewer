@@ -15,7 +15,7 @@ A Change's worktrees live until the Change is merged or closed, or until the Rev
 
 - Check each pull request's state on GitHub when the window starts, when the Inbox refreshes and when the Reviewer signs in, and treat a Change with deleted worktrees as closed
 - Check on a timer
-- Leave it to the Reviewer: offer to close merged pull requests' Changes, and recreate deleted worktrees when the window starts
+- Leave it to the Reviewer: offer to close merged pull requests' Changes, and create deleted worktrees again when the window starts
 
 ## Decision Outcome
 
@@ -25,7 +25,7 @@ Chosen option: check on GitHub when the window starts, when the Inbox refreshes 
 - At the same moments, Dear Reviewer asks git about each local branch that is open as a Change or has a saved conversation or local Review. A branch is over when it was deleted from its clone, or when the clone's main branch, found as the Inbox finds it (ADR 0006), has all its commits. Main itself is never over. A branch whose clone is gone, or that git can't answer for, counts as open.
 - When a pull request is merged or closed, its Change closes as Close Change closes it: its folders leave the window, its worktrees are deleted, the clone's records of them are pruned, and its Assistant and timeline panels close. Its Assistant conversation is forgotten too, including one whose Change the Reviewer had already closed. This finishes what ADR 0009 left to this work. A closed pull request that is reopened on GitHub starts a new conversation.
 - A Change whose base or head worktree, or whose repository, was deleted outside Dear Reviewer is closed the same way at those moments. The clone's records of its worktrees are pruned, and the other worktree, if any, is deleted. Opening the Change again recreates both worktrees, as before.
-- Each window also removes any of its folders in Dear Reviewer's folder of Changes that no open Change names, such as those of a Change another window closed, or all of them after the Reviewer deleted the extension's storage.
+- Each window also removes any of its folders in Dear Reviewer's folder of Changes that no open Change names, such as those of a Change another window closed, or every one of them after the Reviewer deleted the extension's storage.
 - Removing folders never touches the first folder of a window (ADR 0002).
 - When a local branch is over, its Change closes the same way. Dear Reviewer also forgets its conversation, its local Review with any Comments not yet in a Brief, the record of its last Brief, and its Brief files (ADR 0016), including those of a Change the Reviewer had already closed.
 - A Change of a commit range that isn't a branch is never closed on its own: Dear Reviewer has no way to know that it is finished. The Reviewer closes it.

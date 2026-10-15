@@ -1,6 +1,6 @@
 # Dear Reviewer
 
-A workbench for a person reviewing a code change, with AI assistance woven through the review without taking it over.
+A workbench for a person reviewing a code change, with AI help woven through the review without taking it over.
 
 ## Language
 
@@ -9,7 +9,7 @@ The human examining a change and deciding what to say about it. Always a person,
 _Avoid_: User (too broad), AI reviewer
 
 **Review**:
-One pass by a Reviewer over a Change, ending when they submit a verdict or copy a Brief for an agent. A Change can have several Reviews as new commits arrive.
+One pass by a Reviewer over a Change, ending when they submit a verdict or copy a Brief for an agent. A Change can have more than one Review as new commits arrive.
 _Avoid_: Code review session, audit, round
 
 **Assistant**:

@@ -1,6 +1,6 @@
 # Build Dear Reviewer as a VS Code extension
 
-The main reason for Dear Reviewer is real code navigation (go to definition, find usages, browsing any file) while reviewing, in a work monorepo of Python, TypeScript/JavaScript, OpenTofu, YAML and Bash, and home projects in Python and Rust. VS Code gets that navigation from language servers the Reviewer already has installed, provided that both sides of a diff are real files in app-managed worktrees. A standalone native macOS app would have to embed an editor and run a language server for every one of those languages itself. Despite native macOS experience, we therefore build a VS Code extension, separate from the official GitHub Pull Requests extension.
+The main reason for Dear Reviewer is real code navigation (go to definition, find usages, browsing any file) while reviewing, in a work monorepo of Python, TypeScript and JavaScript, OpenTofu, YAML and Bash, and home projects in Python and Rust. VS Code gets that navigation from language servers the Reviewer already has installed, if both sides of a diff are real files in app-managed worktrees. A standalone native macOS app would have to embed an editor and run a language server for every one of those languages itself. Despite native macOS experience, we build a VS Code extension, separate from the official GitHub Pull Requests extension.
 
 ## Considered Options
 
@@ -12,5 +12,5 @@ The main reason for Dear Reviewer is real code navigation (go to definition, fin
 ## Consequences
 
 - Navigation on the old (base) version depends on opening the base side of each diff from a real worktree. The spike in `spikes/base-nav/` showed this working on 2026-10-12, in VSCodium 1.135 with basedpyright, on a two-file Python repo: go to definition on each side resolved inside that side's own worktree. It is still unchecked on the work monorepo, in other languages, and for indexing cost.
-- Two worktrees per open Change in a large monorepo may cost significant disk space and language-server indexing time.
-- Review UI such as the timeline is built from webviews, not native views. ADR 0012 limits this: the Change's code appears only in VS Code's editors, never in a webview, and a new webview needs a reason no native view fits.
+- Two worktrees per open Change in a large monorepo might cost significant disk space and language-server indexing time.
+- Review UI such as the timeline is built from webviews, not native views. ADR 0012 limits this: the Change's code shows only in VS Code's editors, never in a webview, and a new webview needs a reason no native view fits.

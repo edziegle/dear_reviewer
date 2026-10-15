@@ -5,7 +5,7 @@ date: 2026-10-13
 
 # Keep each Change's Assistant conversation by pull request or branch, and resume it with `claude --resume`
 
-Amended by [ADR 0013](0013-end-changes-that-are-over.md): the conversation of a pull request that GitHub says was merged or closed, or of a local branch that was merged into main or deleted, is forgotten, whether or not its Change is still open.
+Amended by [ADR 0013](0013-end-changes-that-are-over.md): the conversation of a pull request that GitHub says was merged or closed, or of a local branch that was merged into main or deleted, is forgotten, even if its Change is still open.
 
 Amended by [ADR 0015](0015-what-changed-since-the-last-review.md): when the Assistant starts or moves to a head with new commits since the Reviewer's last Review, it explains what changed, and the saved conversation keeps which commits it explained.
 

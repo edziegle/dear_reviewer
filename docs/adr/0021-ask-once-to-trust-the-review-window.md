@@ -7,7 +7,7 @@ date: 2026-10-14
 
 ## Context and Problem Statement
 
-ADR 0010 had Dear Reviewer explain Restricted Mode and offer Manage Workspace Trust whenever the review window started untrusted. That warning came back on every start, with no way to dismiss it for good (#20). Trusting the review window is a real trade-off: the reviewed code's workspace settings and tasks then apply in it, including for pull requests from strangers. It should be the Reviewer's choice, asked once.
+ADR 0010 had Dear Reviewer explain Restricted Mode and offer Manage Workspace Trust whenever the review window started untrusted. That warning came back on every start, with no way to dismiss it for good (#20). Trusting the review window is a real tradeoff: the reviewed code's workspace settings and tasks then apply in it, including for pull requests from strangers. It should be the Reviewer's choice, asked once.
 
 No API grants trust. The editor trusts a folder when it, or a folder above it, is on its list of trusted folders. Its Trust button, in its own startup prompt and at the top of Workspace Trust, trusts the window's current folders and its workspace file. The review window's first folder used to be a home folder beside the folder of Changes, so that Trust covered only the Changes open at that moment. Each later Change brought the editor's prompt about untrusted folders back. Trusting the folder of Changes itself took Add Folder in Workspace Trust, a native file dialog that can't take a pasted path, opened in the wrong folder.
 
@@ -22,7 +22,7 @@ How does the Reviewer trust the review window once, with one click, for every Ch
 
 ## Decision Outcome
 
-Chosen option: make the folder of Changes the review window's first folder, and let the editor's own prompt ask once, because one click on the editor's Trust then covers every Change, and the Reviewer sees one prompt instead of two.
+Chosen option: make the folder of Changes the review window's first folder, and let the editor's own prompt ask once, because one click in the editor's Trust then covers every Change, and the Reviewer sees one prompt instead of two.
 
 - The review window's first folder is `changes` in the extension's storage, which holds every Change's worktrees. Its own listing is hidden by a `files.exclude` in its `.vscode/settings.json`, so the Changes show only as folders of their own. The workspace file stays in `review-window`.
 - The editor asks whether to trust the review window the first time it opens, as it does for any untrusted workspace, and remembers the answer. Dear Reviewer doesn't ask too.

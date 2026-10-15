@@ -19,13 +19,13 @@ The Inbox lists local branches that are ahead of main, such as an agent's branch
 
 ## Decision Outcome
 
-Chosen option: scan the configured local clones, because they are the repositories the Reviewer already named as theirs on this machine. Agents usually work in a worktree or branch of that same clone, so its branches are where their work shows up. The review window never holds the Reviewer's own folders, so workspace folders aren't an option.
+Chosen option: scan the configured local clones, because they are the repositories the Reviewer already named as theirs on this machine. Agents typically work in a worktree or branch of that same clone, so its branches are where their work shows up. The review window never holds the Reviewer's own folders, so workspace folders aren't an option.
 
 - A repository is scanned only if it is in the Repositories setting and has an entry in `dearReviewer.localClones`. The setting is read only from user settings, as in ADR 0005. A clone listed for two repositories is scanned once.
 - Main is the default branch of the clone's remote for the repository: the remote whose URL names `owner/name`, or else `origin` (as in ADR 0005), and the ref that `refs/remotes/<remote>/HEAD` points at. If that ref is missing, main is `<remote>/main`, then `<remote>/master`, then the local `main`, then the local `master`.
 - A branch is listed with the number of commits it has that main doesn't (`git rev-list --count main..branch`). Branches with none are left out, and so is the local branch with the same name as main.
 - Opening a branch opens a local Change from the merge base of main and the branch to the branch's head.
-- The Inbox shows the "Local branches" group only when at least one Inbox repository has a local clone. A clone that can't be read appears as a problem entry in the group, and the other clones are still listed.
+- The Inbox shows the "Local branches" group only when at least one Inbox repository has a local clone. A clone that can't be read shows as a problem entry in the group, and the other clones are still listed.
 - Branches are read from what the clone already has; listing them never fetches. The count is as fresh as the clone's last fetch of main.
 
 ### Consequences

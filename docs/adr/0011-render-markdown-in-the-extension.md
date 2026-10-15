@@ -17,7 +17,7 @@ The first real Review showed the Assistant's summary as raw Markdown (`## 1. …
 
 ## Decision Outcome
 
-Chosen option: render and sanitise in the extension. The tests can check the sanitised HTML in the state the panel was sent, because they check webviews through their state and messages, not the DOM. Node has a real HTML parser to sanitise with, so the webviews need no extra script file, resource root or CSP change. Rendering in the extension also lets the extension record which links each panel shows.
+Chosen option: render and sanitise in the extension. The tests can check the sanitised HTML in the state the panel was sent, because they check webviews through their state and messages, not the DOM. Node has a real HTML parser to sanitise with, so the webviews need no extra script file, resource root or content security policy (CSP) change. Rendering in the extension also lets the extension record which links each panel shows.
 
 - `src/markdown.ts` renders with `markdown-it`, with its `linkify` option on, and then runs `sanitize-html` with a short allow-list: paragraphs, headings, emphasis, code, lists, quotes, tables and `a`. No other attributes or tags get through, including `class`, `style`, `href` and `src`.
 - Raw HTML is parsed only so it can be dropped: a tag never reaches the output, the text between tags stays (as GitHub shows it), and a script's or style's text goes with it. Turning raw HTML off in `markdown-it` would instead show the tags as escaped text, and pull request templates are full of `<!-- -->` and `<details>`.

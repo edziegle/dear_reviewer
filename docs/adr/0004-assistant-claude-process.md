@@ -27,7 +27,7 @@ The Agent SDK lost even though it runs on a subscription login too. It starts it
 
 - The process starts when the Change's diff is shown in a window and stops when the Change is closed. Its working directory is the head worktree, and the base worktree is added with `--add-dir`. ADR 0009 changes this: `claude` runs in a folder of the conversation's own, with both worktrees added, and starts with the conversation's first turn.
 - Tools are limited to `Read`, `Grep` and `Glob` (`--tools` and `--allowedTools`), with `--permission-mode dontAsk`, so the Assistant never prompts, never runs commands and never edits files.
-- `--setting-sources user` and `--strict-mcp-config` keep a worktree's own Claude settings, hooks and MCP servers from loading.
+- `--setting-sources user` and `--strict-mcp-config` keep a worktree's own Claude settings, hooks and Model Context Protocol (MCP) servers from loading.
 - The environment is built from a list of the extension host's variables that `claude` needs to find itself, its login and the network: `PATH`, `HOME`, `CLAUDE_CONFIG_DIR`, `USER`, `LOGNAME`, `SHELL`, `TMPDIR`, `LANG`, `LC_*`, `TERM`, the proxy variables in either case and `NODE_EXTRA_CA_CERTS`. Nothing else reaches it, so no `ANTHROPIC_*` or `CLAUDE_CODE_*` variable can make it bill an API key or a cloud provider, or send its requests elsewhere. `claude auth status` runs in the same environment, and its login method is shown to the Reviewer.
 - The path to `claude` is read only from user settings, so a workspace can't choose the program Dear Reviewer runs.
 - `src/assistant/claude.ts` owns this. A conversation's `ask(prompt, onText)` is one turn; turns queue.

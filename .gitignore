@@ -11,6 +11,9 @@
 skills-lock.json
 node_modules/
 
+# Git worktrees for working on issues side by side
+.worktrees/
+
 # Vale packages, downloaded by `vale sync`
 .vale/styles/*
 !.vale/styles/config/

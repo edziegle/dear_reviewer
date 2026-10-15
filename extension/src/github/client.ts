@@ -31,7 +31,10 @@ export interface PullRequestSummary {
    * a reviewer whose review was requested again.
    */
   latestReviews: LatestReview[];
-  /** Each reviewer's latest review that approved, requested changes, or was dismissed. */
+  /**
+   * Each reviewer's latest review that approved or requested changes. GitHub
+   * leaves out a reviewer whose latest such review was dismissed.
+   */
   latestOpinionatedReviews: LatestReview[];
 }
 

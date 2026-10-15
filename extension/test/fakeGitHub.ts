@@ -904,8 +904,11 @@ export async function startFakeGitHub(): Promise<{
         }),
       }),
       ...(/\blatestOpinionatedReviews\(/.test(query) && {
-        latestOpinionatedReviews: latestReviewsField(pr, (r) =>
-          ["APPROVED", "CHANGES_REQUESTED", "DISMISSED"].includes(r.state)
+        latestOpinionatedReviews: latestReviewsField(
+          pr,
+          (r) =>
+            ["APPROVED", "CHANGES_REQUESTED", "DISMISSED"].includes(r.state),
+          { leaveOutDismissed: true }
         ),
       }),
     };
@@ -913,13 +916,14 @@ export async function startFakeGitHub(): Promise<{
 
   /**
    * Each reviewer's latest of the reviews that count, as GitHub gives them:
-   * never the pull request author's own, and for `latestReviews` none from
-   * a reviewer whose review is requested again.
+   * never the pull request author's own; for `latestReviews` none from a
+   * reviewer whose review is requested again, and for
+   * `latestOpinionatedReviews` none whose latest was dismissed.
    */
   function latestReviewsField(
     pr: FakePullRequest,
     counts: (review: FakeReview) => boolean,
-    { leaveOutRequested = false } = {}
+    { leaveOutRequested = false, leaveOutDismissed = false } = {}
   ) {
     const latest = new Map<string, FakeReview>();
     for (const review of pr.reviews ?? [])
@@ -927,6 +931,9 @@ export async function startFakeGitHub(): Promise<{
         latest.set(review.author, review);
     if (leaveOutRequested)
       for (const login of pr.reviewRequested ?? []) latest.delete(login);
+    if (leaveOutDismissed)
+      for (const [login, review] of latest)
+        if (review.state === "DISMISSED") latest.delete(login);
     return {
       nodes: [...latest.values()].map((r) => ({
         state: r.state,

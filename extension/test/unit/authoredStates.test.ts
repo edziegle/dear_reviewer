@@ -30,7 +30,7 @@ function pr({
     latestReviews: latestOf(reviews),
     latestOpinionatedReviews: latestOf(
       reviews.filter((r) => r.verdict !== "commented")
-    ),
+    ).filter((r) => r.verdict !== "dismissed"),
     ...fields,
   };
 }

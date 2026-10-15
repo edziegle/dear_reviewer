@@ -207,6 +207,28 @@ describe("Inbox: Authored by me", () => {
     );
   });
 
+  it("leaves out a dismissed approval, but not a later one", async () => {
+    const { authored } = await showInbox([
+      mine(1, "Dismissed", {
+        reviews: [
+          review("alice", "APPROVED", older),
+          review("alice", "DISMISSED", older),
+        ],
+      }),
+      mine(2, "Approved again", {
+        reviews: [
+          review("alice", "DISMISSED", older),
+          review("alice", "APPROVED"),
+        ],
+      }),
+    ]);
+
+    assert.deepStrictEqual(
+      authored.entries.map((e) => `${e.label}: ${e.icon}`),
+      ["Dismissed: $(git-pull-request)", "Approved again: $(pass-filled)"]
+    );
+  });
+
   it("leaves out a reviewer whose review I requested again, until they review", async () => {
     const { authored } = await showInbox([
       mine(1, "Asked again", {

@@ -53,6 +53,7 @@ import {
 import { messageOf } from "./errors";
 import { ReviewWindowTrust } from "./trust";
 import { LanguageOffer } from "./highlighting";
+import { conversationFolder } from "./conversationName";
 
 export function activate(context: vscode.ExtensionContext) {
   const changes = new ChangeWorkspace(context.globalStorageUri.fsPath);
@@ -1356,6 +1357,9 @@ export function activate(context: vscode.ExtensionContext) {
       panels: () => assistants.panels(),
       overviews: () => assistants.overviews(),
       loginStatus: () => assistants.loginStatus(),
+      /** The folder the conversation of the Change the request opens runs `claude` in, by name. */
+      conversationFolder: async (request: ChangeRequest) =>
+        conversationFolder(await changes.conversationFor(request)),
     },
     timeline: {
       panels: () =>

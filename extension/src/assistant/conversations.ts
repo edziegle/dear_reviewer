@@ -4,9 +4,9 @@
 // the Change's overview shows from the Assistant, and its Reading Order. Kept
 // by the Change's conversation name, which new commits don't change (ADR 0009).
 
-import * as crypto from "crypto";
 import * as fs from "fs";
 import * as path from "path";
+import { conversationFolder } from "../conversationName";
 import type { ReadingOrder } from "../readingOrder";
 import type { Message } from "./panel";
 
@@ -61,10 +61,7 @@ export class Conversations {
    * the folder must stay the same while the worktrees come and go.
    */
   workingDirectory(name: string): string {
-    const dir = path.join(
-      this.dirs,
-      crypto.createHash("sha256").update(name).digest("hex").slice(0, 16)
-    );
+    const dir = path.join(this.dirs, conversationFolder(name));
     fs.mkdirSync(dir, { recursive: true });
     return dir;
   }

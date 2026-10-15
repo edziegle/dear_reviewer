@@ -4,7 +4,9 @@
 // Briefs are kept in the extension's storage under the name this gives, so
 // the names' format must stay as it is for saved conversations to resume.
 
+import * as crypto from "crypto";
 import * as path from "path";
+import { git } from "./git";
 import type { PullRequestRef } from "./openChanges";
 
 export type ConversationId =
@@ -22,6 +24,44 @@ export function conversationName(id: ConversationId): string {
     case "range":
       return `range ${id.mergeBase}..${id.headSha} in ${id.repository}`;
   }
+}
+
+/**
+ * The conversation name of the Change a request opens: its pull request, or
+ * else the local branch the request named (`HEAD` names the checked-out
+ * branch), or else the commit range itself, which `range` gives.
+ */
+export async function conversationOf(
+  repository: string,
+  request: { head: string; pullRequest?: PullRequestRef },
+  range: () => Promise<{ mergeBase: string; headSha: string }>
+): Promise<string> {
+  if (request.pullRequest)
+    return conversationName({
+      kind: "pullRequest",
+      pullRequest: request.pullRequest,
+    });
+  const ref = await git(
+    repository,
+    "rev-parse",
+    "--symbolic-full-name",
+    request.head
+  ).catch(() => "");
+  if (ref.startsWith("refs/heads/"))
+    return conversationName({
+      kind: "branch",
+      branch: ref.slice("refs/heads/".length),
+      repository,
+    });
+  return conversationName({ kind: "range", ...(await range()), repository });
+}
+
+/**
+ * The name of the folder `claude` runs in for the conversation, the same
+ * for as long as the conversation lasts.
+ */
+export function conversationFolder(name: string): string {
+  return crypto.createHash("sha256").update(name).digest("hex").slice(0, 16);
 }
 
 /** What a conversation name names, if it is one `conversationName` gives. */

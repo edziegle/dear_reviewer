@@ -15,7 +15,7 @@ import {
   changedFiles,
   changeName,
 } from "./changeDetails";
-import { conversationName } from "./conversationName";
+import { conversationOf } from "./conversationName";
 import { git } from "./git";
 import {
   Change,
@@ -279,6 +279,18 @@ export class ChangeWorkspace implements vscode.Disposable {
     );
   }
 
+  /**
+   * The conversation name of the Change the request opens, or opened while
+   * it is open. A pull request's needs none of its commits.
+   */
+  async conversationFor(request: ChangeRequest): Promise<string> {
+    if (request.pullRequest)
+      return conversationOf(request.repository, request, () => {
+        throw new Error("A pull request's conversation has no range");
+      });
+    return (await this.resolve(request)).conversation;
+  }
+
   private async resolve(request: ChangeRequest): Promise<Change> {
     const repository = path.resolve(request.repository);
     const mergeBase = await git(
@@ -307,7 +319,10 @@ export class ChangeWorkspace implements vscode.Disposable {
     const dir = path.join(this.storageDir, "changes", id);
     const conversation =
       this.openChanges.get(id)?.conversation ??
-      (await conversationOf(repository, request, mergeBase, headSha));
+      (await conversationOf(repository, request, async () => ({
+        mergeBase,
+        headSha,
+      })));
     return {
       id,
       repository,
@@ -319,37 +334,6 @@ export class ChangeWorkspace implements vscode.Disposable {
       conversation,
     };
   }
-}
-
-/**
- * What the Change is across new commits: its pull request, or else the local
- * branch the request named (`HEAD` names the checked-out branch), or else
- * the commit range itself.
- */
-async function conversationOf(
-  repository: string,
-  request: ChangeRequest,
-  mergeBase: string,
-  headSha: string
-): Promise<string> {
-  if (request.pullRequest)
-    return conversationName({
-      kind: "pullRequest",
-      pullRequest: request.pullRequest,
-    });
-  const ref = await git(
-    repository,
-    "rev-parse",
-    "--symbolic-full-name",
-    request.head
-  ).catch(() => "");
-  if (ref.startsWith("refs/heads/"))
-    return conversationName({
-      kind: "branch",
-      branch: ref.slice("refs/heads/".length),
-      repository,
-    });
-  return conversationName({ kind: "range", mergeBase, headSha, repository });
 }
 
 /** Whether a worktree, or the repository it belongs to, was deleted outside Dear Reviewer. */

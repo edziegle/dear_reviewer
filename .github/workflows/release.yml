@@ -40,7 +40,7 @@ jobs:
           path: ~/.npm
           key: npm-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
           restore-keys: npm-${{ runner.os }}-
-      - run: mise run setup
+      - run: mise run deps
       - run: mise run package
       - run: mise run upload-vsix "$TAG"
         env:

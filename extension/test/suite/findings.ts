@@ -18,6 +18,8 @@ export interface GutterMarker {
   hover: string;
   /** The only commands the hover's links may run. */
   enabledCommands: readonly string[];
+  /** The icon the gutter shows on each of its lines. */
+  gutter: ("lightbulb" | "lightbulbWithBar" | "bar" | undefined)[];
 }
 
 export interface FindingEntry {

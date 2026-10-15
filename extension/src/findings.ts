@@ -14,6 +14,7 @@ import { Change, changeName } from "./changeWorkspace";
 import type { ThreadPlace } from "./github/client";
 import { setContext } from "./context";
 import { messageOf } from "./errors";
+import { gutterIcons, type GutterIcon } from "./findingGutter";
 
 /** A spot in a Change the Assistant thinks deserves the Reviewer's attention. */
 export interface Finding {
@@ -47,9 +48,15 @@ export class Findings
     string,
     { change: Change; findings: Finding[] }
   >();
+  /** Each Finding's whole lines: its hover and its mark on the scroll bar. */
   private readonly decoration: vscode.TextEditorDecorationType;
-  /** What each visible editor's gutter shows, by document URI, for the tests. */
-  private shown = new Map<string, vscode.DecorationOptions[]>();
+  /** The gutter's icons, one per line. */
+  private readonly icons: Record<GutterIcon, vscode.TextEditorDecorationType>;
+  /** What each visible editor shows, by document URI, for the tests. */
+  private shown = new Map<
+    string,
+    { options: vscode.DecorationOptions[]; icons: Map<number, GutterIcon> }
+  >();
   private readonly subscriptions: vscode.Disposable[] = [];
 
   /**
@@ -74,17 +81,36 @@ export class Findings
     // A gutter marker and a mark on the scroll bar: nothing in the text. A
     // gutter icon can't take a theme color, so each theme kind gets an icon
     // in its default editorWarning.foreground.
-    const icon = (file: string) =>
-      vscode.Uri.joinPath(extensionUri, "media", file);
+    const icon = (name: string) =>
+      vscode.window.createTextEditorDecorationType({
+        light: {
+          gutterIconPath: vscode.Uri.joinPath(
+            extensionUri,
+            "media",
+            `${name}-light.svg`
+          ),
+        },
+        dark: {
+          gutterIconPath: vscode.Uri.joinPath(
+            extensionUri,
+            "media",
+            `${name}.svg`
+          ),
+        },
+        gutterIconSize: "contain",
+      });
+    this.icons = {
+      lightbulb: icon("finding"),
+      lightbulbWithBar: icon("finding-start"),
+      bar: icon("finding-bar"),
+    };
     this.decoration = vscode.window.createTextEditorDecorationType({
-      light: { gutterIconPath: icon("finding-light.svg") },
-      dark: { gutterIconPath: icon("finding.svg") },
-      gutterIconSize: "contain",
       overviewRulerColor: new vscode.ThemeColor("editorWarning.foreground"),
       overviewRulerLane: vscode.OverviewRulerLane.Right,
     });
     this.subscriptions.push(
       this.decoration,
+      ...Object.values(this.icons),
       this.changed,
       vscode.window.onDidChangeVisibleTextEditors(() => this.render())
     );
@@ -277,23 +303,32 @@ export class Findings
     }));
   }
 
-  /** What the gutters of the visible editors show, for the tests. */
+  /**
+   * The Findings the visible editors mark, for the tests: each one's lines,
+   * hover, and the icon the gutter shows on each of its lines.
+   */
   decorated(): {
     file: string;
     lines: [number, number];
     hover: string;
     enabledCommands: readonly string[];
+    gutter: (GutterIcon | undefined)[];
   }[] {
-    return [...this.shown].flatMap(([uri, options]) =>
+    return [...this.shown].flatMap(([uri, { options, icons }]) =>
       options.map((o) => {
         const hover = o.hoverMessage as vscode.MarkdownString;
         const trusted = hover.isTrusted;
+        const first = o.range.start.line;
+        const last = o.range.end.line;
         return {
           file: vscode.Uri.parse(uri).fsPath,
-          lines: [o.range.start.line, o.range.end.line] as [number, number],
+          lines: [first, last] as [number, number],
           hover: hover.value,
           enabledCommands:
             typeof trusted === "object" ? trusted.enabledCommands : [],
+          gutter: Array.from({ length: last - first + 1 }, (_, i) =>
+            icons.get(first + i)
+          ),
         };
       })
     );
@@ -321,12 +356,25 @@ export class Findings
       });
       byFile.set(uri, options);
     }
-    const shown = new Map<string, vscode.DecorationOptions[]>();
+    const shown: typeof this.shown = new Map();
     for (const editor of vscode.window.visibleTextEditors) {
       const uri = editor.document.uri.toString();
       const options = byFile.get(uri) ?? [];
+      const icons = gutterIcons(
+        options.map(({ range }) => ({
+          first: range.start.line,
+          last: range.end.line,
+        }))
+      );
       editor.setDecorations(this.decoration, options);
-      if (options.length > 0) shown.set(uri, options);
+      for (const [kind, type] of Object.entries(this.icons))
+        editor.setDecorations(
+          type,
+          [...icons]
+            .filter(([, icon]) => icon === kind)
+            .map(([line]) => new vscode.Range(line, 0, line, 0))
+        );
+      if (options.length > 0) shown.set(uri, { options, icons });
     }
     this.shown = shown;
   }

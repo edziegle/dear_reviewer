@@ -154,7 +154,7 @@ The palette is borrowed whole from the active theme; Dear Reviewer chooses roles
 ### Tertiary
 
 - **Check Signals** (`check-passed`, `check-failed`, `check-running`): the outline of a check's status. The word inside stays in `foreground`: these are icon colors, meant for 3:1, and too faint for small text in light themes. Skipped and neutral checks use `muted-foreground`.
-- **Finding** (`finding`): the Assistant's Findings: the tree icon, the overview-ruler mark and the gutter marker. A gutter icon can't take a theme color, so the marker is two SVGs in VS Code's default `editorWarning.foreground` for each theme kind: `#cca700` in `extension/media/finding.svg` for dark themes and `#bf8803` in `extension/media/finding-light.svg` for light ones. These are the only literal colors in the system; change them only if VS Code's defaults change.
+- **Finding** (`finding`): the Assistant's Findings: the tree icon, the overview-ruler mark and the gutter marker. A one-line Finding's marker is the lightbulb. A longer one's first line shows the lightbulb with a bar down its left edge, and its other lines the bar alone, so the bar runs unbroken to its last line. A gutter icon can't take a theme color, so each icon is two SVGs in VS Code's default `editorWarning.foreground` for each theme kind: `#cca700` in `extension/media/finding.svg`, `finding-start.svg` and `finding-bar.svg` for dark themes, and `#bf8803` in `finding-light.svg`, `finding-start-light.svg` and `finding-bar-light.svg` for light ones. These are the only literal colors in the system; change them only if VS Code's defaults change.
 - **Problem** (`problem-background` with a `problem-border` outline): the banner that says what went wrong, in words for the Reviewer.
 
 ### Neutral

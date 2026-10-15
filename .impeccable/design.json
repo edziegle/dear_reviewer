@@ -141,7 +141,7 @@
         "displayName": "Finding",
         "canonical": "var(--vscode-editorWarning-foreground)",
         "previewValue": "#cca700",
-        "note": "Gutter icons can't take a theme color: extension/media/finding.svg (#cca700, dark) and finding-light.svg (#bf8803, light) carry editorWarning.foreground's defaults."
+        "note": "Gutter icons can't take a theme color: extension/media/finding.svg, finding-start.svg and finding-bar.svg (#cca700, dark) and finding-light.svg, finding-start-light.svg and finding-bar-light.svg (#bf8803, light) carry editorWarning.foreground's defaults."
       },
       "problem-background": {
         "role": "tertiary",

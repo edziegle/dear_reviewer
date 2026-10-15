@@ -107,6 +107,33 @@ const findingsReply = [
   "```",
 ].join("\n");
 
+// Findings over several lines, one overlapping another's last line.
+const longFindingsReply = JSON.stringify({
+  findings: [
+    {
+      path: "util.py",
+      side: "head",
+      startLine: 1,
+      endLine: 3,
+      message: "new_helper could be inlined.",
+    },
+    {
+      path: "util.py",
+      side: "base",
+      startLine: 1,
+      endLine: 2,
+      message: "The base had no docstring.",
+    },
+    {
+      path: "util.py",
+      side: "base",
+      startLine: 2,
+      endLine: 2,
+      message: "It returned 2 here too.",
+    },
+  ],
+});
+
 // Findings only when the Reviewer asks for them, in the gutter of a pull
 // request's diff, turned into Comments or dismissed.
 describe("Findings on request", () => {
@@ -155,6 +182,7 @@ describe("Findings on request", () => {
         replyTurn("Sorry, I would rather chat about it."),
         replyTurn(findingsReply),
         replyTurn('{"findings": []}'),
+        replyTurn(longFindingsReply),
       ],
     });
     await refreshInbox();
@@ -269,10 +297,10 @@ describe("Findings on request", () => {
       assert.deepStrictEqual(
         (await gutterMarkers())
           .filter((m) => opened.includes(m.file))
-          .map(({ file, lines }) => ({ file, lines })),
+          .map(({ file, lines, gutter }) => ({ file, lines, gutter })),
         [
-          { file: opened[0], lines: [0, 0] },
-          { file: opened[1], lines: [1, 1] },
+          { file: opened[0], lines: [0, 0], gutter: ["lightbulb"] },
+          { file: opened[1], lines: [1, 1], gutter: ["lightbulb"] },
         ]
       )
     );
@@ -452,6 +480,69 @@ describe("Findings on request", () => {
         from: "note",
         text: "Raised no Findings.",
       })
+    );
+  });
+
+  it("marks a Finding over several lines with one lightbulb and a bar down the rest, and one icon per line where Findings overlap", async () => {
+    await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+    const headFile = path.join(head, "util.py");
+    const baseFile = path.join(base, "util.py");
+    await vscode.window.showTextDocument(vscode.Uri.file(headFile), {
+      viewColumn: vscode.ViewColumn.One,
+      preview: false,
+    });
+    await vscode.window.showTextDocument(vscode.Uri.file(baseFile), {
+      viewColumn: vscode.ViewColumn.Two,
+      preview: false,
+    });
+
+    await findIssues(change);
+
+    await eventually(async () =>
+      assert.deepStrictEqual(
+        (await gutterMarkers()).map(({ file, lines, gutter }) => ({
+          file,
+          lines,
+          gutter,
+        })),
+        [
+          {
+            file: baseFile,
+            lines: [0, 1],
+            gutter: ["lightbulbWithBar", "lightbulbWithBar"],
+          },
+          { file: baseFile, lines: [1, 1], gutter: ["lightbulbWithBar"] },
+          {
+            file: headFile,
+            lines: [0, 2],
+            gutter: ["lightbulbWithBar", "bar", "bar"],
+          },
+        ].sort((a, b) => a.file.localeCompare(b.file))
+      )
+    );
+    const hovers = (await gutterMarkers())
+      .filter((m) => m.file === headFile)
+      .map((m) => m.hover);
+    assert.strictEqual(hovers.length, 1, "one hover over the whole Finding");
+    assert.ok(hovers[0].includes("inlined."), hovers[0]);
+    assert.match(hovers[0], /\]\(command:dearReviewer\.dismissFinding\?/);
+  });
+
+  it("finds the Finding under the cursor on any of its lines", async () => {
+    await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+    const editor = await vscode.window.showTextDocument(
+      vscode.Uri.file(path.join(head, "util.py"))
+    );
+    editor.selection = new vscode.Selection(2, 0, 2, 0);
+    await eventually(async () =>
+      assert.strictEqual(vscode.window.activeTextEditor, editor)
+    );
+
+    await vscode.commands.executeCommand("dearReviewer.dismissFinding");
+
+    assert.deepStrictEqual(
+      (await findingsView()).map((e) => e.where),
+      ["util.py:1-2 (base)", "util.py:2 (base)"]
     );
   });
 });

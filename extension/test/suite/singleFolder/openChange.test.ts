@@ -222,4 +222,50 @@ describe("Open Change from a single-folder window", () => {
       await closeChange(behind);
     }
   });
+
+  it("shows only the Change left in front in the review window when this window's lifecycle closes several there at once", async () => {
+    const repo = buildFixtureRepo("endedElsewhere");
+    const titleOf = (c: { base: string; head: string }) =>
+      `${path.basename(repo.path)} ${short(c.base)}..${short(c.head)}`;
+    const left = {
+      repository: repo.path,
+      base: repo.commits.initial,
+      head: repo.commits.renamed,
+    };
+    const ending = [
+      [repo.commits.renamed, repo.commits.documented],
+      [repo.commits.documented, repo.commits.restructured],
+    ].map(([base, head]) => ({ repository: repo.path, base, head }));
+    await openChange(left);
+    const kept = worktreesOf(repo.path).map((w) => w.path);
+    for (const change of ending) await openChange(change);
+    // The first of them again, in front, so they don't end in the order shown.
+    await openChange(ending[0]);
+    let shownBefore = 0;
+    await inReviewWindow((report) => {
+      assert.strictEqual(report.shown.at(-1), titleOf(ending[0]));
+      shownBefore = report.shown.length;
+    });
+    // Deleted by hand, so the lifecycle finds them over.
+    for (const worktree of worktreesOf(repo.path))
+      if (!kept.includes(worktree.path))
+        fs.rmSync(worktree.path, { recursive: true, force: true });
+
+    await vscode.commands.executeCommand("dearReviewer.refreshInbox");
+
+    try {
+      await inReviewWindow((report) => {
+        assert.deepStrictEqual(report.shown.slice(shownBefore), [
+          titleOf(left),
+        ]);
+        assert.deepStrictEqual(report.changeFiles, [titleOf(left)]);
+      });
+      await new Promise((resolve) => setTimeout(resolve, 2_000));
+      await inReviewWindow((report) =>
+        assert.deepStrictEqual(report.shown.slice(shownBefore), [titleOf(left)])
+      );
+    } finally {
+      await closeChange(left);
+    }
+  });
 });

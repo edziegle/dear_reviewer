@@ -2,7 +2,12 @@ import * as assert from "assert";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { changeInFront, OpenChange, OpenChanges } from "../../src/openChanges";
+import {
+  changeInFront,
+  OpenChange,
+  OpenChanges,
+  waitingToShow,
+} from "../../src/openChanges";
 
 function changeNamed(id: string, more: Partial<OpenChange> = {}): OpenChange {
   return {
@@ -97,9 +102,49 @@ describe("The open Changes' order", () => {
     );
   });
 
+  it("removes several Changes at once, leaving the others in their order", () => {
+    for (const id of ["abc", "def", "ghi", "xyz"]) open.put(changeNamed(id));
+    open.removeAll(["xyz", "def"]);
+    assert.deepStrictEqual(ids(open.all()), ["abc", "ghi"]);
+  });
+
   it("leaves the others in their order when a Change behind the front closes", () => {
     for (const id of ["abc", "def", "xyz"]) open.put(changeNamed(id));
     open.remove("def");
     assert.deepStrictEqual(ids(open.all()), ["abc", "xyz"]);
+  });
+});
+
+describe("Whether the review window has a Change sent to it still to show", () => {
+  const pending = changeNamed("abc", { diffPending: true });
+  const sent = [pending.baseDir, pending.headDir];
+
+  it("does while a Change waits for its diff and its folders are on their way", () => {
+    assert.strictEqual(waitingToShow([pending], ["/home", ...sent]), true);
+  });
+
+  it("doesn't once every Change has shown its diff", () => {
+    assert.strictEqual(
+      waitingToShow([changeNamed("abc")], ["/home", ...sent]),
+      false
+    );
+  });
+
+  it("doesn't for a Change whose folders were never sent, or were taken out", () => {
+    assert.strictEqual(waitingToShow([pending], ["/home"]), false);
+    assert.strictEqual(
+      waitingToShow([pending], ["/home", pending.headDir]),
+      false
+    );
+  });
+
+  it("doesn't for a Change waiting to show in another window", () => {
+    assert.strictEqual(
+      waitingToShow(
+        [changeNamed("abc", { diffPending: true, inReviewWindow: false })],
+        ["/home", ...sent]
+      ),
+      false
+    );
   });
 });

@@ -30,9 +30,12 @@ describe("Changes that ended while the window was closed", () => {
       )
     );
     assert.deepStrictEqual(workspaceFolders()[0], before[0]);
-    assert.deepStrictEqual(
-      worktreesOf(deleted.change.repository).map((w) => w.path),
-      [deleted.change.repository]
+    // The Change's folders leave the window before git's records are pruned.
+    await eventually(() =>
+      assert.deepStrictEqual(
+        worktreesOf(deleted.change.repository).map((w) => w.path),
+        [deleted.change.repository]
+      )
     );
     assert.ok(
       merged.folders.every((f) => paths().includes(f)),

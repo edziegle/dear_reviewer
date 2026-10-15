@@ -11,7 +11,7 @@ import {
   summaryNote,
 } from "../../assistant";
 import { overviewTake } from "../../timeline";
-import { closeChange, eventually } from "../../reviewer";
+import { closeChange, eventually, short } from "../../reviewer";
 import { pickUpAfterReload } from "../handoff";
 
 // A second launch of the workspace the first assistant launch left with a
@@ -36,7 +36,8 @@ describe("The Assistant after a window reload", () => {
     await showAssistant(change);
     await eventually(async () =>
       assert.deepStrictEqual(await renderedPanel(title), {
-        title,
+        name: title,
+        range: `${short(change.base)}..${short(change.head)}`,
         login: "Claude subscription (Max)",
         busy: false,
         messages: [

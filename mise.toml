@@ -87,9 +87,14 @@ fi
 description = "Print the ISO week, like 2026-W42, for cache keys that rotate weekly"
 run = 'echo "week=$(date -u +%G-W%V)" >> "${GITHUB_OUTPUT:-/dev/stdout}"'
 
+# Homebrew quarantines the app, so its first launch through `open` waits on
+# macOS's "downloaded from the Internet" prompt, which no one answers in CI.
 [tasks.install-vscodium]
 description = "Install VSCodium with Homebrew, for the tests"
-run = "brew install --cask vscodium"
+run = [
+  "brew install --cask vscodium",
+  "xattr -dr com.apple.quarantine /Applications/VSCodium.app",
+]
 
 [tasks.fmt-docs]
 description = "Format Markdown with Prettier"

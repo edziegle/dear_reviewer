@@ -104,7 +104,9 @@ jobs:
       - run: mise run install-vscodium
       - run: mise run deps
       - run: mise run test
-      - if: failure()
+      # A timeout counts as cancelled, not failed, and a hung run is the one
+      # whose logs matter most.
+      - if: failure() || cancelled()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: vscodium-logs

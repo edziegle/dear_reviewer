@@ -636,13 +636,14 @@ describe("The git tools on a repository", function () {
       "..",
       `${path.basename(repo.dir)}-slow-git`
     );
+    // The slow git's process id, which `exec` keeps for the sleep.
+    const pidFile = `${slow}.pid`;
     fs.writeFileSync(
       slow,
-      `#!/bin/sh\ncase " $* " in *" log "*) exec sleep 30;; esac\nexec git "$@"\n`,
+      `#!/bin/sh\ncase " $* " in *" log "*) echo $$ > '${pidFile}'; exec sleep 30;; esac\nexec git "$@"\n`,
       { mode: 0o755 }
     );
     try {
-      const started = Date.now();
       const result = await new GitHistory(
         history,
         { maxChars: 20_000, timeoutMs: 300 },
@@ -653,9 +654,15 @@ describe("The git tools on a repository", function () {
         result.text,
         /git took longer than 0\.3 seconds, so it was stopped/
       );
-      assert.ok(Date.now() - started < 5_000, "it didn't wait for git");
+      const pid = Number(fs.readFileSync(pidFile, "utf8"));
+      assert.throws(
+        () => process.kill(pid, 0),
+        { code: "ESRCH" },
+        "the slow git is gone, not left sleeping"
+      );
     } finally {
       fs.rmSync(slow, { force: true });
+      fs.rmSync(pidFile, { force: true });
     }
   });
 

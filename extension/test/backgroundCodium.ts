@@ -13,13 +13,13 @@ import * as os from "os";
 import * as path from "path";
 
 const [codiumApp, outputDir, ...codiumArgs] = process.argv.slice(2);
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dear-reviewer-codium-"));
+const fifoDir = fs.mkdtempSync(path.join(os.tmpdir(), "dear-reviewer-codium-"));
 const result = path.join(outputDir, "result");
 fs.mkdirSync(outputDir, { recursive: true });
 fs.rmSync(result, { force: true });
 
 function relay(name: string, to: NodeJS.WritableStream): fs.ReadStream {
-  const fifo = path.join(dir, name);
+  const fifo = path.join(fifoDir, name);
   cp.execFileSync("mkfifo", [fifo]);
   const stream = fs.createReadStream(fifo);
   stream.pipe(to, { end: false });
@@ -41,9 +41,9 @@ const open = cp.spawn(
     "-n",
     "-W",
     "--stdout",
-    path.join(dir, "stdout"),
+    path.join(fifoDir, "stdout"),
     "--stderr",
-    path.join(dir, "stderr"),
+    path.join(fifoDir, "stderr"),
     ...Object.entries(env).flatMap(([key, value]) => [
       "--env",
       `${key}=${value}`,
@@ -123,6 +123,6 @@ open.on("exit", async (code) => {
     Promise.all([closed(stdout), closed(stderr)]),
     new Promise((resolve) => setTimeout(resolve, 5_000)),
   ]);
-  fs.rmSync(dir, { recursive: true, force: true });
+  fs.rmSync(fifoDir, { recursive: true, force: true });
   process.stdout.write("", () => process.exit(passed ? 0 : 1));
 });

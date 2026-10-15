@@ -53,3 +53,5 @@ backticked
 Don'ts
 PyCharm
 MCP
+VSX
+RPC

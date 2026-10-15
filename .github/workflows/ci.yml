@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json', 'extension/package-lock.json') }}
+          restore-keys: npm-${{ runner.os }}-
+      - uses: jdx/mise-action@v3
+      - run: mise run deps
+      - run: mise run package
+
+  lint-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: jdx/mise-action@v3
+        with:
+          install_args: vale
+      - run: mise run vale-sync
+      - run: mise run lint-docs
+
+  # Reports only: nothing gates on this job.
+  commitlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json', 'extension/package-lock.json') }}
+          restore-keys: npm-${{ runner.os }}-
+      - uses: jdx/mise-action@v3
+        with:
+          install_args: node
+      - run: mise run deps
+      - run: mise run commitlint "$FROM" "$TO"
+        env:
+          FROM: ${{ github.event.pull_request.base.sha || github.event.before }}
+          TO: ${{ github.event.pull_request.head.sha || github.sha }}

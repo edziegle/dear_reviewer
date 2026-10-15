@@ -23,6 +23,7 @@ import {
   setToken,
 } from "../github";
 import {
+  addReviewComment,
   bodyText,
   cancelEdit,
   comment,
@@ -113,7 +114,7 @@ describe("Commenting on a local Change", () => {
       thread.comments.map((c) => bodyText(c)),
       ["Why a docstring?"]
     );
-    assert.strictEqual(thread.canReply, false);
+    assert.strictEqual(thread.canReply, true, "it takes follow-up Comments");
     assert.deepStrictEqual(await reviewsOnGitHub(), []);
   });
 
@@ -208,6 +209,64 @@ describe("Commenting on a local Change", () => {
           ["util.py", "Why a docstring here?"],
         ]
       )
+    );
+  });
+
+  it("adds a follow-up Comment to a thread, and tells the Assistant", async () => {
+    const thread = await threadAt(path.join(base, "pkg/legacy.py"), 0);
+
+    await addReviewComment(thread, "Check the docs too.");
+
+    assert.deepStrictEqual(
+      thread.comments.map((c) => [bodyText(c), c.contextValue]),
+      [
+        ["Who used this?", "pending"],
+        ["Check the docs too.", "pending"],
+      ]
+    );
+    assert.deepStrictEqual(await reviewsOnGitHub(), []);
+    await eventually(() =>
+      assert.deepStrictEqual(
+        threadsForAssistant(head)
+          ?.find((t) => t.path === "pkg/legacy.py")
+          ?.comments.map((c) => c.body),
+        ["Who used this?", "Check the docs too."]
+      )
+    );
+  });
+
+  it("edits and deletes a follow-up Comment on its own, and keeps a thread whose first Comment is deleted", async () => {
+    const file = path.join(head, "pkg/core.py");
+    const thread = await comment(file, 0, 0, "Is this used?", "addToReview");
+    await addReviewComment(thread, "Only by main?");
+    await addReviewComment(thread, "Never mind.");
+
+    await editComment(thread.comments[1], "Only by main.py?");
+    await deleteComment(thread.comments[2]);
+    assert.deepStrictEqual(
+      thread.comments.map((c) => bodyText(c)),
+      ["Is this used?", "Only by main.py?"]
+    );
+
+    await deleteComment(thread.comments[0]);
+    assert.deepStrictEqual(
+      (await commentThreads()).find((t) => t.file === file)?.comments,
+      ["Only by main.py?"],
+      "the thread stays with its follow-up Comment, as on GitHub"
+    );
+    await eventually(() =>
+      assert.deepStrictEqual(
+        threadsForAssistant(head)
+          ?.find((t) => t.path === "pkg/core.py")
+          ?.comments.map((c) => c.body),
+        ["Only by main.py?"]
+      )
+    );
+
+    await deleteComment(thread.comments[0]);
+    assert.ok(
+      !(await commentThreads()).some((t) => t.file === file),
+      "its last Comment took the thread with it"
     );
   });
 

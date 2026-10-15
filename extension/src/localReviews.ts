@@ -25,8 +25,17 @@ interface LocalReview {
   threads: LocalThread[];
   /** The Brief that ended the last Review. */
   briefed?: { commit: string; at: string };
-  /** The Brief written for the Review under way, which ends it once copied. */
-  written?: { file: string; commit: string; threads: string[] };
+  /**
+   * The Brief written for the Review under way, which ends it once copied,
+   * with the ids of the Comments it covered. Those kept before follow-up
+   * Comments (see ADR 0024) have the ids of the threads instead.
+   */
+  written?: {
+    file: string;
+    commit: string;
+    comments?: string[];
+    threads?: string[];
+  };
 }
 
 export class LocalPendingReviews implements PendingReviews {
@@ -88,9 +97,23 @@ export class LocalPendingReviews implements PendingReviews {
     return { threadId: thread.id, commentId: thread.comments[0].id };
   }
 
-  /** A local thread is all the Reviewer's own: they edit its Comments rather than reply. */
-  async reply(): Promise<never> {
-    throw new Error("A local Change's threads take no replies.");
+  /** Adds a follow-up Comment to the thread, in the Review under way. */
+  async reply(
+    change: Change,
+    threadId: string,
+    body: string
+  ): Promise<{ commentId: string; pending: boolean }> {
+    const comment = {
+      id: crypto.randomUUID(),
+      body,
+      createdAt: new Date().toISOString(),
+    };
+    this.update(change, (review) => {
+      const thread = review.threads.find((t) => t.id === threadId);
+      if (!thread) throw new Error("The thread is no longer there.");
+      thread.comments.push(comment);
+    });
+    return { commentId: comment.id, pending: true };
   }
 
   async setResolved(): Promise<never> {
@@ -128,16 +151,18 @@ export class LocalPendingReviews implements PendingReviews {
       review.written = {
         file,
         commit: change.headSha,
-        threads: briefed.map((t) => t.id),
+        comments: briefed.flatMap((t) => t.comments.map((c) => c.id)),
       };
     });
   }
 
   /**
    * Ends the Review whose Brief is this file, if it is the latest written
-   * and the Review hasn't ended: the threads that went into the Brief leave
-   * the Review, and the head it covered is kept as the last reviewed commit.
-   * Gives the conversation name of the Review it ended.
+   * and the Review hasn't ended: the Comments that went into the Brief leave
+   * the Review, with the threads they leave empty, and the head it covered
+   * is kept as the last reviewed commit. A follow-up Comment added since
+   * stays for the next Brief. Gives the conversation name of the Review it
+   * ended.
    */
   endWithBrief(file: string): string | undefined {
     const all = this.all();
@@ -146,10 +171,16 @@ export class LocalPendingReviews implements PendingReviews {
     );
     if (conversation === undefined) return;
     const review = all[conversation];
-    const ids = new Set(review.written!.threads);
-    review.threads = review.threads.filter((t) => !ids.has(t.id));
+    const written = review.written!;
+    const comments = new Set(written.comments);
+    const threads = new Set(written.threads);
+    for (const thread of review.threads)
+      thread.comments = threads.has(thread.id)
+        ? []
+        : thread.comments.filter((c) => !comments.has(c.id));
+    review.threads = review.threads.filter((t) => t.comments.length > 0);
     review.briefed = {
-      commit: review.written!.commit,
+      commit: written.commit,
       at: new Date().toISOString(),
     };
     delete review.written;

@@ -331,6 +331,7 @@ export async function briefPrompt(
   note?: string
 ): Promise<string> {
   const branch = branchOfConversation(change.conversation);
+  const commentCount = threads.reduce((n, t) => n + t.comments.length, 0);
   const comments = await Promise.all(
     threads.map(async (thread, i) => {
       const side = thread.side === "LEFT" ? "base" : "head";
@@ -348,7 +349,13 @@ export async function briefPrompt(
       return [
         `${i + 1}. ${reference} on the ${side} side${thread.commit === current ? "" : `, written at the older commit ${thread.commit}, so those lines may have moved since`}:`,
         ...(lines === undefined ? [] : ["```", lines, "```"]),
-        ...thread.comments.map((c) => c.body),
+        ...(thread.comments.length === 1
+          ? [thread.comments[0].body]
+          : thread.comments.flatMap((c, j) => [
+              ...(j === 0 ? [] : [""]),
+              `Comment ${j + 1} of ${thread.comments.length} in this thread:`,
+              c.body,
+            ])),
         "",
       ].join("\n");
     })
@@ -363,7 +370,7 @@ export async function briefPrompt(
     "- Read the worktrees' files if you need more context.",
     "- Reply with only the Brief, in Markdown, with no preamble: it goes to the agent as you write it.",
     "",
-    `The Reviewer's Comments (${threads.length}):`,
+    `The Reviewer's Comments (${threads.length === commentCount ? commentCount : `${commentCount}, in ${threads.length} threads`}):`,
     "",
     ...comments,
   ].join("\n");

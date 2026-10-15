@@ -20,10 +20,13 @@ import {
   setToken,
 } from "../../github";
 import {
+  addReviewComment,
   commentThreads,
   copyBrief,
+  deleteComment,
   reviewInProgressFiles,
   showChangesSinceLastReview,
+  threadAt,
   writeBrief,
 } from "../../review";
 import {
@@ -76,8 +79,8 @@ describe("Ending a local Review with a Brief", () => {
         {
           file: path.join(baseDir, "pkg/legacy.py"),
           lines: [0, 0],
-          comments: ["Who used this?"],
-          editable: [true],
+          comments: ["Who used this?", "Check the docs too."],
+          editable: [true, true],
         },
         {
           file: path.join(headDir, "util.py"),
@@ -144,11 +147,23 @@ describe("Ending a local Review with a Brief", () => {
       '"""Two."""',
       "pkg/legacy.py:1",
       "Who used this?",
+      "Check the docs too.",
       "LEGACY = True",
       "agent/docs",
       change.head,
     ])
       assert.ok(prompt.includes(expected), `${expected} in ${prompt}`);
+    for (const together of [
+      "The Reviewer's Comments (3, in 2 threads):",
+      [
+        "Comment 1 of 2 in this thread:",
+        "Who used this?",
+        "",
+        "Comment 2 of 2 in this thread:",
+        "Check the docs too.",
+      ].join("\n"),
+    ])
+      assert.ok(prompt.includes(together), `${together} in ${prompt}`);
   });
 
   it("opens the Brief as a Markdown document to edit", async () => {
@@ -166,7 +181,7 @@ describe("Ending a local Review with a Brief", () => {
       assert.strictEqual(panel?.busy, false);
       assert.deepStrictEqual(panel?.messages.at(-1), {
         from: "note",
-        text: "Wrote a Brief from your 2 Comments. It is open in the editor.",
+        text: "Wrote a Brief from your 3 Comments. It is open in the editor.",
       });
       assert.ok(
         !panel?.messages.some((m) => m.text.includes("drop the docstring")),
@@ -183,6 +198,10 @@ describe("Ending a local Review with a Brief", () => {
     const editor = vscode.window.activeTextEditor!;
     const end = editor.document.lineAt(editor.document.lineCount - 1).range.end;
     await editor.edit((edit) => edit.insert(end, "3. Run the tests.\n"));
+    await addReviewComment(
+      await threadAt(path.join(baseDir, "pkg/legacy.py"), 0),
+      "And the README."
+    );
     await vscode.env.clipboard.writeText("");
 
     await copyBrief();
@@ -193,6 +212,18 @@ describe("Ending a local Review with a Brief", () => {
     );
     // Unsaved, it would hold up closing the editors.
     await editor.document.save();
+  });
+
+  it("keeps a follow-up Comment added since the Brief was written for the next Brief", async () => {
+    // Added after the Brief was written, before it was copied.
+    await eventually(async () =>
+      assert.deepStrictEqual(
+        (await commentThreads()).map((t) => [t.file, t.comments]),
+        [[path.join(baseDir, "pkg/legacy.py"), ["And the README."]]]
+      )
+    );
+    const thread = await threadAt(path.join(baseDir, "pkg/legacy.py"), 0);
+    await deleteComment(thread.comments[0]);
   });
 
   it("ends the Review: its Comments leave the gutter, and nothing is new since", async () => {

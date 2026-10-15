@@ -834,12 +834,16 @@ export function activate(context: vscode.ExtensionContext) {
     reviewInProgress,
     reading,
     changes.onDidShowChange(() => void review.sync()),
-    // Start Review and Add Review Comment are Add Comment, labelled by whether the Review is in progress.
-    ...["addComment", "startReview", "addToReview"].map((command) =>
+    // Start Review is Add Comment, labelled by whether the Review is in progress.
+    ...["addComment", "startReview"].map((command) =>
       vscode.commands.registerCommand(
         `dearReviewer.${command}`,
         (reply: vscode.CommentReply) => review.addComment(reply)
       )
+    ),
+    vscode.commands.registerCommand(
+      "dearReviewer.addToReview",
+      (reply: vscode.CommentReply) => review.addToReview(reply)
     ),
     vscode.commands.registerCommand(
       "dearReviewer.replyToThread",

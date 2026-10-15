@@ -223,7 +223,7 @@ describe("Existing review threads", () => {
             { author: "reviewer", body: "Is NEW used?", pending: true },
           ],
           resolved: false,
-          canReply: false,
+          canReply: true,
         },
         {
           file: path.join(head, "util.py"),

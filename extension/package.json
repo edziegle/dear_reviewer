@@ -776,7 +776,12 @@
         {
           "command": "dearReviewer.replyToThread",
           "group": "inline",
-          "when": "commentController == dearReviewer.review && !commentThreadIsEmpty"
+          "when": "commentController == dearReviewer.review && !commentThreadIsEmpty && commentThread != pending"
+        },
+        {
+          "command": "dearReviewer.addToReview",
+          "group": "inline",
+          "when": "commentController == dearReviewer.review && !commentThreadIsEmpty && commentThread == pending"
         }
       ],
       "comments/commentThread/title": [

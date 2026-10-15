@@ -5,7 +5,8 @@
 // and come back from it after a reload. Everyone's published threads show
 // too, and the Reviewer replies to them and resolves them (see ADR 0014). On
 // a local Change, the Comments are kept in the extension's storage until a
-// Brief ends the Review (see ADR 0016). A Finding the Reviewer converts
+// Brief ends the Review (see ADR 0016). The Reviewer's own threads in the
+// Review take follow-up Comments that wait for it too (see ADR 0024). A Finding the Reviewer converts
 // becomes a draft Comment at its place, saved only when they save it (see
 // ADR 0017). The Assistant learns the threads as they stand (see ADR 0023).
 
@@ -246,14 +247,28 @@ export class ReviewComments implements vscode.Disposable {
     });
   }
 
-  /** Adds the text the Reviewer wrote in a thread's reply box: pending if a Review is, or else published. */
+  /**
+   * Adds the text to the Review under way, from Add Review Comment: as a new
+   * thread's first Comment, or as a follow-up Comment on one of the
+   * Reviewer's pending threads (see ADR 0024).
+   */
+  addToReview(reply: vscode.CommentReply): Promise<void> {
+    return this.states.has(reply.thread)
+      ? this.reply(reply)
+      : this.addComment(reply);
+  }
+
+  /**
+   * Adds the text the Reviewer wrote in a thread's reply box: pending if a
+   * Review is, or else published. A pending thread's reply is always pending.
+   */
   async reply(reply: vscode.CommentReply): Promise<void> {
     const { thread, text } = reply;
     const state = this.states.get(thread);
     const place = this.placeOf(thread.uri);
     if (!state || !place) {
       void vscode.window.showErrorMessage(
-        "Replies go on the review threads of a pull request's Change."
+        "Replies go on the review threads of a Change open in this window."
       );
       return;
     }
@@ -547,20 +562,20 @@ export class ReviewComments implements vscode.Disposable {
   }
 
   /**
-   * The Reviewer edits a pending thread's Comments rather than replying to
-   * it. A published thread takes replies, and offers Resolve or Unresolve;
-   * it starts collapsed once resolved or outdated, as on github.com.
+   * Every thread takes replies: a pending thread's join the Review under
+   * way as follow-up Comments (see ADR 0024). A published thread offers
+   * Resolve or Unresolve; it starts collapsed once resolved or outdated, as
+   * on github.com.
    */
   private style(thread: vscode.CommentThread, state: ThreadState): void {
     this.states.set(thread, state);
     thread.label = state.outdated ? "Outdated" : undefined;
+    thread.canReply = true;
     if (state.pending) {
-      thread.canReply = false;
       thread.contextValue = "pending";
       thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
       return;
     }
-    thread.canReply = true;
     thread.contextValue = state.resolved ? "resolved" : "unresolved";
     thread.state = state.resolved
       ? vscode.CommentThreadState.Resolved

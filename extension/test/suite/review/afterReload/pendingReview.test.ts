@@ -17,8 +17,9 @@ const viewer = { login: "reviewer", token: "test-token" };
 const settingKeys = ["githubApiUrl", "repositories"];
 
 // A second launch of the workspace the first review launch left with a pull
-// request open and two Comments in its pending review. The fake GitHub kept
-// the pending review; the token, kept in memory, did not survive.
+// request open and four Comments in its pending review, two of them in one
+// thread. The fake GitHub kept the pending review; the token, kept in
+// memory, did not survive.
 describe("A pull request Review after a reload", () => {
   const { change, baseDir: base, headDir: head } = pickUpAfterReload();
   const found = new Map<string, unknown>();
@@ -45,6 +46,12 @@ describe("A pull request Review after a reload", () => {
   it("shows the pending review's Comments again, at their lines and sides", async () => {
     await eventually(async () =>
       assert.deepStrictEqual(await commentThreads(), [
+        {
+          file: path.join(base, "pkg/legacy.py"),
+          lines: [0, 0],
+          comments: ["Check the docs and tests too.", "And the changelog."],
+          editable: [true, true],
+        },
         {
           file: path.join(base, "util.py"),
           lines: [0, 1],
@@ -81,6 +88,12 @@ describe("A pull request Review after a reload", () => {
         body: "Please explain the docstring.",
         threads: [
           {
+            path: "pkg/legacy.py",
+            side: "LEFT",
+            line: 1,
+            comments: ["Check the docs and tests too.", "And the changelog."],
+          },
+          {
             path: "util.py",
             side: "LEFT",
             startLine: 1,
@@ -101,6 +114,12 @@ describe("A pull request Review after a reload", () => {
 
   it("ends the Review: its Comments stay on the diff, published, and no pending review is left", async () => {
     assert.deepStrictEqual(await commentThreads(), [
+      {
+        file: path.join(base, "pkg/legacy.py"),
+        lines: [0, 0],
+        comments: ["Check the docs and tests too.", "And the changelog."],
+        editable: [false, false],
+      },
       {
         file: path.join(base, "util.py"),
         lines: [0, 1],
@@ -158,13 +177,17 @@ describe("A pull request Review after a reload", () => {
     assert.deepStrictEqual(
       reviews.map((r) => [r.state, r.body, r.threads.length]),
       [
-        ["CHANGES_REQUESTED", "Please explain the docstring.", 2],
+        ["CHANGES_REQUESTED", "Please explain the docstring.", 3],
         ["APPROVED", "Looks good.", 1],
       ]
     );
     assert.deepStrictEqual(
       (await commentThreads()).map((t) => [t.comments, t.editable]),
       [
+        [
+          ["Check the docs and tests too.", "And the changelog."],
+          [false, false],
+        ],
         [["The old helper."], [false]],
         [["Is NEW used?"], [false]],
         [["Why a docstring here?"], [false]],

@@ -15,6 +15,7 @@ import {
   type FakePullRequest,
 } from "../github";
 import {
+  addReviewComment,
   bodyText,
   cancelEdit,
   comment,
@@ -23,6 +24,7 @@ import {
   deleteComment,
   editComment,
   reviewInProgressFiles,
+  reviewThreads,
   threadAt,
   withoutIds,
 } from "../review";
@@ -143,7 +145,7 @@ describe("Commenting on a pull request", () => {
       thread.comments.map((c) => bodyText(c)),
       ["Why a docstring?"]
     );
-    assert.strictEqual(thread.canReply, false);
+    assert.strictEqual(thread.canReply, true, "it takes follow-up Comments");
   });
 
   it("adds Comments on the base side to the same pending review", async () => {
@@ -335,6 +337,104 @@ describe("Commenting on a pull request", () => {
       [
         [path.join(base, "util.py"), ["The old helper."]],
         [path.join(head, "util.py"), ["Why a docstring here?"]],
+      ]
+    );
+  });
+
+  it("adds a follow-up Comment to a pending thread, in the same pending review", async () => {
+    const file = path.join(base, "pkg/legacy.py");
+    const thread = await comment(file, 0, 0, "Who used this?", "addToReview");
+
+    await addReviewComment(thread, "Check the docs too.");
+
+    const reviews = await reviewsOnGitHub();
+    assert.strictEqual(reviews.length, 1, "no review of its own for the reply");
+    const onGitHub = reviews[0].threads.find((t) => t.path === "pkg/legacy.py");
+    assert.deepStrictEqual(
+      onGitHub?.comments.map((c) => c.body),
+      ["Who used this?", "Check the docs too."]
+    );
+    assert.strictEqual(
+      onGitHub?.comments[1].reviewId,
+      reviews[0].id,
+      "the reply went in with the pending review's id"
+    );
+    assert.deepStrictEqual(
+      (await reviewThreads()).find((t) => t.file === file),
+      {
+        file,
+        lines: [0, 0],
+        comments: [
+          { author: "reviewer", body: "Who used this?", pending: true },
+          { author: "reviewer", body: "Check the docs too.", pending: true },
+        ],
+        resolved: false,
+        canReply: true,
+      }
+    );
+  });
+
+  it("edits and deletes a follow-up Comment on its own", async () => {
+    const thread = await threadAt(path.join(base, "pkg/legacy.py"), 0);
+    await addReviewComment(thread, "Never mind.");
+
+    await editComment(thread.comments[1], "Check the docs and tests too.");
+    await deleteComment(thread.comments[2]);
+
+    const [review] = (await reviewsOnGitHub()).map(withoutIds);
+    assert.deepStrictEqual(
+      review.threads.find((t) => t.path === "pkg/legacy.py")?.comments,
+      ["Who used this?", "Check the docs and tests too."]
+    );
+    assert.deepStrictEqual(
+      thread.comments.map((c) => bodyText(c)),
+      ["Who used this?", "Check the docs and tests too."]
+    );
+  });
+
+  it("keeps a thread whose first Comment is deleted, with its follow-up Comments, as GitHub does", async () => {
+    const file = path.join(base, "pkg/legacy.py");
+    const thread = await threadAt(file, 0);
+    await addReviewComment(thread, "And the changelog.");
+
+    await deleteComment(thread.comments[0]);
+
+    const [review] = (await reviewsOnGitHub()).map(withoutIds);
+    assert.deepStrictEqual(
+      review.threads.find((t) => t.path === "pkg/legacy.py")?.comments,
+      ["Check the docs and tests too.", "And the changelog."]
+    );
+    assert.deepStrictEqual(
+      (await commentThreads()).find((t) => t.file === file),
+      {
+        file,
+        lines: [0, 0],
+        comments: ["Check the docs and tests too.", "And the changelog."],
+        editable: [true, true],
+      }
+    );
+  });
+
+  it("offers Add Review Comment in a pending thread's reply box, and Reply in the others", () => {
+    const menus = vscode.extensions.getExtension("edziegle.dear-reviewer")!
+      .packageJSON.contributes.menus as Record<
+      string,
+      { command: string; when?: string }[]
+    >;
+    const ours = "commentController == dearReviewer.review";
+    assert.deepStrictEqual(
+      menus["comments/commentThread/context"]
+        .filter((m) => m.when?.includes("!commentThreadIsEmpty"))
+        .map((m) => [m.command, m.when]),
+      [
+        [
+          "dearReviewer.replyToThread",
+          `${ours} && !commentThreadIsEmpty && commentThread != pending`,
+        ],
+        [
+          "dearReviewer.addToReview",
+          `${ours} && !commentThreadIsEmpty && commentThread == pending`,
+        ],
       ]
     );
   });

@@ -112,6 +112,20 @@ export async function reply(
   });
 }
 
+/**
+ * Adds a follow-up Comment to a thread in the Review under way, typing in
+ * its reply box and pressing Add Review Comment.
+ */
+export async function addReviewComment(
+  thread: vscode.CommentThread,
+  text: string
+): Promise<void> {
+  await vscode.commands.executeCommand("dearReviewer.addToReview", {
+    thread,
+    text,
+  });
+}
+
 export function resolveThread(thread: vscode.CommentThread): Thenable<unknown> {
   return vscode.commands.executeCommand("dearReviewer.resolveThread", thread);
 }

@@ -12,7 +12,10 @@ import {
   workspaceFolders,
   worktreesOf,
 } from "../reviewer";
-import { reviewWindowReportFile } from "../reviewWindowProbe";
+import {
+  reviewWindowReportFile,
+  type ReviewWindowReport,
+} from "../reviewWindowProbe";
 
 describe("Open Change from a single-folder window", () => {
   it("leaves this window and its extension host alone, and shows the Change in the review window", async () => {
@@ -85,5 +88,100 @@ describe("Open Change from a single-folder window", () => {
       [repo.path]
     );
     for (const w of [base, head]) assert.ok(!fs.existsSync(w.path));
+  });
+
+  /** Waits for the review window to show what `check` asks of its report. */
+  async function inReviewWindow(
+    check: (report: ReviewWindowReport) => void
+  ): Promise<void> {
+    await eventually(() => {
+      const report = JSON.parse(
+        fs.readFileSync(reviewWindowReportFile(), "utf8")
+      ) as ReviewWindowReport;
+      check(report);
+    }, 30_000);
+  }
+
+  /**
+   * The open Changes still waiting for the review window to show them, from
+   * the list every window shares, next to the folder of Changes.
+   */
+  function pendingInReviewWindow(repository: string): string[] {
+    // A worktree is <folder of Changes>/<id>/base.
+    const changesDir = path.dirname(
+      path.dirname(worktreesOf(repository)[1].path)
+    );
+    const open = JSON.parse(
+      fs.readFileSync(
+        path.join(path.dirname(changesDir), "open-changes.json"),
+        "utf8"
+      )
+    ) as { id: string; diffPending?: boolean }[];
+    return open.filter((c) => c.diffPending).map((c) => c.id);
+  }
+
+  /** Two Changes of one repository, and their titles in the review window. */
+  function twoChangesOf(name: string) {
+    const repo = buildFixtureRepo(name);
+    const first = {
+      repository: repo.path,
+      base: repo.commits.initial,
+      head: repo.commits.renamed,
+    };
+    const second = {
+      repository: repo.path,
+      base: repo.commits.renamed,
+      head: repo.commits.documented,
+    };
+    const titleOf = (c: typeof first) =>
+      `${path.basename(repo.path)} ${short(c.base)}..${short(c.head)}`;
+    return { first, second, titles: [titleOf(first), titleOf(second)] };
+  }
+
+  /** The review window shows this Change in front, as a review starts. */
+  const inFront = (title: string) => (report: ReviewWindowReport) => {
+    assert.deepStrictEqual(report.changeFiles, [title]);
+    assert.strictEqual(report.tab, title);
+    assert.deepStrictEqual(report.tabs, [title]);
+  };
+
+  it("shows the Change behind in the review window once the one in front closes from this window", async () => {
+    const { first, second, titles } = twoChangesOf("closedElsewhere");
+    await openChange(first);
+    await openChange(second);
+    await inReviewWindow(inFront(titles[1]));
+
+    await closeChange(second);
+
+    try {
+      await inReviewWindow(inFront(titles[0]));
+    } finally {
+      await closeChange(first);
+    }
+  });
+
+  it("brings a Change opened again from this window to the front of the review window", async () => {
+    const { first, second, titles } = twoChangesOf("openedAgain");
+    await openChange(first);
+    await openChange(second);
+    await inReviewWindow(inFront(titles[1]));
+
+    try {
+      await openChange(first);
+      await inReviewWindow(inFront(titles[0]));
+
+      // Opened again while in front, it stays in front once the review
+      // window has taken it in again.
+      await openChange(first);
+      await eventually(
+        () =>
+          assert.deepStrictEqual(pendingInReviewWindow(first.repository), []),
+        30_000
+      );
+      await inReviewWindow(inFront(titles[0]));
+    } finally {
+      await closeChange(second);
+      await closeChange(first);
+    }
   });
 });

@@ -6,10 +6,13 @@ import { changeFiles, render } from "../changeFiles";
 import { buildFixtureRepo } from "../fixtures";
 import { configure, refreshInbox, serveGitHub, setToken } from "../github";
 import {
+  activeTabLabel,
   closeChange,
+  eventually,
   foldersAddedSince,
   gitIn,
   openChange,
+  short,
   workspaceFolders,
   worktreesOf,
 } from "../reviewer";
@@ -177,5 +180,38 @@ describe("A Change whose worktrees were deleted outside Dear Reviewer", () => {
     await refreshInbox();
 
     assert.deepStrictEqual(workspaceFolders(), before);
+  });
+
+  it("shows the Change behind as a review starts when the one in front is closed this way", async () => {
+    const repo = buildFixtureRepo("deletedInFront");
+    const behind = {
+      repository: repo.path,
+      base: repo.commits.initial,
+      head: repo.commits.renamed,
+    };
+    const inFront = {
+      repository: repo.path,
+      base: repo.commits.renamed,
+      head: repo.commits.documented,
+    };
+    const title = `${path.basename(repo.path)} ${short(behind.base)}..${short(behind.head)}`;
+    await openChange(behind);
+    const before = workspaceFolders();
+    await openChange(inFront);
+    deleteOutsideDearReviewer(foldersAddedSince(before));
+
+    await refreshInbox();
+
+    try {
+      await eventually(async () => {
+        assert.deepStrictEqual(
+          (await changeFiles()).map((entry) => entry.label),
+          [title]
+        );
+        assert.strictEqual(activeTabLabel(), title);
+      });
+    } finally {
+      await closeChange(behind);
+    }
   });
 });

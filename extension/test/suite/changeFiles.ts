@@ -184,6 +184,14 @@ export function filesIn(tab: vscode.Tab | undefined): string[] {
   return [];
 }
 
+/** Subscribes to every change of the Change files tree. */
+export async function changeFilesTreeChanged(): Promise<
+  (listener: () => void) => unknown
+> {
+  const view = await changeFilesView();
+  return (listener) => view.onDidChangeTreeData?.(listener);
+}
+
 async function changeFilesView(): Promise<ChangeFilesView> {
   const extension = vscode.extensions.getExtension<{
     changeFiles: ChangeFilesView;

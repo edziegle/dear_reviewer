@@ -12,6 +12,7 @@ import {
   viewedFilesKey,
 } from "../changeFiles";
 import { buildFixtureRepo } from "../fixtures";
+import { comment, commentThreads } from "../review";
 import {
   activeTabLabel,
   closeChange,
@@ -145,6 +146,36 @@ describe("Two open Changes", () => {
         true
       );
       assert.strictEqual((await viewedFilesKey()).length, 2);
+    } finally {
+      await closeChange(second);
+      await closeChange(first);
+    }
+  });
+
+  it("keeps the pending Comments of a Change behind the one in front, and shows them when it comes back", async () => {
+    const { first, second } = twoChangesOf("comments");
+    const before = workspaceFolders();
+    await openChange(first);
+    const [, head] = foldersAddedSince(before).map((f) => f.path);
+    const file = path.join(head, "util.py");
+    await comment(file, 0, 0, "Is the new name clearer?");
+    const pending = [
+      {
+        file,
+        lines: [0, 0],
+        comments: ["Is the new name clearer?"],
+        editable: [true],
+      },
+    ];
+
+    await openChange(second);
+
+    try {
+      assert.deepStrictEqual(await commentThreads(), pending);
+
+      await openChange(first);
+
+      assert.deepStrictEqual(await commentThreads(), pending);
     } finally {
       await closeChange(second);
       await closeChange(first);

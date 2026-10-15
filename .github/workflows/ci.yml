@@ -94,11 +94,12 @@ jobs:
 
   test-integration:
     needs: changes
-    if: needs.changes.outputs.code == 'true'
-    # Pull requests test on Linux, whose runners start at once; pushes to main,
-    # and so every release, on macOS, where the Reviewer runs Dear Reviewer
+    # Only pull requests: a push to main was tested as its pull request. The
+    # release pull request tests on macOS, where the Reviewer runs Dear
+    # Reviewer; the rest on Linux, whose runners start at once
     # (docs/adr/0029-ci-tests-on-linux.md).
-    runs-on: ${{ github.event_name == 'push' && 'macos-latest' || 'ubuntu-latest' }}
+    if: needs.changes.outputs.code == 'true' && github.event_name == 'pull_request'
+    runs-on: ${{ startsWith(github.head_ref, 'release-please--') && 'macos-latest' || 'ubuntu-latest' }}
     timeout-minutes: 30
     # Only the tests are worth cancelling: a cancelled commitlint run would
     # leave its push's commits unlinted.

@@ -122,8 +122,8 @@ function installFakeClaude() {
 }
 
 function writeUserSettings() {
-  // The built-in git extension can't find git under the agent sandbox and
-  // floods the log; Dear Reviewer runs git itself.
+  // The built-in git extension floods the log when it can't find git;
+  // Dear Reviewer runs git itself.
   const settings = path.join(userDataDir, "User", "settings.json");
   fs.mkdirSync(path.dirname(settings), { recursive: true });
   // Each suite starts in the window it asks for, not the last one restored.
@@ -301,7 +301,7 @@ async function launch({ phase, files }: Launch): Promise<string[]> {
         DEAR_REVIEWER_RESULT: suiteResult,
       },
       // --force-disable-user-env keeps the launching PATH instead of
-      // re-resolving it from the login shell, which the sandbox blocks.
+      // re-resolving it from the login shell.
       launchArgs: [
         openPath,
         "--extensions-dir",

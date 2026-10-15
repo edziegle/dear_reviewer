@@ -260,7 +260,8 @@ export class ReviewComments implements vscode.Disposable {
 
   /**
    * Adds the text the Reviewer wrote in a thread's reply box: pending if a
-   * Review is, or else published. A pending thread's reply is always pending.
+   * Review is, or else published. While this window shows a Review in
+   * progress, or the thread is pending, the reply is always pending.
    */
   async reply(reply: vscode.CommentReply): Promise<void> {
     const { thread, text } = reply;
@@ -274,7 +275,9 @@ export class ReviewComments implements vscode.Disposable {
     }
     let saved: { commentId: string; pending: boolean };
     try {
-      saved = await this.pending.reply(place.change, state.id, text);
+      // A Review in progress here holds the reply, whatever became of it on GitHub.
+      const inReview = state.pending || this.pendingCount(place.change) > 0;
+      saved = await this.pending.reply(place.change, state.id, text, inReview);
     } catch (err) {
       void vscode.window.showErrorMessage(
         `Couldn't save the reply: ${messageOf(err)}`

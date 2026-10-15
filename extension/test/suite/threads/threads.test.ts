@@ -4,6 +4,7 @@ import * as vscode from "vscode";
 import { buildPullRequestFixture } from "../fixtures";
 import {
   configure,
+  fakeGitHubUrl,
   inbox,
   inboxEntry,
   openFromInbox,
@@ -15,6 +16,9 @@ import {
   type FakePullRequest,
 } from "../github";
 import {
+  addReviewComment,
+  bodyText,
+  comment,
   reply,
   resolveThread,
   reviewThreads,
@@ -460,4 +464,79 @@ describe("Existing review threads", () => {
       "resolve",
     ]);
   });
+
+  it("never publishes a follow-up Comment when its pending review was submitted elsewhere", async () => {
+    const thread = await comment(
+      path.join(head, "pkg/sub/new.py"),
+      0,
+      0,
+      "Is NEW still used?",
+      "startReview"
+    );
+    await submitElsewhere();
+
+    // The first try finds the pending review gone; the next starts another.
+    await addReviewComment(thread, "And OLD?");
+    await addReviewComment(thread, "And OLD?");
+
+    assert.deepStrictEqual(
+      await statesOfReviewsHolding("And OLD?"),
+      ["PENDING"],
+      "the follow-up Comment waits for a Review"
+    );
+    assert.deepStrictEqual(
+      thread.comments.map((c) => [bodyText(c), c.contextValue]),
+      [
+        ["Is NEW still used?", "pending"],
+        ["And OLD?", "pending"],
+      ]
+    );
+  });
+
+  it("keeps a reply in the Review while one is in progress here, even when it was submitted elsewhere", async () => {
+    await submitElsewhere();
+    const thread = await threadAt(path.join(base, "util.py"), 1);
+
+    await reply(thread, "Still not needed.");
+    await reply(thread, "Still not needed.");
+
+    assert.deepStrictEqual(
+      await statesOfReviewsHolding("Still not needed."),
+      ["PENDING"],
+      "the reply waits for a Review"
+    );
+  });
+
+  /** The state of the review each Comment with this text went into. */
+  async function statesOfReviewsHolding(body: string): Promise<string[]> {
+    const reviews = await reviewsOnGitHub();
+    return reviews
+      .flatMap((r) =>
+        r.threads.flatMap((t) =>
+          t.comments.map((c) => ({ review: c.reviewId ?? r.id, body: c.body }))
+        )
+      )
+      .filter((c) => c.body === body)
+      .map((c) => reviews.find((r) => r.id === c.review)?.state ?? "missing");
+  }
+
+  /** Submits the Reviewer's pending review on github.com, out of the extension's sight. */
+  async function submitElsewhere(): Promise<void> {
+    const pending = (await reviewsOnGitHub()).find(
+      (r) => r.author === "reviewer" && r.state === "PENDING"
+    );
+    assert.ok(pending, "a pending review to submit");
+    const res = await fetch(`${fakeGitHubUrl()}/graphql`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${viewer.token}` },
+      body: JSON.stringify({
+        query:
+          "mutation($input: SubmitPullRequestReviewInput!) { submitPullRequestReview(input: $input) { pullRequestReview { id } } }",
+        variables: {
+          input: { pullRequestReviewId: pending.id, event: "COMMENT" },
+        },
+      }),
+    });
+    assert.ok(!("errors" in ((await res.json()) as object)));
+  }
 });

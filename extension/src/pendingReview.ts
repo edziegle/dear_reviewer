@@ -29,11 +29,16 @@ export interface PendingReviews {
     place: ThreadPlace,
     body: string
   ): Promise<{ threadId: string; commentId: string }>;
-  /** Replies to a thread. Gives the reply's id and whether it is pending. */
+  /**
+   * Replies to a thread. `inReview` says the Reviewer expects the reply to
+   * wait for the Review, so it never publishes. Gives the reply's id and
+   * whether it is pending.
+   */
   reply(
     change: Change,
     threadId: string,
-    body: string
+    body: string,
+    inReview: boolean
   ): Promise<{ commentId: string; pending: boolean }>;
   setResolved(
     change: Change,
@@ -63,8 +68,8 @@ export class PendingReviewsBySource implements PendingReviews {
     return this.of(change).addThread(change, place, body);
   }
 
-  reply(change: Change, threadId: string, body: string) {
-    return this.of(change).reply(change, threadId, body);
+  reply(change: Change, threadId: string, body: string, inReview: boolean) {
+    return this.of(change).reply(change, threadId, body, inReview);
   }
 
   setResolved(
@@ -157,16 +162,22 @@ export class GitHubPendingReviews implements PendingReviews {
 
   /**
    * Replies to a thread: into the pending review if one is open, or else
-   * published at once. Gives the reply's id and whether it is pending.
+   * published at once. A reply `inReview` is never published: it goes into
+   * the pending review, started at the Change's head if the last one was
+   * submitted or discarded elsewhere. Gives the reply's id and whether it is
+   * pending.
    */
   async reply(
     change: Change,
     threadId: string,
-    body: string
+    body: string,
+    inReview: boolean
   ): Promise<{ commentId: string; pending: boolean }> {
     const pullRequest = pullRequestOf(change);
     const key = keyOf(pullRequest);
-    let reviewId = await this.reviewIds.get(key);
+    let reviewId = inReview
+      ? await this.reviewId(pullRequest, change.headSha)
+      : await this.reviewIds.get(key);
     if (reviewId === undefined) {
       // One may have been started on github.com since.
       const found = await this.github.reviewThreads(

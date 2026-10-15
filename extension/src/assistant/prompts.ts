@@ -138,6 +138,34 @@ export async function summaryPrompt(change: Change): Promise<string> {
 }
 
 /**
+ * Asks for a Reading Order, as a JSON object that `parseReadingOrder` reads,
+ * after `note` if the conversation has news for the Assistant. It follows
+ * the summary in the same conversation, so it starts where the summary does.
+ */
+export function readingOrderPrompt(
+  files: string[],
+  start: string | undefined,
+  note?: string
+): string {
+  return [
+    ...(note ? [note, ""] : []),
+    "Suggest a Reading Order for the Reviewer: the order to read the Change's files in, so the Change reads as a story, such as an interface before its callers, the core change before the plumbing, and tests last.",
+    "",
+    start
+      ? `- Start with ${start}, where your summary says to start.`
+      : "- Start where your summary says to start.",
+    "- Group the files into a few steps, each with a label of a few words.",
+    "- Give each file a few words on why it comes there.",
+    "- List every changed file once, by its path relative to the repository root.",
+    "- Reply with only a JSON object of this shape, with no Markdown fence or prose around it:",
+    '{"steps": [{"label": "The API shape", "files": [{"path": "src/api.ts", "why": "the new interface"}]}]}',
+    "",
+    `Changed files (${files.length}):`,
+    ...files.map((f) => `- ${f}`),
+  ].join("\n");
+}
+
+/**
  * Asks the Assistant to explain what changed since the Reviewer's last
  * Review, which covered the commit `from`, after `note` if the conversation
  * has news for the Assistant.

@@ -5,7 +5,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 import type { FakeClaudeScript, RecordedClaudeCall } from "../fakeClaude";
-import { toolUse, waitFor } from "../fakeClaude";
+import { readingOrderRequest, toolUse, waitFor } from "../fakeClaude";
 import { eventually, type ChangeRequest } from "./reviewer";
 import type { Take } from "./timeline";
 
@@ -75,8 +75,20 @@ export function flag(
   return i >= 0 ? call.args[i + 1] : undefined;
 }
 
-/** The text of the user messages the run received. */
+/**
+ * The text of the user messages the run received, leaving out the requests
+ * for a Reading Order, which the fake answers on the side.
+ */
 export function userMessages(call: RecordedClaudeCall): string[] {
+  return messagesOf(call).filter((m) => !m.includes(readingOrderRequest));
+}
+
+/** The requests for a Reading Order the run received. */
+export function readingOrderRequests(call: RecordedClaudeCall): string[] {
+  return messagesOf(call).filter((m) => m.includes(readingOrderRequest));
+}
+
+function messagesOf(call: RecordedClaudeCall): string[] {
   return call.input
     .filter((m) => m.type === "user")
     .map((m) => {

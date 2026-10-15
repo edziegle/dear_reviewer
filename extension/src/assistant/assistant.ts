@@ -8,10 +8,13 @@
 // what changed, once for each such pair of commits, in the overview too (ADR
 // 0015). At the end of a local Change's Review, it turns the Reviewer's
 // Comments into a Brief in the same conversation (ADR 0016), and when the
-// Reviewer asks, it raises Findings there too (ADR 0017).
+// Reviewer asks, it raises Findings there too (ADR 0017). After the summary,
+// it suggests a Reading Order for the Change's files, out of the panel's
+// sight, and again when the Reviewer asks (ADR 0022).
 
 import * as vscode from "vscode";
-import { Change, changeTitle } from "../changeWorkspace";
+import { inTreeOrder } from "../changeFiles";
+import { Change, changedFiles, changeTitle } from "../changeWorkspace";
 import type { LocalThread } from "../localReviews";
 import { describeToolUse } from "./activity";
 import {
@@ -35,11 +38,18 @@ import {
   chatPrompt,
   findingsPrompt,
   newHeadNote,
+  readingOrderPrompt,
   Selection,
   sinceLastReviewPrompt,
   summaryPrompt,
 } from "./prompts";
 import { messageOf } from "../errors";
+import { findReferences } from "../markdown";
+import {
+  parseReadingOrder,
+  type ReadingOrder,
+  type ReadingOrderState,
+} from "../readingOrder";
 import { openReference } from "../references";
 
 /** Gives the head commit the Reviewer's last Review of the Change covered, if any. */
@@ -75,6 +85,9 @@ export class Assistants implements vscode.Disposable {
   private readonly overviewChanged = new vscode.EventEmitter<string>();
   /** Fires with a Change's conversation name when its overview's Assistant part changes. */
   readonly onDidChangeOverview = this.overviewChanged.event;
+  private readonly readingOrderChanged = new vscode.EventEmitter<string>();
+  /** Fires with a Change's conversation name when its Reading Order, or the writing of one, changes. */
+  readonly onDidChangeReadingOrder = this.readingOrderChanged.event;
 
   /**
    * `claudePath` gives the Reviewer's Claude Path setting; empty means find
@@ -115,6 +128,7 @@ export class Assistants implements vscode.Disposable {
       this.openLink,
       this.lastReview,
       () => this.overviewChanged.fire(change.conversation),
+      () => this.readingOrderChanged.fire(change.conversation),
       (current) => this.codeColumn(current),
       () => this.retryStart(assistant)
     );
@@ -143,6 +157,24 @@ export class Assistants implements vscode.Disposable {
   /** What the Change's overview shows from its Assistant, once it has started. */
   overviewOf(change: Change): AssistantOverview | undefined {
     return this.byConversation.get(change.conversation)?.overview;
+  }
+
+  /**
+   * The Change's Reading Order, from its Assistant if it has started, or
+   * else as its saved conversation kept it.
+   */
+  readingOrderOf(change: Change): ReadingOrderState | undefined {
+    const assistant = this.byConversation.get(change.conversation);
+    if (assistant) return assistant.readingOrderState;
+    const order = this.conversations.get(change.conversation)?.readingOrder;
+    return order && { writing: false, order };
+  }
+
+  /** Has the Change's Assistant suggest a Reading Order again, starting it if it hasn't started. */
+  async suggestReadingOrder(change: Change): Promise<void> {
+    const assistant = this.started(change);
+    await assistant.started;
+    await assistant.suggestReadingOrder();
   }
 
   /** Runs the problem's button of the Change's Assistant, such as to set the Claude path. */
@@ -289,6 +321,7 @@ export class Assistants implements vscode.Disposable {
     this.byConversation.clear();
     this.status.dispose();
     this.overviewChanged.dispose();
+    this.readingOrderChanged.dispose();
   }
 
   private async showLogin(cli: ClaudeCli): Promise<ClaudeLogin> {
@@ -336,6 +369,9 @@ class ChangeAssistant {
   private settle!: () => void;
   /** The summary the conversation started with. */
   private summary?: string;
+  private readingOrder?: ReadingOrder;
+  /** Whether a Reading Order is being written. */
+  private writingOrder = false;
   private overviewState: AssistantOverview;
 
   constructor(
@@ -346,6 +382,8 @@ class ChangeAssistant {
     private readonly lastReview: LastReview,
     /** Tells the Change's overview that what it shows from the Assistant changed. */
     private readonly overviewChanged: () => void,
+    /** Tells Change Files and the overview that the Reading Order changed. */
+    private readonly readingOrderChanged: () => void,
     /** The column the Change's code opens in. */
     private readonly codeColumn: (change: Change) => vscode.ViewColumn,
     /** Starts the Assistant again, once `claude` couldn't run. */
@@ -361,6 +399,7 @@ class ChangeAssistant {
     this.summary =
       saved?.summary ??
       saved?.messages.find((m) => m.from === "assistant")?.text;
+    this.readingOrder = saved?.readingOrder;
     const explained = saved?.sinceLastReview;
     this.overviewState =
       explained?.text && explained.to === change.headSha
@@ -385,6 +424,18 @@ class ChangeAssistant {
   /** What the Change's overview shows from the Assistant. */
   get overview(): AssistantOverview {
     return this.overviewState;
+  }
+
+  get readingOrderState(): ReadingOrderState {
+    return {
+      writing: this.writingOrder,
+      ...(this.readingOrder && { order: this.readingOrder }),
+    };
+  }
+
+  /** Has the Assistant suggest a Reading Order, after whatever it is busy with. */
+  suggestReadingOrder(): Promise<void> {
+    return this.enqueue(() => this.writeReadingOrder());
   }
 
   /** Whether `claude` couldn't run, so the Assistant can't take a turn. */
@@ -485,6 +536,7 @@ class ChangeAssistant {
         if (text === undefined) return;
         this.summary = text;
         this.save();
+        await this.writeReadingOrder();
       });
     this.settle();
     await summary;
@@ -673,6 +725,45 @@ class ChangeAssistant {
     });
   }
 
+  /**
+   * Asks for a Reading Order in a turn the panel doesn't show, starting at
+   * the summary's start, and keeps it if the reply holds a usable one. If
+   * the turn fails, the Change stays in tree order, with no problem shown:
+   * the next turn meets the problem, if it lasts.
+   */
+  private async writeReadingOrder(): Promise<void> {
+    const change = this.change;
+    const files = inTreeOrder(change, await changedFiles(change)).map(
+      (f) => f.path
+    );
+    const start = findReferences(this.summary ?? "").find((ref) =>
+      files.includes(ref.path)
+    )?.path;
+    const prompt = readingOrderPrompt(files, start, this.note);
+    this.note = undefined;
+    this.setWritingOrder(true);
+    let reply: string | undefined;
+    try {
+      reply = await this.turn(prompt, "hidden");
+    } catch {
+      this.update({ busy: false, stoppable: undefined, steps: undefined });
+    } finally {
+      this.setWritingOrder(false);
+    }
+    if (reply === undefined || this.disposed) return;
+    const steps = parseReadingOrder(reply, files, start);
+    if (!steps) return;
+    this.readingOrder = { headSha: change.headSha, steps };
+    this.save();
+    this.readingOrderChanged();
+  }
+
+  private setWritingOrder(writing: boolean): void {
+    if (this.disposed) return;
+    this.writingOrder = writing;
+    this.readingOrderChanged();
+  }
+
   private enqueue(task: () => Promise<void>): Promise<void> {
     const run = this.queue.then(async () => {
       if (this.disposed) return;
@@ -822,6 +913,7 @@ class ChangeAssistant {
       messages: this.state.messages,
       ...(this.summary && { summary: this.summary }),
       ...(this.explained && { sinceLastReview: this.explained }),
+      ...(this.readingOrder && { readingOrder: this.readingOrder }),
     });
   }
 }

@@ -61,6 +61,18 @@ export interface Take {
   canRetry?: boolean;
 }
 
+/** The Assistant's suggested order for reading the Change's files, as the overview lists it. */
+export interface ShownReadingOrder {
+  /** Whether the Assistant is writing it. */
+  writing: boolean;
+  /** Whether the Change has new commits since it was written. */
+  outOfDate: boolean;
+  steps: {
+    label: string;
+    files: { path: string; why?: string; viewed: boolean }[];
+  }[];
+}
+
 export interface Timeline {
   title: string;
   /** Such as `acme/api #7 · alice → main`. */
@@ -71,6 +83,7 @@ export interface Timeline {
   progress?: { viewed: number; total: number };
   navigationOff?: boolean;
   take: Take;
+  readingOrder?: ShownReadingOrder;
   finish: string;
   history: string;
   loading: boolean;
@@ -107,8 +120,12 @@ async function timelineApi(): Promise<TimelineApi> {
 }
 
 async function panel(title: string) {
-  const found = (await timelineApi()).panels().find((p) => p.title === title);
-  if (!found) throw new Error(`no overview panel "${title}"`);
+  const panels = (await timelineApi()).panels();
+  const found = panels.find((p) => p.title === title);
+  if (!found)
+    throw new Error(
+      `no overview panel "${title}" among ${JSON.stringify(panels.map((p) => p.title))}`
+    );
   return found;
 }
 
@@ -137,7 +154,14 @@ export async function clickRefresh(title: string): Promise<void> {
 /** Clicks one of the overview's buttons. */
 export async function clickOverview(
   title: string,
-  button: "finish" | "nextFile" | "ask" | "takeAction" | "takeRetry" | "trust"
+  button:
+    | "finish"
+    | "nextFile"
+    | "ask"
+    | "takeAction"
+    | "takeRetry"
+    | "trust"
+    | "suggestReadingOrder"
 ): Promise<void> {
   (await panel(title)).receive({ type: button });
 }
@@ -148,6 +172,14 @@ export async function clickTakeReference(
   reference: { path: string; startLine: number; endLine: number }
 ): Promise<void> {
   (await panel(title)).receive({ type: "openReference", ...reference });
+}
+
+/** Clicks a file in the overview's Reading Order. */
+export async function clickReadingOrderFile(
+  title: string,
+  file: string
+): Promise<void> {
+  (await panel(title)).receive({ type: "openFile", path: file });
 }
 
 /** What the overview with this title shows from the Assistant, as last sent. */

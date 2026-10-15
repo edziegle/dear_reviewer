@@ -1,7 +1,8 @@
 // The overview panel for one Change: the webview a Change opens with, alone
 // in the main column, that orients the Reviewer (ADR 0019, ADR 0020). Code
-// opens in the column beside it once the Reviewer starts reading. It shows what the Change is, how big it is, where
-// the Reviewer stands on it and the Assistant's short take, then its history:
+// opens in the column beside it once the Reviewer starts reading. It shows
+// what the Change is, how big it is, where the Reviewer stands on it, the
+// Assistant's short take and its Reading Order (ADR 0022), then its history:
 // a pull request's timeline from GitHub, or a local Change's commits. The
 // extension sends it the whole state; the webview renders it, says which
 // state it rendered, and asks the extension for everything else.
@@ -16,6 +17,7 @@ import {
   sharedScript,
   sharedStyles,
 } from "../markdownPanel";
+import type { ShownReadingOrder } from "../readingOrder";
 import type {
   CheckRunStatus,
   CheckStatus,
@@ -79,6 +81,8 @@ export interface TimelineState {
   /** Whether the review window is untrusted, so code navigation is off. */
   navigationOff?: boolean;
   take: OverviewTake;
+  /** The order the Assistant suggests for reading the Change's files, while it has one or writes one. */
+  readingOrder?: ShownReadingOrder;
   /** The button that finishes the Review: "Submit Review…" or "Write Brief…". */
   finish: string;
   /** "Timeline" for a pull request, "Commits" for a local Change. */
@@ -120,6 +124,8 @@ export type FromWebview =
   | Handshake
   | { type: "openLink"; url: string }
   | { type: "openReference"; path: string; startLine: number; endLine: number }
+  | { type: "openFile"; path: string }
+  | { type: "suggestReadingOrder" }
   | { type: "refresh" }
   | { type: "finish" }
   | { type: "nextFile" }
@@ -204,9 +210,13 @@ export class TimelinePanel {
         Number.isInteger(endLine)
       )
         this.onAction({ type: "openReference", path, startLine, endLine });
+    } else if (message.type === "openFile") {
+      if (typeof message.path === "string")
+        this.onAction({ type: "openFile", path: message.path });
     } else if (
       [
         "refresh",
+        "suggestReadingOrder",
         "finish",
         "nextFile",
         "ask",
@@ -330,6 +340,15 @@ function html(cspSource: string): string {
   .take .reading { font-style: italic; }
   .problem-line .link { margin-left: 4px; text-decoration: underline; }
   .overview .actions { margin-top: 12px; }
+  .order h2 { margin-top: 14px; margin-bottom: 4px; }
+  .order ol { margin: 0; padding-left: 1.6em; }
+  .order ol > li { margin: 6px 0 0; }
+  .order .step { font-weight: 600; }
+  .order ul li { display: flex; flex-wrap: wrap; gap: 0 6px; align-items: baseline; padding: 1px 0; }
+  .order .mark { width: 1em; flex: none; }
+  .order .file { font-family: var(--vscode-editor-font-family); overflow-wrap: anywhere; }
+  .order .viewed .file { color: var(--vscode-descriptionForeground); }
+  .order .reading { font-style: italic; }
   ul { list-style: none; padding: 0; margin: 0; }
   .checks li { display: flex; flex-wrap: wrap; gap: 0 8px; align-items: baseline; padding: 2px 0; }
   .checks .name { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; }
@@ -367,6 +386,11 @@ function html(cspSource: string): string {
       <div class="muted reading" id="reading"></div>
       <div class="muted problem-line" id="takeProblem" hidden></div>
     </div>
+  </div>
+  <div class="order" id="order" hidden>
+    <h2>Reading Order</h2>
+    <div class="muted" id="orderNote" role="status"></div>
+    <ol id="orderSteps"></ol>
   </div>
   <div class="actions" id="ways">
     <button class="primary" id="start" type="button" hidden></button>
@@ -547,6 +571,39 @@ function html(cspSource: string): string {
     }
   }
 
+  function readingOrder(state) {
+    const order = state.readingOrder;
+    byId("order").hidden = !order;
+    if (!order) return;
+    const said = JSON.stringify(order);
+    const node = byId("order");
+    if (node.dataset.said === said) return;
+    node.dataset.said = said;
+    const note = byId("orderNote");
+    note.replaceChildren();
+    note.className = order.writing ? "muted reading" : "muted";
+    if (order.writing) note.append("Choosing an order to read the files in…");
+    else if (order.outOfDate) note.append("Suggested before the latest commits, which are in the last step. ", textButton("Suggest again", () => vscode.postMessage({ type: "suggestReadingOrder" })));
+    byId("orderSteps").replaceChildren(...order.steps.map((step) => {
+      const li = el("li");
+      li.append(el("div", "step", step.label));
+      const files = el("ul");
+      files.append(...step.files.map((file) => {
+        const row = el("li", file.viewed ? "viewed" : "");
+        const mark = el("span", "mark", file.viewed ? "✓" : "");
+        mark.setAttribute("aria-label", file.viewed ? "Viewed" : "Not viewed");
+        const open = textButton(file.path, () => vscode.postMessage({ type: "openFile", path: file.path }));
+        open.classList.add("file");
+        open.title = "Open the diff of " + file.path;
+        row.append(mark, open);
+        if (file.why) row.append(el("span", "muted", file.why));
+        return row;
+      }));
+      li.append(files);
+      return li;
+    }));
+  }
+
   // The way in is the filled button until every file is viewed; then
   // finishing the Review is.
   function ways(state) {
@@ -588,6 +645,7 @@ function html(cspSource: string): string {
     facts(state);
     standing(state);
     take(state);
+    readingOrder(state);
     ways(state);
     setText(byId("history"), state.history);
     setText(byId("loading"), state.loading ? "Loading…" : "");

@@ -130,6 +130,23 @@
         "icon": "$(eye)"
       },
       {
+        "command": "dearReviewer.sortByReadingOrder",
+        "title": "Sort by Reading Order",
+        "category": "Dear Reviewer",
+        "icon": "$(list-ordered)"
+      },
+      {
+        "command": "dearReviewer.sortByTree",
+        "title": "Sort as Tree",
+        "category": "Dear Reviewer",
+        "icon": "$(list-tree)"
+      },
+      {
+        "command": "dearReviewer.suggestReadingOrder",
+        "title": "Suggest Reading Order",
+        "category": "Dear Reviewer"
+      },
+      {
         "command": "dearReviewer.nextUnviewedFile",
         "title": "Next Unviewed File",
         "category": "Dear Reviewer"
@@ -381,6 +398,16 @@
           "group": "navigation"
         },
         {
+          "command": "dearReviewer.sortByReadingOrder",
+          "when": "view == dearReviewer.changeFiles && dearReviewer.hasReadingOrder && dearReviewer.changeFilesSortBy == tree",
+          "group": "navigation"
+        },
+        {
+          "command": "dearReviewer.sortByTree",
+          "when": "view == dearReviewer.changeFiles && dearReviewer.hasReadingOrder && dearReviewer.changeFilesSortBy == readingOrder",
+          "group": "navigation"
+        },
+        {
           "command": "dearReviewer.findIssues",
           "when": "view == dearReviewer.findings",
           "group": "navigation"
@@ -414,6 +441,18 @@
         {
           "command": "dearReviewer.showViewedFiles",
           "when": "dearReviewer.hideViewedFiles"
+        },
+        {
+          "command": "dearReviewer.sortByReadingOrder",
+          "when": "dearReviewer.changeFilesSortBy == tree"
+        },
+        {
+          "command": "dearReviewer.sortByTree",
+          "when": "dearReviewer.changeFilesSortBy == readingOrder"
+        },
+        {
+          "command": "dearReviewer.suggestReadingOrder",
+          "when": "dearReviewer.hasOpenChange"
         },
         {
           "command": "dearReviewer.addComment",

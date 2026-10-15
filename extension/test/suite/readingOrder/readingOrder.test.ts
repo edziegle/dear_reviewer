@@ -1,0 +1,398 @@
+import * as assert from "assert";
+import * as path from "path";
+import {
+  assistantRuns,
+  renderedPanel,
+  replyTurn,
+  scriptClaude,
+  showAssistant,
+  summaryNote,
+  readingOrderRequests,
+  releaseClaude,
+  userMessages,
+  waitFor,
+} from "../assistant";
+import { buildFixtureRepo } from "../fixtures";
+import * as fs from "fs";
+import { leaveForReload } from "./handoff";
+import * as vscode from "vscode";
+import {
+  activeDiff,
+  changeFiles,
+  entryAt,
+  markViewed,
+  render,
+  review,
+} from "../changeFiles";
+import {
+  clickOverview,
+  clickReadingOrderFile,
+  overviewTake,
+  sentTimeline,
+  showTimeline,
+  type ShownReadingOrder,
+} from "../timeline";
+import { closeChange, eventually, openChange, short } from "../reviewer";
+
+/** The Assistant's reply to a request for a Reading Order, with this JSON in it. */
+function orderReply(json: unknown): Record<string, unknown>[] {
+  return replyTurn(
+    [
+      "Here is an order:",
+      "```json",
+      JSON.stringify(json),
+      "```",
+      "Enjoy.",
+    ].join("\n")
+  );
+}
+
+/** Waits until the overview shows this Reading Order. */
+async function overviewShows(
+  title: string,
+  expected: ShownReadingOrder | undefined
+): Promise<void> {
+  await eventually(async () =>
+    assert.deepStrictEqual((await sentTimeline(title)).readingOrder, expected)
+  );
+}
+
+// The Reading Order the Assistant suggests after its summary: in the
+// overview, in Change Files, and for stepping through the files. Runs first;
+// ./afterReload runs in a second launch of the same workspace.
+describe("The Reading Order", () => {
+  const repo = buildFixtureRepo("reading-order");
+  const request = {
+    repository: repo.path,
+    base: repo.commits.initial,
+    head: repo.commits.restructured,
+  };
+  const title = `${path.basename(repo.path)} ${short(repo.commits.initial)}..${short(repo.commits.restructured)}`;
+  const longLabel = `Then the package, ${"and more ".repeat(12)}`;
+  const longWhy = "because ".repeat(20);
+
+  it("lists the Assistant's steps in the overview, keeping only the Change's files, with its start first and the rest last", async () => {
+    scriptClaude({
+      turns: [
+        replyTurn(
+          "Renames the helper and restructures pkg. Start with util.py:1, where the rename happens."
+        ),
+      ],
+      readingOrder: [
+        waitFor("reading-order-written"),
+        ...orderReply({
+          steps: [
+            {
+              label: "The rename",
+              files: [
+                { path: "main.py", why: "calls the new name" },
+                { path: "util.py", why: "defines it" },
+                { path: "unknown.py", why: "not in the Change" },
+                { path: "main.py", why: "again" },
+              ],
+            },
+            {
+              label: longLabel,
+              files: [
+                { path: "pkg/core.py", why: longWhy },
+                { path: "../outside.py" },
+                { path: 42 },
+              ],
+            },
+            { label: "Nothing real", files: [{ path: "nowhere.py" }] },
+          ],
+        }),
+      ],
+    });
+
+    await openChange(request);
+
+    await overviewShows(title, { writing: true, outOfDate: false, steps: [] });
+    releaseClaude("reading-order-written");
+
+    await overviewShows(title, {
+      writing: false,
+      outOfDate: false,
+      steps: [
+        {
+          label: "The rename",
+          files: [
+            { path: "util.py", why: "defines it", viewed: false },
+            { path: "main.py", why: "calls the new name", viewed: false },
+          ],
+        },
+        {
+          label: `${longLabel.slice(0, 79)}…`,
+          files: [
+            {
+              path: "pkg/core.py",
+              why: `${longWhy.slice(0, 79)}…`,
+              viewed: false,
+            },
+          ],
+        },
+        {
+          label: "Other files",
+          files: [
+            { path: "pkg/sub/new.py", viewed: false },
+            { path: "pkg/legacy.py", viewed: false },
+            { path: "added.py", viewed: false },
+            { path: "obsolete.py", viewed: false },
+          ],
+        },
+      ],
+    });
+    const [run] = assistantRuns();
+    assert.strictEqual(userMessages(run).length, 1, "the summary");
+    const [asked, ...more] = readingOrderRequests(run);
+    assert.deepStrictEqual(more, [], "then one request for the order");
+    for (const expected of ["Start with util.py", "pkg/sub/new.py"])
+      assert.ok(asked.includes(expected), `${expected} in ${asked}`);
+    await showAssistant(request);
+    await eventually(async () =>
+      assert.deepStrictEqual((await renderedPanel(title))?.messages, [
+        summaryNote,
+      ])
+    );
+
+    await closeChange(request);
+  });
+
+  it("leaves a Change in tree order when the reply holds no usable order, with no error", async () => {
+    scriptClaude({
+      turns: [replyTurn("Renames the helper. Start with util.py:1.")],
+      readingOrder: replyTurn("I would rather not say."),
+    });
+    const other = { ...request, head: repo.commits.renamed };
+    const otherTitle = `${path.basename(repo.path)} ${short(repo.commits.initial)}..${short(repo.commits.renamed)}`;
+
+    await openChange(other);
+
+    await eventually(() => {
+      const [run] = assistantRuns();
+      assert.strictEqual(run && readingOrderRequests(run).length, 1);
+    });
+    await eventually(async () =>
+      assert.deepStrictEqual(render(await changeFiles()), [
+        `${otherTitle} — 0 of 4 viewed`,
+        "  added.py [A]",
+        "  main.py [M]",
+        "  obsolete.py [D]",
+        "  util.py [M]",
+      ])
+    );
+    await overviewShows(otherTitle, undefined);
+    assert.strictEqual((await overviewTake(otherTitle))?.problem, undefined);
+
+    await closeChange(other);
+  });
+
+  it("lists a Change in Change Files by its Reading Order, kept from its conversation, or as a tree", async () => {
+    scriptClaude({
+      turns: [replyTurn("A summary that shouldn't be written.")],
+    });
+    const cutLabel = `${longLabel.slice(0, 79)}…`;
+    const cutWhy = `${longWhy.slice(0, 79)}…`;
+    const inReadingOrder = [
+      `${title} — 0 of 7 viewed`,
+      "  1. The rename",
+      "    util.py [M] — defines it",
+      "    main.py [M] — calls the new name",
+      `  2. ${cutLabel}`,
+      `    core.py [M] — pkg · ${cutWhy}`,
+      "  3. Other files",
+      "    new.py [A] — pkg/sub",
+      "    legacy.py [D] — pkg",
+      "    added.py [A]",
+      "    obsolete.py [D]",
+    ];
+
+    await openChange(request);
+
+    await eventually(async () =>
+      assert.deepStrictEqual(render(await changeFiles()), inReadingOrder)
+    );
+    assert.deepStrictEqual(assistantRuns(), [], "no new turn");
+
+    await vscode.commands.executeCommand("dearReviewer.sortByTree");
+
+    assert.deepStrictEqual(render(await changeFiles()), [
+      `${title} — 0 of 7 viewed`,
+      "  pkg",
+      "    sub",
+      "      new.py [A]",
+      "    core.py [M]",
+      "    legacy.py [D]",
+      "  added.py [A]",
+      "  main.py [M]",
+      "  obsolete.py [D]",
+      "  util.py [M]",
+    ]);
+
+    await vscode.commands.executeCommand("dearReviewer.sortByReadingOrder");
+
+    assert.deepStrictEqual(render(await changeFiles()), inReadingOrder);
+  });
+
+  it("steps through the unviewed files in the Reading Order, and checks them off in the overview", async () => {
+    const tree = await changeFiles();
+    await markViewed(
+      entryAt(tree, title, `2. ${longLabel.slice(0, 79)}…`, "core.py")
+    );
+    await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+    // The diff's head side is in the head worktree, so its path ends with the file's.
+    const shown = () => {
+      const file = activeDiff().modified.path;
+      return (
+        ["util.py", "main.py", "pkg/sub/new.py", "pkg/core.py"].find((f) =>
+          file.endsWith(`/${f}`)
+        ) ?? file
+      );
+    };
+    const opened: string[] = [];
+    const step = async (command: "nextUnviewedFile" | "markViewedAndNext") => {
+      const before = opened.at(-1);
+      await review(command);
+      await eventually(() => assert.notStrictEqual(shown(), before));
+      opened.push(shown());
+    };
+
+    await step("nextUnviewedFile");
+    await step("markViewedAndNext");
+    await step("markViewedAndNext");
+
+    assert.deepStrictEqual(opened, ["util.py", "main.py", "pkg/sub/new.py"]);
+    // Closing every editor closed the overview too.
+    await showTimeline(request);
+    await eventually(async () => {
+      const viewed = (await sentTimeline(title)).readingOrder?.steps
+        .flatMap((s) => s.files)
+        .filter((f) => f.viewed)
+        .map((f) => f.path);
+      assert.deepStrictEqual(viewed, ["util.py", "main.py", "pkg/core.py"]);
+    });
+  });
+
+  it("keeps the Reading Order after new commits, marked out of date with what they changed last, until the Reviewer asks again", async () => {
+    repo.git("branch", "order", repo.commits.documented);
+    const branch = {
+      repository: repo.path,
+      base: repo.commits.initial,
+      head: "refs/heads/order",
+    };
+    // A branch's overview is named after the branch, whatever its head.
+    const overview = "order";
+    scriptClaude({
+      turns: [replyTurn("Renames the helper. Start with util.py:1.")],
+      readingOrder: orderReply({
+        steps: [
+          {
+            label: "The rename",
+            files: [
+              { path: "util.py" },
+              { path: "main.py" },
+              { path: "added.py" },
+              { path: "obsolete.py" },
+            ],
+          },
+        ],
+      }),
+    });
+    await openChange(branch);
+    await eventually(async () =>
+      assert.strictEqual(
+        (await sentTimeline(overview)).readingOrder?.steps.length,
+        1
+      )
+    );
+
+    await clickReadingOrderFile(overview, "main.py");
+
+    await eventually(() =>
+      assert.ok(activeDiff().modified.path.endsWith("/main.py"))
+    );
+
+    fs.writeFileSync(
+      path.join(repo.path, "util.py"),
+      "def new_helper():\n    return 3\n"
+    );
+    fs.writeFileSync(path.join(repo.path, "since.py"), "SINCE = 1\n");
+    repo.git("add", "-A");
+    repo.git("commit", "-q", "-m", "later");
+    const later = repo.git("rev-parse", "HEAD");
+    repo.git("branch", "-f", "order", later);
+    // Main without the branch's commits, or the branch's Change would end as merged.
+    repo.git("reset", "-q", "--hard", repo.commits.restructured);
+    scriptClaude({
+      turns: [replyTurn("Shouldn't be asked.")],
+      readingOrder: orderReply({
+        steps: [{ label: "Everything", files: [{ path: "since.py" }] }],
+      }),
+    });
+
+    await openChange(branch);
+
+    await overviewShows(overview, {
+      writing: false,
+      outOfDate: true,
+      steps: [
+        {
+          label: "The rename",
+          files: [
+            { path: "main.py", viewed: false },
+            { path: "added.py", viewed: false },
+            { path: "obsolete.py", viewed: false },
+          ],
+        },
+        {
+          label: "Since the suggestion",
+          files: [
+            { path: "pkg/sub/new.py", viewed: false },
+            { path: "pkg/core.py", viewed: false },
+            { path: "pkg/legacy.py", viewed: false },
+            { path: "since.py", viewed: false },
+            { path: "util.py", viewed: false },
+          ],
+        },
+      ],
+    });
+    assert.deepStrictEqual(assistantRuns(), [], "no new turn on its own");
+
+    await clickOverview(overview, "suggestReadingOrder");
+
+    await overviewShows(overview, {
+      writing: false,
+      outOfDate: false,
+      steps: [
+        {
+          label: "Everything",
+          files: [
+            { path: "util.py", viewed: false },
+            { path: "since.py", viewed: false },
+          ],
+        },
+        {
+          label: "Other files",
+          files: [
+            { path: "pkg/sub/new.py", viewed: false },
+            { path: "pkg/core.py", viewed: false },
+            { path: "pkg/legacy.py", viewed: false },
+            { path: "added.py", viewed: false },
+            { path: "main.py", viewed: false },
+            { path: "obsolete.py", viewed: false },
+          ],
+        },
+      ],
+    });
+    const [run] = assistantRuns();
+    const [prompt] = readingOrderRequests(run);
+    assert.ok(prompt.includes(later), `it hears of the new head: ${prompt}`);
+
+    leaveForReload({
+      branch,
+      overview,
+      readingOrder: (await sentTimeline(overview)).readingOrder!,
+      changeFiles: render(await changeFiles()),
+    });
+  });
+});

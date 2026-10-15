@@ -1,8 +1,9 @@
 // The Change files view: each open Change in this window, with its files as a
-// directory tree. A Change shows how many files are viewed and whether it has
-// new commits since the Reviewer's last Review, and holds the actions that
-// finish its Review. Files show their status and a viewed checkbox; selecting
-// one opens its diff between the base and head worktrees.
+// directory tree, or in the steps of its Reading Order (ADR 0022). A Change
+// shows how many files are viewed and whether it has new commits since the
+// Reviewer's last Review, and holds the actions that finish its Review.
+// Files show their status and a viewed checkbox; selecting one opens its diff
+// between the base and head worktrees.
 
 import * as fs from "fs";
 import * as path from "path";
@@ -19,6 +20,12 @@ import {
 import { setContext } from "./context";
 import { messageOf } from "./errors";
 import { SignInRejectedError } from "./github/client";
+import {
+  stepsAt,
+  type ReadingOrderState,
+  type ReadingStep,
+  type ShownReadingOrder,
+} from "./readingOrder";
 import { hasFolder } from "./reviewWindow";
 import { ViewedFiles } from "./viewedFiles";
 
@@ -39,7 +46,25 @@ export type ChangeFilesNode =
       files: ChangedFile[];
       children: ChangeFilesNode[];
     }
-  | { kind: "file"; change: Change; file: ChangedFile; viewed: boolean }
+  | {
+      kind: "step";
+      change: Change;
+      /** Counted from 0. */
+      index: number;
+      label: string;
+      files: ChangedFile[];
+      children: ChangeFilesNode[];
+    }
+  | {
+      kind: "file";
+      change: Change;
+      file: ChangedFile;
+      viewed: boolean;
+      /** Why the file comes where it does, in a step of the Reading Order. */
+      why?: string;
+      /** Whether it is listed flat in a step, rather than in its directory. */
+      inStep?: boolean;
+    }
   | {
       kind: "problem";
       message: string;
@@ -72,6 +97,14 @@ const statuses: Record<
   },
 };
 
+/** How Change Files lists a Change's files. */
+export type SortBy = "readingOrder" | "tree";
+
+interface Settings {
+  hideViewed?: boolean;
+  sortBy?: SortBy;
+}
+
 export class ChangeFilesView
   implements
     vscode.TreeDataProvider<ChangeFilesNode>,
@@ -94,9 +127,13 @@ export class ChangeFilesView
       change: Change
     ) => Promise<string | undefined>,
     /** The column a diff of the Change opens in: beside its overview. */
-    private readonly codeColumn: (change: Change) => Promise<vscode.ViewColumn>
+    private readonly codeColumn: (change: Change) => Promise<vscode.ViewColumn>,
+    /** The Change's Reading Order, and whether the Assistant is writing one. */
+    private readonly readingOrderOf: (
+      change: Change
+    ) => ReadingOrderState | undefined
   ) {
-    void this.showHideViewedContext();
+    void this.showSettingsContext();
   }
 
   refresh(): void {
@@ -110,22 +147,51 @@ export class ChangeFilesView
   }
 
   get hidesViewed(): boolean {
-    try {
-      const settings = JSON.parse(fs.readFileSync(this.settingsFile, "utf8"));
-      return settings.hideViewed === true;
-    } catch {
-      return false;
-    }
+    return this.settings().hideViewed === true;
   }
 
   async setHideViewed(hide: boolean): Promise<void> {
-    fs.mkdirSync(path.dirname(this.settingsFile), { recursive: true });
-    fs.writeFileSync(
-      this.settingsFile,
-      JSON.stringify({ hideViewed: hide }, null, 2)
-    );
-    await this.showHideViewedContext();
-    this.refresh();
+    await this.changeSettings({ hideViewed: hide });
+  }
+
+  /** Reading Order, for the Changes that have one, until the Reviewer picks Tree. */
+  get sortBy(): SortBy {
+    return this.settings().sortBy === "tree" ? "tree" : "readingOrder";
+  }
+
+  async setSortBy(sortBy: SortBy): Promise<void> {
+    await this.changeSettings({ sortBy });
+  }
+
+  /**
+   * The Change's Reading Order as the overview lists it, at its head and
+   * with each file's viewed state, while it has one or one is being written.
+   */
+  async readingOrder(change: Change): Promise<ShownReadingOrder | undefined> {
+    const state = this.readingOrderOf(change);
+    if (!state?.order)
+      return state?.writing
+        ? { ...state, outOfDate: false, steps: [] }
+        : undefined;
+    const [{ steps, outOfDate }, viewed] = await Promise.all([
+      stepsAt(
+        change,
+        state.order,
+        inTreeOrder(change, await this.filesOf(change))
+      ),
+      this.viewedFiles.viewed(change),
+    ]);
+    return {
+      writing: state.writing,
+      outOfDate,
+      steps: steps.map((step) => ({
+        label: step.label,
+        files: step.files.map((file) => ({
+          ...file,
+          viewed: viewed.has(file.path),
+        })),
+      })),
+    };
   }
 
   /** Marks the files of these nodes, including those under directories and Changes. */
@@ -174,7 +240,13 @@ export class ChangeFilesView
     from: string | undefined,
     direction: 1 | -1
   ): Promise<{ file?: ChangedFile; total: number }> {
-    const files = inViewOrder(change, await this.filesOf(change));
+    const all = await this.filesOf(change);
+    const steps = await this.stepsOf(change, all);
+    const files = steps
+      ? filesInSteps(all, steps).flatMap((s) =>
+          s.files.map(({ why: _, ...file }) => file)
+        )
+      : inTreeOrder(change, all);
     const viewed = await this.viewedFiles.viewed(change);
     const start = from ? files.findIndex((f) => f.path === from) : -1;
     for (let step = 1; step <= files.length; step++) {
@@ -217,6 +289,12 @@ export class ChangeFilesView
     return this.openDiff({ kind: "file", change, file, viewed: false });
   }
 
+  /** Opens the diff of the Change's file at this path, if it is one of its files. */
+  async openPath(change: Change, filePath: string): Promise<void> {
+    const file = (await this.filesOf(change)).find((f) => f.path === filePath);
+    if (file) await this.openFile(change, file);
+  }
+
   async openDiff(node: ChangeFilesNode): Promise<void> {
     if (node.kind !== "file") return;
     const { change, file } = node;
@@ -241,6 +319,10 @@ export class ChangeFilesView
     if (node) return "children" in node ? node.children : [];
     const open = this.openChanges().filter(
       (change) => hasFolder(change.baseDir) && hasFolder(change.headDir)
+    );
+    void setContext(
+      "dearReviewer.hasReadingOrder",
+      open.some((change) => this.readingOrderOf(change)?.order)
     );
     return Promise.all(open.map((change) => this.changeNode(change)));
   }
@@ -281,6 +363,16 @@ export class ChangeFilesView
         ].join(".");
         return item;
       }
+      case "step": {
+        const item = new vscode.TreeItem(
+          `${node.index + 1}. ${node.label}`,
+          vscode.TreeItemCollapsibleState.Expanded
+        );
+        item.id = `${node.change.id}:step:${node.index}`;
+        item.iconPath = new vscode.ThemeIcon("list-ordered");
+        item.contextValue = "step";
+        return item;
+      }
       case "directory": {
         const item = new vscode.TreeItem(
           path.posix.basename(node.path),
@@ -298,7 +390,18 @@ export class ChangeFilesView
         item.id = `${change.id}:${file.path}`;
         item.resourceUri = resourceUri(change, file.path, file.status);
         item.iconPath = vscode.ThemeIcon.File;
-        item.tooltip = `${file.path} · ${statuses[file.status].tooltip}`;
+        item.tooltip = [
+          file.path,
+          statuses[file.status].tooltip,
+          ...(node.why ? [node.why] : []),
+        ].join(" · ");
+        if (node.inStep) {
+          const dir = path.posix.dirname(file.path);
+          item.description = [
+            ...(dir === "." ? [] : [dir]),
+            ...(node.why ? [node.why] : []),
+          ].join(" · ");
+        }
         item.checkboxState = {
           state: node.viewed
             ? vscode.TreeItemCheckboxState.Checked
@@ -349,6 +452,7 @@ export class ChangeFilesView
       };
     }
     const reviewed = await this.reviewedOf(change);
+    const steps = await this.stepsOf(change, files);
     return {
       kind: "change",
       change,
@@ -358,8 +462,39 @@ export class ChangeFilesView
         sinceReview:
           reviewed === change.headSha ? "noNewCommits" : "newCommits",
       }),
-      children: directoryTree(change, files, viewed, this.hidesViewed),
+      children: steps
+        ? stepNodes(change, files, steps, viewed, this.hidesViewed)
+        : directoryTree(change, files, viewed, this.hidesViewed),
     };
+  }
+
+  /** The Reading Order's steps, while the view lists the Change by one. */
+  private async stepsOf(
+    change: Change,
+    files: ChangedFile[]
+  ): Promise<ReadingStep[] | undefined> {
+    const order = this.readingOrderOf(change)?.order;
+    if (this.sortBy !== "readingOrder" || !order) return;
+    const { steps } = await stepsAt(change, order, inTreeOrder(change, files));
+    return steps;
+  }
+
+  private settings(): Settings {
+    try {
+      return JSON.parse(fs.readFileSync(this.settingsFile, "utf8")) as Settings;
+    } catch {
+      return {};
+    }
+  }
+
+  private async changeSettings(changes: Settings): Promise<void> {
+    fs.mkdirSync(path.dirname(this.settingsFile), { recursive: true });
+    fs.writeFileSync(
+      this.settingsFile,
+      JSON.stringify({ ...this.settings(), ...changes }, null, 2)
+    );
+    await this.showSettingsContext();
+    this.refresh();
   }
 
   /** The commit the Change's last Review covered; unknown counts as none. */
@@ -385,13 +520,17 @@ export class ChangeFilesView
     return files;
   }
 
-  private showHideViewedContext(): Thenable<unknown> {
-    return setContext("dearReviewer.hideViewedFiles", this.hidesViewed);
+  private async showSettingsContext(): Promise<void> {
+    await setContext("dearReviewer.hideViewedFiles", this.hidesViewed);
+    await setContext("dearReviewer.changeFilesSortBy", this.sortBy);
   }
 }
 
-/** The Change's files in the order the view lists them. */
-function inViewOrder(change: Change, files: ChangedFile[]): ChangedFile[] {
+/** The Change's files in the order the view lists them as a tree. */
+export function inTreeOrder(
+  change: Change,
+  files: ChangedFile[]
+): ChangedFile[] {
   const flat = (nodes: ChangeFilesNode[]): ChangedFile[] =>
     nodes.flatMap((node) =>
       node.kind === "file"
@@ -401,6 +540,56 @@ function inViewOrder(change: Change, files: ChangedFile[]): ChangedFile[] {
           : []
     );
   return flat(directoryTree(change, files, new Set(), false));
+}
+
+/** The Change's files in each step, which lists only the Change's files. */
+function filesInSteps(
+  files: ChangedFile[],
+  steps: ReadingStep[]
+): { step: ReadingStep; files: (ChangedFile & { why?: string })[] }[] {
+  const byPath = new Map(files.map((f) => [f.path, f]));
+  return steps.map((step) => ({
+    step,
+    files: step.files.map((f) => ({
+      ...byPath.get(f.path)!,
+      ...(f.why && { why: f.why }),
+    })),
+  }));
+}
+
+/** The Reading Order's steps, each with its files flat beneath it; empty steps are left out. */
+function stepNodes(
+  change: Change,
+  files: ChangedFile[],
+  steps: ReadingStep[],
+  viewed: ReadonlySet<string>,
+  hideViewed: boolean
+): ChangeFilesNode[] {
+  return filesInSteps(files, steps).flatMap(
+    ({ step, files: inStep }, index) => {
+      const children = inStep
+        .filter((f) => !(hideViewed && viewed.has(f.path)))
+        .map(({ why, ...file }) => ({
+          kind: "file" as const,
+          change,
+          file,
+          viewed: viewed.has(file.path),
+          ...(why && { why }),
+          inStep: true,
+        }));
+      if (children.length === 0) return [];
+      return [
+        {
+          kind: "step" as const,
+          change,
+          index,
+          label: step.label,
+          files: inStep.map(({ why: _, ...file }) => file),
+          children,
+        },
+      ];
+    }
+  );
 }
 
 interface Directory {

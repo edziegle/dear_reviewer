@@ -16,6 +16,10 @@
 //   sessions/     each session's working directory and user messages
 //   <name>        a file a turn waits for (see waitFor), written by the test
 //
+// A request for a Reading Order, which follows every new summary, gets the
+// script's `readingOrder` answer on the side, so the scripted turns stay
+// the summary and what the Reviewer asks.
+//
 // In the scripted events, the strings {head} and {base} stand for the first
 // and second `--add-dir` the run was given, the Change's worktrees, so a
 // tool-use event (see toolUse) can name files the way Claude Code does.
@@ -37,7 +41,15 @@ export interface FakeClaudeScript {
    * session, and a `waitFor` event pauses the turn until its file exists.
    */
   turns?: Record<string, unknown>[][];
+  /**
+   * The stream-json events printed for every request for a Reading Order,
+   * which take no turn. Defaults to a reply with no order in it.
+   */
+  readingOrder?: Record<string, unknown>[];
 }
+
+/** What a request for a Reading Order says, which the fake answers on the side. */
+export const readingOrderRequest = "Suggest a Reading Order";
 
 /** An event that holds the rest of the turn back until the test writes the file. */
 export function waitFor(name: string): Record<string, unknown> {
@@ -198,14 +210,23 @@ function main(): void {
     call.input.push(message);
     record();
     if (message.type !== "user") return;
-    session.messages.push(textOf(message));
+    const text = textOf(message);
+    session.messages.push(text);
     fs.writeFileSync(sessionFile, JSON.stringify(session));
-    const taken = Number(readText(turnCounter) ?? "0");
-    fs.writeFileSync(turnCounter, String(taken + 1));
-    const events = turns[Math.min(taken, turns.length - 1)];
     const worktrees = args.flatMap((arg, i) =>
       args[i - 1] === "--add-dir" ? [arg] : []
     );
+    if (text.includes(readingOrderRequest)) {
+      const events =
+        script.readingOrder ?? defaultTurn("No Reading Order, sorry.");
+      replying = replying.then(() =>
+        reply(stateDir, events, sessionId, worktrees)
+      );
+      return;
+    }
+    const taken = Number(readText(turnCounter) ?? "0");
+    fs.writeFileSync(turnCounter, String(taken + 1));
+    const events = turns[Math.min(taken, turns.length - 1)];
     replying = replying.then(() =>
       reply(stateDir, events, sessionId, worktrees)
     );

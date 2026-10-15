@@ -1,12 +1,13 @@
 // Each Change's Assistant conversation, kept in the extension's storage so it
 // outlasts the window and the Change's worktrees: the Claude session to
 // resume, the messages the panel shows, the head they were about, and what
-// the Change's overview shows from the Assistant. Kept
+// the Change's overview shows from the Assistant, and its Reading Order. Kept
 // by the Change's conversation name, which new commits don't change (ADR 0009).
 
 import * as crypto from "crypto";
 import * as fs from "fs";
 import * as path from "path";
+import type { ReadingOrder } from "../readingOrder";
 import type { Message } from "./panel";
 
 export interface SavedConversation {
@@ -22,6 +23,8 @@ export interface SavedConversation {
    * explained, and what it said, which the overview shows.
    */
   sinceLastReview?: { from: string; to: string; text?: string };
+  /** The order the Assistant suggested for reading the Change's files. */
+  readingOrder?: ReadingOrder;
 }
 
 export class Conversations {

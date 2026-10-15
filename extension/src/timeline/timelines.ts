@@ -1,9 +1,9 @@
 // The overview of each Change shown in this window (ADR 0019): one panel per
 // Change, opened alone in the main column when the Change opens, which
 // orients the Reviewer before they read; their code then opens beside it
-// (ADR 0020). It shows what the Change is, its size, where
-// the Reviewer stands on it and the Assistant's short take, then its
-// history: a pull request's timeline, loaded from GitHub, or a local
+// (ADR 0020). It shows what the Change is, its size, where the Reviewer
+// stands on it, the Assistant's short take and its Reading Order (ADR 0022),
+// then its history: a pull request's timeline, loaded from GitHub, or a local
 // Change's commits, from git. Links in the panel open through the
 // extension, and only the ones it sent; `path:line` references open only
 // the Change's own files.
@@ -34,6 +34,7 @@ import {
   type TimelineState,
 } from "./panel";
 import { isUnreachable, messageOf } from "../errors";
+import type { ShownReadingOrder } from "../readingOrder";
 
 const signIn = "Sign In to GitHub";
 
@@ -55,10 +56,21 @@ export interface OverviewSources {
   navigationOff(): boolean;
   /** What the Change's Assistant has to show, once it has started. */
   take(change: Change): OverviewTake | undefined;
+  /** The Change's Reading Order, with each file's viewed state. */
+  readingOrder(change: Change): Promise<ShownReadingOrder | undefined>;
+  /** Opens the diff of one of the Change's files. */
+  openFile(change: Change, path: string): void;
   /** Runs an action the overview offers for the Change. */
   act(
     change: Change,
-    action: "finish" | "nextFile" | "ask" | "takeAction" | "takeRetry" | "trust"
+    action:
+      | "finish"
+      | "nextFile"
+      | "ask"
+      | "takeAction"
+      | "takeRetry"
+      | "trust"
+      | "suggestReadingOrder"
   ): void;
 }
 
@@ -227,10 +239,12 @@ class ChangeTimeline {
 
   async showStanding(): Promise<void> {
     if (!this.panel) return;
-    const found = await this.sources
-      .standing(this.change)
-      .catch(() => undefined);
+    const [found, readingOrder] = await Promise.all([
+      this.sources.standing(this.change).catch(() => undefined),
+      this.sources.readingOrder(this.change).catch(() => undefined),
+    ]);
     this.update({
+      readingOrder,
       standing: found?.notes ?? [],
       navigationOff: this.sources.navigationOff(),
       ...(found && { progress: { viewed: found.viewed, total: found.total } }),
@@ -273,6 +287,11 @@ class ChangeTimeline {
           action.endLine,
           this.codeColumn()
         );
+        return;
+      case "openFile":
+        // Only the Change's files, as the Reading Order listed them.
+        if (this.files.has(action.path))
+          this.sources.openFile(this.change, action.path);
         return;
       case "refresh":
         return void this.load();

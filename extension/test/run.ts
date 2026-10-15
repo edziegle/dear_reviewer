@@ -204,6 +204,9 @@ async function main() {
     await runSuite("localReview", localReview);
     await runSuite("localReview/afterReload", localReview);
     await runSuite("findings", multiRootWorkspace("findings", "findings"));
+    const readingOrder = multiRootWorkspace("reading-order", "reading-order");
+    await runSuite("readingOrder", readingOrder);
+    await runSuite("readingOrder/afterReload", readingOrder);
     // Last, so the repositories it remembers can't reach other suites; it forgets them when done.
     await runSuite(
       "openFolders",

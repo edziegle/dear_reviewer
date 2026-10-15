@@ -71,7 +71,8 @@ export function activate(context: vscode.ExtensionContext) {
     viewedFiles,
     path.join(context.globalStorageUri.fsPath, "change-files-view.json"),
     (change) => reviews.lastReviewed(change),
-    (change) => codeColumnOf(change)
+    (change) => codeColumnOf(change),
+    (change) => assistants.readingOrderOf(change)
   );
   const avatars = new Avatars(
     github,
@@ -160,8 +161,12 @@ export function activate(context: vscode.ExtensionContext) {
     standing: (change) => standingOf(change),
     navigationOff: () => trust.navigationOff,
     take: (change) => assistants.overviewOf(change),
+    readingOrder: (change) => changeFiles.readingOrder(change),
+    openFile: (change, file) => void changeFiles.openPath(change, file),
     act: (change, action) => {
       if (action === "ask") void assistants.open(change, true);
+      else if (action === "suggestReadingOrder")
+        void assistants.suggestReadingOrder(change);
       else if (action === "takeAction") assistants.helpWithProblem(change);
       else if (action === "takeRetry") void assistants.retry(change);
       else if (action === "trust") void trust.trust();
@@ -680,6 +685,8 @@ export function activate(context: vscode.ExtensionContext) {
     assistants.onDidChangeOverview((conversation) =>
       timelines.refreshTake(conversation)
     ),
+    // Change Files lists the Reading Order, and the overview follows it.
+    assistants.onDidChangeReadingOrder(() => changeFiles.refresh()),
     changeFiles.onDidChangeTreeData(() => showStanding()),
     review.onDidChange(() => showStanding()),
     review,
@@ -1024,6 +1031,19 @@ export function activate(context: vscode.ExtensionContext) {
     ),
     vscode.commands.registerCommand("dearReviewer.showViewedFiles", () =>
       changeFiles.setHideViewed(false)
+    ),
+    vscode.commands.registerCommand("dearReviewer.sortByReadingOrder", () =>
+      changeFiles.setSortBy("readingOrder")
+    ),
+    vscode.commands.registerCommand("dearReviewer.sortByTree", () =>
+      changeFiles.setSortBy("tree")
+    ),
+    vscode.commands.registerCommand(
+      "dearReviewer.suggestReadingOrder",
+      async (target?: ChangeTarget) => {
+        const change = await changeFor(target, "Suggest Reading Order");
+        if (change) await assistants.suggestReadingOrder(change);
+      }
     ),
     vscode.window.registerTreeDataProvider("dearReviewer.inbox", inbox),
     vscode.commands.registerCommand(

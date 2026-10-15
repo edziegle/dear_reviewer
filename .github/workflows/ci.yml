@@ -8,6 +8,12 @@ on:
 permissions:
   contents: read
 
+# mise run would otherwise install every tool in mise.toml, VSCodium too, with
+# no GitHub token, since mise-action doesn't pass its own on. Each job installs
+# only what it needs through mise-action's install_args.
+env:
+  MISE_TASK_RUN_AUTO_INSTALL: false
+
 jobs:
   build:
     runs-on: ubuntu-latest

@@ -25,8 +25,14 @@ export interface PullRequestSummary {
   mergeable: Mergeability;
   /** GitHub's review decision; undefined where the base branch requires no reviews. */
   reviewDecision?: ReviewDecision;
-  /** Each reviewer's latest submitted review, the author's own included. */
+  /**
+   * Each reviewer's latest submitted review, whatever its verdict, so a reply
+   * in a thread replaces an approval. GitHub leaves out the author's own, and
+   * a reviewer whose review was requested again.
+   */
   latestReviews: LatestReview[];
+  /** Each reviewer's latest review that approved, requested changes, or was dismissed. */
+  latestOpinionatedReviews: LatestReview[];
 }
 
 export type Mergeability = "mergeable" | "conflicting" | "unknown";
@@ -1057,7 +1063,14 @@ const INBOX_PULL_REQUEST = `fragment InboxPullRequest on PullRequest {
   reviewDecision
   commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
   reviews(last: 1, author: $reviewer, states: ${SUBMITTED_REVIEWS}) { nodes { commit { oid } } }
-  latestReviews(first: 100) { nodes { state author { login } commit { oid } } }
+  latestReviews(first: 100) { nodes { ...InboxReview } }
+  latestOpinionatedReviews(first: 100) { nodes { ...InboxReview } }
+}
+
+fragment InboxReview on PullRequestReview {
+  state
+  author { login }
+  commit { oid }
 }`;
 
 interface PullRequestNode {
@@ -1078,13 +1091,14 @@ interface PullRequestNode {
   isDraft: boolean;
   mergeable: string;
   reviewDecision: string | null;
-  latestReviews: {
-    nodes: ({
-      state: string;
-      author: { login: string } | null;
-      commit: { oid: string } | null;
-    } | null)[];
-  };
+  latestReviews: { nodes: (InboxReviewNode | null)[] };
+  latestOpinionatedReviews: { nodes: (InboxReviewNode | null)[] };
+}
+
+interface InboxReviewNode {
+  state: string;
+  author: { login: string } | null;
+  commit: { oid: string } | null;
 }
 
 function summaryOf(node: PullRequestNode): PullRequestSummary {
@@ -1105,6 +1119,7 @@ function summaryOf(node: PullRequestNode): PullRequestSummary {
     mergeable: mergeabilities[node.mergeable] ?? "unknown",
     reviewDecision: reviewDecisions[node.reviewDecision ?? ""],
     latestReviews: latestReviewsOf(node.latestReviews),
+    latestOpinionatedReviews: latestReviewsOf(node.latestOpinionatedReviews),
   };
 }
 
@@ -1122,7 +1137,7 @@ const reviewDecisions: Record<string, ReviewDecision> = {
 
 /** The submitted ones of the latest reviews; a pending review has no verdict. */
 function latestReviewsOf(
-  reviews: PullRequestNode["latestReviews"] | undefined
+  reviews: { nodes: (InboxReviewNode | null)[] } | undefined
 ): LatestReview[] {
   return (reviews?.nodes ?? []).flatMap((review) => {
     const verdict = review && verdicts[review.state];

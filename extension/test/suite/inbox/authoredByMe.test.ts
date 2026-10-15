@@ -2,9 +2,11 @@ import * as assert from "assert";
 import * as fs from "fs";
 import type { FakePullRequest, FakeReview } from "../../fakeGitHub";
 import {
+  awaitingSearches,
   configure,
   inbox,
   inboxEntry,
+  inboxSettled,
   refreshInbox,
   serveGitHub,
   setToken,
@@ -176,6 +178,86 @@ describe("Inbox: Authored by me", () => {
         "Pending approval: $(git-pull-request)",
       ]
     );
+  });
+
+  it("keeps changes requested after the reviewer replies in a thread, and after GitHub's decision alone", async () => {
+    const { authored } = await showInbox([
+      mine(1, "Replied to", {
+        reviews: [
+          review("alice", "CHANGES_REQUESTED", older),
+          review("alice", "COMMENTED"),
+        ],
+      }),
+      mine(2, "Decided", { reviewDecision: "CHANGES_REQUESTED" }),
+      mine(3, "Approver replied", {
+        reviews: [
+          review("alice", "APPROVED", older),
+          review("alice", "COMMENTED", older),
+        ],
+      }),
+    ]);
+
+    assert.deepStrictEqual(
+      authored.entries.map((e) => `${e.label}: ${e.description}`),
+      [
+        "Replied to: acme/api #1 · changes requested · commented",
+        "Decided: acme/api #2 · changes requested",
+        "Approver replied: acme/api #3 · ready to merge",
+      ]
+    );
+  });
+
+  it("leaves out a reviewer whose review I requested again, until they review", async () => {
+    const { authored } = await showInbox([
+      mine(1, "Asked again", {
+        reviewRequested: ["alice"],
+        reviews: [review("alice", "COMMENTED")],
+      }),
+    ]);
+
+    assert.strictEqual(authored.entries[0].icon, "$(git-pull-request)");
+  });
+
+  it("loads once more while GitHub works out whether a pull request merges cleanly", async () => {
+    const approved: Partial<FakePullRequest> = {
+      reviewDecision: "APPROVED",
+      reviews: [review("alice", "APPROVED")],
+    };
+    const { authored } = await showInbox([
+      mine(1, "Just pushed", { ...approved, mergeable: "UNKNOWN" }),
+    ]);
+    assert.strictEqual(authored.entries[0].icon, "$(git-pull-request)");
+
+    await serveGitHub(
+      { viewer, pullRequests: [mine(1, "Just pushed", approved)] },
+      { settle: false }
+    );
+    await inboxSettled();
+
+    assert.strictEqual(
+      inboxEntry(await inbox(), "Just pushed").icon,
+      "$(pass-filled)"
+    );
+  });
+
+  it("loads once more only, while GitHub still doesn't know", async () => {
+    await serveGitHub({
+      viewer,
+      pullRequests: [mine(1, "Stuck", { mergeable: "UNKNOWN" })],
+    });
+    await configure({ repositories: ["acme/api"] });
+    await setToken(viewer.token);
+    await refreshInbox();
+    await serveGitHub(
+      {
+        viewer,
+        pullRequests: [mine(1, "Stuck", { mergeable: "UNKNOWN" })],
+      },
+      { settle: false }
+    );
+
+    assert.strictEqual((await awaitingSearches()).length, 1);
+    assert.strictEqual((await awaitingSearches()).length, 1);
   });
 
   it("isn't ready to merge as a draft, with checks running, or while mergeability is unknown", async () => {

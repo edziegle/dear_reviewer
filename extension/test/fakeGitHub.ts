@@ -899,18 +899,34 @@ export async function startFakeGitHub(): Promise<{
         reviews: reviewsField(pr, query, vars),
       }),
       ...(/\blatestReviews\(/.test(query) && {
-        latestReviews: latestReviewsField(pr),
+        latestReviews: latestReviewsField(pr, (r) => r.state !== "PENDING", {
+          leaveOutRequested: true,
+        }),
+      }),
+      ...(/\blatestOpinionatedReviews\(/.test(query) && {
+        latestOpinionatedReviews: latestReviewsField(pr, (r) =>
+          ["APPROVED", "CHANGES_REQUESTED", "DISMISSED"].includes(r.state)
+        ),
       }),
     };
   }
 
-  /** Each author's latest review that the viewer can see, in the order given. */
-  function latestReviewsField(pr: FakePullRequest) {
-    const me = state.viewer.login;
+  /**
+   * Each reviewer's latest of the reviews that count, as GitHub gives them:
+   * never the pull request author's own, and for `latestReviews` none from
+   * a reviewer whose review is requested again.
+   */
+  function latestReviewsField(
+    pr: FakePullRequest,
+    counts: (review: FakeReview) => boolean,
+    { leaveOutRequested = false } = {}
+  ) {
     const latest = new Map<string, FakeReview>();
     for (const review of pr.reviews ?? [])
-      if (review.state !== "PENDING" || review.author === me)
+      if (counts(review) && review.author !== pr.author)
         latest.set(review.author, review);
+    if (leaveOutRequested)
+      for (const login of pr.reviewRequested ?? []) latest.delete(login);
     return {
       nodes: [...latest.values()].map((r) => ({
         state: r.state,

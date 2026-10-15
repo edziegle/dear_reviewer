@@ -53,6 +53,11 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
    * lists them as awaiting review, since its index lags behind.
    */
   private readonly justReviewed = new Map<string, number>();
+  /**
+   * My pull requests, by `pullRequestKey`, whose unknown mergeability a
+   * later refresh was due to pick up, so each gets one until it's known.
+   */
+  private readonly mergeabilityRechecked = new Set<string>();
   private laterRefresh: NodeJS.Timeout | undefined;
 
   constructor(
@@ -100,14 +105,38 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
       Date.now() + keepReviewed
     );
     this.changed.fire();
+    this.refreshIn(refreshAfterReview);
+  }
+
+  /** Loads the Inbox again in this many milliseconds, instead of any later refresh due. */
+  private refreshIn(delay: number): void {
     clearTimeout(this.laterRefresh);
     this.laterRefresh = setTimeout(() => {
       this.laterRefresh = undefined;
       void this.refresh();
-    }, refreshAfterReview);
+    }, delay);
   }
 
-  /** Runs the refresh due after a Review now, and waits until no load is in flight. */
+  /**
+   * Loads the Inbox again shortly when GitHub doesn't know yet whether one of
+   * my pull requests merges cleanly, as after a push, since it works that
+   * out only once asked. Once per pull request until it knows.
+   */
+  private recheckMergeability(authored: PullRequestSummary[]): void {
+    const unknown = new Set(
+      authored.filter((pr) => pr.mergeable === "unknown").map(pullRequestKey)
+    );
+    for (const key of this.mergeabilityRechecked)
+      if (!unknown.has(key)) this.mergeabilityRechecked.delete(key);
+    const fresh = [...unknown].filter(
+      (key) => !this.mergeabilityRechecked.has(key)
+    );
+    if (fresh.length === 0 || this.laterRefresh) return;
+    for (const key of fresh) this.mergeabilityRechecked.add(key);
+    this.refreshIn(refreshForMergeability);
+  }
+
+  /** Runs any later refresh due now, and waits until no load is in flight. */
   async settled(): Promise<void> {
     if (this.laterRefresh) {
       clearTimeout(this.laterRefresh);
@@ -275,6 +304,7 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
     if (superseded()) return loaded.nodes;
     if (loaded.awaitingMyReview)
       this.forgetReviewedOnceSearchHasCaughtUp(loaded.awaitingMyReview);
+    if (loaded.authoredByMe) this.recheckMergeability(loaded.authoredByMe);
     if (loaded.signedIn !== undefined)
       await setContext("dearReviewer.signedIn", loaded.signedIn);
     // VS Code only shows the welcome message while the view is empty.
@@ -300,6 +330,7 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
         signedIn: true,
         welcome: "none",
         awaitingMyReview: inbox.awaitingMyReview,
+        authoredByMe: inbox.authoredByMe,
       };
     } catch (err) {
       if (err instanceof NotSignedInError)
@@ -411,10 +442,13 @@ interface InboxLoad {
   signedIn?: boolean;
   welcome: Welcome;
   awaitingMyReview?: PullRequestSummary[];
+  authoredByMe?: PullRequestSummary[];
 }
 
 /** How long after a Review the Inbox loads again, once search has caught up. */
 const refreshAfterReview = 20_000;
+/** How long after GitHub didn't know a pull request's mergeability the Inbox loads again. */
+const refreshForMergeability = 10_000;
 /** How long the Inbox at most shows a reviewed pull request as reviewed against search. */
 const keepReviewed = 120_000;
 

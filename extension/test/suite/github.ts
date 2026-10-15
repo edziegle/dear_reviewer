@@ -28,8 +28,16 @@ export function fakeGitHubUrl(): string {
 }
 
 /** Replaces what the fake GitHub serves, and forgets the requests it saw once the Inbox settles. */
-export async function serveGitHub(state: FakeGitHubState): Promise<void> {
-  await inboxSettled();
+/**
+ * Replaces the fake GitHub's fixtures, once the Inbox's refreshes have
+ * landed, unless `settle` is false, which leaves a later refresh due to
+ * load the new fixtures.
+ */
+export async function serveGitHub(
+  state: FakeGitHubState,
+  { settle = true } = {}
+): Promise<void> {
+  if (settle) await inboxSettled();
   const res = await fetch(`${fakeGitHubUrl()}/_fake/state`, {
     method: "PUT",
     body: JSON.stringify(state),

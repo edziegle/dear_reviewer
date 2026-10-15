@@ -5,7 +5,16 @@ import type { LatestReview, PullRequestSummary } from "../../src/github/client";
 const head = "a".repeat(40);
 const older = "b".repeat(40);
 
-function pr(fields: Partial<PullRequestSummary> = {}): PullRequestSummary {
+/**
+ * A pull request of the Reviewer's, with these reviews in the order they
+ * were submitted, which give each reviewer's latest as GitHub does.
+ */
+function pr({
+  reviews = [],
+  ...fields
+}: Partial<PullRequestSummary> & {
+  reviews?: LatestReview[];
+} = {}): PullRequestSummary {
   return {
     repository: "acme/api",
     number: 1,
@@ -18,9 +27,16 @@ function pr(fields: Partial<PullRequestSummary> = {}): PullRequestSummary {
     baseRefName: "main",
     isDraft: false,
     mergeable: "mergeable",
-    latestReviews: [],
+    latestReviews: latestOf(reviews),
+    latestOpinionatedReviews: latestOf(
+      reviews.filter((r) => r.verdict !== "commented")
+    ),
     ...fields,
   };
+}
+
+function latestOf(reviews: LatestReview[]): LatestReview[] {
+  return [...new Map(reviews.map((r) => [r.author, r])).values()];
 }
 
 function review(
@@ -52,21 +68,61 @@ describe("The states of a pull request the Reviewer authored", () => {
   it("has changes requested when some reviewer's latest review requests them", () => {
     assert.deepStrictEqual(
       authoredStates(
-        pr({ latestReviews: [review("alice", "changesRequested", older)] })
+        pr({ reviews: [review("alice", "changesRequested", older)] })
       ),
       ["changesRequested"]
     );
   });
 
+  it("keeps changes requested after the same reviewer replies in a thread", () => {
+    assert.deepStrictEqual(
+      authoredStates(
+        pr({
+          reviews: [
+            review("alice", "changesRequested", older),
+            review("alice", "commented"),
+          ],
+        })
+      ),
+      ["changesRequested", "commented"]
+    );
+  });
+
+  it("has changes requested when GitHub's review decision says so", () => {
+    assert.deepStrictEqual(
+      authoredStates(pr({ reviewDecision: "changesRequested" })),
+      ["changesRequested"]
+    );
+    assert.strictEqual(
+      authoredStateLook(
+        "changesRequested",
+        pr({ reviewDecision: "changesRequested" })
+      ).tooltip,
+      "Changes requested"
+    );
+  });
+
+  it("stays ready to merge after an approver replies in a thread", () => {
+    assert.deepStrictEqual(
+      authoredStates(
+        pr({
+          reviews: [
+            review("alice", "approved", older),
+            review("alice", "commented", older),
+          ],
+        })
+      ),
+      ["readyToMerge"]
+    );
+  });
+
   it("has a comment only from a comment-only review at the current head", () => {
     assert.deepStrictEqual(
-      authoredStates(pr({ latestReviews: [review("alice", "commented")] })),
+      authoredStates(pr({ reviews: [review("alice", "commented")] })),
       ["commented"]
     );
     assert.deepStrictEqual(
-      authoredStates(
-        pr({ latestReviews: [review("alice", "commented", older)] })
-      ),
+      authoredStates(pr({ reviews: [review("alice", "commented", older)] })),
       []
     );
   });
@@ -75,7 +131,7 @@ describe("The states of a pull request the Reviewer authored", () => {
     assert.deepStrictEqual(
       authoredStates(
         pr({
-          latestReviews: [
+          reviews: [
             review("Reviewer", "commented"),
             review("reviewer", "approved"),
           ],
@@ -97,13 +153,13 @@ describe("The states of a pull request the Reviewer authored", () => {
 
   it("without a review decision, is ready to merge on an approval and no request for changes", () => {
     assert.deepStrictEqual(
-      authoredStates(pr({ latestReviews: [review("alice", "approved")] })),
+      authoredStates(pr({ reviews: [review("alice", "approved")] })),
       ["readyToMerge"]
     );
     assert.deepStrictEqual(
       authoredStates(
         pr({
-          latestReviews: [
+          reviews: [
             review("alice", "approved"),
             review("bob", "changesRequested"),
           ],
@@ -118,13 +174,13 @@ describe("The states of a pull request the Reviewer authored", () => {
       authoredStates(
         pr({
           reviewDecision: "reviewRequired",
-          latestReviews: [review("alice", "approved")],
+          reviews: [review("alice", "approved")],
         })
       ),
       []
     );
     assert.deepStrictEqual(
-      authoredStates(pr({ latestReviews: [review("alice", "dismissed")] })),
+      authoredStates(pr({ reviews: [review("alice", "dismissed")] })),
       []
     );
   });
@@ -149,7 +205,7 @@ describe("The states of a pull request the Reviewer authored", () => {
         pr({
           checks: "failed",
           mergeable: "conflicting",
-          latestReviews: [
+          reviews: [
             review("alice", "commented"),
             review("bob", "changesRequested"),
           ],
@@ -161,10 +217,7 @@ describe("The states of a pull request the Reviewer authored", () => {
       authoredStates(
         pr({
           reviewDecision: "approved",
-          latestReviews: [
-            review("alice", "approved"),
-            review("bob", "commented"),
-          ],
+          reviews: [review("alice", "approved"), review("bob", "commented")],
         })
       ),
       ["commented", "readyToMerge"]
@@ -175,7 +228,7 @@ describe("The states of a pull request the Reviewer authored", () => {
 describe("How a state looks on the Reviewer's own pull request", () => {
   it("names the reviewers who requested changes or commented", () => {
     const mine = pr({
-      latestReviews: [
+      reviews: [
         review("alice", "changesRequested"),
         review("bob", "commented"),
         review("carol", "commented", older),

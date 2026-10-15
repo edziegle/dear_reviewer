@@ -16,15 +16,16 @@ export type AuthoredState = (typeof authoredStateOrder)[number];
 
 /** Every state that applies to the pull request, in `authoredStateOrder`. */
 export function authoredStates(pr: PullRequestSummary): AuthoredState[] {
-  const reviews = reviewersLatest(pr);
   const holds: Record<AuthoredState, boolean> = {
     checksFailed: pr.checks === "failed",
     mergeConflicts: pr.mergeable === "conflicting",
-    changesRequested: reviews.some((r) => r.verdict === "changesRequested"),
-    commented: commentedAtHead(pr, reviews).length > 0,
+    changesRequested:
+      pr.reviewDecision === "changesRequested" ||
+      requestingChanges(pr).length > 0,
+    commented: commentedAtHead(pr).length > 0,
     readyToMerge:
       !pr.isDraft &&
-      approved(pr, reviews) &&
+      approved(pr) &&
       (pr.checks === "passed" || pr.checks === undefined) &&
       pr.mergeable === "mergeable",
   };
@@ -46,7 +47,6 @@ export function authoredStateLook(
   state: AuthoredState,
   pr: PullRequestSummary
 ): AuthoredStateLook {
-  const reviews = reviewersLatest(pr);
   switch (state) {
     case "checksFailed":
       return {
@@ -67,18 +67,17 @@ export function authoredStateLook(
         icon: "request-changes",
         color: "list.warningForeground",
         description: "changes requested",
-        tooltip: `Changes requested by ${logins(
-          reviews.filter((r) => r.verdict === "changesRequested")
-        )}`,
+        tooltip: byReviewers("Changes requested", requestingChanges(pr)),
       };
     case "commented":
       return {
         icon: "comment",
         color: "editorInfo.foreground",
         description: "commented",
-        tooltip: `Commented on the latest commit by ${logins(
-          commentedAtHead(pr, reviews)
-        )}`,
+        tooltip: byReviewers(
+          "Commented on the latest commit",
+          commentedAtHead(pr)
+        ),
       };
     case "readyToMerge":
       return {
@@ -90,17 +89,32 @@ export function authoredStateLook(
   }
 }
 
-/** The latest submitted review of everyone but the pull request's author. */
-function reviewersLatest(pr: PullRequestSummary): LatestReview[] {
-  const author = pr.author.login.toLowerCase();
-  return pr.latestReviews.filter((r) => r.author.toLowerCase() !== author);
-}
-
-function commentedAtHead(
+/**
+ * Leaves out the pull request's author, whose reviews don't count. GitHub
+ * leaves them out already; this keeps the rules from relying on it.
+ */
+function byOthers(
   pr: PullRequestSummary,
   reviews: LatestReview[]
 ): LatestReview[] {
-  return reviews.filter(
+  const author = pr.author.login.toLowerCase();
+  return reviews.filter((r) => r.author.toLowerCase() !== author);
+}
+
+/**
+ * The reviewers whose latest approval or request for changes requests
+ * changes. A later reply in a thread is a comment-only review, which
+ * doesn't take the request back.
+ */
+function requestingChanges(pr: PullRequestSummary): LatestReview[] {
+  return byOthers(pr, pr.latestOpinionatedReviews).filter(
+    (r) => r.verdict === "changesRequested"
+  );
+}
+
+/** The reviewers whose latest review only commented, at the current head. */
+function commentedAtHead(pr: PullRequestSummary): LatestReview[] {
+  return byOthers(pr, pr.latestReviews).filter(
     (r) => r.verdict === "commented" && r.commit === pr.headSha
   );
 }
@@ -109,14 +123,17 @@ function commentedAtHead(
  * GitHub's review decision; where the repository requires no reviews and so
  * has none, some reviewer's approval and no request for changes.
  */
-function approved(pr: PullRequestSummary, reviews: LatestReview[]): boolean {
+function approved(pr: PullRequestSummary): boolean {
   if (pr.reviewDecision) return pr.reviewDecision === "approved";
+  const opinions = byOthers(pr, pr.latestOpinionatedReviews);
   return (
-    reviews.some((r) => r.verdict === "approved") &&
-    !reviews.some((r) => r.verdict === "changesRequested")
+    opinions.some((r) => r.verdict === "approved") &&
+    !opinions.some((r) => r.verdict === "changesRequested")
   );
 }
 
-function logins(reviews: LatestReview[]): string {
-  return reviews.map((r) => r.author).join(", ");
+/** "What by alice, bob", or just "What" when GitHub names no one. */
+function byReviewers(what: string, reviews: LatestReview[]): string {
+  if (reviews.length === 0) return what;
+  return `${what} by ${reviews.map((r) => r.author).join(", ")}`;
 }

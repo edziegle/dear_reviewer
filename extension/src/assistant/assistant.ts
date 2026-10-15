@@ -930,6 +930,11 @@ class ChangeAssistant {
         ],
         systemPrompt: assistantRole(this.change),
         resume: this.session?.id,
+        history: {
+          repository: this.change.repository,
+          base: this.change.mergeBase,
+          head: this.change.headSha,
+        },
       });
     }
     return this.conversation;

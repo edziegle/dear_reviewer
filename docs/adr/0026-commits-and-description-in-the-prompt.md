@@ -5,6 +5,8 @@ date: 2026-10-14
 
 # Put the Change's commits and its pull request's description in the summary prompt
 
+Amended by [ADR 0030](0030-read-only-git-tools-for-the-assistant.md): the Assistant can also read the history its base and head reach with read-only git tools, `log`, `show`, `blame` and `diff`. What the prompts carry is unchanged.
+
 ## Context and Problem Statement
 
 The Assistant's summary says what a Change does and why, but its prompt held only the changed files and the diff. The why is often in the commit messages and the pull request's description, which the Assistant never saw. The explanation of what changed since the last Review had only the new commits' subject lines (issue #27). The Assistant can't run git itself: it has `Read`, `Grep` and `Glob` (ADR 0004), and the worktrees are checkouts, not a history it can read. How does the Assistant learn the Change's history?

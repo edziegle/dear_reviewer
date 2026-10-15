@@ -23,7 +23,13 @@
 // In the scripted events, the strings {head} and {base} stand for the first
 // and second `--add-dir` the run was given, the Change's worktrees, so a
 // tool-use event (see toolUse) can name files the way Claude Code does.
+//
+// An mcpCall event calls a tool of an MCP server from the run's
+// `--mcp-config` for real, as Claude Code would: it starts the server with
+// the config's command, arguments and environment over its own, and records
+// the result in the run's `mcpResults`.
 
+import * as cp from "child_process";
 import * as crypto from "crypto";
 import * as fs from "fs";
 import * as path from "path";
@@ -87,6 +93,26 @@ export function toolUse(
   ];
 }
 
+/**
+ * The events in which the Assistant calls a tool of an MCP server in the
+ * run's `--mcp-config`, which the fake really calls, followed by its result.
+ */
+export function mcpCall(
+  server: string,
+  tool: string,
+  input: Record<string, unknown>
+): Record<string, unknown> {
+  return { type: "fakeClaude.mcpCall", server, tool, input };
+}
+
+/** What an MCP tool the fake called gave back. */
+export interface McpResult {
+  name: string;
+  input: Record<string, unknown>;
+  text: string;
+  isError: boolean;
+}
+
 export interface RecordedClaudeCall {
   args: string[];
   cwd: string;
@@ -97,6 +123,8 @@ export interface RecordedClaudeCall {
   sessionId?: string;
   /** The user messages of earlier runs that `--resume` brought back. */
   resumed?: string[];
+  /** The results of the MCP tools its turns called, oldest first. */
+  mcpResults?: McpResult[];
 }
 
 interface Session {
@@ -200,6 +228,10 @@ function main(): void {
   call.sessionId = sessionId;
   record();
 
+  const mcp = new McpServers(args, (result) => {
+    call.mcpResults = [...(call.mcpResults ?? []), result];
+    record();
+  });
   const turns = script.turns?.length ? script.turns : [defaultTurn()];
   const turnCounter = path.join(stateDir, "turns-taken");
   let replying = Promise.resolve();
@@ -220,7 +252,7 @@ function main(): void {
       const events =
         script.readingOrder ?? defaultTurn("No Reading Order, sorry.");
       replying = replying.then(() =>
-        reply(stateDir, events, sessionId, worktrees)
+        reply(stateDir, events, sessionId, worktrees, mcp)
       );
       return;
     }
@@ -228,7 +260,7 @@ function main(): void {
     fs.writeFileSync(turnCounter, String(taken + 1));
     const events = turns[Math.min(taken, turns.length - 1)];
     replying = replying.then(() =>
-      reply(stateDir, events, sessionId, worktrees)
+      reply(stateDir, events, sessionId, worktrees, mcp)
     );
   });
 }
@@ -237,9 +269,48 @@ async function reply(
   stateDir: string,
   events: Record<string, unknown>[],
   sessionId: string,
-  [head = "", base = ""]: string[]
+  [head = "", base = ""]: string[],
+  mcp: McpServers
 ): Promise<void> {
   for (const event of events) {
+    if (event.type === "fakeClaude.mcpCall") {
+      const { server, tool, input } = event as {
+        server: string;
+        tool: string;
+        input: Record<string, unknown>;
+      };
+      const name = `mcp__${server}__${tool}`;
+      const id = `toolu_${crypto.randomUUID().replace(/-/g, "").slice(0, 24)}`;
+      process.stdout.write(
+        JSON.stringify({
+          type: "assistant",
+          session_id: sessionId,
+          message: {
+            role: "assistant",
+            content: [{ type: "tool_use", id, name, input }],
+          },
+        }) + "\n"
+      );
+      const result = await mcp.call(server, tool, input);
+      process.stdout.write(
+        JSON.stringify({
+          type: "user",
+          session_id: sessionId,
+          message: {
+            role: "user",
+            content: [
+              {
+                type: "tool_result",
+                tool_use_id: id,
+                content: result.text,
+                is_error: result.isError,
+              },
+            ],
+          },
+        }) + "\n"
+      );
+      continue;
+    }
     if (event.type === "fakeClaude.waitFor") {
       const file = path.join(stateDir, String(event.file));
       while (!fs.existsSync(file))
@@ -252,6 +323,139 @@ async function reply(
       .replaceAll("{head}", JSON.stringify(head).slice(1, -1))
       .replaceAll("{base}", JSON.stringify(base).slice(1, -1));
     process.stdout.write(line + "\n");
+  }
+}
+
+/**
+ * The MCP servers of the run's `--mcp-config`, each started on its first
+ * call and kept for the run, as Claude Code keeps them.
+ */
+class McpServers {
+  private readonly config: Record<string, McpServerConfig>;
+  private readonly started = new Map<string, Promise<McpClient>>();
+
+  constructor(
+    args: string[],
+    private readonly recordResult: (result: McpResult) => void
+  ) {
+    const at = args.indexOf("--mcp-config");
+    this.config =
+      at >= 0
+        ? (
+            JSON.parse(args[at + 1]) as {
+              mcpServers: Record<string, McpServerConfig>;
+            }
+          ).mcpServers
+        : {};
+  }
+
+  async call(
+    server: string,
+    tool: string,
+    input: Record<string, unknown>
+  ): Promise<McpResult> {
+    const name = `mcp__${server}__${tool}`;
+    let result: McpResult;
+    try {
+      let client = this.started.get(server);
+      if (!client) {
+        const config = this.config[server];
+        if (!config) throw new Error(`No MCP server ${server} in --mcp-config`);
+        client = McpClient.start(config);
+        this.started.set(server, client);
+      }
+      const answer = (await (
+        await client
+      ).request("tools/call", {
+        name: tool,
+        arguments: input,
+      })) as { content: { text: string }[]; isError?: boolean };
+      result = {
+        name,
+        input,
+        text: answer.content.map((c) => c.text).join(""),
+        isError: answer.isError === true,
+      };
+    } catch (err) {
+      result = { name, input, text: (err as Error).message, isError: true };
+    }
+    this.recordResult(result);
+    return result;
+  }
+}
+
+interface McpServerConfig {
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+}
+
+/** A client of one stdio MCP server, after the handshake. */
+class McpClient {
+  private next = 1;
+  private readonly waiting = new Map<
+    number,
+    { resolve: (result: unknown) => void; reject: (err: Error) => void }
+  >();
+  private stderr = "";
+
+  private constructor(private readonly child: cp.ChildProcess) {
+    readline.createInterface({ input: child.stdout! }).on("line", (line) => {
+      const message = JSON.parse(line) as {
+        id?: number;
+        result?: unknown;
+        error?: { message: string };
+      };
+      const waiter =
+        message.id === undefined ? undefined : this.waiting.get(message.id);
+      if (!waiter) return;
+      this.waiting.delete(message.id!);
+      if (message.error) waiter.reject(new Error(message.error.message));
+      else waiter.resolve(message.result);
+    });
+    child.stderr!.on(
+      "data",
+      (chunk: Buffer) => (this.stderr += chunk.toString())
+    );
+    child.on("exit", (code) => {
+      for (const waiter of this.waiting.values())
+        waiter.reject(
+          new Error(
+            `The MCP server stopped (exit code ${code}): ${this.stderr}`
+          )
+        );
+      this.waiting.clear();
+    });
+  }
+
+  static async start(config: McpServerConfig): Promise<McpClient> {
+    const child = cp.spawn(config.command, config.args ?? [], {
+      env: { ...process.env, ...config.env },
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    child.on("error", () => undefined);
+    const client = new McpClient(child);
+    await client.request("initialize", {
+      protocolVersion: "2025-06-18",
+      capabilities: {},
+      clientInfo: { name: "fake-claude", version: "0" },
+    });
+    client.send({ method: "notifications/initialized" });
+    return client;
+  }
+
+  request(method: string, params: Record<string, unknown>): Promise<unknown> {
+    const id = this.next++;
+    return new Promise((resolve, reject) => {
+      this.waiting.set(id, { resolve, reject });
+      this.send({ id, method, params });
+    });
+  }
+
+  private send(message: Record<string, unknown>): void {
+    this.child.stdin!.write(
+      JSON.stringify({ jsonrpc: "2.0", ...message }) + "\n"
+    );
   }
 }
 

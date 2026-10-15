@@ -315,7 +315,11 @@ describe("The Assistant's summary when a Change opens", () => {
       }
       const [run] = assistantRuns();
       assert.strictEqual(flag(run, "--tools"), "Read,Grep,Glob");
-      assert.strictEqual(flag(run, "--allowedTools"), "Read,Grep,Glob");
+      assert.strictEqual(
+        flag(run, "--allowedTools"),
+        "Read,Grep,Glob,mcp__git__log,mcp__git__show,mcp__git__blame,mcp__git__diff"
+      );
+      assert.ok(run.args.includes("--strict-mcp-config"));
       assert.strictEqual(flag(run, "--permission-mode"), "dontAsk");
       assert.deepStrictEqual(
         run.args.filter((arg) =>

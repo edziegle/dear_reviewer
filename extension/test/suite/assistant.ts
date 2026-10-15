@@ -4,13 +4,17 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
-import type { FakeClaudeScript, RecordedClaudeCall } from "../fakeClaude";
-import { readingOrderRequest, toolUse, waitFor } from "../fakeClaude";
+import type {
+  FakeClaudeScript,
+  McpResult,
+  RecordedClaudeCall,
+} from "../fakeClaude";
+import { mcpCall, readingOrderRequest, toolUse, waitFor } from "../fakeClaude";
 import { eventually, type ChangeRequest } from "./reviewer";
 import type { Take } from "./timeline";
 
-export type { FakeClaudeScript, RecordedClaudeCall };
-export { toolUse, waitFor };
+export type { FakeClaudeScript, McpResult, RecordedClaudeCall };
+export { mcpCall, toolUse, waitFor };
 
 export function fakeClaudePath(): string {
   const file = process.env.DEAR_REVIEWER_FAKE_CLAUDE;

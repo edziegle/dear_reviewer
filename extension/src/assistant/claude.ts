@@ -9,9 +9,20 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import * as readline from "readline";
+import {
+  allowedGitTools,
+  type ChangeHistory,
+  gitServerConfig,
+} from "./gitTools";
 
 /** The Assistant can look at code, never change it or run anything. */
 export const readOnlyTools = ["Read", "Grep", "Glob"];
+
+/**
+ * The git tools' MCP server, which esbuild bundles beside the extension's
+ * own dist/extension.js (ADR 0030).
+ */
+const gitServerScript = path.join(__dirname, "gitServer.js");
 
 /**
  * A problem with `claude` itself, worded for the Reviewer: what's wrong and
@@ -208,6 +219,8 @@ export interface ConversationOptions {
   systemPrompt: string;
   /** An earlier session to carry on, which Claude Code keeps under `cwd`. */
   resume?: string;
+  /** The repository, base and head the Assistant's git tools reach. */
+  history: ChangeHistory;
 }
 
 /**
@@ -246,14 +259,19 @@ export class ClaudeConversation {
       "--tools",
       readOnlyTools.join(","),
       "--allowedTools",
-      readOnlyTools.join(","),
+      [...readOnlyTools, ...allowedGitTools].join(","),
       "--permission-mode",
       "dontAsk",
       // A Change's worktrees are someone else's code: don't run its hooks or
-      // connect its MCP servers.
+      // connect its MCP servers. Only Dear Reviewer's git server connects,
+      // on VS Code's own binary run as Node.
       "--setting-sources",
       "user",
       "--strict-mcp-config",
+      "--mcp-config",
+      JSON.stringify(
+        gitServerConfig(process.execPath, gitServerScript, options.history)
+      ),
       "--append-system-prompt",
       options.systemPrompt,
       ...options.addDirs.flatMap((dir) => ["--add-dir", dir]),

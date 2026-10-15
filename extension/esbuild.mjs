@@ -1,9 +1,13 @@
 import { build } from "esbuild";
 
 await build({
-  entryPoints: ["src/extension.ts"],
+  // The git tools' MCP server runs in a process of its own (ADR 0030).
+  entryPoints: {
+    extension: "src/extension.ts",
+    gitServer: "src/assistant/gitServer.ts",
+  },
   bundle: true,
-  outfile: "dist/extension.js",
+  outdir: "dist",
   external: ["vscode"],
   format: "cjs",
   platform: "node",

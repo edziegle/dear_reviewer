@@ -2,12 +2,18 @@
 // the background (see backgroundCodium.ts). `mise run test` sets
 // CODIUM_APP=/path/to/VSCodium.app to the VSCodium that mise.toml pins; without
 // it, the suites run in /Applications/VSCodium.app.
+// DEAR_REVIEWER_SUITES, DEAR_REVIEWER_FILES and DEAR_REVIEWER_GREP pick what
+// runs; see AGENTS.md.
 
 import * as cp from "child_process";
+import * as crypto from "crypto";
 import * as fs from "fs";
+import * as os from "os";
 import * as path from "path";
 import { runTests } from "@vscode/test-electron";
 import { startFakeGitHub } from "./fakeGitHub";
+import { acquireRunLock } from "./runLock";
+import { Launch, planLaunches, suiteOf, testWindowPids } from "./runPlan";
 
 const root = path.resolve(__dirname, "..", "..");
 const codiumApp = process.env.CODIUM_APP ?? "/Applications/VSCodium.app";
@@ -21,12 +27,23 @@ const codiumCli = path.join(
 );
 const testRoot = path.join(root, ".vscode-test");
 const extensionsDir = path.join(testRoot, "extensions");
-const userDataDir = path.join(testRoot, "user-data");
+// VSCodium puts its IPC socket in the user data folder, and macOS caps a
+// socket's path at 103 characters, so the folder lives under a short path
+// named for this checkout rather than in it: its real path, since the
+// extension sees the real paths of the files it keeps there. The link in
+// testRoot keeps its logs where CI collects them.
+const userDataDir = path.join(
+  fs.realpathSync(os.tmpdir()),
+  `dr-test-${crypto.createHash("sha256").update(fs.realpathSync(root)).digest("hex").slice(0, 8)}`
+);
+const userDataLink = path.join(testRoot, "user-data");
 const work = path.join(testRoot, "work");
 const fakeClaudeDir = path.join(work, "fake-claude");
 const fakeClaude = path.join(fakeClaudeDir, "bin", "claude");
 const backgroundCodium = path.join(testRoot, "background-codium");
 const codiumOutput = path.join(testRoot, "codium-output");
+// One run at a time on this machine: see docs/adr/0028-one-test-run-at-a-time.md.
+const runLock = path.join(os.tmpdir(), "dear-reviewer-test-run.lock");
 
 /**
  * Only the basedpyright suite needs these, so a failed install stops a CI run
@@ -52,6 +69,13 @@ function installLanguageServers() {
     if (process.env.CI) throw new Error(failure);
     console.warn(`${failure}; continuing without it.`);
   }
+}
+
+function linkUserData() {
+  fs.mkdirSync(userDataDir, { recursive: true });
+  fs.mkdirSync(testRoot, { recursive: true });
+  fs.rmSync(userDataLink, { recursive: true, force: true });
+  fs.symlinkSync(userDataDir, userDataLink);
 }
 
 function freshWorkFolder() {
@@ -132,104 +156,230 @@ function folder(name: string): string {
   return folder;
 }
 
-let fakeGitHubUrl = "";
+/** A workspace that later phases of a suite reopen, made on first use. */
+function sharedWorkspace(name: string): () => string {
+  let file: string | undefined;
+  return () => (file ??= multiRootWorkspace(name, name));
+}
+
+const changeFiles = sharedWorkspace("change-files");
+const assistant = sharedWorkspace("assistant");
+const review = sharedWorkspace("review");
+const lifecycle = sharedWorkspace("lifecycle");
+const localReview = sharedWorkspace("local-review");
+const readingOrder = sharedWorkspace("reading-order");
 
 /**
- * Runs the suite unless DEAR_REVIEWER_SUITES names others (comma-separated).
- * A suite like `name/phase` is a later launch of suite `name`, sharing its
- * fixtures folder.
+ * Every launch of a run, in order, with what it opens. A phase like
+ * `name/phase` is a later launch of suite `name`, sharing its fixtures folder;
+ * an `afterReload` phase reopens the workspace, like a window reload.
  */
-async function runSuite(suite: string, openPath: string) {
-  const name = suite.split("/")[0];
-  const only = process.env.DEAR_REVIEWER_SUITES?.split(",");
-  if (only && !only.includes(name)) return;
-  console.log(`\n=== ${suite} suite, opening ${path.basename(openPath)} ===`);
-  await runTests({
-    vscodeExecutablePath: backgroundCodium,
-    extensionDevelopmentPath: root,
-    extensionTestsPath: path.join(__dirname, "suite", "index.js"),
-    extensionTestsEnv: {
-      DEAR_REVIEWER_SUITE: suite,
-      DEAR_REVIEWER_FIXTURES: path.join(work, "fixtures", name),
-      DEAR_REVIEWER_FAKE_GITHUB: fakeGitHubUrl,
-      DEAR_REVIEWER_FAKE_CLAUDE: fakeClaude,
-      DEAR_REVIEWER_FAKE_CLAUDE_DIR: fakeClaudeDir,
-    },
-    // --force-disable-user-env keeps the launching PATH instead of
-    // re-resolving it from the login shell, which the sandbox blocks.
-    launchArgs: [
-      openPath,
-      "--extensions-dir",
-      extensionsDir,
-      "--user-data-dir",
-      userDataDir,
-      "--force-disable-user-env",
-      // Software rendering avoids GPU surface failures that crash the window.
-      "--disable-gpu",
-      // Keeps test tokens out of the OS keychain.
-      "--use-inmemory-secretstorage",
-    ],
-  });
+const phases: [phase: string, open: () => string][] = [
+  ["multiRoot", () => multiRootWorkspace()],
+  ["singleFolder", () => folder("single-folder")],
+  ["inbox", () => folder("inbox")],
+  ["changeFiles", changeFiles],
+  ["changeFiles/afterReload", changeFiles],
+  ["assistant", assistant],
+  ["assistant/afterReload", assistant],
+  ["pullRequest", () => multiRootWorkspace("pull-request", "pull-request")],
+  ["review", review],
+  ["review/afterReload", review],
+  ["timeline", () => multiRootWorkspace("timeline", "timeline")],
+  ["threads", () => multiRootWorkspace("threads", "threads")],
+  [
+    "localBranches",
+    () => multiRootWorkspace("local-branches", "local-branches"),
+  ],
+  ["lifecycle", lifecycle],
+  ["lifecycle/afterReload", lifecycle],
+  [
+    "sinceLastReview",
+    () => multiRootWorkspace("since-last-review", "since-last-review"),
+  ],
+  ["localReview", localReview],
+  ["localReview/afterReload", localReview],
+  ["findings", () => multiRootWorkspace("findings", "findings")],
+  ["readingOrder", readingOrder],
+  ["readingOrder/afterReload", readingOrder],
+  // Last, so the repositories it remembers can't reach other suites; it forgets them when done.
+  ["openFolders", () => multiRootWorkspace("open-folders", "open-folders")],
+  ["openFolders/elsewhere", () => multiRootWorkspace("elsewhere", "elsewhere")],
+];
+
+const listed = (value: string | undefined) =>
+  value
+    ?.split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+/** The launches DEAR_REVIEWER_SUITES and DEAR_REVIEWER_FILES pick. */
+function plannedLaunches(): Launch[] {
+  const launches = planLaunches(
+    phases.map(([phase]) => phase),
+    {
+      suites: listed(process.env.DEAR_REVIEWER_SUITES),
+      files: listed(process.env.DEAR_REVIEWER_FILES),
+    }
+  );
+  for (const { phase, files } of launches)
+    for (const file of files ?? []) {
+      const compiled = path.join(__dirname, "suite", phase, `${file}.test.js`);
+      if (!fs.existsSync(compiled))
+        throw new Error(
+          `There is no test file test/suite/${phase}/${file}.test.ts`
+        );
+    }
+  return launches;
+}
+
+/**
+ * Stops every VSCodium process running with this checkout's test user data:
+ * the window of an interrupted or failed run, never another checkout's or the
+ * developer's own.
+ */
+async function killTestWindows() {
+  const running = () =>
+    testWindowPids(
+      cp.execFileSync("ps", ["-axo", "pid=,args="], { encoding: "utf8" }),
+      userDataDir
+    );
+  const signal = (pids: number[], name: NodeJS.Signals) => {
+    for (const pid of pids) {
+      try {
+        process.kill(pid, name);
+      } catch {
+        // It quit meanwhile.
+      }
+    }
+  };
+  let pids = running();
+  if (pids.length === 0) return;
+  console.log(`Closing ${pids.length} leftover test VSCodium processes.`);
+  signal(pids, "SIGTERM");
+  for (let i = 0; i < 50 && pids.length > 0; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    pids = running();
+  }
+  signal(pids, "SIGKILL");
+}
+
+let fakeGitHubUrl = "";
+
+/** The full titles of the tests that failed, from the suite's result file. */
+function failedTests(): string[] {
+  try {
+    const [, ...titles] = fs
+      .readFileSync(path.join(codiumOutput, "result"), "utf8")
+      .split("\n");
+    return titles.filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+/** Runs one launch, and returns what failed in it, if anything. */
+async function launch({ phase, files }: Launch): Promise<string[]> {
+  const openPath = phases.find(([p]) => p === phase)![1]();
+  console.log(`\n=== ${phase} suite, opening ${path.basename(openPath)} ===`);
+  try {
+    await runTests({
+      vscodeExecutablePath: backgroundCodium,
+      extensionDevelopmentPath: root,
+      extensionTestsPath: path.join(__dirname, "suite", "index.js"),
+      extensionTestsEnv: {
+        DEAR_REVIEWER_SUITE: phase,
+        DEAR_REVIEWER_TEST_FILES: files?.join(","),
+        DEAR_REVIEWER_GREP: process.env.DEAR_REVIEWER_GREP,
+        DEAR_REVIEWER_FIXTURES: path.join(work, "fixtures", suiteOf(phase)),
+        DEAR_REVIEWER_FAKE_GITHUB: fakeGitHubUrl,
+        DEAR_REVIEWER_FAKE_CLAUDE: fakeClaude,
+        DEAR_REVIEWER_FAKE_CLAUDE_DIR: fakeClaudeDir,
+      },
+      // --force-disable-user-env keeps the launching PATH instead of
+      // re-resolving it from the login shell, which the sandbox blocks.
+      launchArgs: [
+        openPath,
+        "--extensions-dir",
+        extensionsDir,
+        "--user-data-dir",
+        userDataDir,
+        "--force-disable-user-env",
+        // Software rendering avoids GPU surface failures that crash the window.
+        "--disable-gpu",
+        // Keeps test tokens out of the OS keychain.
+        "--use-inmemory-secretstorage",
+      ],
+    });
+    return [];
+  } catch (err) {
+    const tests = failedTests();
+    return tests.length > 0 ? tests : [(err as Error).message];
+  } finally {
+    await killTestWindows();
+  }
+}
+
+/** Closes the test window and frees the lock when the run is interrupted. */
+function onInterrupt(cleanUp: () => Promise<void>) {
+  const codes: Partial<Record<NodeJS.Signals, number>> = {
+    SIGINT: 130,
+    SIGTERM: 143,
+    SIGHUP: 129,
+  };
+  for (const [signal, code] of Object.entries(codes)) {
+    process.once(signal, () => {
+      console.error(`\nInterrupted by ${signal}; closing the test window.`);
+      cleanUp().finally(() => process.exit(code));
+    });
+  }
 }
 
 async function main() {
-  installLanguageServers();
-  freshWorkFolder();
-  installBackgroundCodium();
-  installFakeClaude();
-  writeUserSettings();
-  const fakeGitHub = await startFakeGitHub();
-  fakeGitHubUrl = fakeGitHub.url;
+  const launches = plannedLaunches();
+  const release = await acquireRunLock(
+    runLock,
+    `the test run in ${root}`,
+    (holder) => console.log(`Waiting for ${holder} to finish.`)
+  );
+  let closeFakeGitHub = async () => {};
+  let interrupted = false;
+  onInterrupt(async () => {
+    interrupted = true;
+    await killTestWindows();
+    await closeFakeGitHub();
+    release();
+  });
+  const failures: [phase: string, tests: string[]][] = [];
   try {
-    await runSuite("multiRoot", multiRootWorkspace());
-    await runSuite("singleFolder", folder("single-folder"));
-    await runSuite("inbox", folder("inbox"));
-    // The second launch reopens the same workspace, like a window reload.
-    const changeFiles = multiRootWorkspace("change-files", "change-files");
-    await runSuite("changeFiles", changeFiles);
-    await runSuite("changeFiles/afterReload", changeFiles);
-    const assistant = multiRootWorkspace("assistant", "assistant");
-    await runSuite("assistant", assistant);
-    await runSuite("assistant/afterReload", assistant);
-    await runSuite(
-      "pullRequest",
-      multiRootWorkspace("pull-request", "pull-request")
-    );
-    const review = multiRootWorkspace("review", "review");
-    await runSuite("review", review);
-    await runSuite("review/afterReload", review);
-    await runSuite("timeline", multiRootWorkspace("timeline", "timeline"));
-    await runSuite("threads", multiRootWorkspace("threads", "threads"));
-    await runSuite(
-      "localBranches",
-      multiRootWorkspace("local-branches", "local-branches")
-    );
-    const lifecycle = multiRootWorkspace("lifecycle", "lifecycle");
-    await runSuite("lifecycle", lifecycle);
-    await runSuite("lifecycle/afterReload", lifecycle);
-    await runSuite(
-      "sinceLastReview",
-      multiRootWorkspace("since-last-review", "since-last-review")
-    );
-    const localReview = multiRootWorkspace("local-review", "local-review");
-    await runSuite("localReview", localReview);
-    await runSuite("localReview/afterReload", localReview);
-    await runSuite("findings", multiRootWorkspace("findings", "findings"));
-    const readingOrder = multiRootWorkspace("reading-order", "reading-order");
-    await runSuite("readingOrder", readingOrder);
-    await runSuite("readingOrder/afterReload", readingOrder);
-    // Last, so the repositories it remembers can't reach other suites; it forgets them when done.
-    await runSuite(
-      "openFolders",
-      multiRootWorkspace("open-folders", "open-folders")
-    );
-    await runSuite(
-      "openFolders/elsewhere",
-      multiRootWorkspace("elsewhere", "elsewhere")
-    );
+    await killTestWindows();
+    linkUserData();
+    installLanguageServers();
+    freshWorkFolder();
+    installBackgroundCodium();
+    installFakeClaude();
+    writeUserSettings();
+    const fakeGitHub = await startFakeGitHub();
+    closeFakeGitHub = () => fakeGitHub.close();
+    fakeGitHubUrl = fakeGitHub.url;
+    for (const planned of launches) {
+      if (interrupted) break;
+      const failed = await launch(planned);
+      if (failed.length > 0) failures.push([planned.phase, failed]);
+    }
   } finally {
-    await fakeGitHub.close();
+    await closeFakeGitHub();
+    release();
   }
+  if (failures.length === 0) return;
+  console.error(
+    `\n=== ${failures.length} of ${launches.length} launches failed ===`
+  );
+  for (const [phase, tests] of failures) {
+    console.error(`${phase}:`);
+    for (const test of tests) console.error(`  ${test}`);
+  }
+  process.exitCode = 1;
 }
 
 main().catch((err) => {

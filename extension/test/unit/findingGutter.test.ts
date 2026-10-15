@@ -2,28 +2,28 @@ import * as assert from "assert";
 import { gutterIcons, type LineSpan } from "../../src/findingGutter";
 
 describe("Which icon a Finding's lines show in the gutter", () => {
-  const icons = (...spans: LineSpan[]) => [...gutterIcons(spans)];
+  const icons = (...spans: LineSpan[]) =>
+    gutterIcons(spans).map(({ icon, first, last }) => [icon, first, last]);
 
   it("shows the plain lightbulb on a one-line Finding", () => {
-    assert.deepStrictEqual(icons({ first: 4, last: 4 }), [[4, "lightbulb"]]);
+    assert.deepStrictEqual(icons({ first: 4, last: 4 }), [["lightbulb", 4, 4]]);
   });
 
   it("shows the lightbulb with a bar on a long Finding's first line, and the bar on the rest", () => {
     assert.deepStrictEqual(icons({ first: 0, last: 9 }), [
-      [0, "lightbulbWithBar"],
-      ...Array.from({ length: 9 }, (_, i) => [i + 1, "bar"]),
+      ["lightbulbWithBar", 0, 0],
+      ["bar", 1, 9],
     ]);
   });
 
   it("starts each of two Findings on adjacent lines with its own lightbulb", () => {
     assert.deepStrictEqual(
-      icons({ first: 0, last: 2 }, { first: 3, last: 4 }),
+      icons({ first: 3, last: 4 }, { first: 0, last: 2 }),
       [
-        [0, "lightbulbWithBar"],
-        [1, "bar"],
-        [2, "bar"],
-        [3, "lightbulbWithBar"],
-        [4, "bar"],
+        ["lightbulbWithBar", 0, 0],
+        ["bar", 1, 2],
+        ["lightbulbWithBar", 3, 3],
+        ["bar", 4, 4],
       ]
     );
   });
@@ -32,9 +32,9 @@ describe("Which icon a Finding's lines show in the gutter", () => {
     assert.deepStrictEqual(
       icons({ first: 0, last: 1 }, { first: 2, last: 2 }),
       [
-        [0, "lightbulbWithBar"],
-        [1, "bar"],
-        [2, "lightbulb"],
+        ["lightbulbWithBar", 0, 0],
+        ["bar", 1, 1],
+        ["lightbulb", 2, 2],
       ]
     );
   });
@@ -43,11 +43,10 @@ describe("Which icon a Finding's lines show in the gutter", () => {
     assert.deepStrictEqual(
       icons({ first: 0, last: 4 }, { first: 2, last: 2 }),
       [
-        [0, "lightbulbWithBar"],
-        [1, "bar"],
-        [2, "lightbulbWithBar"],
-        [3, "bar"],
-        [4, "bar"],
+        ["lightbulbWithBar", 0, 0],
+        ["bar", 1, 1],
+        ["lightbulbWithBar", 2, 2],
+        ["bar", 3, 4],
       ]
     );
   });
@@ -56,10 +55,21 @@ describe("Which icon a Finding's lines show in the gutter", () => {
     assert.deepStrictEqual(
       icons({ first: 3, last: 3 }, { first: 0, last: 3 }),
       [
-        [0, "lightbulbWithBar"],
-        [1, "bar"],
-        [2, "bar"],
-        [3, "lightbulbWithBar"],
+        ["lightbulbWithBar", 0, 0],
+        ["bar", 1, 2],
+        ["lightbulbWithBar", 3, 3],
+      ]
+    );
+  });
+
+  it("runs the bar on past a Finding that starts and ends inside a longer one", () => {
+    assert.deepStrictEqual(
+      icons({ first: 0, last: 9 }, { first: 2, last: 4 }),
+      [
+        ["lightbulbWithBar", 0, 0],
+        ["bar", 1, 1],
+        ["lightbulbWithBar", 2, 2],
+        ["bar", 3, 9],
       ]
     );
   });
@@ -68,13 +78,13 @@ describe("Which icon a Finding's lines show in the gutter", () => {
     assert.deepStrictEqual(
       icons({ first: 1, last: 1 }, { first: 1, last: 2 }),
       [
-        [1, "lightbulbWithBar"],
-        [2, "bar"],
+        ["lightbulbWithBar", 1, 1],
+        ["bar", 2, 2],
       ]
     );
     assert.deepStrictEqual(
       icons({ first: 1, last: 1 }, { first: 1, last: 1 }),
-      [[1, "lightbulb"]]
+      [["lightbulb", 1, 1]]
     );
   });
 
@@ -82,14 +92,34 @@ describe("Which icon a Finding's lines show in the gutter", () => {
     assert.deepStrictEqual(
       icons({ first: 0, last: 1 }, { first: 5, last: 5 }),
       [
-        [0, "lightbulbWithBar"],
-        [1, "bar"],
-        [5, "lightbulb"],
+        ["lightbulbWithBar", 0, 0],
+        ["bar", 1, 1],
+        ["lightbulb", 5, 5],
       ]
     );
   });
 
   it("shows nothing for no Findings", () => {
     assert.deepStrictEqual(icons(), []);
+  });
+
+  it("takes no longer for Findings over many lines than over a few", () => {
+    const started = process.hrtime.bigint();
+    const result = icons(
+      { first: 0, last: 1e12 },
+      { first: 5e11, last: 5e11 },
+      { first: 7e11, last: 9e11 }
+    );
+    const ms = Number(process.hrtime.bigint() - started) / 1e6;
+
+    assert.deepStrictEqual(result, [
+      ["lightbulbWithBar", 0, 0],
+      ["bar", 1, 5e11 - 1],
+      ["lightbulbWithBar", 5e11, 5e11],
+      ["bar", 5e11 + 1, 7e11 - 1],
+      ["lightbulbWithBar", 7e11, 7e11],
+      ["bar", 7e11 + 1, 1e12],
+    ]);
+    assert.ok(ms < 50, `took ${ms} ms`);
   });
 });

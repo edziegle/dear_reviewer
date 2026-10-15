@@ -14,7 +14,7 @@ import { Change, changeName } from "./changeWorkspace";
 import type { ThreadPlace } from "./github/client";
 import { setContext } from "./context";
 import { messageOf } from "./errors";
-import { gutterIcons, type GutterIcon } from "./findingGutter";
+import { gutterIcons, type GutterIcon, type IconSpan } from "./findingGutter";
 
 /** A spot in a Change the Assistant thinks deserves the Reviewer's attention. */
 export interface Finding {
@@ -55,7 +55,7 @@ export class Findings
   /** What each visible editor shows, by document URI, for the tests. */
   private shown = new Map<
     string,
-    { options: vscode.DecorationOptions[]; icons: Map<number, GutterIcon> }
+    { options: vscode.DecorationOptions[]; icons: IconSpan[] }
   >();
   private readonly subscriptions: vscode.Disposable[] = [];
 
@@ -326,8 +326,11 @@ export class Findings
           hover: hover.value,
           enabledCommands:
             typeof trusted === "object" ? trusted.enabledCommands : [],
-          gutter: Array.from({ length: last - first + 1 }, (_, i) =>
-            icons.get(first + i)
+          gutter: Array.from(
+            { length: last - first + 1 },
+            (_, i) =>
+              icons.find((s) => s.first <= first + i && first + i <= s.last)
+                ?.icon
           ),
         };
       })
@@ -370,9 +373,9 @@ export class Findings
       for (const [kind, type] of Object.entries(this.icons))
         editor.setDecorations(
           type,
-          [...icons]
-            .filter(([, icon]) => icon === kind)
-            .map(([line]) => new vscode.Range(line, 0, line, 0))
+          icons
+            .filter(({ icon }) => icon === kind)
+            .map(({ first, last }) => new vscode.Range(first, 0, last, 0))
         );
       if (options.length > 0) shown.set(uri, { options, icons });
     }

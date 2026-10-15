@@ -17,9 +17,9 @@ A design critique of the review flow (2026-10-14) found that finishing a Review 
 
 ## Decision Outcome
 
-Chosen option: actions on the Change and the timeline, because they put Submit and Write Brief where the Reviewer already is, use native tree menus (ADR 0012), and match the JetBrains review flow PRODUCT.md takes as its reference. A separate webview would copy the Comments that already show as native threads in the gutter.
+Chosen option: actions on the Change and the timeline, because they put Submit and Write Brief where the Reviewer already is, use native tree menus (ADR 0012), and match the JetBrains review flow PRODUCT.md takes as its reference. A separate webview would copy the Comments that already show as native threads in the editor's gutter.
 
-- The Change's row in Change Files offers Submit Review for a pull request or Write Brief for a local Change, then Show Timeline and Show Assistant, as inline buttons. Its context menu adds Discard Pending Review, Show Changes Since My Last Review when there are new commits, Ask for Findings, the viewed actions and Close Change. The row says whether there are new commits since the Reviewer's last Review.
+- The Change's row in Change Files offers Submit Review for a pull request or Write Brief for a local Change, then Show Timeline and Show Assistant, as inline buttons. Its right-click menu adds Discard Pending Review, Show Changes Since My Last Review when there are new commits, Ask for Findings, the viewed actions and Close Change. The row says whether there are new commits since the Reviewer's last Review.
 - The timeline's header has a Submit Review button, which runs the same command for its Change.
 - A command run without a Change acts on the Change of the panel or editor the Reviewer is looking at, or else on the only Change in this window that fits, such as the only pull request for Submit Review. It asks only when several fit.
 - Submit Review names the pull request and how many pending Comments it publishes, both when it asks for a verdict and when it confirms, and shows progress while GitHub takes the Review.

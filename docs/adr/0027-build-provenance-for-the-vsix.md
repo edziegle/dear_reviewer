@@ -18,6 +18,7 @@ The release workflow builds `dear-reviewer.vsix` and attaches it to a GitHub Rel
 ## Decision Outcome
 
 <!-- vale RedHat.Slash = NO -->
+
 Chosen option: `actions/attest`, because it's one step and two job permissions, with no keys or secrets, and it lets anyone verify a downloaded .vsix with `gh attestation verify dear-reviewer.vsix -R edziegle/dear_reviewer`. Build L3 hardens the build against a tampered workflow run, which matters less than letting people verify the file at all, and it moves the build into a reusable workflow the project would have to maintain.
 <!-- vale RedHat.Slash = YES -->
 

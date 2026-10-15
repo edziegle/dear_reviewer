@@ -37,6 +37,22 @@ run = ["npx tsc -p test", "node out/test/run.js"]
 description = "Check prose with Vale"
 run = "vale docs GLOSSARY.md AGENTS.md"
 
+# A range whose start isn't in the history (a new branch's all-zeros "before", or
+# a force-push) lints only the last commit.
+[tasks.commitlint]
+description = "Check the commit messages in a range against Conventional Commits"
+usage = '''
+arg "<from>" help="The commit before the range, like the push's before SHA"
+arg "[to]" default="HEAD" help="The last commit in the range"
+'''
+run = '''
+if git cat-file -e "$usage_from^{commit}" 2>/dev/null; then
+  npx commitlint --from "$usage_from" --to "$usage_to"
+else
+  npx commitlint --from "$usage_to^" --to "$usage_to"
+fi
+'''
+
 [tasks.fmt-docs]
 description = "Format Markdown with Prettier"
 run = "npx prettier --write '**/*.md'"

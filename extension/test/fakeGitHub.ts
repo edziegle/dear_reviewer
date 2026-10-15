@@ -178,6 +178,8 @@ export interface FakeGitHubState {
    * another origin than the API. Defaults to the server's own URL.
    */
   avatarOrigin?: string;
+  /** Queries, by operation name, that GitHub answers with an error. */
+  failQueries?: string[];
 }
 
 export interface RecordedRequest {
@@ -261,6 +263,9 @@ export async function startFakeGitHub(): Promise<{
         query: string;
         variables: Record<string, unknown>;
       };
+      const operation = /^\s*query\s+(\w+)/.exec(query)?.[1];
+      if (operation && state.failQueries?.includes(operation))
+        return send(200, { errors: [{ message: `${operation} failed` }] });
       try {
         return send(200, { data: graphql(query, variables) });
       } catch (err) {
@@ -325,6 +330,8 @@ export async function startFakeGitHub(): Promise<{
     return {
       id: fakePullRequestId(pr),
       state: pr.state ?? "OPEN",
+      title: pr.title,
+      body: pr.body ?? "",
       ...(/\btimelineItems\(/.test(query) &&
         timelineFields(pr, visible, vars.after)),
       reviews: reviewsField(pr, query, vars),

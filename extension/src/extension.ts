@@ -131,7 +131,13 @@ export function activate(context: vscode.ExtensionContext) {
     {
       threadsOf: (change) => review.threadsOf(change),
       readingIn: (change) => reading.readingIn(change),
-    }
+    },
+    async (change) =>
+      change.pullRequest &&
+      github.pullRequestDescription(
+        change.pullRequest.repository,
+        change.pullRequest.number
+      )
   );
   // Only the user's own setting counts: a workspace must not be able to
   // choose the repository Dear Reviewer runs git in.

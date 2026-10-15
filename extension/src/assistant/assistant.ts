@@ -54,6 +54,7 @@ import {
 } from "./prompts";
 import { threadsOnLines, type ThreadInChange } from "./threads";
 import { messageOf } from "../errors";
+import type { PullRequestDescription } from "../github/client";
 import { findReferences } from "../markdown";
 import {
   parseReadingOrder,
@@ -64,6 +65,14 @@ import { openReference } from "../references";
 
 /** Gives the head commit the Reviewer's last Review of the Change covered, if any. */
 export type LastReview = (change: Change) => Promise<string | undefined>;
+
+/** A pull request Change's description; undefined for a local Change. */
+export type DescriptionOf = (
+  change: Change
+) => Promise<PullRequestDescription | undefined>;
+
+/** How long a summary waits for the pull request's description before going without. */
+const descriptionWait = 3_000;
 
 /** What the Reviewer has in front of them, which each message tells the Assistant. */
 export interface ReviewerView {
@@ -118,7 +127,8 @@ export class Assistants implements vscode.Disposable {
     private readonly lastReview: LastReview,
     /** The column a Change's code opens in, beside its overview. */
     private readonly codeColumn: (change: Change) => vscode.ViewColumn,
-    private readonly reviewerView: ReviewerView
+    private readonly reviewerView: ReviewerView,
+    private readonly descriptionOf: DescriptionOf
   ) {
     this.status = vscode.window.createStatusBarItem(
       "dearReviewer.claudeLogin",
@@ -150,7 +160,8 @@ export class Assistants implements vscode.Disposable {
       () => this.readingOrderChanged.fire(change.conversation),
       (current) => this.codeColumn(current),
       () => this.retryStart(assistant),
-      this.reviewerView
+      this.reviewerView,
+      this.descriptionOf
     );
     this.byConversation.set(change.conversation, assistant);
     // Its overview may already be open, showing nothing from it yet.
@@ -408,7 +419,8 @@ class ChangeAssistant {
     private readonly codeColumn: (change: Change) => vscode.ViewColumn,
     /** Starts the Assistant again, once `claude` couldn't run. */
     private readonly retry: () => void,
-    private readonly reviewerView: ReviewerView
+    private readonly reviewerView: ReviewerView,
+    private readonly descriptionOf: DescriptionOf
   ) {
     this.state = {
       ...namesOf(change),
@@ -550,8 +562,12 @@ class ChangeAssistant {
             { from: "note", text: summaryNote },
           ],
         });
+        const description = await within(
+          this.descriptionOf(this.change),
+          descriptionWait
+        );
         const text = await this.turn(
-          await summaryPrompt(this.change),
+          await summaryPrompt(this.change, description),
           "overview"
         );
         if (text === undefined) return;
@@ -964,6 +980,22 @@ function namesOf(change: Change): Pick<ConversationState, "name" | "range"> {
     name: changeName(change),
     range: `${change.mergeBase.slice(0, 7)}..${change.headSha.slice(0, 7)}`,
   };
+}
+
+/** What the promise gives within `ms`, or undefined if it fails or takes longer. */
+async function within<T>(
+  promise: Promise<T>,
+  ms: number
+): Promise<T | undefined> {
+  let timer: NodeJS.Timeout | undefined;
+  const late = new Promise<undefined>((resolve) => {
+    timer = setTimeout(() => resolve(undefined), ms);
+  });
+  try {
+    return await Promise.race([promise.catch(() => undefined), late]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function sinceLabel(from: string): string {

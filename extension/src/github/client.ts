@@ -98,6 +98,13 @@ export interface PullRequestReviewThreads {
   threads: ReviewThread[];
 }
 
+/** What the pull request's author wrote about it. */
+export interface PullRequestDescription {
+  title: string;
+  /** Markdown; empty when the author wrote none. */
+  body: string;
+}
+
 export interface GitHubUser {
   login: string;
   avatarUrl: string;
@@ -299,6 +306,18 @@ ${INBOX_PULL_REQUEST}`;
       repository: { pullRequest: { state: PullRequestState } | null } | null;
     }>(PULL_REQUEST_STATE, { owner, name, number });
     return data.repository?.pullRequest?.state;
+  }
+
+  /** The pull request's title and description; undefined if GitHub has no such pull request. */
+  async pullRequestDescription(
+    repository: string,
+    number: number
+  ): Promise<PullRequestDescription | undefined> {
+    const [owner, name] = repository.split("/");
+    const data = await this.graphql<{
+      repository: { pullRequest: PullRequestDescription | null } | null;
+    }>(PULL_REQUEST_DESCRIPTION, { owner, name, number });
+    return data.repository?.pullRequest ?? undefined;
   }
 
   /** Marks these files of the pull request viewed, or not viewed, in one request. */
@@ -685,6 +704,12 @@ function lastReviewedSha(reviews: ReviewsNode | undefined): string | undefined {
 const PULL_REQUEST_STATE = `query PullRequestState($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) { state }
+  }
+}`;
+
+const PULL_REQUEST_DESCRIPTION = `query PullRequestDescription($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) { title body }
   }
 }`;
 

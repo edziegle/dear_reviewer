@@ -5,6 +5,8 @@ date: 2026-10-13
 
 # Show a pull request's review threads on its diff, reply in the pending review, and resolve over GraphQL
 
+Amended by [ADR 0024](0024-reply-to-your-own-pending-threads.md): the Reviewer can add follow-up Comments to their own threads in the pending review or a local Review.
+
 ## Context and Problem Statement
 
 ADR 0007 shows only the threads the Reviewer started in their pending review, so their teammates' threads never reach the diff, and the Reviewer's own threads leave the gutter once they submit the Review. The spec asks for existing review threads at the right lines (#26), for replies to them (#32), and for resolving them and marking them unresolved again (#27). GitHub keeps each thread's place as a line or range on one side of the diff, and when a later commit removes those lines it marks the thread outdated and keeps only the line it was written on. Which threads does Dear Reviewer show, where does it show outdated ones, where does a reply go, and how are threads resolved?

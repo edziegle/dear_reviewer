@@ -5,6 +5,8 @@ date: 2026-10-14
 
 # Keep a local Change's Comments in the extension's storage, and end its Review with a Brief from the Assistant
 
+Amended by [ADR 0024](0024-reply-to-your-own-pending-threads.md): the Reviewer can add follow-up Comments to their own threads in the pending review or a local Review.
+
 Amended by [ADR 0018](0018-finish-a-review-from-the-change.md): writing a Brief no longer ends the Review. Copying it does, so the Reviewer reads and edits the Brief while its Comments are still in the gutter. A local Change's kept Comments can also be discarded.
 
 ## Context and Problem Statement

@@ -11,6 +11,7 @@ import type { RecordedReview } from "./github";
 interface ReviewApi {
   controller: vscode.CommentController;
   threads(): vscode.CommentThread[];
+  inProgressFiles(): readonly string[];
 }
 
 async function reviewApi(): Promise<ReviewApi> {
@@ -19,6 +20,15 @@ async function reviewApi(): Promise<ReviewApi> {
   );
   if (!extension) throw new Error("Dear Reviewer is not installed");
   return (await extension.activate()).review;
+}
+
+/**
+ * The files the `dearReviewer.reviewInProgressFiles` context key lists, as
+ * `resourcePath` gives them: a new thread on them offers Add Review Comment,
+ * and elsewhere Start Review.
+ */
+export async function reviewInProgressFiles(): Promise<readonly string[]> {
+  return (await reviewApi()).inProgressFiles();
 }
 
 /** The lines, counted from 0, where the gutter offers to start a Comment. */
@@ -41,12 +51,15 @@ export async function commentingLines(
 /**
  * Clicks the gutter's "+" on these lines (counted from 0) and writes the
  * Comment, as the comment widget does, giving back the thread it lands in.
+ * The button pressed is Start Review or Add Review Comment, or the command
+ * behind both.
  */
 export async function comment(
   file: string,
   firstLine: number,
   lastLine: number,
-  text: string
+  text: string,
+  button: "addComment" | "startReview" | "addToReview" = "addComment"
 ): Promise<vscode.CommentThread> {
   const { controller } = await reviewApi();
   const thread = controller.createCommentThread(
@@ -54,7 +67,7 @@ export async function comment(
     new vscode.Range(firstLine, 0, lastLine, 0),
     []
   );
-  await vscode.commands.executeCommand("dearReviewer.addComment", {
+  await vscode.commands.executeCommand(`dearReviewer.${button}`, {
     thread,
     text,
   });

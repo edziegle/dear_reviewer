@@ -22,6 +22,7 @@ import {
 import {
   commentThreads,
   copyBrief,
+  reviewInProgressFiles,
   showChangesSinceLastReview,
   writeBrief,
 } from "../../review";
@@ -85,6 +86,12 @@ describe("Ending a local Review with a Brief", () => {
           editable: [true],
         },
       ])
+    );
+    await eventually(async () =>
+      assert.ok(
+        (await reviewInProgressFiles()).includes(path.join(baseDir, "util.py")),
+        "a new thread offers Add Review Comment"
+      )
     );
   });
 
@@ -190,6 +197,13 @@ describe("Ending a local Review with a Brief", () => {
 
   it("ends the Review: its Comments leave the gutter, and nothing is new since", async () => {
     assert.deepStrictEqual(await commentThreads(), []);
+    await eventually(async () =>
+      assert.deepStrictEqual(
+        await reviewInProgressFiles(),
+        [],
+        "a new thread offers Start Review"
+      )
+    );
     await vscode.commands.executeCommand("workbench.action.closeAllEditors");
 
     await showChangesSinceLastReview(change);

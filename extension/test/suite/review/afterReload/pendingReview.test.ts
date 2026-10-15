@@ -6,6 +6,7 @@ import {
   comment,
   commentThreads,
   discardReview,
+  reviewInProgressFiles,
   submitReview,
   withoutIds,
 } from "../../review";
@@ -57,6 +58,12 @@ describe("A pull request Review after a reload", () => {
           editable: [true],
         },
       ])
+    );
+    await eventually(async () =>
+      assert.ok(
+        (await reviewInProgressFiles()).includes(path.join(base, "util.py")),
+        "a new thread offers Add Review Comment"
+      )
     );
   });
 
@@ -111,6 +118,13 @@ describe("A pull request Review after a reload", () => {
       (await reviewsOnGitHub()).every((r) => r.state !== "PENDING"),
       "no pending review on GitHub"
     );
+    await eventually(async () =>
+      assert.deepStrictEqual(
+        await reviewInProgressFiles(),
+        [],
+        "a new thread offers Start Review"
+      )
+    );
   });
 
   it("starts a new pending review with the next Comment", async () => {
@@ -130,6 +144,11 @@ describe("A pull request Review after a reload", () => {
         comments: ["Is NEW used?"],
       },
     ]);
+    await eventually(async () =>
+      assert.ok(
+        (await reviewInProgressFiles()).includes(path.join(head, "util.py"))
+      )
+    );
   });
 
   it("submits that one as an approval", async () => {
@@ -185,6 +204,9 @@ describe("A pull request Review after a reload", () => {
         t.comments.includes("Never mind this.")
       ),
       "the discarded Comment left the gutter"
+    );
+    await eventually(async () =>
+      assert.deepStrictEqual(await reviewInProgressFiles(), [])
     );
   });
 });

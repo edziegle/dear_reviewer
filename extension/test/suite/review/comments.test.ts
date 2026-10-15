@@ -1,7 +1,7 @@
 import * as assert from "assert";
 import * as path from "path";
 import * as vscode from "vscode";
-import { buildPullRequestFixture } from "../fixtures";
+import { buildFixtureRepo, buildPullRequestFixture } from "../fixtures";
 import {
   configure,
   fakePullRequestId,
@@ -22,10 +22,17 @@ import {
   commentThreads,
   deleteComment,
   editComment,
+  reviewInProgressFiles,
   threadAt,
   withoutIds,
 } from "../review";
-import { foldersAddedSince, workspaceFolders } from "../reviewer";
+import {
+  closeChange,
+  eventually,
+  foldersAddedSince,
+  openChange,
+  workspaceFolders,
+} from "../reviewer";
 import { leaveForReload } from "./handoff";
 
 const viewer = { login: "reviewer", token: "test-token" };
@@ -188,6 +195,92 @@ describe("Commenting on a pull request", () => {
         editable: [true],
       },
     ]);
+  });
+
+  it("labels a new thread's button by its own Change's Review: Add Review Comment once one is in progress, else Start Review", async () => {
+    const sides = (dirs: string[], file: string) =>
+      dirs.map((dir) => path.join(dir, file));
+    const pullRequestFiles = [
+      "pkg/core.py",
+      "pkg/legacy.py",
+      "pkg/sub/new.py",
+      "util.py",
+    ].flatMap((file) => sides([base, head], file));
+    await eventually(async () =>
+      assert.deepStrictEqual(
+        [...(await reviewInProgressFiles())].sort(),
+        pullRequestFiles.sort()
+      )
+    );
+
+    const repo = buildFixtureRepo("start-review");
+    const local = {
+      repository: repo.path,
+      base: repo.commits.renamed,
+      head: repo.commits.restructured,
+    };
+    const before = workspaceFolders();
+    await openChange(local);
+    const localDirs = foldersAddedSince(before).map((f) => f.path);
+    try {
+      const localUtil = sides(localDirs, "util.py");
+      const inProgress = async (file: string) =>
+        (await reviewInProgressFiles()).includes(file);
+      for (const file of localUtil)
+        assert.ok(!(await inProgress(file)), "the local Change has no Review");
+
+      const first = await comment(localUtil[1], 0, 0, "Why?", "startReview");
+      await eventually(async () => {
+        for (const file of localUtil) assert.ok(await inProgress(file));
+      });
+      const second = await comment(
+        localUtil[1],
+        2,
+        2,
+        "And this?",
+        "addToReview"
+      );
+      assert.deepStrictEqual(
+        [first, second].map((t) => t.comments.map((c) => bodyText(c))),
+        [["Why?"], ["And this?"]]
+      );
+
+      await deleteComment(first.comments[0]);
+      await deleteComment(second.comments[0]);
+      await eventually(async () => {
+        for (const file of localUtil) assert.ok(!(await inProgress(file)));
+      });
+      assert.ok(
+        await inProgress(path.join(head, "util.py")),
+        "the pull request's Review is still in progress"
+      );
+    } finally {
+      await closeChange(local);
+    }
+  });
+
+  it("offers Start Review and Add Review Comment, not Add Comment, on a new thread", () => {
+    const menus = vscode.extensions.getExtension("edziegle.dear-reviewer")!
+      .packageJSON.contributes.menus as Record<
+      string,
+      { command: string; when?: string }[]
+    >;
+    const ours = "commentController == dearReviewer.review";
+    assert.deepStrictEqual(
+      menus["comments/commentThread/context"]
+        .filter((m) => m.when?.includes("&& commentThreadIsEmpty"))
+        .map((m) => [m.command, m.when]),
+      [
+        [
+          "dearReviewer.startReview",
+          `${ours} && commentThreadIsEmpty && resourcePath not in dearReviewer.reviewInProgressFiles`,
+        ],
+        [
+          "dearReviewer.addToReview",
+          `${ours} && commentThreadIsEmpty && resourcePath in dearReviewer.reviewInProgressFiles`,
+        ],
+      ]
+    );
   });
 
   it("edits a Comment on GitHub", async () => {

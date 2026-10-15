@@ -208,6 +208,16 @@
         "category": "Dear Reviewer"
       },
       {
+        "command": "dearReviewer.startReview",
+        "title": "Start Review",
+        "category": "Dear Reviewer"
+      },
+      {
+        "command": "dearReviewer.addToReview",
+        "title": "Add Review Comment",
+        "category": "Dear Reviewer"
+      },
+      {
         "command": "dearReviewer.replyToThread",
         "title": "Reply",
         "category": "Dear Reviewer"
@@ -482,6 +492,14 @@
           "when": "false"
         },
         {
+          "command": "dearReviewer.startReview",
+          "when": "false"
+        },
+        {
+          "command": "dearReviewer.addToReview",
+          "when": "false"
+        },
+        {
           "command": "dearReviewer.replyToThread",
           "when": "false"
         },
@@ -737,9 +755,14 @@
       ],
       "comments/commentThread/context": [
         {
-          "command": "dearReviewer.addComment",
+          "command": "dearReviewer.startReview",
           "group": "inline",
-          "when": "commentController == dearReviewer.review && commentThreadIsEmpty"
+          "when": "commentController == dearReviewer.review && commentThreadIsEmpty && resourcePath not in dearReviewer.reviewInProgressFiles"
+        },
+        {
+          "command": "dearReviewer.addToReview",
+          "group": "inline",
+          "when": "commentController == dearReviewer.review && commentThreadIsEmpty && resourcePath in dearReviewer.reviewInProgressFiles"
         },
         {
           "command": "dearReviewer.replyToThread",

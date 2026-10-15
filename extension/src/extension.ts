@@ -38,6 +38,7 @@ import { LocalClone, Repositories } from "./repositories";
 import { ReviewWindow } from "./reviewWindow";
 import { GitHubPendingReviews, PendingReviewsBySource } from "./pendingReview";
 import { ReviewComments, Verdict } from "./reviewComments";
+import { ReviewInProgressFiles } from "./reviewInProgress";
 import {
   CommitFiles,
   commitFileScheme,
@@ -99,6 +100,12 @@ export function activate(context: vscode.ExtensionContext) {
   const threadsFiles = new ThreadsFiles(
     () => changes.shownHere(),
     (change) => review.threadsOf(change),
+    review.onDidChange
+  );
+  // A new thread's button says whether its Change's Review is in progress.
+  const reviewInProgress = new ReviewInProgressFiles(
+    () => changes.shownHere(),
+    (change) => review.pendingCount(change),
     review.onDidChange
   );
   const reading = new ReadingTracker(() => changes.shownHere());
@@ -824,11 +831,15 @@ export function activate(context: vscode.ExtensionContext) {
     review.onDidChange(() => showStanding()),
     review,
     threadsFiles,
+    reviewInProgress,
     reading,
     changes.onDidShowChange(() => void review.sync()),
-    vscode.commands.registerCommand(
-      "dearReviewer.addComment",
-      (reply: vscode.CommentReply) => review.addComment(reply)
+    // Start Review and Add Review Comment are Add Comment, labelled by whether the Review is in progress.
+    ...["addComment", "startReview", "addToReview"].map((command) =>
+      vscode.commands.registerCommand(
+        `dearReviewer.${command}`,
+        (reply: vscode.CommentReply) => review.addComment(reply)
+      )
     ),
     vscode.commands.registerCommand(
       "dearReviewer.replyToThread",
@@ -1302,6 +1313,7 @@ export function activate(context: vscode.ExtensionContext) {
     review: {
       controller: review.controller,
       threads: () => review.threads(),
+      inProgressFiles: () => reviewInProgress.paths,
     },
     assistant: {
       panels: () => assistants.panels(),

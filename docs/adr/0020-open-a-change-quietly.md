@@ -5,6 +5,10 @@ date: 2026-10-14
 
 # Open a Change quietly, with its overview alone, and let a newer head replace the older one
 
+Amended by [ADR 0025](0025-home-replaces-the-inbox-in-the-review-window.md): the review window's side bar holds Change Files and Findings, and no Inbox.
+
+Amended by issue #25: an added file opens from the head worktree, and a deleted file from the base worktree, in a plain editor in the column beside the overview, not as a diff with one empty side. Modified files still open as diffs.
+
 ## Context and Problem Statement
 
 ADR 0019 opened each Change with its multi-file diff and its overview beside it. In use, the review window, one saved workspace that every review reuses (ADR 0002), brought back what the last session left: the earlier heads of the same pull request, each with its own diff in its own column, the overviews of every open Change after a reload, a terminal in a base worktree, and the Explorer full of the repository's files. Opening a pull request gave four narrow columns, code wrapped one word a line, the overview squeezed to the narrowest of them, and an empty terminal under it all (critique of 2026-10-14). The Reviewer couldn't tell which diff was the pull request they had opened. What should the review window look like when a Change opens, and what happens to a pull request's or branch's older head?

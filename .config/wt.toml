@@ -1,0 +1,13 @@
+# Worktrunk project hooks: https://worktrunk.dev/hook/
+#
+# A new worktree lacks the gitignored files that `mise run setup` installs.
+# These run before `wt switch --create` returns, so an agent handed the
+# worktree can lint docs and build the extension straight away. They call
+# vale and npm directly, not mise, so they also run where mise can't. The
+# root node_modules isn't installed: worktrees live under .worktrees/, so
+# Node finds the main checkout's.
+[pre-start]
+# Vale's style packages, which .vale.ini names and `vale sync` downloads
+vale-styles = "vale sync"
+# The extension's dependencies, for typecheck, build and test
+extension-deps = "[ -d extension/node_modules ] || npm ci --prefix extension"

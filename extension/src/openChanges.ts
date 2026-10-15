@@ -62,7 +62,13 @@ export class OpenChanges {
   }
 
   remove(id: string): void {
-    this.write(this.all().filter((c) => c.id !== id));
+    this.removeAll([id]);
+  }
+
+  /** Removes these Changes in one write, so other windows see them go at once. */
+  removeAll(ids: Iterable<string>): void {
+    const gone = new Set(ids);
+    this.write(this.all().filter((c) => !gone.has(c.id)));
   }
 
   private write(changes: OpenChange[]): void {
@@ -83,4 +89,24 @@ export function changeInFront<T extends OpenChange>(
   return changes
     .filter((change) => !change.diffPending && isHere(change))
     .at(-1);
+}
+
+/**
+ * Whether the review window still has a Change sent to it to show: one
+ * waiting for its diff whose folders the review window's workspace file
+ * lists, so they are on their way. One whose folders were never sent, or
+ * were taken out, won't arrive, so it doesn't count.
+ */
+export function waitingToShow(
+  changes: readonly OpenChange[],
+  listedFolders: readonly string[]
+): boolean {
+  const listed = new Set(listedFolders);
+  return changes.some(
+    (c) =>
+      c.inReviewWindow &&
+      c.diffPending &&
+      listed.has(c.baseDir) &&
+      listed.has(c.headDir)
+  );
 }

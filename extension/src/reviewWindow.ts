@@ -69,6 +69,25 @@ export class ReviewWindow {
     fs.writeFileSync(this.workspaceFile, JSON.stringify(workspace, null, 2));
   }
 
+  /**
+   * The folders the review window's workspace file lists, as absolute
+   * paths; none if it can't be read.
+   */
+  listedFolders(): string[] {
+    try {
+      const workspace = JSON.parse(
+        fs.readFileSync(this.workspaceFile, "utf8")
+      ) as { folders?: { path?: unknown }[] };
+      return (workspace.folders ?? []).flatMap((folder) =>
+        typeof folder.path === "string"
+          ? [path.resolve(path.dirname(this.workspaceFile), folder.path)]
+          : []
+      );
+    } catch {
+      return [];
+    }
+  }
+
   /** Opens (or focuses) the review window, leaving this window as it is. */
   async open(): Promise<void> {
     await vscode.commands.executeCommand(

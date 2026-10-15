@@ -21,6 +21,7 @@ import {
   Change,
   changeInFront,
   OpenChanges,
+  waitingToShow,
   PullRequestRef,
 } from "./openChanges";
 import {
@@ -96,11 +97,14 @@ export class ChangeWorkspace implements vscode.Disposable {
     return this.operations > 0;
   }
 
-  /** Whether this is the review window and a Change sent here still waits to show. */
+  /**
+   * Whether this is the review window and a Change sent here still waits to
+   * show, with its folders on their way.
+   */
   waitingHere(): boolean {
     return (
       this.reviewWindow.isThisWindow() &&
-      this.openChanges.all().some((c) => c.inReviewWindow && c.diffPending)
+      waitingToShow(this.openChanges.all(), this.reviewWindow.listedFolders())
     );
   }
 
@@ -168,12 +172,10 @@ export class ChangeWorkspace implements vscode.Disposable {
    */
   tidy(isOver: (change: Change) => boolean): Promise<Change[]> {
     return this.serially(async () => {
-      const closed: Change[] = [];
-      for (const change of this.openChanges.all()) {
-        if (!isOver(change) && !isBroken(change)) continue;
-        await this.remove(change);
-        closed.push(change);
-      }
+      const closed: Change[] = this.openChanges
+        .all()
+        .filter((change) => isOver(change) || isBroken(change));
+      await this.remove(...closed);
       const kept = new Set(
         this.openChanges.all().flatMap((c) => [c.baseDir, c.headDir])
       );
@@ -232,20 +234,30 @@ export class ChangeWorkspace implements vscode.Disposable {
     }
   }
 
-  /** Removes the Change's folders, its worktrees and git's records of them. */
-  private async remove(change: Change): Promise<void> {
-    const wasInReviewWindow = this.openChanges.get(change.id)?.inReviewWindow;
-    await removeFolders([change.headDir, change.baseDir]);
-    this.openChanges.remove(change.id);
-    if (wasInReviewWindow && !this.reviewWindow.isThisWindow()) {
+  /**
+   * Removes the Changes' folders, their worktrees and git's records of them.
+   * They leave the open Changes in one write, so other windows see them go
+   * at once rather than one by one.
+   */
+  private async remove(...changes: Change[]): Promise<void> {
+    if (changes.length === 0) return;
+    const ids = new Set(changes.map((c) => c.id));
+    const wereInReviewWindow = this.openChanges
+      .all()
+      .some((c) => ids.has(c.id) && c.inReviewWindow);
+    for (const change of changes)
+      await removeFolders([change.headDir, change.baseDir]);
+    this.openChanges.removeAll(ids);
+    if (wereInReviewWindow && !this.reviewWindow.isThisWindow()) {
       this.syncReviewWindow();
     }
-    for (const dir of [change.baseDir, change.headDir, assistantDir(change)]) {
-      fs.rmSync(dir, { recursive: true, force: true });
+    for (const change of changes) {
+      for (const dir of [change.baseDir, change.headDir, assistantDir(change)])
+        fs.rmSync(dir, { recursive: true, force: true });
+      // A repository that was deleted has no records left to prune.
+      if (fs.existsSync(change.repository))
+        await git(change.repository, "worktree", "prune");
     }
-    // A repository that was deleted has no records left to prune.
-    if (fs.existsSync(change.repository))
-      await git(change.repository, "worktree", "prune");
   }
 
   private serially<T>(work: () => Promise<T>): Promise<T> {

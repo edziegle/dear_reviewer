@@ -14,7 +14,12 @@
 
 import * as vscode from "vscode";
 import { inTreeOrder } from "../changeFiles";
-import { Change, changedFiles, changeTitle } from "../changeWorkspace";
+import {
+  Change,
+  changedFiles,
+  changeName,
+  changeTitle,
+} from "../changeWorkspace";
 import type { LocalThread } from "../localReviews";
 import { describeToolUse } from "./activity";
 import {
@@ -390,7 +395,7 @@ class ChangeAssistant {
     private readonly retry: () => void
   ) {
     this.state = {
-      title: changeTitle(change),
+      ...namesOf(change),
       busy: true,
       messages: saved?.messages ?? [],
     };
@@ -464,9 +469,9 @@ class ChangeAssistant {
     return this.change.id;
   }
 
-  /** The Change's title, as its panel names it. */
+  /** The Change's title, which the tests find its Assistant by. */
   get title(): string {
-    return this.state.title;
+    return changeTitle(this.change);
   }
 
   /** Whether its panel is the one the Reviewer is looking at. */
@@ -552,7 +557,7 @@ class ChangeAssistant {
       // The next turn restarts `claude` with the new worktrees.
       this.conversation?.dispose();
       this.conversation = undefined;
-      this.update({ title: changeTitle(change) });
+      this.update(namesOf(change));
       this.noteNewHead(previousHead);
     });
     void this.explainSinceLastReview();
@@ -628,7 +633,7 @@ class ChangeAssistant {
     if (!panel) return [];
     return [
       {
-        title: this.state.title,
+        title: this.title,
         sent: panel.sent,
         rendered: panel.rendered,
         receive: (message) => panel.receive(message),
@@ -921,6 +926,13 @@ class ChangeAssistant {
 /** The note a conversation starts with, before the summary is written, which may still fail. */
 const summaryNote =
   "The Assistant's summary of this Change is in its overview.";
+
+function namesOf(change: Change): Pick<ConversationState, "name" | "range"> {
+  return {
+    name: changeName(change),
+    range: `${change.mergeBase.slice(0, 7)}..${change.headSha.slice(0, 7)}`,
+  };
+}
 
 function sinceLabel(from: string): string {
   return `Since your Review at ${from.slice(0, 7)}`;

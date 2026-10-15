@@ -166,7 +166,7 @@ describe("The Assistant's summary when a Change opens", () => {
     await clickOverview(title, "ask");
     await eventually(() =>
       assert.ok(
-        webviewTabs().includes(`Assistant: ${title}`),
+        webviewTabs().includes(`Assistant · ${title}`),
         `the Assistant opens: ${webviewTabs().join(", ")}`
       )
     );

@@ -29,8 +29,10 @@ export interface Message {
 }
 
 export interface ConversationState {
-  /** The Change's title. */
-  title: string;
+  /** The Change as the Reviewer knows it, which the tab and heading show. */
+  name: string;
+  /** The Change's commits, such as `3f2a1c0..9be41d7`. */
+  range: string;
   /** The Claude login the Assistant runs on. */
   login?: string;
   /** Whether the Assistant is working on a reply. */
@@ -84,7 +86,7 @@ export class AssistantPanel {
   ) {
     this.view = new MarkdownPanel(state, {
       viewType: "dearReviewer.assistant",
-      title: `Assistant: ${state.title}`,
+      title: tabTitle(state),
       localResourceRoots: [],
       html,
       show: shown,
@@ -109,7 +111,7 @@ export class AssistantPanel {
   }
 
   update(state: ConversationState): void {
-    this.view.title = `Assistant: ${state.title}`;
+    this.view.title = tabTitle(state);
     this.view.update(state);
   }
 
@@ -164,6 +166,10 @@ export class AssistantPanel {
   }
 }
 
+function tabTitle(state: ConversationState): string {
+  return `Assistant · ${state.name}`;
+}
+
 /** Renders each reply's Markdown, with `path:line` references. */
 function shown(
   state: ConversationState,
@@ -189,7 +195,7 @@ function html(): string {
   body { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); padding: 0 16px; margin: 0; display: flex; flex-direction: column; min-height: 100vh; }
   header { position: sticky; top: 0; background: var(--vscode-editor-background); padding: 12px 0 8px; border-bottom: 1px solid var(--vscode-panel-border); }
   h1 { font-size: 1.1em; margin: 0 0 4px; }
-  .login { color: var(--vscode-descriptionForeground); font-size: 0.9em; }
+  .muted { color: var(--vscode-descriptionForeground); font-size: 0.9em; }
   main { flex: 1; }
   .message { white-space: pre-wrap; line-height: 1.5; margin: 12px 0; }
   .message.reviewer { padding: 8px; border-radius: 4px; background: var(--vscode-editor-inactiveSelectionBackground); outline: 1px solid var(--vscode-contrastBorder, transparent); outline-offset: -1px; }
@@ -223,7 +229,7 @@ function html(): string {
 </style>
 </head>
 <body>
-<header><h1 id="title"></h1><div class="login" id="login"></div></header>
+<header><h1 id="title"></h1><div class="muted" id="range"></div><div class="muted" id="login"></div></header>
 <main id="messages"></main>
 <div class="busy" id="busy" hidden><div class="now" id="now"></div><details id="steps" hidden><summary id="stepCount"></summary><ol id="stepList"></ol></details><button class="stop" id="stop" type="button" title="Stop this reply; the conversation goes on with your next message" hidden>Stop</button></div>
 <div class="problem" id="problem" role="alert" hidden></div>
@@ -359,7 +365,8 @@ function html(): string {
   const render = (state) => {
     // A Reviewer reading at the end keeps following the reply as it grows.
     const following = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 24;
-    setText(byId("title"), state.title);
+    setText(byId("title"), state.name);
+    setText(byId("range"), state.range);
     setText(byId("login"), state.login ? "Claude login: " + state.login : "");
     const grew = showMessages(state.messages);
     const steps = state.steps || [];

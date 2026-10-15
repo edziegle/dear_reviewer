@@ -35,7 +35,7 @@ describe("Chatting with the Assistant about a Change", () => {
     title: `${path.basename(repo.path)} ${short(base)}..${short(head)}`,
   });
   const assistantTabs = () =>
-    webviewTabs().filter((label) => label.startsWith("Assistant:"));
+    webviewTabs().filter((label) => label.startsWith("Assistant · "));
 
   it("sends the Reviewer's turns to the Assistant and streams its replies", async () => {
     const answer = "util.py defines new_helper, which returns 2.";
@@ -303,7 +303,8 @@ describe("Chatting with the Assistant about a Change", () => {
     const note = `New commits: the Change is now at ${short(repo.commits.documented)}, after ${short(repo.commits.renamed)}.`;
     await eventually(async () =>
       assert.deepStrictEqual(await renderedPanel(newTitle), {
-        title: newTitle,
+        name: "chat-feature",
+        range: `${short(repo.commits.initial)}..${short(repo.commits.documented)}`,
         login: "Claude subscription (Max)",
         busy: false,
         messages: [
@@ -315,6 +316,7 @@ describe("Chatting with the Assistant about a Change", () => {
       })
     );
     assert.deepStrictEqual(assistantRuns(), [], "no new summary");
+    assert.deepStrictEqual(assistantTabs(), ["Assistant · chat-feature"]);
 
     await askAssistant(newTitle, "Second question?");
 
@@ -375,7 +377,13 @@ describe("Chatting with the Assistant about a Change", () => {
         ["note", "reviewer", "assistant", "note"]
       )
     );
-    assert.deepStrictEqual(assistantTabs(), [`Assistant: ${newer.title}`]);
+    assert.deepStrictEqual(assistantTabs(), ["Assistant · acme/chat #5"]);
+    const shown = await renderedPanel(newer.title);
+    assert.strictEqual(shown?.name, "acme/chat #5");
+    assert.strictEqual(
+      shown?.range,
+      `${short(repo.commits.initial)}..${short(repo.commits.documented)}`
+    );
     await askAssistant(newer.title, "Second question?");
     await eventually(async () =>
       assert.strictEqual(

@@ -124,8 +124,10 @@ export interface Step {
 }
 
 export interface Conversation {
-  /** The Change's title, as the panel names it. */
-  title: string;
+  /** The Change's name, which the panel's tab and heading show. */
+  name: string;
+  /** The Change's commits, such as `3f2a1c0..9be41d7`, under the heading. */
+  range: string;
   /** The Claude login the Assistant runs on, as the panel shows it. */
   login?: string;
   /** Whether the Assistant is still working. */

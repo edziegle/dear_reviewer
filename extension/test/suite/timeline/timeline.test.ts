@@ -315,7 +315,7 @@ describe("A pull request's timeline", () => {
       "nothing else opens: no diff, no other tab"
     );
     assert.deepStrictEqual(
-      webviewTabs().filter((label) => label.startsWith("Assistant: ")),
+      webviewTabs().filter((label) => label.startsWith("Assistant · ")),
       [],
       "the Assistant's panel waits until the Reviewer asks"
     );

@@ -29,8 +29,14 @@ function fakeClaudeDir(): string {
 }
 
 /**
- * Replaces what the fake `claude` answers, and forgets the runs it saw. The
- * sessions it keeps, which `--resume` brings back, stay.
+ * Replaces what the fake `claude` answers, and forgets the runs it saw and
+ * the turns they took. The sessions it keeps, which `--resume` brings back,
+ * stay.
+ *
+ * The new script reaches only the runs that start after it: a conversation
+ * already going on keeps its old turns, counted from the first again. Every
+ * Change takes its turns from the one list, so a Change whose conversation
+ * starts after this takes the next turn as its summary.
  */
 export function scriptClaude(script: FakeClaudeScript): void {
   const dir = fakeClaudeDir();
@@ -315,7 +321,11 @@ export async function loginStatus(): Promise<LoginStatus | undefined> {
   return (await assistantApi()).loginStatus();
 }
 
-/** Runs Show Assistant on the Change, which opens its chat panel. */
+/**
+ * Runs Show Assistant on the Change, which opens its chat panel. Showing a
+ * Change closes every other Change's panel, though their conversations go
+ * on, so a test that shows another Change runs this again for a panel.
+ */
 export function showAssistant(change: ChangeRequest): Thenable<unknown> {
   return vscode.commands.executeCommand("dearReviewer.showAssistant", change);
 }

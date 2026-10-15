@@ -20,6 +20,12 @@
 // script's `readingOrder` answer on the side, so the scripted turns stay
 // the summary and what the Reviewer asks.
 //
+// The scripted turns are one list for every Change: `turns-taken` counts
+// the turns of every run, so whichever Change asks next gets the next turn,
+// and each new conversation takes one as its summary. A run reads script.json
+// once, as it starts, so a run already going on when the test scripts the
+// fake again keeps its old turns while counting from the first again.
+//
 // In the scripted events, the strings {head} and {base} stand for the first
 // and second `--add-dir` the run was given, the Change's worktrees, so a
 // tool-use event (see toolUse) can name files the way Claude Code does.
@@ -42,7 +48,7 @@ export interface FakeClaudeScript {
   authStatusExitCode?: number;
   /**
    * The stream-json events printed for each user message, in order, counted
-   * across every run. Once they run out, the last turn repeats. Defaults to a
+   * across every run of every Change. Once they run out, the last turn repeats. Defaults to a
    * short summary. Each event's `session_id` is replaced with the run's
    * session, and a `waitFor` event pauses the turn until its file exists.
    */

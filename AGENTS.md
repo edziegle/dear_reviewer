@@ -14,7 +14,13 @@ Unit tests live in `extension/test/unit/`, and the test runner's beside it in `e
 - `DEAR_REVIEWER_FILES=review/comments,inbox/settings.test.ts`: test files, by path from `test/suite/`, narrowing their suite even when `DEAR_REVIEWER_SUITES` names it. The phases before a file's phase also run, since they set up its state; the phases after it don't.
 - `DEAR_REVIEWER_GREP='pending review'`: a regular expression for Mocha's `--grep`, applied in every phase that runs.
 
-Test runs on this machine take turns, so a run can first print that it's waiting for another worktree's (ADR 0028).
+Test runs on this machine take turns, so a run can first print that it's waiting for another worktree's (ADR 0028). Start a run of every suite in the background: waiting its turn and then running can outlast a foreground command.
+
+Rules for tests, which reviewers enforce:
+
+- A test waits for what it checks, with `eventually` or a helper's own wait, and asserts nothing about elapsed time: a loaded machine runs every test slower.
+- Each integration test that talks to the Assistant opens a Change of its own, with its own pull request, branch or commit range. The Assistant keeps one conversation for each (ADR 0009), so tests sharing one resume each other's conversation and take each other's scripted turns.
+- The fake `claude` (`extension/test/fakeClaude.ts`) and the helpers in `extension/test/suite/` name their traps in their doc comments: read them before scripting the Assistant or serving GitHub.
 
 ## Agent skills
 

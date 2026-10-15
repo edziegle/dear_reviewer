@@ -14,7 +14,12 @@ export interface GutterMarker {
   file: string;
   /** First and last line, counted from 0. */
   lines: [number, number];
-  /** The hover's Markdown. */
+  /**
+   * The hover's Markdown, with the Assistant's message escaped as
+   * `MarkdownString.appendText` escapes it: each space or tab becomes
+   * `&nbsp;`, and `>` and Markdown's punctuation, such as `_`, `*`, `#` and
+   * brackets, get a backslash. Find the message by one word without them.
+   */
   hover: string;
   /** The only commands the hover's links may run. */
   enabledCommands: readonly string[];

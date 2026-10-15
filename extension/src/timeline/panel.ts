@@ -89,6 +89,8 @@ export interface TimelineState {
   progress?: { viewed: number; total: number };
   /** Whether the review window is untrusted, so code navigation is off. */
   navigationOff?: boolean;
+  /** File extensions, such as `.tofu`, of changed files no installed language highlights, while any are offered. */
+  unhighlighted?: string[];
   take: OverviewTake;
   /** The order the Assistant suggests for reading the Change's files, while it has one or writes one. */
   readingOrder?: ShownReadingOrder;
@@ -134,6 +136,8 @@ export type FromWebview =
   | { type: "openLink"; url: string }
   | { type: "openReference"; path: string; startLine: number; endLine: number }
   | { type: "openFile"; path: string }
+  | { type: "findExtension"; extension: string }
+  | { type: "dismissUnhighlighted" }
   | { type: "suggestReadingOrder" }
   | { type: "refresh" }
   | { type: "finish" }
@@ -222,6 +226,9 @@ export class TimelinePanel {
     } else if (message.type === "openFile") {
       if (typeof message.path === "string")
         this.onAction({ type: "openFile", path: message.path });
+    } else if (message.type === "findExtension") {
+      if (typeof message.extension === "string")
+        this.onAction({ type: "findExtension", extension: message.extension });
     } else if (
       [
         "refresh",
@@ -233,6 +240,7 @@ export class TimelinePanel {
         "takeRetry",
         "trust",
         "problemAction",
+        "dismissUnhighlighted",
       ].includes(message.type)
     )
       this.onAction({ type: message.type } as OverviewAction);
@@ -337,6 +345,7 @@ function html(cspSource: string): string {
   button.primary:hover { background: var(--vscode-button-hoverBackground); }
   .overview .actions button.primary { padding: 4px 12px; }
   .overview .actions button { max-width: 100%; overflow-wrap: anywhere; text-align: start; }
+  #highlighting code { font-family: var(--vscode-editor-font-family); }
   #start code { font-family: var(--vscode-editor-font-family); color: inherit; background: none; padding: 0; }
   .overview { padding: 12px 0 14px; border-bottom: 1px solid var(--vscode-panel-border); }
   .overview p { margin: 0 0 4px; }
@@ -391,6 +400,7 @@ function html(cspSource: string): string {
 <section class="overview" aria-label="Overview">
   <p class="facts" id="facts" hidden></p>
   <p class="muted" id="standing" hidden></p>
+  <p class="muted" id="highlighting" hidden></p>
   <div class="take">
     <h2 id="takeLabel"></h2>
     <div class="markdown" id="take"></div>
@@ -549,6 +559,37 @@ function html(cspSource: string): string {
     }
   }
 
+  // Offers to search the Extensions view for each file extension no
+  // installed language highlights; the Reviewer chooses what to install.
+  function highlighting(state) {
+    const node = byId("highlighting");
+    const extensions = state.unhighlighted || [];
+    node.hidden = extensions.length === 0;
+    const said = JSON.stringify(extensions);
+    if (node.dataset.said === said) return;
+    node.dataset.said = said;
+    node.replaceChildren();
+    if (extensions.length === 0) return;
+    node.append("No syntax highlighting for ");
+    extensions.forEach((extension, i) => {
+      if (i) node.append(i === extensions.length - 1 ? " and " : ", ");
+      node.append(el("code", "", extension));
+    });
+    node.append(" files. ");
+    const find = (extension, label) => {
+      const button = textButton(label, () => vscode.postMessage({ type: "findExtension", extension }));
+      button.title = "Search the Extensions view for " + extension.slice(1);
+      button.setAttribute("aria-label", "Find an Extension for " + extension + " files");
+      return button;
+    };
+    if (extensions.length === 1) node.append(find(extensions[0], "Find an Extension"));
+    else {
+      node.append("Find an Extension: ");
+      extensions.forEach((extension, i) => node.append(...(i ? [", "] : []), find(extension, extension)));
+    }
+    node.append(" · ", textButton("Don't ask again", () => vscode.postMessage({ type: "dismissUnhighlighted" })));
+  }
+
   let showAll = false;
   let lastTake;
   let lastState;
@@ -667,6 +708,7 @@ function html(cspSource: string): string {
       byId("byline").replaceChildren(...state.byline.split(" · ").filter(Boolean).flatMap((part, i) => (i ? [" · ", el("span", "", part)] : [el("span", "", part)])));
     facts(state);
     standing(state);
+    highlighting(state);
     take(state);
     readingOrder(state);
     ways(state);

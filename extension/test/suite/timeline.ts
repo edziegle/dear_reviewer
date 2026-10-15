@@ -87,6 +87,8 @@ export interface Timeline {
   standing: string[];
   progress?: { viewed: number; total: number };
   navigationOff?: boolean;
+  /** File extensions, such as `.tofu`, that no installed language highlights, while offered. */
+  unhighlighted?: string[];
   take: Take;
   readingOrder?: ShownReadingOrder;
   finish: string;
@@ -169,6 +171,19 @@ export async function clickOverview(
     | "suggestReadingOrder"
 ): Promise<void> {
   (await panel(title)).receive({ type: button });
+}
+
+/** Clicks Find an Extension for a file extension in the overview. */
+export async function clickFindExtension(
+  title: string,
+  extension: string
+): Promise<void> {
+  (await panel(title)).receive({ type: "findExtension", extension });
+}
+
+/** Clicks Don't ask again on the overview's line about syntax highlighting. */
+export async function clickDontAskAgain(title: string): Promise<void> {
+  (await panel(title)).receive({ type: "dismissUnhighlighted" });
 }
 
 /** Clicks a `path:line` reference in the Assistant's take. */

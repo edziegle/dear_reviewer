@@ -53,6 +53,7 @@ import {
 } from "./viewedFiles";
 import { messageOf } from "./errors";
 import { ReviewWindowTrust } from "./trust";
+import { LanguageOffer, unhighlighted } from "./highlighting";
 
 export function activate(context: vscode.ExtensionContext) {
   const changes = new ChangeWorkspace(context.globalStorageUri.fsPath);
@@ -177,12 +178,18 @@ export function activate(context: vscode.ExtensionContext) {
     () => reviewWindow.isThisWindow(),
     () => changes.showReviewWindow()
   );
+  const languageOffer = new LanguageOffer(context.globalState);
+  context.subscriptions.push(languageOffer);
   const timelines = new Timelines(github, avatars, (uri) => openLink(uri), {
     standing: (change) => standingOf(change),
     navigationOff: () => trust.navigationOff,
     take: (change) => assistants.overviewOf(change),
     readingOrder: (change) => changeFiles.readingOrder(change),
     openFile: (change, file) => void changeFiles.openPath(change, file),
+    unhighlighted: (files) => languageOffer.unhighlighted(files),
+    findExtension: (extension) => languageOffer.find(extension),
+    dismissUnhighlighted: (extensions) =>
+      void languageOffer.dismiss(extensions),
     act: (change, action) => {
       if (action === "ask") void assistants.open(change, true);
       else if (action === "suggestReadingOrder")
@@ -216,6 +223,9 @@ export function activate(context: vscode.ExtensionContext) {
     return { review: lastReview, notes: standing, viewed, total };
   }
   context.subscriptions.push(trust.onDidChangeNavigation(() => showStanding()));
+  context.subscriptions.push(
+    languageOffer.onDidChange(() => timelines.refreshUnhighlighted())
+  );
 
   // Many threads load at once, so the overviews catch up once they have.
   let standingTimer: NodeJS.Timeout | undefined;
@@ -1271,6 +1281,12 @@ export function activate(context: vscode.ExtensionContext) {
           rendered: panel.rendered,
           receive: (message: FromWebview) => panel.receive(message),
         })),
+    },
+    /** The pure check of which file extensions go unhighlighted, and a stand-in for the Extensions view's search. */
+    languages: {
+      searchWith: (search?: (query: string) => void) =>
+        languageOffer.searchWith(search),
+      unhighlighted,
     },
     /** Stands in for workspace trust and for showing Workspace Trust; tests run with trust off. */
     trust: {

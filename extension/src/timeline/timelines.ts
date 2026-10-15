@@ -18,6 +18,7 @@ import {
 } from "../changeWorkspace";
 import { branchOfConversation } from "../conversationName";
 import { git } from "../git";
+import type { CheckedFile } from "../highlighting";
 import {
   GitHubClient,
   NotSignedInError,
@@ -63,6 +64,12 @@ export interface OverviewSources {
   readingOrder(change: Change): Promise<ShownReadingOrder | undefined>;
   /** Opens the diff of one of the Change's files. */
   openFile(change: Change, path: string): void;
+  /** The file extensions among these files that no installed language highlights, unless dismissed. */
+  unhighlighted(files: readonly CheckedFile[]): string[];
+  /** Opens the Extensions view with a search for the file extension. */
+  findExtension(extension: string): void;
+  /** Never offers these file extensions again. */
+  dismissUnhighlighted(extensions: string[]): void;
   /** Runs an action the overview offers for the Change. */
   act(
     change: Change,
@@ -133,6 +140,11 @@ export class Timelines implements vscode.Disposable {
     await Promise.all([...this.byChange.values()].map((t) => t.showStanding()));
   }
 
+  /** Shows afresh, in every overview, which file extensions no installed language highlights. */
+  refreshUnhighlighted(): void {
+    for (const timeline of this.byChange.values()) timeline.showUnhighlighted();
+  }
+
   /** Shows afresh what the Assistant of the Change with this conversation name has to show. */
   refreshTake(conversation: string): void {
     for (const timeline of this.byChange.values())
@@ -167,6 +179,8 @@ class ChangeTimeline {
   private loads = 0;
   /** The Change's files, whose `path:line` references in the take open them. */
   private files = new Set<string>();
+  /** The Change's files, with which are binary, once counted. */
+  private checked: CheckedFile[] = [];
 
   constructor(
     readonly change: Change,
@@ -218,6 +232,7 @@ class ChangeTimeline {
     ]);
     if (load !== this.loads) return;
     if (size) this.update({ size });
+    this.showUnhighlighted();
     try {
       const found = this.change.pullRequest
         ? await this.pullRequestState(panel)
@@ -262,6 +277,14 @@ class ChangeTimeline {
       : vscode.ViewColumn.One;
   }
 
+  /** Offers to find an extension for the file extensions no installed language highlights, while any remain. */
+  showUnhighlighted(): void {
+    const extensions = this.sources.unhighlighted(this.checked);
+    if (extensions.length) this.state.unhighlighted = extensions;
+    else delete this.state.unhighlighted;
+    this.panel?.update(this.state);
+  }
+
   showTake(): void {
     this.update({ take: this.take() });
   }
@@ -297,6 +320,15 @@ class ChangeTimeline {
         if (this.files.has(action.path))
           this.sources.openFile(this.change, action.path);
         return;
+      case "findExtension":
+        // Only a file extension the overview offered.
+        if (this.state.unhighlighted?.includes(action.extension))
+          this.sources.findExtension(action.extension);
+        return;
+      case "dismissUnhighlighted":
+        if (this.state.unhighlighted)
+          this.sources.dismissUnhighlighted(this.state.unhighlighted);
+        return;
       case "refresh":
         return void this.load();
       case "problemAction":
@@ -328,17 +360,28 @@ class ChangeTimeline {
       this.change.repository,
       "diff",
       "--numstat",
+      "-z",
       this.change.mergeBase,
       this.change.headSha
     );
     let additions = 0;
     let deletions = 0;
-    for (const line of numstat.split("\n")) {
+    const binary = new Set<string>();
+    const fields = numstat.split("\0");
+    for (let i = 0; i < fields.length; i++) {
+      if (!fields[i]) continue;
       // A binary file counts "-" for both.
-      const [added, deleted] = line.split("\t");
+      const [added, deleted, name] = fields[i].split("\t");
       additions += Number(added) || 0;
       deletions += Number(deleted) || 0;
+      // A renamed file's old and new paths follow in fields of their own.
+      const file = name === "" ? fields[(i += 2)] : name;
+      if (added === "-") binary.add(file);
     }
+    this.checked = files.map((f) => ({
+      path: f.path,
+      binary: binary.has(f.path),
+    }));
     return { files: files.length, additions, deletions };
   }
 

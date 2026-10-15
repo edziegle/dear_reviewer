@@ -29,10 +29,22 @@ export function selectionOrScreenInChange(
   editor: vscode.TextEditor,
   changes: Change[]
 ): ReturnType<typeof selectionInChange> {
-  const [onScreen] = editor.visibleRanges;
+  const onScreen = linesOnScreen(editor);
   if (!editor.selection.isEmpty || !onScreen)
     return selectionInChange(editor, changes);
-  return linesInChange(editor, changes, onScreen.start.line, onScreen.end.line);
+  return linesInChange(editor, changes, onScreen.first, onScreen.last);
+}
+
+/** The first and last lines on screen in an editor, counted from 0. */
+function linesOnScreen(
+  editor: vscode.TextEditor
+): { first: number; last: number } | undefined {
+  const ranges = editor.visibleRanges;
+  if (ranges.length === 0) return;
+  return {
+    first: ranges[0].start.line,
+    last: ranges[ranges.length - 1].end.line,
+  };
 }
 
 function linesInChange(
@@ -79,12 +91,12 @@ export class ReadingTracker implements vscode.Disposable {
     const editor = vscode.window.activeTextEditor ?? this.last;
     if (!editor || !vscode.window.visibleTextEditors.includes(editor)) return;
     const where = whereInChange(editor.document.uri, this.changes());
-    const ranges = editor.visibleRanges;
-    if (where?.change.id !== change.id || ranges.length === 0) return;
+    const onScreen = linesOnScreen(editor);
+    if (where?.change.id !== change.id || !onScreen) return;
     return {
       ...where.file,
-      startLine: ranges[0].start.line + 1,
-      endLine: ranges[ranges.length - 1].end.line + 1,
+      startLine: onScreen.first + 1,
+      endLine: onScreen.last + 1,
     };
   }
 

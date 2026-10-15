@@ -19,7 +19,7 @@ jobs:
       release_created: ${{ steps.release.outputs['extension--release_created'] }}
       tag_name: ${{ steps.release.outputs['extension--tag_name'] }}
     steps:
-      - uses: googleapis/release-please-action@v4
+      - uses: googleapis/release-please-action@v5
         id: release
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -31,13 +31,13 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: jdx/mise-action@v3
+      - uses: jdx/mise-action@v5
         with:
           install_args: node
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.npm
           key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json', 'extension/package-lock.json') }}

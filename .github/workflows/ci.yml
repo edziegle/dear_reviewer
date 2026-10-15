@@ -12,13 +12,13 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/cache@v4
+      - uses: actions/checkout@v7
+      - uses: actions/cache@v6
         with:
           path: ~/.npm
           key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json', 'extension/package-lock.json') }}
           restore-keys: npm-${{ runner.os }}-
-      - uses: jdx/mise-action@v3
+      - uses: jdx/mise-action@v5
         with:
           install_args: node
       - run: mise run deps
@@ -27,8 +27,8 @@ jobs:
   lint-docs:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: jdx/mise-action@v3
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
         with:
           install_args: vale
       - run: mise run vale-sync
@@ -38,15 +38,15 @@ jobs:
   commitlint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.npm
           key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json', 'extension/package-lock.json') }}
           restore-keys: npm-${{ runner.os }}-
-      - uses: jdx/mise-action@v3
+      - uses: jdx/mise-action@v5
         with:
           install_args: node
       - run: mise run deps
@@ -62,10 +62,10 @@ jobs:
     outputs:
       code: ${{ steps.changes.outputs.code }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: jdx/mise-action@v3
+      - uses: jdx/mise-action@v5
         with:
           install: false
       - id: changes
@@ -85,19 +85,19 @@ jobs:
       group: ${{ github.workflow }}-test-${{ github.ref }}
       cancel-in-progress: true
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/cache@v4
+      - uses: actions/checkout@v7
+      - uses: actions/cache@v6
         with:
           path: ~/.npm
           key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json', 'extension/package-lock.json') }}
           restore-keys: npm-${{ runner.os }}-
-      - uses: jdx/mise-action@v3
+      - uses: jdx/mise-action@v5
         with:
           install_args: node
       - id: week
         run: mise run week
       # The Python and basedpyright extensions from Open VSX, refreshed weekly.
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: extension/.vscode-test/extensions
           key: vscode-test-extensions-${{ runner.os }}-${{ steps.week.outputs.week }}
@@ -105,7 +105,7 @@ jobs:
       - run: mise run deps
       - run: mise run test
       - if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: vscodium-logs
           path: |

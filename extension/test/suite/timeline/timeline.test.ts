@@ -421,7 +421,8 @@ describe("A pull request's timeline", () => {
       const items = (await renderedTimeline(title))!.items;
       const description = htmlOf(items[0]);
       for (const expected of [
-        "<h2>Why</h2>",
+        // Two levels below the overview's own headings.
+        "<h4>Why</h4>",
         "<strong>Bold</strong>",
         "<code>code</code>",
         '<a data-href="https://docs.example.com/guide">the docs</a>',

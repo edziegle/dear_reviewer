@@ -425,7 +425,9 @@ function html(cspSource: string): string {
   .take .markdown { line-height: 1.5; max-width: 40em; }
   .take .more { margin-top: 4px; font-size: 0.9em; }
   .take .reading { font-style: italic; }
-  .problem-line .link { margin-left: 4px; text-decoration: underline; }
+  .problem-line .link { margin-left: 4px; }
+  /* A link inside a sentence is underlined, so it doesn't rely on color alone. */
+  .problem-line .link, #standing .link, #highlighting .link, #orderNote .link { text-decoration: underline; text-underline-offset: 2px; }
   .order h2 { margin-top: 14px; margin-bottom: 4px; }
   .order ol { margin: 0; padding-left: 1.6em; }
   .order ol > li { margin: 6px 0 0; }
@@ -461,7 +463,7 @@ function html(cspSource: string): string {
   .submit .pending .muted { min-width: 0; overflow-wrap: anywhere; }
   .submit .actions { margin-top: 12px; align-items: baseline; }
   .submit .actions button.primary { padding: 4px 12px; }
-  .submit button:disabled { opacity: 0.5; cursor: default; }
+  .submit button[aria-disabled="true"] { opacity: 0.5; cursor: default; }
   #submitProblem:empty, #submitReason:empty { display: none; }
   #submitProblem { margin-top: 8px; }
   #submitReason { margin-top: 4px; }
@@ -625,8 +627,10 @@ ${catSymbol}
     if (state.size) {
       const { files, additions, deletions } = state.size;
       const size = el("span");
-      size.append(files + (files === 1 ? " file · " : " files · "), el("span", "added", "+" + additions), " ", el("span", "deleted", "−" + deletions));
-      size.setAttribute("aria-label", files + " files, " + additions + " lines added, " + deletions + " removed");
+      const shown = el("span");
+      shown.setAttribute("aria-hidden", "true");
+      shown.append(files + (files === 1 ? " file · " : " files · "), el("span", "added", "+" + additions), " ", el("span", "deleted", "−" + deletions));
+      size.append(shown, el("span", "visually-hidden", files + (files === 1 ? " file, " : " files, ") + additions + " lines added, " + deletions + " removed"));
       parts.push(size);
     }
     if (state.checks && state.checks.status) parts.push("checks " + state.checks.status);
@@ -748,11 +752,16 @@ ${catSymbol}
     const node = byId("order");
     if (node.dataset.said === said) return;
     node.dataset.said = said;
+    // The note is a live region, so it changes only when its words do.
     const note = byId("orderNote");
-    note.replaceChildren();
-    note.className = order.writing ? "muted reading" : "muted";
-    if (order.writing) note.append("Choosing an order to read the files in…");
-    else if (order.outOfDate) note.append("Suggested before the latest commits, which are in the last step. ", textButton("Suggest again", () => vscode.postMessage({ type: "suggestReadingOrder" })));
+    const noted = JSON.stringify([order.writing, order.outOfDate]);
+    if (note.dataset.said !== noted) {
+      note.dataset.said = noted;
+      note.replaceChildren();
+      note.className = order.writing ? "muted reading" : "muted";
+      if (order.writing) note.append("Choosing an order to read the files in…");
+      else if (order.outOfDate) note.append("Suggested before the latest commits, which are in the last step. ", textButton("Suggest again", () => vscode.postMessage({ type: "suggestReadingOrder" })));
+    }
     byId("orderSteps").replaceChildren(...order.steps.map((step) => {
       const li = el("li");
       li.append(el("div", "step", step.label));
@@ -760,10 +769,12 @@ ${catSymbol}
       files.append(...step.files.map((file) => {
         const row = el("li", file.viewed ? "viewed" : "");
         const mark = el("span", "mark", file.viewed ? "✓" : "");
-        mark.setAttribute("aria-label", file.viewed ? "Viewed" : "Not viewed");
+        mark.setAttribute("aria-hidden", "true");
         const open = textButton(file.path, () => vscode.postMessage({ type: "openFile", path: file.path }));
         open.classList.add("file");
         open.title = "Open the diff of " + file.path;
+        // The ✓ is hidden from screen readers, so the name says it.
+        open.setAttribute("aria-label", file.path + (file.viewed ? ", viewed" : ", not viewed"));
         row.append(mark, open);
         if (file.why) row.append(el("span", "muted", file.why));
         return row;
@@ -828,11 +839,14 @@ ${catSymbol}
       byId("cancelSubmit").click();
     }
   });
+  // Submit Review and Cancel are aria-disabled rather than disabled, so the
+  // focus stays on them while GitHub takes the Review.
   byId("submitReview").addEventListener("click", () => {
     if (!lastStep || lastStep.submitting || reasonOf(lastStep)) return;
     vscode.postMessage({ type: "submit", verdict: draft.verdict, summary: draft.summary });
   });
   byId("cancelSubmit").addEventListener("click", () => {
+    if (lastStep && lastStep.submitting) return;
     byId("finish").focus();
     vscode.postMessage({ type: "cancelSubmit" });
   });
@@ -841,9 +855,9 @@ ${catSymbol}
     const reason = reasonOf(step);
     setText(byId("submitReason"), step.problem ? "" : reason);
     const submit = byId("submitReview");
-    submit.disabled = step.submitting || !!reason;
+    submit.setAttribute("aria-disabled", String(step.submitting || !!reason));
     setText(submit, step.submitting ? "Submitting…" : "Submit Review");
-    byId("cancelSubmit").disabled = step.submitting;
+    byId("cancelSubmit").setAttribute("aria-disabled", String(step.submitting));
   }
   function submitStep(state) {
     const step = state.submit;
@@ -900,6 +914,7 @@ ${catSymbol}
       }));
     }
     setText(byId("submitProblem"), step.problem || "");
+    if (step.submitting) setText(byId("announce"), "Submitting your Review…");
     submitButtons(step);
     if (fresh) {
       asked = step.asked;

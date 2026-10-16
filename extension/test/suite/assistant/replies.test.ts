@@ -144,7 +144,8 @@ describe("The Assistant's work and replies in its panel", () => {
     assert.strictEqual(message.text, reply, "the reply's text stays as it was");
     const html = message.html ?? "";
     for (const expected of [
-      "<h2>Summary</h2>",
+      // Two levels below the panel's own headings.
+      "<h4>Summary</h4>",
       "<strong>Renames</strong>",
       "<code>old_helper</code>",
       '<a data-href="https://docs.example.com/guide">the guide</a>',

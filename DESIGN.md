@@ -186,7 +186,7 @@ The palette is borrowed whole from the active theme; Dear Reviewer chooses roles
 
 - **Title** (bold, 1.1em): the panel heading, which is the pull request's or Change's title.
 - **Headline** (bold, 1em): section headings in a panel, such as Checks and Timeline.
-- **Body** (regular, the theme size, line-height 1.5): messages, timeline bodies and rendered Markdown. Headings inside Markdown stay small (1.05–1.2em) so a reply can't outshout the panel.
+- **Body** (regular, the theme size, line-height 1.5): messages, timeline bodies and rendered Markdown. Headings inside Markdown stay small (1.05–1.2em) so a reply can't outshout the panel, and sit two levels below the panel's own (`# Title` becomes an `h3`), so a description's headings don't break the page's outline.
 - **Label** (regular, 0.9em, `muted-foreground`): metadata lines, the pull-request reference, the Claude login and the step list.
 - **Status** (regular, 0.85em): check status pills and selection chips.
 - **Code** (the editor font): commit SHAs, `path:line` chips, step subjects and Markdown code.
@@ -287,7 +287,7 @@ The take shows at most three sentences, with a Show all link (with `aria-expande
 
 **The Next Step Rule.** The overview fills only the button for what comes next. While files are unviewed, that is the way in: Start at, or Next unviewed file when the take names no file. Once every file is viewed, it is Submit Review… or Write Brief…, which stays in the same place in the sticky header throughout and is secondary until then. It is secondary again while the Submit step is open, whose own Submit Review is the filled one, and once a Review covers the head with no Comments pending, when there is nothing to finish. Tooltips give each button's `Ctrl+Alt+R` key. The Dashboard follows the same rule across all the Reviewer's Changes (see Dashboard).
 
-**The Steady Focus Rule.** An update never moves the Reviewer's focus. The webviews rebuild only what changed, such as the reply being written or a history that loaded again, and if a rebuilt element had the focus, it goes to the element in the same place.
+**The Steady Focus Rule.** An update never moves the Reviewer's focus. The webviews rebuild only what changed, such as the reply being written or a history that loaded again, and if a rebuilt element had the focus, it goes to the element in the same place. When the focused element hides or is disabled, such as Stop once a reply ends or the last selection chip removed, the focus goes to the element in the same place, else the panel's default (the Assistant's message box), else the nearest one before it; never to the page. A button that waits on the extension, such as Submit Review while GitHub takes the Review, is `aria-disabled` rather than disabled, so it keeps the focus.
 
 **The One Paragraph Rule.** The Assistant's take is at most three sentences and ends by naming where to start. The overview enforces it: anything longer waits behind Show all.
 

@@ -202,7 +202,7 @@ function html(): string {
   .message.reviewer { padding: 8px; border-radius: 4px; background: var(--vscode-editor-inactiveSelectionBackground); outline: 1px solid var(--vscode-contrastBorder, transparent); outline-offset: -1px; }
   .message.note { color: var(--vscode-descriptionForeground); font-style: italic; }
   .context { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
-  .chip { display: inline-flex; align-items: center; font-family: var(--vscode-editor-font-family); font-size: 0.85em; padding: 1px 6px; border-radius: 3px; background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); max-width: 100%; overflow-wrap: anywhere; }
+  .chip { display: inline-flex; align-items: center; font-family: var(--vscode-editor-font-family); font-size: 0.85em; padding: 1px 6px; border-radius: 3px; background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); outline: 1px solid var(--vscode-contrastBorder, transparent); outline-offset: -1px; max-width: 100%; overflow-wrap: anywhere; }
   .chip button { display: inline-flex; align-items: center; justify-content: center; flex: none; min-width: 20px; min-height: 20px; margin: -2px -5px -2px 2px; padding: 0; background: none; border: none; border-radius: 2px; color: inherit; cursor: pointer; }
   .chip button:hover { background: var(--vscode-toolbar-hoverBackground); }
   .chip button svg { width: 12px; height: 12px; }
@@ -237,7 +237,7 @@ ${catSymbol}
 <footer>
   <div class="context" id="context"></div>
   <form id="ask">
-    <textarea id="text" rows="2" aria-label="Ask the Assistant about this Change"></textarea>
+    <textarea id="text" rows="2" aria-label="Ask the Assistant about this Change" data-focus-default></textarea>
     <button class="send" id="send" type="submit">Send</button>
   </form>
 </footer>

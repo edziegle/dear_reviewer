@@ -22,9 +22,9 @@ export const sharedStyles = `
   .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .markdown > :first-child { margin-top: 0; }
   .markdown > :last-child { margin-bottom: 0; }
-  .markdown h1, .markdown h2, .markdown h3, .markdown h4 { font-size: 1.05em; margin: 1em 0 0.4em; }
-  .markdown h1 { font-size: 1.2em; }
-  .markdown h2 { font-size: 1.1em; }
+  .markdown h3, .markdown h4, .markdown h5, .markdown h6 { font-size: 1.05em; margin: 1em 0 0.4em; }
+  .markdown h3 { font-size: 1.2em; }
+  .markdown h4 { font-size: 1.1em; }
   .markdown p, .markdown ul, .markdown ol, .markdown pre, .markdown blockquote, .markdown table { margin: 0.5em 0; }
   .markdown ul, .markdown ol { padding-left: 1.6em; list-style: revert; }
   .markdown code { font-family: var(--vscode-editor-font-family); font-size: var(--vscode-editor-font-size); background: var(--vscode-textCodeBlock-background); padding: 0 3px; border-radius: 3px; overflow-wrap: anywhere; }
@@ -50,22 +50,34 @@ export const sharedStyles = `
   @media (prefers-reduced-motion: reduce) { .progress::before { width: 100%; animation: progress-breathe 1.2s ease-in-out infinite alternate; } }`;
 
 /**
- * The script both webviews share: `keepFocus` runs a render and puts the
- * focus back on the element at the same place if the render replaced the
- * focused one; `setText` changes a node's text only when it differs, so a
- * live region speaks only of a change; `appendWithCode` shows the
- * backticked parts of plain text, such as a problem, as code.
+ * The script both webviews share: `keepFocus` runs a render and, if the
+ * render replaced, hid or disabled the focused element, puts the focus on the
+ * element at the same place, else the panel's `data-focus-default`, else
+ * the nearest one before it; `setText` changes a node's text only when it
+ * differs, so a live region speaks only of a change; `appendWithCode` shows
+ * the backticked parts of plain text, such as a problem, as code.
  */
 export const sharedScript = `
-  const focusables = (root) => [...root.querySelectorAll("a[role=link], button, summary, textarea")];
+  const canFocus = (node) => node.isConnected && !node.disabled && !node.closest("[hidden]");
+  const focusables = (root) => [...root.querySelectorAll("a[role=link], button, summary, textarea, input")].filter(canFocus);
   const keepFocus = (render) => {
     const active = document.activeElement;
-    const scope = active && active !== document.body && active.parentElement ? active.parentElement.closest("[id]") : null;
+    if (!active || active === document.body) return render();
+    const scope = active.parentElement ? active.parentElement.closest("[id]") : null;
+    const scopeId = scope && scope.id;
     const index = scope ? focusables(scope).indexOf(active) : -1;
+    const all = focusables(document.body);
+    const earlier = all.slice(0, all.indexOf(active)).reverse();
     render();
-    if (index < 0 || active.isConnected) return;
-    const now = document.getElementById(scope.id);
-    const target = now && focusables(now)[index];
+    const now = document.activeElement;
+    // The render kept the focus, or gave it somewhere on purpose.
+    if (now === active ? canFocus(active) : now && now !== document.body) return;
+    const rebuilt = scopeId && document.getElementById(scopeId);
+    const fallback = document.querySelector("[data-focus-default]");
+    const target = (rebuilt && index >= 0 && focusables(rebuilt)[index])
+      || (fallback && canFocus(fallback) && fallback)
+      || earlier.find(canFocus)
+      || focusables(document.body)[0];
     if (target) target.focus({ preventScroll: true });
   };
   const setText = (node, text) => {

@@ -272,7 +272,8 @@ function html(cspSource: string): string {
   .item .muted.notes { white-space: normal; overflow: visible; overflow-wrap: anywhere; }
   .item .notes > span { display: inline-block; max-width: 100%; }
   .problem-line { margin: 6px 0 0; }
-  .problem-line .link { text-decoration: underline; }
+  /* A link among words is underlined, so it doesn't rely on color alone. */
+  .problem-line .link, .setup .muted .link { text-decoration: underline; text-underline-offset: 2px; }
   .setup .muted { margin-top: 8px; }
   .more { margin-top: 6px; }
   footer { margin-top: 16px; }
@@ -319,7 +320,9 @@ function html(cspSource: string): string {
   const line = (className, parts) => {
     const node = el("div", className);
     parts.filter(Boolean).forEach((part, i) => node.append(...(i ? [" · "] : []), typeof part === "string" ? el("span", "", part) : part));
-    node.title = node.textContent;
+    const shown = node.cloneNode(true);
+    for (const hidden of shown.querySelectorAll(".visually-hidden")) hidden.remove();
+    node.title = shown.textContent;
     return node;
   };
   // Each note keeps whole, so the line breaks between notes, and its " ·"
@@ -393,8 +396,10 @@ function html(cspSource: string): string {
   function size(entry) {
     const { files, additions, deletions } = entry.size;
     const node = el("span", "facts");
-    node.append(files + (files === 1 ? " file · " : " files · "), el("span", "added", "+" + additions), " ", el("span", "deleted", "−" + deletions));
-    node.setAttribute("aria-label", files + (files === 1 ? " file, " : " files, ") + additions + " lines added, " + deletions + " removed");
+    const shown = el("span");
+    shown.setAttribute("aria-hidden", "true");
+    shown.append(files + (files === 1 ? " file · " : " files · "), el("span", "added", "+" + additions), " ", el("span", "deleted", "−" + deletions));
+    node.append(shown, el("span", "visually-hidden", files + (files === 1 ? " file, " : " files, ") + additions + " lines added, " + deletions + " removed"));
     return node;
   }
 

@@ -36,6 +36,13 @@ const textOnly: sanitizeHtml.IOptions = {
   allowedTags: [],
   allowedAttributes: {},
 };
+// The panels' own headings are h1 and h2, so Markdown's headings sit two
+// levels below them, and a description's "# Title" doesn't outrank the page.
+md.core.ruler.push("headings_below_the_page", (state) => {
+  for (const token of state.tokens)
+    if (token.type === "heading_open" || token.type === "heading_close")
+      token.tag = `h${Math.min(Number(token.tag.slice(1)) + 2, 6)}`;
+});
 md.renderer.rules.html_block = (tokens, i) =>
   sanitizeHtml(tokens[i].content, textOnly);
 md.renderer.rules.html_inline = (tokens, i) =>

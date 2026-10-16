@@ -491,7 +491,11 @@ function html(cspSource: string): string {
   .submit .pending .muted { min-width: 0; overflow-wrap: anywhere; }
   .submit .actions { margin-top: 12px; align-items: baseline; }
   .submit button[aria-disabled="true"], header button[aria-disabled="true"] { opacity: 0.5; cursor: default; }
-  .result { padding: 12px 0 14px; border-bottom: 1px solid var(--vscode-panel-border); }
+  .result { padding: 12px 0 14px 12px; border-bottom: 1px solid var(--vscode-panel-border); border-left: 2px solid var(--vscode-descriptionForeground); }
+  .result.passed { border-left-color: var(--vscode-testing-iconPassed); }
+  .result.failed { border-left-color: var(--vscode-testing-iconFailed); }
+  .result .verdict.done { font-weight: 600; }
+  #showTake { margin-top: 12px; }
   .result p { margin: 0 0 8px; line-height: 1.5; }
   .result .verdict .mark { margin-right: 4px; }
   .result .actions { align-items: baseline; }
@@ -543,6 +547,7 @@ ${catSymbol}
   <p class="facts" id="facts" hidden></p>
   <p class="muted" id="standing" hidden></p>
   <p class="muted" id="highlighting" hidden></p>
+  <button class="link" id="showTake" type="button" aria-controls="take" aria-expanded="false" hidden></button>
   <div class="hand">
     <div class="take">
       <h2 class="speaker">${catMark}Assistant<span class="label" id="takeLabel"></span></h2>
@@ -937,11 +942,38 @@ ${catSymbol}
     if (target) target.focus();
   }
 
+  // While the result shows, the Assistant's take and Reading Order are
+  // reference, so they fold behind one link, closed again each time.
+  let takeOpen = false;
+  let wasBack = false;
+  function collapse(state) {
+    const back = stepsBack(state);
+    if (back !== wasBack) {
+      wasBack = back;
+      takeOpen = false;
+    }
+    const toggle = byId("showTake");
+    toggle.hidden = !back;
+    document.querySelector(".overview .hand").hidden = back && !takeOpen;
+    setText(toggle, takeOpen ? "Hide the Assistant's take" : "Show the Assistant's take");
+    toggle.setAttribute("aria-expanded", String(takeOpen));
+  }
+  byId("showTake").addEventListener("click", () => {
+    takeOpen = !takeOpen;
+    keepFocus(() => collapse(lastState));
+  });
+
   function result(state) {
     const kind = resultOf(state);
     const node = byId("result");
     node.hidden = !kind;
     if (!kind) return;
+    // The rule takes the result's state color.
+    const tone = kind === "problem" ? "failed"
+      : kind === "clean" ? "passed"
+      : kind === "ended" ? (state.review && state.review.verdict === "changesRequested" ? "failed" : state.review && state.review.verdict === "commented" ? "" : "passed")
+      : "";
+    node.className = "result " + tone;
     const said = JSON.stringify([kind, state.submitted, state.review, state.brief]);
     if (node.dataset.said === said) return;
     node.dataset.said = said;
@@ -970,7 +1002,7 @@ ${catSymbol}
       if (brief.canShow) actions.append(button("secondary", "Show Brief", { type: "showBrief" }, "Open the Brief in the editor"));
       actions.append(textButton("Discard Comments…", () => vscode.postMessage({ type: "discard" })));
     } else if (kind === "clean") {
-      text.className = "verdict review approved";
+      text.className = "verdict done review approved";
       const mark = el("span", "mark", "✓");
       mark.setAttribute("aria-hidden", "true");
       text.append(mark, "Nothing to brief. You found nothing to change.");
@@ -979,7 +1011,7 @@ ${catSymbol}
       const review = state.review;
       const done = state.submitted;
       const verdict = review ? review.verdict : "approved";
-      text.className = "verdict review " + verdict;
+      text.className = "verdict done review " + verdict;
       const mark = el("span", "mark", reviewMarks[verdict] || "✓");
       mark.setAttribute("aria-hidden", "true");
       text.append(mark, done ? done.text.replace(/\.$/, "") : review ? review.text : "Your Review is submitted");
@@ -1230,6 +1262,7 @@ ${catSymbol}
     ways(state);
     submitted(state);
     result(state);
+    collapse(state);
     submitStep(state);
     finishFocus(state);
     setText(byId("history"), state.history);

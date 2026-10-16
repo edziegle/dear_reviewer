@@ -229,7 +229,7 @@ export class ReviewComments implements vscode.Disposable {
     const run = this.loading.then(async () => {
       const shown = this.shown.get(change.id);
       if (!shown || !this.loaded.has(change.id)) return 0;
-      if ([...shown].some((thread) => !this.states.get(thread))) return 0;
+      if (this.hasOpenDraft(change)) return 0;
       const before = this.commentCounts(change);
       await this.load(change);
       let changed = 0;
@@ -242,6 +242,13 @@ export class ReviewComments implements vscode.Disposable {
       () => undefined
     );
     return run;
+  }
+
+  /** Whether a Comment is being written on the Change, which closing it would lose. */
+  hasOpenDraft(change: Change): boolean {
+    return [...(this.shown.get(change.id) ?? [])].some(
+      (thread) => !this.states.get(thread)
+    );
   }
 
   /** How many Comments each of the Change's shown threads has, by the thread's id. */

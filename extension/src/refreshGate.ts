@@ -54,3 +54,26 @@ export function foundText(found: {
     );
   return parts.length > 0 ? parts.join(", ") : "Up to date";
 }
+
+/** Whether GitHub's commit id is one, since it is handed to git. */
+export function isCommitId(value: unknown): value is string {
+  return (
+    typeof value === "string" && /^[0-9a-f]{40}([0-9a-f]{24})?$/.test(value)
+  );
+}
+
+/** Whether a branch name from GitHub is safe to build a git ref from: no leading `-`, no `..`, no `.lock` part. */
+export function isSafeBranchName(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    /^[A-Za-z0-9._/-]+$/.test(value) &&
+    !value.startsWith("-") &&
+    !value.startsWith("/") &&
+    !value.endsWith("/") &&
+    !value.includes("..") &&
+    !value.includes("//") &&
+    !value
+      .split("/")
+      .some((part) => part.endsWith(".lock") || part.startsWith("."))
+  );
+}

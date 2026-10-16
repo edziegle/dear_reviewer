@@ -1,6 +1,7 @@
 // Talks to GitHub: GraphQL where it covers the operation, REST elsewhere,
 // against a configurable API base URL.
 
+import { isCommitId, isSafeBranchName } from "../refreshGate";
 import { GitHubAuth, trustedOrigin } from "./auth";
 import { requestedOfReviewerAt, type ReviewRequest } from "./reviewRequests";
 import { fetchWithin, REQUEST_TIMEOUT_MS } from "./request";
@@ -501,7 +502,14 @@ ${INBOX_PULL_REQUEST}${withHistory ? `\n${TEAM_HISTORY}` : ""}`;
     const data = await this.graphql<{
       repository: { pullRequest: PullRequestHead | null } | null;
     }>(PULL_REQUEST_HEAD, { owner, name, number });
-    return data.repository?.pullRequest ?? undefined;
+    const head = data.repository?.pullRequest;
+    if (!head) return;
+    // Both are handed to git, so they must be what they claim to be.
+    if (!isCommitId(head.headRefOid) || !isSafeBranchName(head.baseRefName))
+      throw new GitHubError(
+        `GitHub gave an unusable head or base for ${repository}#${number}`
+      );
+    return head;
   }
 
   /** The pull request's title and description; undefined if GitHub has no such pull request. */

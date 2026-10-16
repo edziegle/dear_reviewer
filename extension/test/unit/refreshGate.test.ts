@@ -1,5 +1,11 @@
 import * as assert from "assert";
-import { foundText, minimumGapMs, RefreshGate } from "../../src/refreshGate";
+import {
+  foundText,
+  isCommitId,
+  isSafeBranchName,
+  minimumGapMs,
+  RefreshGate,
+} from "../../src/refreshGate";
 
 describe("RefreshGate", () => {
   let now = 1_000_000;
@@ -72,5 +78,32 @@ describe("foundText", () => {
 
   it("says when nothing did", () => {
     assert.strictEqual(foundText({ newCommits: 0, threads: 0 }), "Up to date");
+  });
+});
+
+describe("what GitHub gives that git is handed", () => {
+  it("accepts commit ids only", () => {
+    assert.ok(isCommitId("a".repeat(40)));
+    assert.ok(!isCommitId("--upload-pack=x"));
+    assert.ok(!isCommitId("abc"));
+    assert.ok(!isCommitId(undefined));
+  });
+
+  it("accepts ordinary branch names only", () => {
+    for (const ok of ["main", "release/1.2", "feat_x-1", "v1.0.x"])
+      assert.ok(isSafeBranchName(ok), ok);
+    for (const bad of [
+      "-x",
+      "a..b",
+      "a b",
+      "/x",
+      "x/",
+      "a//b",
+      "x.lock",
+      "a/.hidden",
+      "a;b",
+      "",
+    ])
+      assert.ok(!isSafeBranchName(bad), bad);
   });
 });

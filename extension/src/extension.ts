@@ -432,6 +432,10 @@ export function activate(context: vscode.ExtensionContext) {
         showStanding();
         return foundText({ newCommits: 0, threads });
       }
+      // Swapping closes the Change's editors, and a Comment still being
+      // written in one would be lost.
+      if (review.hasOpenDraft(change))
+        return "New commits, not brought in while a Comment is being written";
       return await swapToNewHead(change, pullRequest, remote.baseRefName);
     } catch (err) {
       if (!automatic) throw err;

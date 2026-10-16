@@ -37,7 +37,7 @@ export const sharedStyles = `
   .markdown a[data-href]:hover, .markdown a[data-path]:hover { color: var(--vscode-textLink-activeForeground, var(--vscode-textLink-foreground)); }
   .problem { margin: 12px 0; padding: 8px; border: 1px solid var(--vscode-inputValidation-errorBorder); background: var(--vscode-inputValidation-errorBackground); white-space: pre-wrap; }
   .problem code { font-family: var(--vscode-editor-font-family); }
-  .problem button { display: block; margin-top: 8px; padding: 4px 10px; border-radius: 2px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); cursor: pointer; font: inherit; }
+  .problem button { display: block; margin-top: 8px; padding: 4px 12px; border-radius: 2px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); cursor: pointer; font: inherit; }
   .problem button:hover { background: var(--vscode-button-hoverBackground); }
   .hand { border-left: 2px solid var(--vscode-dearReviewer-assistantForeground); padding-left: 12px; }
   .speaker { display: flex; flex-wrap: wrap; align-items: center; gap: 0 6px; font-size: 0.9em; font-weight: 600; margin: 0 0 4px; }

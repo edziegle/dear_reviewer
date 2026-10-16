@@ -197,7 +197,8 @@ function html(): string {
   header { position: sticky; top: 0; background: var(--vscode-editor-background); padding: 12px 0 8px; border-bottom: 1px solid var(--vscode-panel-border); }
   h1 { font-size: 1.1em; margin: 0 0 4px; }
   .muted { color: var(--vscode-descriptionForeground); font-size: 0.9em; }
-  main { flex: 1; }
+  /* The working line and any problem follow the conversation, and the footer keeps to the bottom. */
+  .conversation { flex: 1; }
   .message { white-space: pre-wrap; line-height: 1.5; margin: 12px 0; }
   .message.reviewer { padding: 8px; border-radius: 4px; background: var(--vscode-editor-inactiveSelectionBackground); outline: 1px solid var(--vscode-contrastBorder, transparent); outline-offset: -1px; }
   .message.note { color: var(--vscode-descriptionForeground); font-style: italic; }
@@ -230,9 +231,11 @@ function html(): string {
 <body>
 <header><h1 id="title"></h1><div class="muted" id="range"></div><div class="muted" id="login"></div></header>
 ${catSymbol}
+<div class="conversation">
 <main id="messages"></main>
 <div class="busy hand" id="busy" hidden><div class="now" id="now"></div><details id="steps" hidden><summary id="stepCount"></summary><ol id="stepList"></ol></details><button class="stop" id="stop" type="button" title="Stop this reply; the conversation goes on with your next message" hidden>Stop</button></div>
 <div class="problem" id="problem" role="alert" hidden></div>
+</div>
 <div class="visually-hidden" id="announce" role="status"></div>
 <footer>
   <div class="context" id="context"></div>

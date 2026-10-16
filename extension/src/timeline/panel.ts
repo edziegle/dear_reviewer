@@ -449,7 +449,7 @@ function html(cspSource: string): string {
   .submit h2 { margin-top: 0; }
   .submit fieldset { border: none; margin: 0; padding: 0; }
   .submit .choice { display: flex; gap: 6px; align-items: baseline; padding: 2px 0; cursor: pointer; }
-  .submit .choice input { margin: 0; flex: none; accent-color: var(--vscode-button-background); }
+  .submit .choice input { margin: 0; flex: none; accent-color: var(--vscode-contrastActiveBorder, var(--vscode-button-background)); }
   .submit .choice input:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
   body.vscode-dark, body.vscode-high-contrast { color-scheme: dark; }
   body.vscode-light, body.vscode-high-contrast-light { color-scheme: light; }
@@ -982,7 +982,7 @@ ${catSymbol}
     submitted(state);
     submitStep(state);
     setText(byId("history"), state.history);
-    setText(byId("loading"), state.loading ? "Loading…" : "");
+    setText(byId("loading"), state.loading ? (state.items.length ? "Refreshing…" : "Loading…") : "");
     byId("progress").hidden = !state.loading && !(state.submit && state.submit.submitting);
     const problem = byId("historyProblem");
     problem.hidden = !state.problem;

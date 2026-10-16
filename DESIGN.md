@@ -253,7 +253,7 @@ The feel of every control is quiet and editor-plain. If a control looks custom, 
 ### Inputs / Fields
 
 - **Style:** the Assistant's message box and the Submit step's summary take the `input-*` colors and a 1px `input-border` (transparent when the theme has none), 2px corners, 4px 6px padding and the body font. They resize vertically from about two lines (`textarea` in `sharedStyles`).
-- **Choices:** the Submit step's verdict is a group of the browser's radio buttons tinted `action-background` (`accent-color`), each with its label in `foreground` and what it does muted beside it.
+- **Choices:** the Submit step's verdict is a group of the browser's radio buttons tinted `action-background`, or `contrastActiveBorder` in high-contrast themes, where the button's fill is the ground (`accent-color`), each with its label in `foreground` and what it does muted beside it.
 - **Focus:** a 1px `focus` outline drawn inside the border (offset -1px), as VS Code draws its own inputs.
 
 ### Navigation

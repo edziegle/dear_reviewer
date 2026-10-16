@@ -24,43 +24,49 @@ describe("The Change's multi-file diff", () => {
     const before = workspaceFolders();
 
     await openChange(request);
+    try {
+      const [base, head] = foldersAddedSince(before);
+      const title = `${path.basename(repo.path)} ${short(repo.commits.initial)}..${short(repo.commits.renamed)}`;
+      await eventually(() => assert.strictEqual(activeTabLabel(), title));
+      assert.deepStrictEqual(multiDiffFiles(), [], "no diff until asked");
 
-    const [base, head] = foldersAddedSince(before);
-    const title = `${path.basename(repo.path)} ${short(repo.commits.initial)}..${short(repo.commits.renamed)}`;
-    await eventually(() => assert.strictEqual(activeTabLabel(), title));
-    assert.deepStrictEqual(multiDiffFiles(), [], "no diff until asked");
+      await vscode.commands.executeCommand(
+        "dearReviewer.openAllChanges",
+        request
+      );
 
-    await vscode.commands.executeCommand(
-      "dearReviewer.openAllChanges",
-      request
-    );
-
-    await eventually(() =>
-      assert.match(activeTabLabel() ?? "", /· all changes \(4 files\)$/)
-    );
-    const overviewGroup = vscode.window.tabGroups.all.find((group) =>
-      group.tabs.some((tab) => tab.label === title)
-    );
-    assert.notStrictEqual(
-      overviewGroup,
-      vscode.window.tabGroups.activeTabGroup,
-      "the overview moved beside the diff"
-    );
-    await eventually(() =>
-      assert.deepStrictEqual(multiDiffFiles(), [
-        { original: undefined, modified: path.join(head.path, "added.py") },
-        {
-          original: path.join(base.path, "main.py"),
-          modified: path.join(head.path, "main.py"),
-        },
-        { original: path.join(base.path, "obsolete.py"), modified: undefined },
-        {
-          original: path.join(base.path, "util.py"),
-          modified: path.join(head.path, "util.py"),
-        },
-      ])
-    );
-
-    await closeChange(request);
+      await eventually(() =>
+        assert.match(activeTabLabel() ?? "", /· all changes \(4 files\)$/)
+      );
+      await eventually(() => {
+        const overviewGroup = vscode.window.tabGroups.all.find((group) =>
+          group.tabs.some((tab) => tab.label === title)
+        );
+        assert.notStrictEqual(
+          overviewGroup,
+          vscode.window.tabGroups.activeTabGroup,
+          "the overview moved beside the diff"
+        );
+      });
+      await eventually(() =>
+        assert.deepStrictEqual(multiDiffFiles(), [
+          { original: undefined, modified: path.join(head.path, "added.py") },
+          {
+            original: path.join(base.path, "main.py"),
+            modified: path.join(head.path, "main.py"),
+          },
+          {
+            original: path.join(base.path, "obsolete.py"),
+            modified: undefined,
+          },
+          {
+            original: path.join(base.path, "util.py"),
+            modified: path.join(head.path, "util.py"),
+          },
+        ])
+      );
+    } finally {
+      await closeChange(request);
+    }
   });
 });

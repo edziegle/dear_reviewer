@@ -838,7 +838,7 @@ export function activate(context: vscode.ExtensionContext) {
     const result = await repositories.rememberFolder(chosen);
     if ("repository" in result) {
       void vscode.window.showInformationMessage(
-        `Added ${result.repository} to the Inbox, with its clone at ${chosen}.`
+        `Added ${result.repository} to the Dashboard, with its clone at ${chosen}.`
       );
       return result.repository;
     }
@@ -871,7 +871,7 @@ export function activate(context: vscode.ExtensionContext) {
         title: "Add Repository: a clone of a GitHub repository",
         canSelectFolders: true,
         canSelectFiles: false,
-        openLabel: "Add to Inbox",
+        openLabel: "Add to Dashboard",
       })
     )?.[0]?.fsPath;
   }
@@ -920,9 +920,10 @@ export function activate(context: vscode.ExtensionContext) {
             () => changes.open(request)
           );
         } catch (err) {
-          const message = messageOf(err);
+          // Git's own words run to several lines; the first says what failed.
+          const message = messageOf(err).split(/\r?\n/, 1)[0].trim();
           void vscode.window.showErrorMessage(
-            `Couldn't open the Change: ${message}`
+            `Couldn't open the Change. ${message}`
           );
         }
         showOpenChanges();

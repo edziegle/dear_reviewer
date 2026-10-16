@@ -358,14 +358,14 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
         err instanceof SignInRejectedError
           ? { title: "Sign In to GitHub", command: "dearReviewer.signIn" }
           : {
-              title: "Refresh the Inbox",
+              title: "Refresh the Dashboard",
               command: "dearReviewer.refreshInbox",
             };
       return {
         nodes: [
           {
             kind: "problem",
-            message: `Couldn't load the Inbox: ${message}`,
+            message: `Couldn't load the Dashboard: ${message}`,
             action,
           },
           ...(await localBranches),

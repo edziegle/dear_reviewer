@@ -627,8 +627,7 @@ ${catSymbol}
     byId(type).addEventListener("click", () => vscode.postMessage({ type }));
   byId("finish").addEventListener("click", () => {
     if (lastState && notReady(lastState)) return;
-    if (lastState && lastState.submit && !lastState.submit.submitting) vscode.postMessage({ type: "cancelSubmit" });
-    else vscode.postMessage({ type: "finish" });
+    vscode.postMessage({ type: "finish" });
   });
   // Links and file references open through the extension, which checks them.
   document.body.addEventListener("click", (event) => {
@@ -887,15 +886,13 @@ ${catSymbol}
     start.className = reading && first === start ? "primary" : "secondary";
     next.className = reading && first === next ? "primary" : "secondary";
     const finish = byId("finish");
-    // There is nothing to finish while the result block says how it ended.
-    finish.hidden = back || noBrief(state);
+    // There is nothing to finish while the result block says how it ended,
+    // and none while the Submit step is open: the step has its own Submit
+    // Review, Cancel and Escape, so a second button of the same name would
+    // do the opposite.
+    finish.hidden = back || noBrief(state) || !!state.submit;
     setLabel(finish, state.finish, "S");
-    // While the Submit step is open, the button is its disclosure: pressing
-    // it again closes the step.
-    if (state.submit) {
-      finish.setAttribute("aria-expanded", "true");
-      finish.setAttribute("aria-controls", "submitStep");
-    } else if (state.finish.startsWith("Submit")) {
+    if (state.finish.startsWith("Submit")) {
       finish.setAttribute("aria-expanded", "false");
       finish.setAttribute("aria-controls", "submitStep");
     } else {
@@ -1182,7 +1179,11 @@ ${catSymbol}
         open.title = "Show this Comment in the diff";
         li.append(open);
         const about = [comment.side === "LEFT" ? "before the change" : "", comment.text].filter(Boolean).join(" · ");
-        if (about) li.append(el("span", "muted", about));
+        if (about) {
+          const line = el("span", "muted", about);
+          if (comment.text === "Suggested change") line.title = "A change to the code that you propose, which the author can apply from GitHub";
+          li.append(line);
+        }
         return li;
       }));
     }

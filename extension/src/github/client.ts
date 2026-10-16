@@ -3,6 +3,7 @@
 
 import { GitHubAuth, trustedOrigin } from "./auth";
 import { requestedOfReviewerAt, type ReviewRequest } from "./reviewRequests";
+import { fetchWithin, REQUEST_TIMEOUT_MS } from "./request";
 
 export type CheckStatus = "passed" | "failed" | "running";
 
@@ -209,6 +210,8 @@ export class SignInRejectedError extends GitHubError {
 }
 
 export class GitHubClient {
+  /** How long a request waits for GitHub to start answering; tests shorten it. */
+  requestTimeoutMs = REQUEST_TIMEOUT_MS;
   /** The signed-in user's login, by API URL and token, once asked. */
   private signedIn?: { key: string; login: Promise<string> };
 
@@ -647,7 +650,7 @@ ${paths
       const token = await this.auth.token(apiUrl);
       if (token) headers.authorization = `Bearer ${token}`;
     }
-    const res = await fetch(url, { headers });
+    const res = await fetchWithin(url, { headers }, this.requestTimeoutMs);
     if (!res.ok) throw new GitHubError(`${url}: ${res.status}`);
     return new Uint8Array(await res.arrayBuffer());
   }
@@ -686,14 +689,18 @@ ${paths
     trustedOrigin(apiUrl);
     const token = await this.auth.token(apiUrl);
     if (!token) throw new NotSignedInError();
-    const res = await fetch(graphqlUrl(apiUrl), {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${token}`,
-        "content-type": "application/json",
+    const res = await fetchWithin(
+      graphqlUrl(apiUrl),
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ query, variables }),
       },
-      body: JSON.stringify({ query, variables }),
-    });
+      this.requestTimeoutMs
+    );
     if (res.status === 401) throw new SignInRejectedError();
     if (!res.ok) throw new GitHubError(`GitHub answered ${res.status}`);
     const body = (await res.json()) as {

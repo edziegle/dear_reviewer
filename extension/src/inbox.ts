@@ -22,7 +22,7 @@ import { setContext } from "./context";
 import { conversationName } from "./conversationName";
 import { branchesAhead, LocalBranch } from "./localBranches";
 import type { LocalClone } from "./repositories";
-import { messageOf } from "./errors";
+import { isUnreachable, messageOf } from "./errors";
 
 export type { LocalClone } from "./repositories";
 
@@ -353,19 +353,21 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
           signedIn: false,
           welcome: "signedOut",
         };
-      const message = messageOf(err);
+      const unreachable = isUnreachable(err);
       const action: vscode.Command =
         err instanceof SignInRejectedError
           ? { title: "Sign In to GitHub", command: "dearReviewer.signIn" }
           : {
-              title: "Refresh the Dashboard",
+              title: unreachable ? "Retry" : "Refresh the Dashboard",
               command: "dearReviewer.refreshInbox",
             };
       return {
         nodes: [
           {
             kind: "problem",
-            message: `Couldn't load the Dashboard: ${message}`,
+            message: unreachable
+              ? "Couldn't reach GitHub to load the Dashboard. Check the connection, then retry."
+              : `Couldn't load the Dashboard: ${messageOf(err)}`,
             action,
           },
           ...(await localBranches),

@@ -8,6 +8,7 @@ import {
   refreshInbox,
   requestsToGitHub,
   serveGitHub,
+  setRequestTimeout,
   forgetToken,
   setToken,
 } from "../github";
@@ -395,6 +396,36 @@ describe("Inbox", () => {
 
     assert.deepStrictEqual(await inbox(), []);
     assert.deepStrictEqual(await requestsToGitHub(), []);
+  });
+
+  it("says GitHub couldn't be reached, and offers to retry, when it never answers", async () => {
+    await serveGitHub({
+      viewer,
+      pullRequests: [],
+      stallQueries: ["Inbox"],
+    });
+    await configure({ repositories: ["acme/api"] });
+    await setToken(viewer.token);
+    await setRequestTimeout(200);
+    try {
+      await refreshInbox();
+
+      const groups = await inbox();
+
+      assert.strictEqual(groups.length, 1, JSON.stringify(groups));
+      assert.strictEqual(
+        groups[0].label,
+        "Couldn't reach GitHub to load the Dashboard. Check the connection, then retry."
+      );
+      assert.strictEqual(groups[0].icon, "$(error)");
+      assert.strictEqual(groups[0].command?.title, "Retry");
+      assert.strictEqual(
+        groups[0].command?.command,
+        "dearReviewer.refreshInbox"
+      );
+    } finally {
+      await setRequestTimeout();
+    }
   });
 
   it("says so when GitHub rejects the token", async () => {

@@ -26,6 +26,7 @@ import {
 import { ThreadsFiles } from "./assistant/threads";
 import { GitHubAuth } from "./github/auth";
 import { GitHubClient, PullRequestSummary } from "./github/client";
+import { REQUEST_TIMEOUT_MS } from "./github/request";
 import { setContext } from "./context";
 import { Avatars, InboxNode, InboxTree } from "./inbox";
 import { openChoices } from "./openChoices";
@@ -1662,6 +1663,10 @@ export function activate(context: vscode.ExtensionContext) {
       notify = answer
         ? async (message, ...actions) => answer(message, actions)
         : showInformation;
+    },
+    /** Shortens how long a request to GitHub waits for an answer, so a test needn't wait a real half minute; without `ms`, back to the default. */
+    requestTimeoutMs: (ms: number = REQUEST_TIMEOUT_MS) => {
+      github.requestTimeoutMs = ms;
     },
     /** Hands error notifications to `answer`, which picks a button or none, or back to the Reviewer. */
     answerErrorsWith: (

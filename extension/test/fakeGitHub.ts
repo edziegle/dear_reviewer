@@ -10,7 +10,8 @@
 // request it receives.
 //
 // Tests control it over HTTP:
-//   PUT /_fake/state        replaces the fixtures and clears what was recorded
+//   PUT /_fake/state        replaces the fixtures and clears what was recorded,
+//                           and drops the requests it never answered
 //   GET /_fake/requests     returns the recorded requests
 //   GET /_fake/mutations    returns the viewed marks received, oldest first
 //   GET /_fake/resolutions  returns the resolves and unresolves received, oldest first
@@ -192,6 +193,8 @@ export interface FakeGitHubState {
   avatarOrigin?: string;
   /** Queries, by operation name, that GitHub answers with an error. */
   failQueries?: string[];
+  /** Queries, by operation name, that GitHub never answers. */
+  stallQueries?: string[];
 }
 
 export interface RecordedRequest {
@@ -217,6 +220,8 @@ export async function startFakeGitHub(): Promise<{
   let lastId = 0;
   const newId = (prefix: string) => `${prefix}_${++lastId}`;
 
+  /** Requests held open by `stallQueries`, dropped when the state is replaced. */
+  const stalled: http.ServerResponse[] = [];
   const server = http.createServer(async (req, res) => {
     const body = await readBody(req);
     const path = req.url ?? "/";
@@ -227,6 +232,7 @@ export async function startFakeGitHub(): Promise<{
 
     if (path === "/_fake/state" && req.method === "PUT") {
       state = JSON.parse(body) as FakeGitHubState;
+      for (const held of stalled.splice(0)) held.destroy();
       requests = [];
       mutations = [];
       resolutions = [];
@@ -276,6 +282,8 @@ export async function startFakeGitHub(): Promise<{
         variables: Record<string, unknown>;
       };
       const operation = /^\s*query\s+(\w+)/.exec(query)?.[1];
+      if (operation && state.stallQueries?.includes(operation))
+        return void stalled.push(res);
       if (operation && state.failQueries?.includes(operation))
         return send(200, { errors: [{ message: `${operation} failed` }] });
       try {

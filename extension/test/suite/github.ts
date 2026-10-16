@@ -174,6 +174,11 @@ export async function inbox(): Promise<InboxGroup[]> {
   return groups;
 }
 
+/** How long a request to GitHub waits for an answer; a test that stalls GitHub shortens it. */
+export async function setRequestTimeout(ms?: number): Promise<void> {
+  (await dearReviewer().activate()).requestTimeoutMs(ms);
+}
+
 /** Waits for the Inbox's refreshes, running the one due after a Review now. */
 export async function inboxSettled(): Promise<void> {
   const extension = dearReviewer();
@@ -191,8 +196,13 @@ type InboxProvider = vscode.TreeDataProvider<unknown> & {
   settled(): Promise<void>;
 };
 
-function dearReviewer(): vscode.Extension<{ inbox: InboxProvider }> {
-  const extension = vscode.extensions.getExtension<{ inbox: InboxProvider }>(
+type DearReviewerApi = {
+  inbox: InboxProvider;
+  requestTimeoutMs(ms?: number): void;
+};
+
+function dearReviewer(): vscode.Extension<DearReviewerApi> {
+  const extension = vscode.extensions.getExtension<DearReviewerApi>(
     "edziegle.dear-reviewer"
   );
   if (!extension) throw new Error("Dear Reviewer is not installed");

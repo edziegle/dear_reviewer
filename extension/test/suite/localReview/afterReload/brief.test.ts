@@ -242,7 +242,7 @@ describe("Ending a local Review with a Brief", () => {
     await showChangesSinceLastReview(change);
 
     assert.ok(
-      !activeTabLabel()?.includes("since my last Review"),
+      !activeTabLabel()?.includes("since your last Review"),
       `no diff since the last Review opened: ${activeTabLabel()}`
     );
   });
@@ -270,7 +270,7 @@ describe("Ending a local Review with a Brief", () => {
     const entry = inboxEntry(await inbox(), "agent/docs");
     assert.strictEqual(
       entry.description,
-      "acme/local · 3 commits ahead · new commits since my Review · open"
+      "acme/local · 3 commits ahead · new commits since your Review · open"
     );
   });
 
@@ -308,7 +308,7 @@ describe("Ending a local Review with a Brief", () => {
     await eventually(() => {
       assert.strictEqual(
         activeTabLabel(),
-        `${repo} ${short(change.head)}..${short(newHead)} since my last Review (2 files)`
+        `${repo} ${short(change.head)}..${short(newHead)} since your last Review (2 files)`
       );
       // VSCodium can still list a closed diff's editors as visible, so this
       // looks for the new diff's own files among them.

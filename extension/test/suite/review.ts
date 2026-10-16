@@ -160,7 +160,7 @@ export function discardReview(change: ChangeRequest): Thenable<unknown> {
   );
 }
 
-/** Runs Show Changes Since My Last Review on the Change. */
+/** Runs Show Changes Since Your Last Review on the Change. */
 export function showChangesSinceLastReview(
   change: ChangeRequest
 ): Thenable<unknown> {

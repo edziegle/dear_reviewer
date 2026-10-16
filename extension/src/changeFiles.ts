@@ -390,10 +390,10 @@ export class ChangeFilesView
         );
         item.id = node.change.id;
         const since = {
-          newCommits: "new commits since my Review",
+          newCommits: "new commits since your Review",
           noNewCommits:
             (node.verdict && verdictLabels[node.verdict]) ??
-            "no new commits since my Review",
+            "no new commits since your Review",
         };
         const progress = viewedProgress(node.viewedCount, node.files.length);
         // The progress comes first, so a narrow side bar cuts off the note.

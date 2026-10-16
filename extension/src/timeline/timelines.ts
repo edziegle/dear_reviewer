@@ -107,6 +107,7 @@ export interface OverviewSources {
       | "takeAction"
       | "takeRetry"
       | "trust"
+      | "closeChange"
       | "suggestReadingOrder"
   ): void;
 }

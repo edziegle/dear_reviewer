@@ -187,6 +187,7 @@ export type FromWebview =
   | { type: "takeAction" }
   | { type: "takeRetry" }
   | { type: "trust" }
+  | { type: "closeChange" }
   | { type: "problemAction" };
 
 /** What the Reviewer does in the panel. */
@@ -289,6 +290,7 @@ export class TimelinePanel {
         "takeAction",
         "takeRetry",
         "trust",
+        "closeChange",
         "problemAction",
         "dismissUnhighlighted",
       ].includes(message.type)
@@ -652,28 +654,43 @@ ${catSymbol}
   function standing(state) {
     const node = byId("standing");
     const notes = state.standing;
-    node.hidden = notes.length === 0 && !state.review && !state.navigationOff;
-    const said = JSON.stringify([notes, state.review, state.navigationOff, state.submitted]);
+    const done = state.submitted;
+    node.hidden = notes.length === 0 && !state.review && !done && !state.navigationOff;
+    const said = JSON.stringify([notes, state.review, state.navigationOff, done]);
     if (node.dataset.said === said) return;
     node.dataset.said = said;
     node.replaceChildren();
+    // The Review just submitted leads: its verdict, its page, then the way
+    // out of the Change; where the Reviewer stands follows.
+    const parts = [];
     if (state.review) {
       const review = el("span", "review " + state.review.verdict);
       const mark = el("span", "mark", reviewMarks[state.review.verdict]);
       mark.setAttribute("aria-hidden", "true");
       review.append(mark, " ", state.review.text);
-      node.append(review, ...(notes.length ? [" · "] : []));
+      parts.push(review);
+    } else if (done) {
+      parts.push(el("span", "review", done.text.replace(/\.$/, "")));
     }
-    node.append(notes.join(" · "));
-    if (state.submitted && state.submitted.url) {
-      const view = link("View on GitHub", state.submitted.url);
+    if (done && done.url) {
+      const view = link("View on GitHub", done.url);
       view.id = "viewSubmitted";
-      node.append(" · ", view);
+      parts.push(view);
     }
+    if (done) {
+      const close = textButton("Close Change", () => vscode.postMessage({ type: "closeChange" }));
+      close.title = "Close this Change and its worktrees, and go back to the Dashboard";
+      parts.push(close);
+    }
+    parts.push(...notes);
     if (state.navigationOff) {
-      node.append(notes.length || state.review ? " · " : "", "Navigation off: ", textButton("Trust the review window…", () => vscode.postMessage({ type: "trust" })));
-      node.lastChild.title = "The review window is in Restricted Mode, so go to definition and other code navigation are off";
+      const off = el("span", "", "Navigation off: ");
+      const trust = textButton("Trust the review window…", () => vscode.postMessage({ type: "trust" }));
+      trust.title = "The review window is in Restricted Mode, so go to definition and other code navigation are off";
+      off.append(trust);
+      parts.push(off);
     }
+    parts.forEach((part, i) => node.append(...(i ? [" · "] : []), part));
   }
 
   // Offers to search the Extensions view for each file extension no
@@ -798,7 +815,9 @@ ${catSymbol}
   function ways(state) {
     const t = state.take;
     const progress = state.progress;
-    const reading = !progress || progress.viewed < progress.total;
+    // Once the Review is submitted, or covers the head with nothing pending,
+    // the way in steps back with the finishing button.
+    const reading = (!progress || progress.viewed < progress.total) && !state.submitted && !state.finished;
     const start = byId("start");
     start.hidden = !t.start;
     if (t.start) {
@@ -821,7 +840,8 @@ ${catSymbol}
     finish.title = (state.finish.startsWith("Submit") ? "Submit your Review to GitHub" : "Write a Brief of your Comments for an agent") + " (Ctrl+Alt+R S)";
     // While the Submit step is open, its own button is the one filled; once
     // a Review covers the head, there is nothing to finish.
-    finish.className = reading || state.submit || state.finished ? "secondary" : "primary";
+    const allViewed = !!progress && progress.viewed >= progress.total;
+    finish.className = allViewed && !state.submit && !state.submitted && !state.finished ? "primary" : "secondary";
   }
 
   // The Submit step (ADR 0033). The verdict and summary are a draft the

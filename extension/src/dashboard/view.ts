@@ -2,7 +2,7 @@
 // windows (ADR 0032). It reads top to bottom like a Change's overview, sized
 // for the side bar: a facts line, where the Reviewer left off and the one
 // button for what comes next, then the lists, In progress, Waiting on you,
-// Your pull requests, Reviewed by me and Local branches, and a way to open
+// Your pull requests, Reviewed by you and Local branches, and a way to open
 // any commit range. The extension sends it the whole state; the webview
 // renders it, says which state it rendered, and asks the extension for
 // everything else.
@@ -291,7 +291,7 @@ function html(cspSource: string): string {
 <section id="inProgress" aria-labelledby="inProgressHeading" hidden><h2 id="inProgressHeading">In progress <span class="muted count" id="inProgressCount"></span></h2><div id="changes" role="list"></div></section>
 <section id="waitingSection" aria-labelledby="waitingHeading" hidden><h2 id="waitingHeading">Waiting on you <span class="muted count" id="waitingCount"></span></h2><div id="waiting" role="list"></div><button class="link more" id="waitingMore" type="button" aria-controls="waiting" aria-expanded="false" hidden></button></section>
 <section id="authoredSection" aria-labelledby="authoredHeading" hidden><h2 id="authoredHeading">Your pull requests <span class="muted count" id="authoredCount"></span></h2><div id="authored" role="list"></div><button class="link more" id="authoredMore" type="button" aria-controls="authored" aria-expanded="false" hidden></button></section>
-<section id="reviewedSection" aria-labelledby="reviewedHeading" hidden><h2 id="reviewedHeading">Reviewed by me <span class="muted count" id="reviewedCount"></span></h2><div id="reviewed" role="list"></div><button class="link more" id="reviewedMore" type="button" aria-controls="reviewed" aria-expanded="false" hidden></button></section>
+<section id="reviewedSection" aria-labelledby="reviewedHeading" hidden><h2 id="reviewedHeading">Reviewed by you <span class="muted count" id="reviewedCount"></span></h2><div id="reviewed" role="list"></div><button class="link more" id="reviewedMore" type="button" aria-controls="reviewed" aria-expanded="false" hidden></button></section>
 <section id="branchesSection" aria-labelledby="branchesHeading" hidden><h2 id="branchesHeading">Local branches <span class="muted count" id="branchesCount"></span></h2><div id="branchProblems"></div><div id="branches" role="list"></div><button class="link more" id="branchesMore" type="button" aria-controls="branches" aria-expanded="false" hidden></button></section>
 <footer><button class="link" id="openRange" type="button" title="Open any commit range of a repository as a Change">Open a commit range…</button></footer>
 <script nonce="${nonce}">${sharedScript}
@@ -501,7 +501,7 @@ function html(cspSource: string): string {
       setText(byId("place"), next.place);
       byId("place").title = next.place;
       setText(byId("next"), next.label);
-      byId("next").title = next.kind === "open" ? "Open it as a Change in the review window" : next.kind === "resume" ? "Show its overview in the review window" : "Finish the Review in its overview, in the review window";
+      byId("next").title = next.kind === "open" ? "Open it as a Change in the review window" : next.kind === "resume" ? "Show its overview in the review window" : (next.label.startsWith("Write") ? "Write a Brief of your Comments for an agent, in the review window" : "Submit your Review from its overview, in the review window");
     }
     section("inProgress", state.inProgress, "inProgressCount");
     list("changes", state.inProgress, change);

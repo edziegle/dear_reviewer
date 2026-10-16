@@ -901,8 +901,8 @@ describe("A pull request's timeline", () => {
     await approveInSubmitStep(before);
   });
 
-  it("closes with the Change", async () => {
-    await closeChange(change);
+  it("closes with the Change, from the Close Change that ends its Review", async () => {
+    await clickOverview(title, "closeChange");
 
     await eventually(() => assert.strictEqual(timelineTab(title), undefined));
   });

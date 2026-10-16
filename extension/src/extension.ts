@@ -235,6 +235,11 @@ export function activate(context: vscode.ExtensionContext) {
       else if (action === "takeAction") assistants.helpWithProblem(change);
       else if (action === "takeRetry") void assistants.retry(change);
       else if (action === "trust") void trust.trust();
+      else if (action === "closeChange")
+        void vscode.commands.executeCommand(
+          "dearReviewer.closeChange",
+          requestOf(change)
+        );
       else
         void vscode.commands.executeCommand(
           action === "finish"
@@ -1128,7 +1133,9 @@ export function activate(context: vscode.ExtensionContext) {
         const discard = "Discard Review";
         if (confirmed !== true) {
           const picked = await vscode.window.showWarningMessage(
-            `Discard your Review of ${name}? Its ${comments} will be deleted without being published. This can't be undone.`,
+            change.pullRequest
+              ? `Discard your Review of ${name}? Its ${comments} will be deleted without being published. This can't be undone.`
+              : `Discard your Review of ${name}? Its ${comments} will be deleted, and no Brief written from them. This can't be undone.`,
             { modal: true },
             discard
           );
@@ -1238,7 +1245,7 @@ export function activate(context: vscode.ExtensionContext) {
       async (target?: ChangeTarget) => {
         const change = await changeFor(
           target,
-          "Show Changes Since My Last Review"
+          "Show Changes Since Your Last Review"
         );
         if (!change) return;
         const name = changeName(change);

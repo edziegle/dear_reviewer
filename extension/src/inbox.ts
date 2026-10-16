@@ -216,7 +216,7 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
       item.description = [
         branch.repository,
         ahead,
-        ...(changedSinceReview ? ["new commits since my Review"] : []),
+        ...(changedSinceReview ? ["new commits since your Review"] : []),
         ...this.openState(node),
       ].join(" · ");
       item.tooltip = new vscode.MarkdownString(
@@ -226,7 +226,7 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
           escapeMarkdown(branch.clone),
           ...(changedSinceReview
             ? [
-                `New commits since my last Review, whose Brief covered ${briefed.slice(0, 7)}`,
+                `New commits since your last Review, whose Brief covered ${briefed.slice(0, 7)}`,
               ]
             : []),
         ].join("\n\n")
@@ -253,7 +253,7 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
       `${pr.repository} #${pr.number}`,
       ...(pr.checks ? [`checks ${pr.checks}`] : []),
       ...stateLooks.map((look) => look.description),
-      ...(changedSinceReview ? ["new commits since my Review"] : []),
+      ...(changedSinceReview ? ["new commits since your Review"] : []),
       ...this.openState(node),
     ].join(" · ");
     item.tooltip = new vscode.MarkdownString(
@@ -264,7 +264,7 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
         ...stateLooks.map((look) => escapeMarkdown(look.tooltip)),
         ...(changedSinceReview
           ? [
-              `New commits since my last Review, at ${pr.lastReviewedSha!.slice(0, 7)}`,
+              `New commits since your last Review, at ${pr.lastReviewedSha!.slice(0, 7)}`,
             ]
           : []),
       ].join("\n\n")

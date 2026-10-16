@@ -192,6 +192,7 @@ export async function clickOverview(
     | "takeRetry"
     | "trust"
     | "suggestReadingOrder"
+    | "closeChange"
 ): Promise<void> {
   (await panel(title)).receive({ type: button });
 }

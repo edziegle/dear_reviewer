@@ -76,7 +76,7 @@ function hasCommit(repository: string, commit: string): Promise<boolean> {
 /** The title of the diff of what changed in the Change since this commit. */
 export function sinceTitle(change: Change, from: string): string {
   const repo = path.basename(change.repository);
-  return `${repo} ${from.slice(0, 7)}..${change.headSha.slice(0, 7)} since my last Review`;
+  return `${repo} ${from.slice(0, 7)}..${change.headSha.slice(0, 7)} since your last Review`;
 }
 
 /**

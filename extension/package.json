@@ -187,6 +187,11 @@
         "icon": "$(dashboard)"
       },
       {
+        "command": "dearReviewer.showReviewKeys",
+        "title": "Show Review Keys",
+        "category": "Dear Reviewer"
+      },
+      {
         "command": "dearReviewer.openAllChanges",
         "title": "Open All Changes",
         "category": "Dear Reviewer",
@@ -916,8 +921,13 @@
             "title": "Open your repositories",
             "description": "Every folder you have open that is a clone of a GitHub repository adds that repository to the Dashboard, with the folder as its clone, and Dear Reviewer remembers it. Add a clone you don't have open, or forget one, from the Dashboard's toolbar.\n[Add Repository](command:dearReviewer.addRepository)",
             "media": {
-              "image": "media/dear-reviewer.svg",
-              "altText": "The Dear Reviewer icon"
+              "image": {
+                "dark": "media/walkthrough/dashboard-dark.png",
+                "light": "media/walkthrough/dashboard-light.png",
+                "hc": "media/walkthrough/dashboard-dark.png",
+                "hcLight": "media/walkthrough/dashboard-light.png"
+              },
+              "altText": "The Dashboard in the side bar: a pull request in progress, and pull requests waiting on you, each with its size and checks"
             },
             "completionEvents": [
               "onContext:dearReviewer.hasRepositories"
@@ -928,8 +938,13 @@
             "title": "Check the Assistant's Claude login",
             "description": "The Assistant runs the claude CLI you already have, with its own login: install Claude Code and sign in by running claude in a terminal. Point the Claude Path setting at it if it isn't on the PATH.\n[Check Claude Login](command:dearReviewer.checkClaudeLogin)",
             "media": {
-              "image": "media/dear-reviewer.svg",
-              "altText": "The Dear Reviewer icon"
+              "image": {
+                "dark": "media/walkthrough/overview-dark.png",
+                "light": "media/walkthrough/overview-light.png",
+                "hc": "media/walkthrough/overview-dark.png",
+                "hcLight": "media/walkthrough/overview-light.png"
+              },
+              "altText": "A Change's overview, with the Assistant's three-sentence take and where to start reading"
             },
             "completionEvents": [
               "onContext:dearReviewer.claudeSignedIn"
@@ -938,7 +953,7 @@
           {
             "id": "trust",
             "title": "Trust the review window",
-            "description": "Changes open in the review window, from a folder in Dear Reviewer's storage that the editor doesn't trust yet. Until you trust it, the review window is in Restricted Mode, with language servers and code navigation off. Trusting it turns them on, for every Change you open later too, and also lets the reviewed code's workspace settings and tasks apply in that window, including for pull requests from people you don't know. It's your choice: the editor asks once, when the review window first opens, and you can choose here later. The button shows Workspace Trust in the review window; choose Trust there.\n[Trust the Review Window…](command:dearReviewer.trustReviewWindow)",
+            "description": "Changes open in the review window, which the editor doesn't trust yet. Until you trust it, it is in Restricted Mode: no language servers and no code navigation. Trusting it turns them on for every Change you open, and also lets the reviewed code's workspace settings and tasks apply there, including for pull requests from people you don't know. The editor asks once, when the review window first opens, and you can choose here later. The button shows Workspace Trust in the review window; choose Trust there.\n[Trust the Review Window…](command:dearReviewer.trustReviewWindow)",
             "media": {
               "image": "media/dear-reviewer.svg",
               "altText": "The Dear Reviewer icon"
@@ -948,16 +963,56 @@
             ]
           },
           {
-            "id": "review",
-            "title": "Review a pull request",
-            "description": "Click a pull request in the Dashboard to open it as a Change, in the review window. It opens with its overview alone: what the Change is, where you stand on it, and the Assistant's short take, with where to start reading. The diff opens when you start, beside the overview. Until you trust the review window, it is in Restricted Mode, without language servers and navigation. Comment in the diff's gutter, then submit your Review with Submit Review… in the overview, which shows your verdict, summary and every Comment that publishes; a local Change's Review ends with Write Brief… instead. Ctrl+Alt+R then N opens the next unviewed file, and Ctrl+Alt+R then S submits the Review or writes the Brief.\n[Show the Dashboard](command:dearReviewer.showDashboard)",
+            "id": "open",
+            "title": "Open a Change from the Dashboard",
+            "description": "Click a pull request in the Dashboard. It opens as a Change in the review window, with its overview alone: what the Change is, where you stand on it, and the Assistant's short take, with where to start reading.\n[Show the Dashboard](command:dearReviewer.showDashboard)",
             "media": {
-              "image": "media/dear-reviewer.svg",
-              "altText": "The Dear Reviewer icon"
+              "image": {
+                "dark": "media/walkthrough/dashboard-dark.png",
+                "light": "media/walkthrough/dashboard-light.png",
+                "hc": "media/walkthrough/dashboard-dark.png",
+                "hcLight": "media/walkthrough/dashboard-light.png"
+              },
+              "altText": "The Dashboard, with a pull request in progress as its filled button"
             },
             "completionEvents": [
               "onCommand:dearReviewer.openPullRequest",
               "onCommand:dearReviewer.openChange"
+            ]
+          },
+          {
+            "id": "read",
+            "title": "Read the diff and comment",
+            "description": "Start where the take says, then step through the files with Next unviewed file (Ctrl+Alt+R N, or ⌃⌥R N on a Mac). Comment in the gutter of the diff. Go to definition and find usages work on both sides of the diff once you trust the review window.",
+            "media": {
+              "image": {
+                "dark": "media/walkthrough/overview-dark.png",
+                "light": "media/walkthrough/overview-light.png",
+                "hc": "media/walkthrough/overview-dark.png",
+                "hcLight": "media/walkthrough/overview-light.png"
+              },
+              "altText": "A Change's overview, with its Reading Order and the Start at button"
+            },
+            "completionEvents": [
+              "onCommand:dearReviewer.nextUnviewedFile"
+            ]
+          },
+          {
+            "id": "finish",
+            "title": "Finish your Review",
+            "description": "When every file is viewed, the overview offers Submit Review…: your verdict, a summary, and every Comment that publishes with it. A local Change ends with Write Brief… instead, and a Brief you copy for your agent. Ctrl+Alt+R S does either.\nEvery key is in Keyboard Shortcuts, where you can rebind it.\n[Show the Review Keys](command:dearReviewer.showReviewKeys)",
+            "media": {
+              "image": {
+                "dark": "media/walkthrough/submit-dark.png",
+                "light": "media/walkthrough/submit-light.png",
+                "hc": "media/walkthrough/submit-dark.png",
+                "hcLight": "media/walkthrough/submit-light.png"
+              },
+              "altText": "The Submit step in a Change's overview: a verdict, a summary and the Comments that publish"
+            },
+            "completionEvents": [
+              "onCommand:dearReviewer.submitReview",
+              "onCommand:dearReviewer.writeBrief"
             ]
           }
         ]

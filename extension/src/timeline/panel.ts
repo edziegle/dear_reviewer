@@ -401,6 +401,7 @@ export const pageStyles = `
   .link { background: none; border: none; padding: 0; color: var(--vscode-textLink-foreground); cursor: pointer; font: inherit; text-align: start; text-decoration: none; }
   .link:hover { text-decoration: underline; }
   .actions { display: flex; flex-wrap: wrap; gap: 6px; }
+  .key { font-family: var(--vscode-editor-font-family); font-size: 0.85em; margin-left: 6px; }
   header .actions { flex: none; align-items: center; }
   button.secondary { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); padding: 2px 8px; border-radius: 2px; cursor: pointer; font: inherit; }
   button.secondary:hover { background: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-secondaryBackground)); }
@@ -559,8 +560,8 @@ ${catSymbol}
   </div>
   <div class="actions" id="ways">
     <button class="primary" id="start" type="button" hidden></button>
-    <button class="secondary" id="nextFile" type="button" hidden>Next unviewed file</button>
-    <button class="secondary" id="ask" type="button" title="Open the Assistant's chat about this Change (Ctrl+Alt+R A)">Ask the Assistant</button>
+    <button class="secondary" id="nextFile" type="button" hidden></button>
+    <button class="secondary" id="ask" type="button" title="Open the Assistant's chat about this Change (Ctrl+Alt+R A)"></button>
   </div>
 </section>
 <section id="checks" hidden><h2 id="checksHeading"></h2><p class="muted facts" id="checksSummary"></p><ul class="checks" id="checkRuns"></ul><button class="link more" id="moreChecks" type="button" aria-controls="checkRuns" aria-expanded="false" hidden></button></section>
@@ -589,6 +590,18 @@ ${catSymbol}
     button.addEventListener("click", onClick);
     return button;
   };
+  // A button's key shows beside its label, in the Reviewer's own notation;
+  // the key isn't part of the name a screen reader gives the button.
+  const mac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
+  function setLabel(node, text, letter) {
+    const said = text + "\0" + letter;
+    if (node.dataset.label === said) return;
+    node.dataset.label = said;
+    const key = el("span", "key", (mac ? "⌃⌥R " : "Ctrl+Alt+R ") + letter);
+    key.setAttribute("aria-hidden", "true");
+    node.replaceChildren(text, key);
+    node.setAttribute("aria-label", text);
+  }
   const when = (iso) => {
     const date = new Date(iso);
     return isNaN(date) ? "" : date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
@@ -857,6 +870,8 @@ ${catSymbol}
       }
     }
     const next = byId("nextFile");
+    setLabel(next, "Next unviewed file", "N");
+    setLabel(byId("ask"), "Ask the Assistant", "A");
     next.hidden = !progress || progress.viewed >= progress.total || back;
     next.title = "Open the diff of the next file you haven't viewed (Ctrl+Alt+R N)";
     const first = t.start ? start : next;
@@ -865,7 +880,7 @@ ${catSymbol}
     const finish = byId("finish");
     // There is nothing to finish while the result block says how it ended.
     finish.hidden = back;
-    setText(finish, state.finish);
+    setLabel(finish, state.finish, "S");
     // While the Submit step is open, the button is its disclosure: pressing
     // it again closes the step.
     if (state.submit) {

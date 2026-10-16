@@ -1186,6 +1186,13 @@ export function activate(context: vscode.ExtensionContext) {
         );
       }
     ),
+    // The review keys can be rebound, as any keybinding, in Keyboard Shortcuts.
+    vscode.commands.registerCommand("dearReviewer.showReviewKeys", () =>
+      vscode.commands.executeCommand(
+        "workbench.action.openGlobalKeybindings",
+        "@ext:edziegle.dear-reviewer"
+      )
+    ),
     vscode.commands.registerCommand(
       "dearReviewer.copyBrief",
       (uri?: vscode.Uri) => briefs.copy(uri)

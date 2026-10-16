@@ -269,6 +269,8 @@ function html(cspSource: string): string {
   .item .link.title { color: var(--vscode-textLink-foreground); }
   .item .branch { font-family: var(--vscode-editor-font-family); font-weight: 400; }
   .item .muted, #place { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 1px 0; }
+  .item .muted.notes { white-space: normal; overflow: visible; overflow-wrap: anywhere; }
+  .item .notes > span { display: inline-block; max-width: 100%; }
   .problem-line { margin: 6px 0 0; }
   .problem-line .link { text-decoration: underline; }
   .setup .muted { margin-top: 8px; }
@@ -312,12 +314,27 @@ function html(cspSource: string): string {
     return node;
   };
   // A muted line keeps to one line, cut short with an ellipsis, and shows
-  // the whole of it on hover.
+  // the whole of it on hover. A row's notes, which say what it needs, have
+  // a line of their own that wraps instead, so they are never cut.
   const line = (className, parts) => {
     const node = el("div", className);
     parts.filter(Boolean).forEach((part, i) => node.append(...(i ? [" · "] : []), typeof part === "string" ? el("span", "", part) : part));
     node.title = node.textContent;
     return node;
+  };
+  // Each note keeps whole, so the line breaks between notes, and its " ·"
+  // keeps to its last word.
+  const notes = (parts) => {
+    const shown = parts.filter(Boolean);
+    if (shown.length === 0) return [];
+    const node = el("div", "muted notes");
+    shown.forEach((part, i) => {
+      const last = i === shown.length - 1;
+      const span = el("span");
+      span.append(part, ...(last ? [] : ["\u00a0·"]));
+      node.append(span, ...(last ? [] : [" "]));
+    });
+    return [node];
   };
   byId("next").addEventListener("click", () => vscode.postMessage({ type: "next" }));
   byId("openRange").addEventListener("click", () => vscode.postMessage({ type: "openRange" }));
@@ -357,7 +374,7 @@ function html(cspSource: string): string {
       mark.setAttribute("aria-hidden", "true");
       review.append(mark, " ", entry.review.text);
     }
-    content.append(line("muted", [review, ...entry.standing]));
+    content.append(...notes([review, ...entry.standing]));
     row.append(content);
     return row;
   }
@@ -391,7 +408,8 @@ function html(cspSource: string): string {
     content.append(
       line("muted", [entry.name, entry.waited !== undefined && "waiting " + entry.waited, entry.waited !== undefined && entry.author]),
       title,
-      line("muted", [size(entry), entry.checks && el("span", "status " + entry.checks, "checks " + entry.checks), ...entry.notes])
+      line("muted", [size(entry), entry.checks && el("span", "status " + entry.checks, "checks " + entry.checks)]),
+      ...notes(entry.notes)
     );
     row.append(content);
     return row;
@@ -403,7 +421,7 @@ function html(cspSource: string): string {
     const content = el("div", "content");
     const title = el("div");
     title.append(button("link title branch", entry.name, { type: "open", id: entry.id }, "Open " + entry.name + " as a Change"));
-    content.append(title, line("muted", [entry.repository, entry.ahead, ...entry.notes]));
+    content.append(title, line("muted", [entry.repository, entry.ahead]), ...notes(entry.notes));
     row.append(content);
     return row;
   }

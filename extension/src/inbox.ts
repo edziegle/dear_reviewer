@@ -23,6 +23,7 @@ import { conversationName } from "./conversationName";
 import { branchesAhead, LocalBranch } from "./localBranches";
 import type { LocalClone } from "./repositories";
 import { isUnreachable, messageOf } from "./errors";
+import { teamNotes } from "./github/teamReviews";
 
 export type { LocalClone } from "./repositories";
 
@@ -251,6 +252,7 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
       .map((state) => authoredStateLook(state, pr));
     item.description = [
       `${pr.repository} #${pr.number}`,
+      ...teamNotes(pr),
       ...(pr.checks ? [`checks ${pr.checks}`] : []),
       ...stateLooks.map((look) => look.description),
       ...(changedSinceReview ? ["new commits since your Review"] : []),
@@ -316,7 +318,10 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
     const loaded = await this.fetch(repositories);
     if (superseded()) return loaded.nodes;
     if (loaded.awaitingMyReview)
-      this.forgetReviewedOnceSearchHasCaughtUp(loaded.awaitingMyReview);
+      this.forgetReviewedOnceSearchHasCaughtUp([
+        ...loaded.awaitingMyReview,
+        ...(loaded.reviewedByMyTeam ?? []),
+      ]);
     if (loaded.authoredByMe) this.recheckMergeability(loaded.authoredByMe);
     if (loaded.signedIn !== undefined)
       await setContext("dearReviewer.signedIn", loaded.signedIn);
@@ -339,12 +344,17 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
             authoredByMe: true,
           }),
           pullRequestGroup(reviewedByMe, inbox.reviewedByMe),
+          // Only when a teammate answered a Team request, so it isn't an empty group for a Reviewer on no team.
+          ...(inbox.reviewedByMyTeam.length > 0
+            ? [pullRequestGroup(reviewedByMyTeam, inbox.reviewedByMyTeam)]
+            : []),
           ...(await localBranches),
         ],
         signedIn: true,
         welcome: "none",
         awaitingMyReview: inbox.awaitingMyReview,
         authoredByMe: inbox.authoredByMe,
+        reviewedByMyTeam: inbox.reviewedByMyTeam,
       };
     } catch (err) {
       if (err instanceof NotSignedInError)
@@ -391,24 +401,49 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
       node.kind === "pullRequest" &&
       (this.justReviewed.get(pullRequestKey(node.pullRequest)) ?? 0) >=
         Date.now();
-    const awaiting = nodes.find(
-      (n) => n.kind === "group" && n.label === awaitingMyReview
+    // From Awaiting my review, and from Reviewed by my team, which the Reviewer's Review answers as well.
+    const unreviewed = (node: InboxNode) =>
+      node.kind === "group" &&
+      (node.label === awaitingMyReview || node.label === reviewedByMyTeam);
+    // As a plain Reviewed by me row, which says nothing of the Team request.
+    const moved = nodes.flatMap((node) =>
+      unreviewed(node) && node.kind === "group"
+        ? node.children.filter(reviewed).map((child) => {
+            if (child.kind !== "pullRequest") return child;
+            const {
+              reviewedByTeam: _reviewedByTeam,
+              requestedViaTeam: _requestedViaTeam,
+              ...pullRequest
+            } = child.pullRequest;
+            return { ...child, pullRequest };
+          })
+        : []
     );
-    const moved =
-      awaiting?.kind === "group" ? awaiting.children.filter(reviewed) : [];
     if (moved.length === 0) return nodes;
-    return nodes.map((node) => {
-      if (node.kind !== "group") return node;
-      if (node.label === awaitingMyReview) {
-        const children = node.children.filter((child) => !reviewed(child));
-        return { ...node, children, count: children.length };
-      }
-      if (node.label === reviewedByMe) {
-        const children = [...moved, ...node.children];
-        return { ...node, children, count: children.length };
-      }
-      return node;
-    });
+    return (
+      nodes
+        .map((node) => {
+          if (node.kind !== "group") return node;
+          if (unreviewed(node)) {
+            const children = node.children.filter((child) => !reviewed(child));
+            return { ...node, children, count: children.length };
+          }
+          if (node.label === reviewedByMe) {
+            const children = [...moved, ...node.children];
+            return { ...node, children, count: children.length };
+          }
+          return node;
+        })
+        // Reviewed by my team shows only while it holds a pull request.
+        .filter(
+          (node) =>
+            !(
+              node.kind === "group" &&
+              node.label === reviewedByMyTeam &&
+              node.children.length === 0
+            )
+        )
+    );
   }
 
   /** The "Local branches" group, if any Inbox repository has a local clone. */
@@ -459,6 +494,7 @@ interface InboxLoad {
   welcome: Welcome;
   awaitingMyReview?: PullRequestSummary[];
   authoredByMe?: PullRequestSummary[];
+  reviewedByMyTeam?: PullRequestSummary[];
 }
 
 /** How long after a Review the Inbox loads again, once search has caught up. */
@@ -471,6 +507,7 @@ const keepReviewed = 120_000;
 export const awaitingMyReview = "Awaiting my review";
 export const authoredByMe = "Authored by me";
 export const reviewedByMe = "Reviewed by me";
+export const reviewedByMyTeam = "Reviewed by my team";
 
 function pullRequestKey(pullRequest: {
   repository: string;

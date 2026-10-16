@@ -4,6 +4,15 @@
 import { GitHubAuth, trustedOrigin } from "./auth";
 import { requestedOfReviewerAt, type ReviewRequest } from "./reviewRequests";
 import { fetchWithin, REQUEST_TIMEOUT_MS } from "./request";
+import {
+  answeredByTeam,
+  requestedViaTeam,
+  type MyTeam,
+  type RequestChange,
+  type RequestedReviewer,
+  type SubmittedReview,
+  type TeamAnswer,
+} from "./teamReviews";
 
 export type CheckStatus = "passed" | "failed" | "running";
 
@@ -17,6 +26,10 @@ export interface PullRequestSummary {
   createdAt: string;
   /** When it last asked me for a review, personally or through a team; undefined when it never did. */
   reviewRequestedAt?: string;
+  /** `org/slug` of the team a pending Team request to me came through; undefined when it asks me personally too, or asks no team I'm on. */
+  requestedViaTeam?: string;
+  /** For a pull request in Reviewed by my team: the teammate's review that answered the Team request. */
+  reviewedByTeam?: TeamAnswer;
   /** How big it is: its changed files and lines. */
   size: { files: number; additions: number; deletions: number };
   author: { login: string; avatarUrl: string };
@@ -77,6 +90,8 @@ export interface InboxPullRequests {
   authoredByMe: PullRequestSummary[];
   /** Ones I reviewed and didn't author, leaving out any awaiting my review again. */
   reviewedByMe: PullRequestSummary[];
+  /** Open ones whose Team request to a team I'm on a teammate's review answered, in none of the other lists. */
+  reviewedByMyTeam: PullRequestSummary[];
 }
 
 export interface PullRequestFiles {
@@ -220,10 +235,26 @@ export class GitHubClient {
     private readonly apiUrl: () => string
   ) {}
 
-  /** Open pull requests in these repositories that await my review, that I authored, or that I reviewed. */
+  /**
+   * Open pull requests in these repositories that await my review, that I
+   * authored, or that I reviewed, and ones whose Team request a teammate's
+   * review answered. The last are read from the review history of the open
+   * pull requests in none of the other lists, and only for repositories of
+   * an organization with a team I'm on.
+   */
   async inbox(repositories: string[]): Promise<InboxPullRequests> {
     if (repositories.length === 0)
-      return { awaitingMyReview: [], authoredByMe: [], reviewedByMe: [] };
+      return {
+        awaitingMyReview: [],
+        authoredByMe: [],
+        reviewedByMe: [],
+        reviewedByMyTeam: [],
+      };
+    const reviewer = await this.viewerLogin();
+    const myTeams = await this.myTeams(reviewer, repositories);
+    const teamOrganizations = new Set(
+      myTeams.map((team) => team.name.split("/")[0].toLowerCase())
+    );
     const searches = repositories.flatMap((repository, i) => [
       {
         alias: `awaiting${i}`,
@@ -237,41 +268,144 @@ export class GitHubClient {
         alias: `reviewed${i}`,
         query: `is:pr is:open archived:false repo:${repository} reviewed-by:@me -author:@me`,
       },
+      ...(teamOrganizations.has(repository.split("/")[0].toLowerCase())
+        ? [
+            {
+              alias: `team${i}`,
+              query: `is:pr is:open archived:false repo:${repository} -author:@me -reviewed-by:@me -review-requested:@me sort:updated-desc`,
+            },
+          ]
+        : []),
     ]);
-    const reviewer = await this.viewerLogin();
+    const withHistory = searches.some((s) => s.alias.startsWith("team"));
     const query = `query Inbox($reviewer: String!, ${searches.map((s) => `$${s.alias}: String!`).join(", ")}) {
 ${searches
   .map(
     (s) =>
-      `  ${s.alias}: search(query: $${s.alias}, type: ISSUE, first: 100) { nodes { ...InboxPullRequest } }`
+      `  ${s.alias}: search(query: $${s.alias}, type: ISSUE, first: 100) { nodes { ...InboxPullRequest${s.alias.startsWith("team") ? " ...TeamHistory" : ""} } }`
   )
   .join("\n")}
 }
-${INBOX_PULL_REQUEST}`;
+${INBOX_PULL_REQUEST}${withHistory ? `\n${TEAM_HISTORY}` : ""}`;
     const data = await this.graphql<
       Record<string, { nodes: PullRequestNode[] }>
     >(query, {
       reviewer,
       ...Object.fromEntries(searches.map((s) => [s.alias, s.query])),
     });
-    const collect = (prefix: string) =>
+    const nodesOf = (prefix: string) =>
       searches
         .filter((s) => s.alias.startsWith(prefix))
         .flatMap((s) => data[s.alias]?.nodes ?? [])
-        .filter((node) => node.__typename === "PullRequest")
-        .map((node) => summaryOf(node, reviewer))
+        .filter((node) => node.__typename === "PullRequest");
+    const collect = (prefix: string) =>
+      nodesOf(prefix)
+        .map((node) => summaryOf(node, reviewer, myTeams))
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    const keyOf = (pr: PullRequestSummary) => `${pr.repository}#${pr.number}`;
     const awaitingMyReview = collect("awaiting");
-    const awaiting = new Set(
-      awaitingMyReview.map((pr) => `${pr.repository}#${pr.number}`)
+    const awaiting = new Set(awaitingMyReview.map(keyOf));
+    const authoredByMe = collect("authored");
+    const reviewedByMe = collect("reviewed").filter(
+      (pr) => !awaiting.has(keyOf(pr))
     );
+    const elsewhere = new Set(
+      [...awaitingMyReview, ...authoredByMe, ...reviewedByMe].map(keyOf)
+    );
+    const reviewedByMyTeam = nodesOf("team").flatMap((node) => {
+      const summary = summaryOf(node, reviewer, myTeams);
+      const reviewedByTeam = answeredByTeam({
+        changes: requestChangesOf(node.requestChanges),
+        pending: pendingReviewersOf(node.pendingRequests),
+        reviews: submittedReviewsOf(node.submittedReviews),
+        myTeams,
+        author: summary.author.login,
+      });
+      return reviewedByTeam && !elsewhere.has(keyOf(summary))
+        ? [{ ...summary, reviewedByTeam }]
+        : [];
+    });
     return {
       awaitingMyReview,
-      authoredByMe: collect("authored"),
-      reviewedByMe: collect("reviewed").filter(
-        (pr) => !awaiting.has(`${pr.repository}#${pr.number}`)
+      authoredByMe,
+      reviewedByMe,
+      reviewedByMyTeam: reviewedByMyTeam.sort((a, b) =>
+        b.updatedAt.localeCompare(a.updatedAt)
       ),
     };
+  }
+
+  /**
+   * The teams I'm on in the organizations of these repositories, and the
+   * teams above them, with every member of each: a request to a parent team
+   * reaches me through a child team. None when GitHub won't say, such as for
+   * a token without `read:org`, so the Inbox still loads.
+   */
+  private async myTeams(
+    login: string,
+    repositories: string[]
+  ): Promise<MyTeam[]> {
+    const owners = new Set(
+      repositories.map((repository) => repository.split("/")[0].toLowerCase())
+    );
+    let data: ViewerTeamsData;
+    try {
+      data = await this.graphql<ViewerTeamsData>(VIEWER_TEAMS, {
+        reviewer: login,
+      });
+    } catch (err) {
+      if (err instanceof GitHubError && !(err instanceof SignInRejectedError))
+        return [];
+      throw err;
+    }
+    const teams = new Map<
+      string,
+      { organization: string; slug: string; members: TeamMembersNode }
+    >();
+    for (const organization of data.viewer?.organizations.nodes ?? []) {
+      if (!owners.has(organization.login.toLowerCase())) continue;
+      for (const team of organization.teams.nodes)
+        for (const t of [team, ...team.ancestors.nodes])
+          teams.set(`${organization.login}/${t.slug}`.toLowerCase(), {
+            organization: organization.login,
+            slug: t.slug,
+            members: t.members,
+          });
+    }
+    return Promise.all(
+      [...teams.values()].map(async ({ organization, slug, members }) => ({
+        name: `${organization}/${slug}`,
+        members: await this.allMembers(organization, slug, members),
+      }))
+    );
+  }
+
+  /** Every member's login: the first page, then the pages after it. */
+  private async allMembers(
+    organization: string,
+    slug: string,
+    first: TeamMembersNode
+  ): Promise<string[]> {
+    const logins = first.nodes.map((member) => member.login);
+    let page = first.pageInfo;
+    // A team of more than a thousand members is read no further.
+    for (let i = 0; page.hasNextPage && i < 9; i++) {
+      try {
+        const data: TeamMembersData = await this.graphql<TeamMembersData>(
+          TEAM_MEMBERS,
+          { organization, slug, after: page.endCursor }
+        );
+        const more = data.organization?.team?.members;
+        if (!more) break;
+        logins.push(...more.nodes.map((member) => member.login));
+        page = more.pageInfo;
+      } catch (err) {
+        if (err instanceof GitHubError && !(err instanceof SignInRejectedError))
+          break;
+        throw err;
+      }
+    }
+    return logins;
   }
 
   /**
@@ -1093,8 +1227,15 @@ const INBOX_PULL_REQUEST = `fragment InboxPullRequest on PullRequest {
   latestReviews(first: 100) { nodes { ...InboxReview } }
   latestOpinionatedReviews(first: 100) { nodes { ...InboxReview } }
   reviewRequests: timelineItems(last: 50, itemTypes: [REVIEW_REQUESTED_EVENT]) {
-    nodes { ... on ReviewRequestedEvent { createdAt requestedReviewer { __typename ... on User { login } } } }
+    nodes { ... on ReviewRequestedEvent { createdAt requestedReviewer { ...Requested } } }
   }
+  pendingRequests: reviewRequests(first: 30) { nodes { requestedReviewer { ...Requested } } }
+}
+
+fragment Requested on RequestedReviewer {
+  __typename
+  ... on User { login }
+  ... on Team { slug organization { login } }
 }
 
 fragment InboxReview on PullRequestReview {
@@ -1102,6 +1243,75 @@ fragment InboxReview on PullRequestReview {
   author { login }
   commit { oid }
 }`;
+
+/** What it takes to tell whether a teammate's review answered a Team request. */
+const TEAM_HISTORY = `fragment TeamHistory on PullRequest {
+  requestChanges: timelineItems(last: 100, itemTypes: [REVIEW_REQUESTED_EVENT, REVIEW_REQUEST_REMOVED_EVENT]) {
+    nodes {
+      __typename
+      ... on ReviewRequestedEvent { createdAt requestedReviewer { ...Requested } }
+      ... on ReviewRequestRemovedEvent { createdAt requestedReviewer { ...Requested } }
+    }
+  }
+  submittedReviews: reviews(last: 100, states: [APPROVED, CHANGES_REQUESTED, COMMENTED]) {
+    nodes { author { login } state submittedAt }
+  }
+}`;
+
+const TEAM_MEMBERS_FIELDS = `members(first: 100) { nodes { login } pageInfo { hasNextPage endCursor } }`;
+
+/** The teams the viewer is on, in the organizations they are in, with the teams above them. */
+const VIEWER_TEAMS = `query ViewerTeams($reviewer: String!) {
+  viewer {
+    login
+    organizations(first: 100) {
+      nodes {
+        login
+        teams(first: 100, userLogins: [$reviewer]) {
+          nodes {
+            slug
+            ${TEAM_MEMBERS_FIELDS}
+            ancestors(first: 10) { nodes { slug ${TEAM_MEMBERS_FIELDS} } }
+          }
+        }
+      }
+    }
+  }
+}`;
+
+const TEAM_MEMBERS = `query TeamMembers($organization: String!, $slug: String!, $after: String) {
+  organization(login: $organization) {
+    team(slug: $slug) {
+      members(first: 100, after: $after) { nodes { login } pageInfo { hasNextPage endCursor } }
+    }
+  }
+}`;
+
+interface TeamMembersNode {
+  nodes: { login: string }[];
+  pageInfo: { hasNextPage: boolean; endCursor: string | null };
+}
+
+interface ViewerTeamsData {
+  viewer: {
+    organizations: {
+      nodes: {
+        login: string;
+        teams: {
+          nodes: {
+            slug: string;
+            members: TeamMembersNode;
+            ancestors: { nodes: { slug: string; members: TeamMembersNode }[] };
+          }[];
+        };
+      }[];
+    };
+  } | null;
+}
+
+interface TeamMembersData {
+  organization: { team: { members: TeamMembersNode } | null } | null;
+}
 
 interface PullRequestNode {
   __typename: string;
@@ -1119,6 +1329,16 @@ interface PullRequestNode {
   repository: { nameWithOwner: string };
   author: { login: string; avatarUrl: string } | null;
   reviewRequests: { nodes: (ReviewRequestedNode | null)[] };
+  /** The review requests pending now. */
+  pendingRequests?: {
+    nodes: ({ requestedReviewer: RequestedReviewerNode | null } | null)[];
+  };
+  /** Review requests made and taken away; for pull requests whose Team requests are read. */
+  requestChanges?: { nodes: (RequestChangeNode | null)[] };
+  /** Submitted reviews, whatever their verdict; for the same. */
+  submittedReviews?: {
+    nodes: (SubmittedReviewNode | null)[];
+  };
   commits: {
     nodes: { commit: { statusCheckRollup: { state: string } | null } }[];
   };
@@ -1130,9 +1350,26 @@ interface PullRequestNode {
   latestOpinionatedReviews: { nodes: (InboxReviewNode | null)[] };
 }
 
+interface RequestedReviewerNode {
+  __typename: string;
+  login?: string;
+  slug?: string;
+  organization?: { login: string };
+}
+
 interface ReviewRequestedNode {
   createdAt?: string;
-  requestedReviewer: { __typename: string; login?: string } | null;
+  requestedReviewer: RequestedReviewerNode | null;
+}
+
+interface RequestChangeNode extends ReviewRequestedNode {
+  __typename: string;
+}
+
+interface SubmittedReviewNode {
+  author: { login: string } | null;
+  state: string;
+  submittedAt: string | null;
 }
 
 interface InboxReviewNode {
@@ -1141,9 +1378,18 @@ interface InboxReviewNode {
   commit: { oid: string } | null;
 }
 
-function summaryOf(node: PullRequestNode, viewer: string): PullRequestSummary {
+function summaryOf(
+  node: PullRequestNode,
+  viewer: string,
+  myTeams: readonly MyTeam[]
+): PullRequestSummary {
   const reviewRequestedAt = requestedOfReviewerAt(
     reviewRequestsOf(node.reviewRequests),
+    viewer
+  );
+  const viaTeam = requestedViaTeam(
+    pendingReviewersOf(node.pendingRequests),
+    myTeams,
     viewer
   );
   return {
@@ -1154,6 +1400,7 @@ function summaryOf(node: PullRequestNode, viewer: string): PullRequestSummary {
     updatedAt: node.updatedAt,
     createdAt: node.createdAt,
     ...(reviewRequestedAt && { reviewRequestedAt }),
+    ...(viaTeam && { requestedViaTeam: viaTeam }),
     size: {
       files: node.changedFiles,
       additions: node.additions,
@@ -1201,6 +1448,60 @@ function reviewRequestsOf(
           : reviewer?.__typename === "Team"
             ? { reviewer: { kind: "team" as const } }
             : {}),
+      },
+    ];
+  });
+}
+
+/** Who a review was requested of, where GitHub says: a person or a team. */
+function reviewerOf(
+  reviewer: RequestedReviewerNode | null | undefined
+): RequestedReviewer | undefined {
+  if (reviewer?.__typename === "User" && reviewer.login)
+    return { kind: "user", login: reviewer.login };
+  if (reviewer?.__typename === "Team" && reviewer.slug && reviewer.organization)
+    return {
+      kind: "team",
+      team: `${reviewer.organization.login}/${reviewer.slug}`,
+    };
+}
+
+function pendingReviewersOf(
+  pending: PullRequestNode["pendingRequests"]
+): RequestedReviewer[] {
+  return (pending?.nodes ?? []).flatMap((node) => {
+    const reviewer = reviewerOf(node?.requestedReviewer);
+    return reviewer ? [reviewer] : [];
+  });
+}
+
+function requestChangesOf(
+  changes: PullRequestNode["requestChanges"]
+): RequestChange[] {
+  return (changes?.nodes ?? []).flatMap((node) => {
+    const reviewer = reviewerOf(node?.requestedReviewer);
+    if (!node?.createdAt || !reviewer) return [];
+    const kind =
+      node.__typename === "ReviewRequestedEvent"
+        ? "requested"
+        : node.__typename === "ReviewRequestRemovedEvent"
+          ? "removed"
+          : undefined;
+    return kind ? [{ kind, at: node.createdAt, reviewer }] : [];
+  });
+}
+
+function submittedReviewsOf(
+  reviews: PullRequestNode["submittedReviews"]
+): SubmittedReview[] {
+  return (reviews?.nodes ?? []).flatMap((review) => {
+    const verdict = review && verdicts[review.state];
+    if (!review?.submittedAt || !verdict) return [];
+    return [
+      {
+        author: review.author?.login ?? "ghost",
+        verdict,
+        at: review.submittedAt,
       },
     ];
   });

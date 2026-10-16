@@ -34,6 +34,13 @@ export interface FakePullRequest {
   state?: "OPEN" | "CLOSED" | "MERGED";
   /** Logins whose review is requested. */
   reviewRequested?: string[];
+  /** Teams, as `org/slug`, whose review is requested now: Team requests. */
+  reviewRequestedTeams?: string[];
+  /**
+   * Review requests made and taken away earlier, on the timeline, oldest
+   * first. The pending requests above are on it too, at `reviewRequestedAt`.
+   */
+  requestHistory?: FakeRequestEvent[];
   /** When their reviews were requested, on the timeline; when it was created if absent. */
   reviewRequestedAt?: string;
   /** Lines added and removed; none if absent. */
@@ -65,6 +72,25 @@ export interface FakePullRequest {
   mergeable?: "MERGEABLE" | "CONFLICTING" | "UNKNOWN";
   /** GitHub's review decision; absent where the base requires no reviews. */
   reviewDecision?: "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED";
+}
+
+/** A review requested of a team or a person, or the request taken away. */
+export interface FakeRequestEvent {
+  type: "requested" | "removed";
+  /** `org/slug`, for a team. */
+  team?: string;
+  /** A login, for a person. */
+  user?: string;
+  at: string;
+}
+
+/** A team of an organization; `parent` is the slug of the team it is a child of. */
+export interface FakeTeam {
+  org: string;
+  slug: string;
+  /** Its own members' logins; the members of its child teams count as its members too. */
+  members: string[];
+  parent?: string;
 }
 
 export type FakeTimelineItem =
@@ -186,6 +212,8 @@ export interface FakeGitHubState {
   /** The signed-in user, and the token that authenticates as them. */
   viewer: { login: string; token: string };
   pullRequests: FakePullRequest[];
+  /** The organizations' teams, which the viewer's teams are read from. */
+  teams?: FakeTeam[];
   /**
    * Where avatar URLs point, such as `http://localhost:<port>` to put them on
    * another origin than the API. Defaults to the server's own URL.
@@ -306,6 +334,18 @@ export async function startFakeGitHub(): Promise<{
         login: state.viewer.login,
         avatarUrl: `${state.avatarOrigin ?? url}/avatars/${encodeURIComponent(state.viewer.login)}?v=4`,
       };
+    if (data.viewer && /\borganizations\(/.test(query))
+      (data.viewer as Record<string, unknown>).organizations = {
+        nodes: viewerOrganizations(),
+      };
+    if (/\borganization\(login:\s*\$organization\)/.test(query)) {
+      const team = teamNamed(variables.organization, variables.slug);
+      data.organization = {
+        team: team && {
+          members: membersPage(membersOf(team), Number(variables.after ?? 0)),
+        },
+      };
+    }
     for (const [, alias, variable] of query.matchAll(
       /(\w+)\s*:\s*search\(\s*query:\s*\$(\w+)/g
     )) {
@@ -863,6 +903,16 @@ export async function startFakeGitHub(): Promise<{
         );
       else if (key === "author") filters.push((pr) => pr.author === user);
       else if (key === "-author") filters.push((pr) => pr.author !== user);
+      else if (key === "sort") continue;
+      else if (key === "-reviewed-by")
+        filters.push(
+          (pr) =>
+            !(pr.reviews ?? []).some(
+              (review) => review.author === user && review.state !== "PENDING"
+            )
+        );
+      else if (key === "-review-requested")
+        filters.push((pr) => !requestedOf(pr, user));
       else if (key === "reviewed-by")
         filters.push((pr) =>
           (pr.reviews ?? []).some(
@@ -870,10 +920,95 @@ export async function startFakeGitHub(): Promise<{
           )
         );
       else if (key === "review-requested")
-        filters.push((pr) => (pr.reviewRequested ?? []).includes(user));
+        filters.push((pr) => requestedOf(pr, user));
       else throw new Error(`The fake GitHub does not know "${term}"`);
     }
     return state.pullRequests.filter((pr) => filters.every((f) => f(pr)));
+  }
+
+  /** Whether the pull request asks `user` for a review, personally or through a team they're on. */
+  function requestedOf(pr: FakePullRequest, user: string): boolean {
+    return (
+      (pr.reviewRequested ?? []).includes(user) ||
+      (pr.reviewRequestedTeams ?? []).some((team) =>
+        teamNamesOf(user).has(team)
+      )
+    );
+  }
+
+  const teamNamed = (org: string, slug: string) =>
+    (state.teams ?? []).find((t) => t.org === org && t.slug === slug);
+
+  /** A team's members, with those of its child teams. */
+  function membersOf(team: FakeTeam): string[] {
+    const children = (state.teams ?? []).filter(
+      (t) => t.org === team.org && t.parent === team.slug
+    );
+    return [...new Set([...team.members, ...children.flatMap(membersOf)])];
+  }
+
+  /** The teams a user is on, directly or through a child team, as `org/slug`. */
+  function teamNamesOf(user: string): Set<string> {
+    const names = new Set<string>();
+    for (const team of state.teams ?? []) {
+      if (!team.members.includes(user)) continue;
+      for (
+        let t: FakeTeam | undefined = team;
+        t;
+        t = t.parent ? teamNamed(t.org, t.parent) : undefined
+      )
+        names.add(`${t.org}/${t.slug}`);
+    }
+    return names;
+  }
+
+  /** The organizations the viewer is in, with the teams they are directly on and those teams' parents. */
+  function viewerOrganizations() {
+    const me = state.viewer.login;
+    const members = (team: FakeTeam) => membersPage(membersOf(team), 0);
+    return [...new Set((state.teams ?? []).map((t) => t.org))].map((org) => ({
+      login: org,
+      teams: {
+        nodes: (state.teams ?? [])
+          .filter((t) => t.org === org && t.members.includes(me))
+          .map((team) => ({
+            slug: team.slug,
+            members: members(team),
+            ancestors: {
+              nodes: ancestorsOf(team).map((a) => ({
+                slug: a.slug,
+                members: members(a),
+              })),
+            },
+          })),
+      },
+    }));
+  }
+
+  /** A hundred members from `offset`, as GitHub pages them. */
+  function membersPage(logins: string[], offset: number) {
+    const end = offset + 100;
+    return {
+      nodes: logins.slice(offset, end).map((login) => ({ login })),
+      pageInfo: {
+        hasNextPage: end < logins.length,
+        endCursor: end < logins.length ? String(end) : null,
+      },
+    };
+  }
+
+  function ancestorsOf(team: FakeTeam): FakeTeam[] {
+    const parent = team.parent && teamNamed(team.org, team.parent);
+    return parent ? [parent, ...ancestorsOf(parent)] : [];
+  }
+
+  /** How GitHub names who a review was requested of. */
+  function requestedReviewer(change: { team?: string; user?: string }) {
+    if (change.team) {
+      const [org, slug] = change.team.split("/");
+      return { __typename: "Team", slug, organization: { login: org } };
+    }
+    return { __typename: "User", login: change.user };
   }
 
   function pullRequestNode(
@@ -917,11 +1052,60 @@ export async function startFakeGitHub(): Promise<{
       }),
       ...(/\breviewRequests: timelineItems\(/.test(query) && {
         reviewRequests: {
-          nodes: (pr.reviewRequested ?? []).map((login) => ({
+          nodes: [
+            ...(pr.reviewRequested ?? []).map((user) => ({ user })),
+            ...(pr.reviewRequestedTeams ?? []).map((team) => ({ team })),
+          ].map((who) => ({
             createdAt:
               pr.reviewRequestedAt ?? pr.createdAt ?? "2026-10-01T00:00:00Z",
-            requestedReviewer: { __typename: "User", login },
+            requestedReviewer: requestedReviewer(who),
           })),
+        },
+      }),
+      ...(/\bpendingRequests: reviewRequests\(/.test(query) && {
+        pendingRequests: {
+          nodes: [
+            ...(pr.reviewRequested ?? []).map((user) => ({
+              requestedReviewer: requestedReviewer({ user }),
+            })),
+            ...(pr.reviewRequestedTeams ?? []).map((team) => ({
+              requestedReviewer: requestedReviewer({ team }),
+            })),
+          ],
+        },
+      }),
+      ...(/\brequestChanges: timelineItems\(/.test(query) && {
+        requestChanges: {
+          nodes: [
+            ...[
+              ...(pr.reviewRequested ?? []).map((user) => ({ user })),
+              ...(pr.reviewRequestedTeams ?? []).map((team) => ({ team })),
+            ].map((who) => ({
+              __typename: "ReviewRequestedEvent",
+              createdAt:
+                pr.reviewRequestedAt ?? pr.createdAt ?? "2026-10-01T00:00:00Z",
+              requestedReviewer: requestedReviewer(who),
+            })),
+            ...(pr.requestHistory ?? []).map((event) => ({
+              __typename:
+                event.type === "requested"
+                  ? "ReviewRequestedEvent"
+                  : "ReviewRequestRemovedEvent",
+              createdAt: event.at,
+              requestedReviewer: requestedReviewer(event),
+            })),
+          ],
+        },
+      }),
+      ...(/\bsubmittedReviews: reviews\(/.test(query) && {
+        submittedReviews: {
+          nodes: (pr.reviews ?? [])
+            .filter((r) => r.state !== "PENDING")
+            .map((r) => ({
+              author: { login: r.author },
+              state: r.state,
+              submittedAt: r.submittedAt ?? null,
+            })),
         },
       }),
       ...(/\blatestReviews\(/.test(query) && {

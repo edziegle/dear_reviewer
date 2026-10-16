@@ -179,6 +179,14 @@ export async function setRequestTimeout(ms?: number): Promise<void> {
   (await dearReviewer().activate()).requestTimeoutMs(ms);
 }
 
+/** Tells the Inbox the Reviewer just submitted a Review of the pull request, as Submit Review does. */
+export async function markReviewed(pullRequest: {
+  repository: string;
+  number: number;
+}): Promise<void> {
+  (await inboxProvider()).reviewed(pullRequest);
+}
+
 /** Waits for the Inbox's refreshes, running the one due after a Review now. */
 export async function inboxSettled(): Promise<void> {
   const extension = dearReviewer();
@@ -194,6 +202,7 @@ export async function awaitingSearches(): Promise<RecordedRequest[]> {
 
 type InboxProvider = vscode.TreeDataProvider<unknown> & {
   settled(): Promise<void>;
+  reviewed(pullRequest: { repository: string; number: number }): void;
 };
 
 type DearReviewerApi = {

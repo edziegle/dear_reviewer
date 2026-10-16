@@ -61,6 +61,8 @@ export interface DashboardState {
   ignored?: DashboardPullRequest[];
   authored?: DashboardPullRequest[];
   reviewed?: DashboardPullRequest[];
+  /** Pull requests whose Team request a teammate answered. */
+  teamReviewed?: DashboardPullRequest[];
   branches: DashboardBranch[];
   loading: boolean;
   setup?: { text: string; actions: { id: string; label: string }[] };

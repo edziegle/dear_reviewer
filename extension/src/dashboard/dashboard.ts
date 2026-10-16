@@ -14,11 +14,13 @@ import {
   authoredByMe,
   awaitingMyReview,
   reviewedByMe,
+  reviewedByMyTeam,
   type Avatars,
   type InboxNode,
   type InboxTree,
   type Welcome,
 } from "../inbox";
+import { teamNotes } from "../github/teamReviews";
 import { countOf } from "../reviewStanding";
 import type { Standing } from "../timeline/timelines";
 import {
@@ -238,6 +240,7 @@ export class Dashboard implements vscode.Disposable {
     const awaiting = group(awaitingMyReview);
     const authored = group(authoredByMe);
     const reviewed = group(reviewedByMe);
+    const teamReviewed = group(reviewedByMyTeam);
     const local = group("Local branches");
     const waitingNodes = byLongestWait(
       (awaiting?.children ?? []).flatMap((node) =>
@@ -324,6 +327,14 @@ export class Dashboard implements vscode.Disposable {
           )
         )
       : undefined;
+    // Nobody waits on the Reviewer for these, so they're not in Waiting on you.
+    const teamReviewedRows = teamReviewed
+      ? await Promise.all(
+          teamReviewed.children.flatMap((node) =>
+            node.kind === "pullRequest" ? [this.pullRequest(targets, node)] : []
+          )
+        )
+      : undefined;
     const branches: DashboardBranch[] = [];
     const branchProblems: DashboardProblem[] = [];
     for (const node of local?.children ?? []) {
@@ -386,6 +397,7 @@ export class Dashboard implements vscode.Disposable {
       ...(ignoredRows && { ignored: ignoredRows }),
       ...(authoredRows && { authored: authoredRows }),
       ...(reviewedRows && { reviewed: reviewedRows }),
+      ...(teamReviewedRows?.length && { teamReviewed: teamReviewedRows }),
       branches,
       loading,
       ...(setup && { setup }),
@@ -424,6 +436,7 @@ export class Dashboard implements vscode.Disposable {
       size: pr.size,
       ...(pr.checks && { checks: pr.checks }),
       notes: [
+        ...teamNotes(pr),
         ...states,
         ...(changedSinceReview ? ["new commits since your Review"] : []),
         ...this.inbox.openState(node),

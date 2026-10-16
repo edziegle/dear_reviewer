@@ -37,7 +37,7 @@ The order the Assistant suggests for reading a Change's files, in a few labeled 
 _Avoid_: File order, review plan, story
 
 **Inbox**:
-The list of Changes waiting for the Reviewer: open pull requests that await their review or that they authored or reviewed, across the repositories they have open in VSCodium, have opened before, or listed, plus local branches ahead of main. The Dashboard shows it.
+The list of Changes waiting for the Reviewer: open pull requests that await their review, that they authored or reviewed, or whose Team request a teammate's review answered. It spans the repositories they have open in VSCodium, have opened before, or listed, plus local branches ahead of main. The Dashboard shows it.
 _Avoid_: Queue
 
 **Ignored**:
@@ -45,7 +45,7 @@ A pull request awaiting the Reviewer's review that they have set aside, so it st
 _Avoid_: Dismissed, hidden, snoozed
 
 **Team request**:
-A request on a pull request for a review from a team the Reviewer is on, rather than from the Reviewer personally. Any one member's review answers it for the whole team.
+A request on a pull request for a review from a team the Reviewer is on, directly or through a child team, rather than from the Reviewer personally. Any one member's review answers it for the whole team.
 _Avoid_: Group request, indirect request
 
 **Dashboard**:

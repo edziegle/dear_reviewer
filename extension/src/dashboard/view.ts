@@ -83,6 +83,8 @@ export interface DashboardState {
   ignored?: DashboardPullRequest[];
   authored?: DashboardPullRequest[];
   reviewed?: DashboardPullRequest[];
+  /** Pull requests whose Team request a teammate answered; left out while there are none. */
+  teamReviewed?: DashboardPullRequest[];
   branches: DashboardBranch[];
   /** Whether the Inbox is loading. */
   loading: boolean;
@@ -307,6 +309,7 @@ function html(cspSource: string): string {
 <section id="ignoredSection" aria-label="Ignored" hidden><details class="ignored"><summary id="ignoredLabel"></summary><div id="ignored" role="list"></div></details></section>
 <section id="authoredSection" aria-labelledby="authoredHeading" hidden><h2 id="authoredHeading">Your pull requests <span class="muted count" id="authoredCount"></span></h2><div id="authored" role="list"></div><button class="link more" id="authoredMore" type="button" aria-controls="authored" aria-expanded="false" hidden></button></section>
 <section id="reviewedSection" aria-labelledby="reviewedHeading" hidden><h2 id="reviewedHeading">Reviewed by you <span class="muted count" id="reviewedCount"></span></h2><div id="reviewed" role="list"></div><button class="link more" id="reviewedMore" type="button" aria-controls="reviewed" aria-expanded="false" hidden></button></section>
+<section id="teamReviewedSection" aria-labelledby="teamReviewedHeading" hidden><h2 id="teamReviewedHeading">Reviewed by your team <span class="muted count" id="teamReviewedCount"></span></h2><div id="teamReviewed" role="list"></div><button class="link more" id="teamReviewedMore" type="button" aria-controls="teamReviewed" aria-expanded="false" hidden></button></section>
 <section id="branchesSection" aria-labelledby="branchesHeading" hidden><h2 id="branchesHeading">Local branches <span class="muted count" id="branchesCount"></span></h2><div id="branchProblems"></div><div id="branches" role="list"></div><button class="link more" id="branchesMore" type="button" aria-controls="branches" aria-expanded="false" hidden></button></section>
 <footer><button class="link" id="openRange" type="button" title="Open any commit range of a repository as a Change">Open a commit range…</button></footer>
 <script nonce="${nonce}">${sharedScript}
@@ -358,7 +361,7 @@ function html(cspSource: string): string {
   byId("openRange").addEventListener("click", () => vscode.postMessage({ type: "openRange" }));
   // A long list shows its first rows, then Show all with the count.
   const showsAll = {};
-  for (const id of ["waiting", "authored", "reviewed", "branches"])
+  for (const id of ["waiting", "authored", "reviewed", "teamReviewed", "branches"])
     byId(id + "More").addEventListener("click", () => {
       showsAll[id] = !showsAll[id];
       keepFocus(() => lists(lastState));
@@ -514,6 +517,8 @@ function html(cspSource: string): string {
     capped("authored", state.authored || [], plainRow);
     section("reviewedSection", state.reviewed || [], "reviewedCount");
     capped("reviewed", state.reviewed || [], plainRow);
+    section("teamReviewedSection", state.teamReviewed || [], "teamReviewedCount");
+    capped("teamReviewed", state.teamReviewed || [], plainRow);
     byId("branchesSection").hidden = state.branches.length === 0 && state.branchProblems.length === 0;
     setText(byId("branchesCount"), state.branches.length ? String(state.branches.length) : "");
     list("branchProblems", state.branchProblems, problem);

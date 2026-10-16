@@ -205,7 +205,7 @@ const phases: [phase: string, open: () => string][] = [
   ["findings", () => multiRootWorkspace("findings", "findings")],
   ["readingOrder", readingOrder],
   ["readingOrder/afterReload", readingOrder],
-  ["home", () => multiRootWorkspace("home", "home")],
+  ["dashboard", () => multiRootWorkspace("dashboard", "dashboard")],
   // Last, so the repositories it remembers can't reach other suites; it forgets them when done.
   ["openFolders", () => multiRootWorkspace("open-folders", "open-folders")],
   ["openFolders/elsewhere", () => multiRootWorkspace("elsewhere", "elsewhere")],

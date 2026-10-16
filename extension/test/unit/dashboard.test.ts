@@ -1,12 +1,12 @@
 import * as assert from "assert";
 import {
   byLongestWait,
-  homeFacts,
+  dashboardFacts,
   nextStep,
   waitedFor,
   type InProgress,
   type Waiting,
-} from "../../src/home/homeState";
+} from "../../src/dashboard/dashboardState";
 import { requestedOfReviewerAt } from "../../src/github/reviewRequests";
 
 const now = Date.parse("2026-10-15T12:00:00Z");
@@ -80,27 +80,27 @@ describe("The order pull requests wait on the Reviewer in", () => {
   });
 });
 
-describe("Home's facts line", () => {
+describe("The Dashboard's facts line", () => {
   it("counts the Changes in progress and the pull requests waiting, with the oldest's wait", () => {
     assert.strictEqual(
-      homeFacts(2, [{ since: ago(hour) }, { since: ago(6 * day) }], now),
+      dashboardFacts(2, [{ since: ago(hour) }, { since: ago(6 * day) }], now),
       "2 in progress · 2 waiting on you · oldest 6 days"
     );
   });
 
   it("says when nothing is in progress or waiting", () => {
     assert.strictEqual(
-      homeFacts(0, [], now),
+      dashboardFacts(0, [], now),
       "Nothing in progress · nothing waiting on you"
     );
   });
 
-  it("leaves out what's waiting while Home can't tell", () => {
-    assert.strictEqual(homeFacts(1, undefined, now), "1 in progress");
+  it("leaves out what's waiting while the Dashboard can't tell", () => {
+    assert.strictEqual(dashboardFacts(1, undefined, now), "1 in progress");
   });
 });
 
-describe("Home's next step", () => {
+describe("The Dashboard's next step", () => {
   it("resumes the Change shown last that still needs the Reviewer", () => {
     assert.deepStrictEqual(
       nextStep(

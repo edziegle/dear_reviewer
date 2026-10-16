@@ -14,13 +14,14 @@ import {
 } from "../github";
 import {
   actAsReviewWindow,
-  clickHome,
-  homePanel,
-  renderedHome,
-  showHome,
-} from "../home";
+  askReviewWindow,
+  clickDashboard,
+  closeEveryChange,
+  dashboardVisible,
+  renderedDashboard,
+  showDashboard,
+} from "../dashboard";
 import {
-  activeTabLabel,
   closeChange,
   eventually,
   gitIn,
@@ -34,9 +35,9 @@ const settingKeys = ["githubApiUrl", "repositories", "localClones"];
 const hour = 60 * 60_000;
 const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
 
-describe("Home", () => {
-  const pr = buildPullRequestFixture("home", "acme/api", 32);
-  const local = buildFixtureRepo("home-local");
+describe("Dashboard", () => {
+  const pr = buildPullRequestFixture("dashboard", "acme/api", 32);
+  const local = buildFixtureRepo("dashboard-local");
   const prRequest = {
     repository: pr.clone,
     base: pr.base,
@@ -125,7 +126,9 @@ describe("Home", () => {
       vscode.ConfigurationTarget.Global
     );
     await setToken(viewer.token);
+    await closeEveryChange();
     await refreshInbox();
+    await showDashboard();
   });
 
   afterEach(async () => {
@@ -133,10 +136,6 @@ describe("Home", () => {
   });
 
   after(async () => {
-    (await homePanel()) &&
-      (await vscode.commands.executeCommand(
-        "workbench.action.closeAllEditors"
-      ));
     const config = vscode.workspace.getConfiguration("dearReviewer");
     for (const key of settingKeys)
       await config.update(
@@ -146,11 +145,11 @@ describe("Home", () => {
       );
   });
 
-  it("takes the Inbox's place in the review window, and is offered there only", () => {
+  it("is the side bar outside the review window, and Change Files and Findings show only where a Change can be in front", () => {
     const contributes = vscode.extensions.getExtension(
       "edziegle.dear-reviewer"
     )!.packageJSON.contributes as {
-      views: Record<string, { id: string; when?: string }[]>;
+      views: Record<string, { id: string; type?: string; when?: string }[]>;
       menus: Record<
         string,
         { command: string; when?: string; group?: string }[]
@@ -158,79 +157,71 @@ describe("Home", () => {
       keybindings: { command: string; key: string; when?: string }[];
     };
     assert.deepStrictEqual(
-      contributes.views.dearReviewer.map((view) => [view.id, view.when]),
+      contributes.views.dearReviewer.map((view) => [
+        view.id,
+        view.type,
+        view.when,
+      ]),
       [
-        ["dearReviewer.inbox", "!dearReviewer.inReviewWindow"],
-        ["dearReviewer.changeFiles", undefined],
-        ["dearReviewer.findings", undefined],
+        ["dearReviewer.dashboard", "webview", "!dearReviewer.inReviewWindow"],
+        [
+          "dearReviewer.changeFiles",
+          undefined,
+          "dearReviewer.inReviewWindow || dearReviewer.hasOpenChange",
+        ],
+        [
+          "dearReviewer.findings",
+          undefined,
+          "dearReviewer.inReviewWindow || dearReviewer.hasOpenChange",
+        ],
       ]
     );
-    const showHomeIn = (menu: string) =>
-      contributes.menus[menu]
-        .filter((m) => m.command === "dearReviewer.showHome")
-        .map((m) => [m.when, m.group]);
-    assert.deepStrictEqual(showHomeIn("view/title"), [
-      [
-        "(view == dearReviewer.changeFiles || view == dearReviewer.findings) && dearReviewer.inReviewWindow",
-        "navigation@0",
-      ],
-    ]);
-    assert.deepStrictEqual(showHomeIn("commandPalette"), [
-      ["dearReviewer.inReviewWindow", undefined],
-    ]);
+    assert.deepStrictEqual(
+      contributes.menus.commandPalette
+        .filter((m) => m.command === "dearReviewer.showDashboard")
+        .map((m) => m.when),
+      ["!dearReviewer.inReviewWindow"]
+    );
     assert.deepStrictEqual(
       contributes.keybindings
-        .filter((k) => k.command === "dearReviewer.showHome")
+        .filter((k) => k.command === "dearReviewer.showDashboard")
         .map((k) => [k.key, k.when]),
-      [["ctrl+alt+r h", "dearReviewer.inReviewWindow"]]
+      [["ctrl+alt+r h", "!dearReviewer.inReviewWindow"]]
     );
+    // A Change's actions show only while a Change is open.
+    for (const command of [
+      "dearReviewer.findIssues",
+      "dearReviewer.refreshChangeFiles",
+      "dearReviewer.hideViewedFiles",
+      "dearReviewer.showViewedFiles",
+    ])
+      for (const entry of contributes.menus["view/title"].filter(
+        (m) => m.command === command
+      ))
+        assert.match(entry.when ?? "", /dearReviewer\.hasOpenChange/, command);
   });
 
-  it("opens in the review window when its last Change closes, and gives way when a Change comes to the front", async () => {
-    const change = range(local.commits.initial, local.commits.renamed);
-    await openChange(change.request);
-    await closeChange(change.request);
-    assert.strictEqual(
-      await homePanel(),
-      undefined,
-      "never on its own outside the review window"
-    );
-
-    await actAsReviewWindow(true);
-    await openChange(change.request);
+  it("comes into sight with Show Dashboard", async () => {
+    await vscode.commands.executeCommand("workbench.action.closeSidebar");
     await eventually(async () =>
-      assert.strictEqual((await shownChanges()).at(-1), change.name)
+      assert.strictEqual(await dashboardVisible(), false)
     );
-    assert.strictEqual(
-      await homePanel(),
-      undefined,
-      "not while a Change is in front"
-    );
-    await closeChange(change.request);
+    await showDashboard();
     await eventually(async () => {
-      const panel = await homePanel();
-      assert.ok(panel, "Home opens once the last Change closes");
-      assert.ok(panel.active, "alone in front, with the focus");
-      assert.strictEqual(panel.title, "Home");
-      assert.deepStrictEqual((await renderedHome()).inProgress, []);
+      assert.strictEqual(await dashboardVisible(), true);
+      assert.ok((await renderedDashboard()).facts);
     });
-    assert.deepStrictEqual(
-      vscode.window.tabGroups.all.flatMap((g) => g.tabs.map((t) => t.label)),
-      ["Home"]
-    );
   });
 
   it("lists what's waiting on the Reviewer, longest wait first, with its size and checks", async () => {
-    await actAsReviewWindow(true);
-    await showHome();
     await eventually(async () => {
-      const home = await renderedHome();
+      const dashboard = await renderedDashboard();
       assert.strictEqual(
-        home.facts,
+        dashboard.facts,
         "Nothing in progress · 2 waiting on you · oldest 6 days"
       );
       assert.deepStrictEqual(
-        home.waiting?.map(({ avatar, ...row }) => {
+        dashboard.waiting?.map(({ avatar, ...row }) => {
           assert.ok(
             avatar?.startsWith("https://"),
             `an avatar for ${row.author}: ${avatar}`
@@ -260,7 +251,7 @@ describe("Home", () => {
           },
         ]
       );
-      assert.deepStrictEqual(home.next, {
+      assert.deepStrictEqual(dashboard.next, {
         kind: "open",
         id: "pull request acme/api#33",
         label: "Review acme/api #33",
@@ -269,12 +260,11 @@ describe("Home", () => {
     });
   });
 
-  it("lists the Reviewer's own pull requests and their local branches, as the Inbox does", async () => {
-    await actAsReviewWindow(true);
-    await showHome();
+  it("lists the Reviewer's own pull requests, the ones they reviewed and their local branches, as the Inbox does", async () => {
     await eventually(async () => {
-      const home = await renderedHome();
-      assert.deepStrictEqual(home.authored, [
+      const dashboard = await renderedDashboard();
+      assert.deepStrictEqual(dashboard.reviewed, []);
+      assert.deepStrictEqual(dashboard.authored, [
         {
           id: "pull request acme/api#40",
           title: "Add retries to the client",
@@ -285,7 +275,7 @@ describe("Home", () => {
         },
       ]);
       assert.deepStrictEqual(
-        home.branches.map(({ id: _id, ...branch }) => branch),
+        dashboard.branches.map(({ id: _id, ...branch }) => branch),
         [
           {
             name: "fix-retry",
@@ -301,17 +291,14 @@ describe("Home", () => {
   it("shows each Change in progress with where the Reviewer stands, and Resume brings one back to the front", async () => {
     const first = range(local.commits.renamed, local.commits.documented);
     const second = range(local.commits.documented, local.commits.restructured);
-    await actAsReviewWindow(true);
     await openChange(first.request);
     await openChange(second.request);
-    // Its overview in front, so showing it doesn't close Home behind.
-    await eventually(() => assert.strictEqual(activeTabLabel(), second.name));
     try {
-      await showHome();
+      await showDashboard();
       await eventually(async () => {
-        const home = await renderedHome();
+        const dashboard = await renderedDashboard();
         assert.deepStrictEqual(
-          home.inProgress.map(({ id: _id, ...row }) => row),
+          dashboard.inProgress.map(({ id: _id, ...row }) => row),
           [
             {
               title: first.name,
@@ -328,14 +315,14 @@ describe("Home", () => {
           ]
         );
         assert.strictEqual(
-          home.facts,
+          dashboard.facts,
           "2 in progress · 2 waiting on you · oldest 6 days"
         );
         assert.deepStrictEqual(
           {
-            kind: home.next?.kind,
-            label: home.next?.label,
-            place: home.next?.place,
+            kind: dashboard.next?.kind,
+            label: dashboard.next?.label,
+            place: dashboard.next?.place,
           },
           {
             kind: "resume",
@@ -345,9 +332,9 @@ describe("Home", () => {
         );
       });
 
-      await clickHome({
+      await clickDashboard({
         type: "resume",
-        id: (await renderedHome()).inProgress[0].id,
+        id: (await renderedDashboard()).inProgress[0].id,
       });
       await eventually(async () => {
         assert.strictEqual((await shownChanges()).at(-1), first.name);
@@ -355,11 +342,6 @@ describe("Home", () => {
           (await changeFiles()).map((entry) => entry.label),
           [first.name],
           "Change Files follows the Change resumed"
-        );
-        assert.strictEqual(
-          await homePanel(),
-          undefined,
-          "Home gives way to its overview"
         );
       });
     } finally {
@@ -369,27 +351,27 @@ describe("Home", () => {
   });
 
   it("opens a pull request waiting on the Reviewer, and finishes its Review from In progress", async () => {
-    await actAsReviewWindow(true);
-    await showHome();
+    await showDashboard();
     await eventually(async () =>
       assert.ok(
-        (await renderedHome()).waiting?.some(
+        (await renderedDashboard()).waiting?.some(
           (w) => w.id === "pull request acme/api#32"
         )
       )
     );
-    await clickHome({ type: "open", id: "pull request acme/api#32" });
+    await clickDashboard({ type: "open", id: "pull request acme/api#32" });
     try {
-      await eventually(async () => {
-        assert.strictEqual((await shownChanges()).at(-1), "acme/api #32");
-        assert.strictEqual(await homePanel(), undefined);
-      }, 30_000);
+      await eventually(
+        async () =>
+          assert.strictEqual((await shownChanges()).at(-1), "acme/api #32"),
+        30_000
+      );
 
-      await showHome();
+      await showDashboard();
       await eventually(async () => {
-        const home = await renderedHome();
+        const dashboard = await renderedDashboard();
         assert.deepStrictEqual(
-          home.inProgress.map(({ id: _id, ...row }) => row),
+          dashboard.inProgress.map(({ id: _id, ...row }) => row),
           [
             {
               title: "Retry failed webhooks",
@@ -400,7 +382,8 @@ describe("Home", () => {
           ]
         );
         assert.deepStrictEqual(
-          home.waiting?.find((w) => w.id === "pull request acme/api#32")?.notes,
+          dashboard.waiting?.find((w) => w.id === "pull request acme/api#32")
+            ?.notes,
           ["open"]
         );
       });
@@ -408,9 +391,9 @@ describe("Home", () => {
       const before = (await reviewsOnGitHub()).filter(
         (r) => r.author === "reviewer" && r.state !== "PENDING"
       ).length;
-      await clickHome({
+      await clickDashboard({
         type: "finish",
-        id: (await renderedHome()).inProgress[0].id,
+        id: (await renderedDashboard()).inProgress[0].id,
       });
       // Submit Review… asks for a verdict and a summary; the first choice and an empty one.
       await eventually(async () => {
@@ -431,9 +414,41 @@ describe("Home", () => {
     }
   });
 
+  it("asks the review window to resume a Change it shows, which it does once it reads the request", async () => {
+    const first = range(local.commits.initial, local.commits.renamed);
+    const second = range(local.commits.renamed, local.commits.documented);
+    await openChange(first.request);
+    await openChange(second.request);
+    try {
+      await eventually(async () =>
+        assert.strictEqual((await shownChanges()).at(-1), second.name)
+      );
+      await showDashboard();
+      let id: string | undefined;
+      await eventually(async () => {
+        id = (await renderedDashboard()).inProgress.find(
+          (c) => c.title === first.name
+        )?.id;
+        assert.ok(id, `${first.name} is in progress`);
+      });
+      await askReviewWindow(id!, "resume");
+      assert.strictEqual(
+        (await shownChanges()).at(-1),
+        second.name,
+        "only the review window carries it out"
+      );
+      await actAsReviewWindow(true);
+      await eventually(async () =>
+        assert.strictEqual((await shownChanges()).at(-1), first.name)
+      );
+    } finally {
+      await closeChange(first.request);
+      await closeChange(second.request);
+    }
+  });
+
   it("follows the Inbox: a new pull request on Refresh, and a sign-in to ask for", async () => {
-    await actAsReviewWindow(true);
-    await showHome();
+    await showDashboard();
     await serveGitHub({
       viewer,
       pullRequests: [
@@ -451,11 +466,11 @@ describe("Home", () => {
     });
     // #32 is left out: a test before may have reviewed it, which keeps it
     // out of Waiting on you for a while, as in the Inbox.
-    await clickHome({ type: "refresh" });
+    await vscode.commands.executeCommand("dearReviewer.refreshInbox");
     await eventually(async () => {
-      const home = await renderedHome();
+      const dashboard = await renderedDashboard();
       assert.deepStrictEqual(
-        home.waiting?.map((w) => [w.name, w.waited]),
+        dashboard.waiting?.map((w) => [w.name, w.waited]),
         [
           ["acme/api #33", "6 days"],
           ["acme/api #34", "10 minutes"],
@@ -466,13 +481,16 @@ describe("Home", () => {
     await forgetToken();
     try {
       await eventually(async () => {
-        const home = await renderedHome();
-        assert.strictEqual(home.waiting, undefined);
-        assert.strictEqual(home.facts, "Nothing in progress");
-        assert.deepStrictEqual(home.setup, {
-          id: "signIn",
-          text: "Sign in to GitHub to list the pull requests waiting on you.",
-          action: "Sign In to GitHub",
+        const dashboard = await renderedDashboard();
+        assert.strictEqual(dashboard.waiting, undefined);
+        assert.strictEqual(dashboard.facts, "Nothing in progress");
+        assert.deepStrictEqual(dashboard.setup, {
+          text: "Sign in to GitHub to list the pull requests waiting on you and the ones you authored.",
+          actions: [
+            { id: "signIn", label: "Sign In to GitHub" },
+            { id: "setToken", label: "Use a Personal Access Token" },
+            { id: "openSetup", label: "Set Up Dear Reviewer" },
+          ],
         });
       });
     } finally {

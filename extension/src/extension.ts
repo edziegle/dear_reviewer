@@ -1335,7 +1335,7 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand(
       "dearReviewer.openAllChanges",
       async (target?: ChangeTarget) => {
-        const change = await changeFor(target, "Open All Changes");
+        const change = await changeFor(target, "Open All Diffs");
         if (!change) return;
         await focusCodeColumn(change);
         await showAllChanges(change);

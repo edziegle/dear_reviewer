@@ -21,7 +21,7 @@ A third design critique (2026-10-16) found that the end of a Review is the quiet
 
 Chosen option: a result block for both, because the Review then ends in one place and one way, on the page where it began, and the Brief stays a file the Reviewer reads and edits in the editor, which a webview can't offer (ADR 0012). A step for Write Brief would rebuild a Markdown editor into the overview.
 
-- **The result block.** Under the header, in place of the muted standing line, a block says what happened in the body size and `foreground`, with a mark: `✓ You approved at 14:32 · 3 Comments published` for a pull request, `✓ You copied a Brief of 3 Comments at 14:32` for a local Change. Below it are its buttons. Exactly one is filled, under the Next Step Rule.
+- **The result block.** Under the header, in place of the muted standing line, a block says what happened in the body size and `foreground`, with a mark: `✓ You approved at 14:32 · 3 Comments published` for a pull request, `✓ You copied a Brief at 14:32 · 3 Comments` for a local Change. Below it are its buttons. Exactly one is filled, under the Next Step Rule.
 - **Pull request.** View on GitHub, secondary, and Close Change, filled.
 - **Local Change, while the Brief is written.** The block reads `A Brief of 3 Comments is open in the editor. Read and edit it, then copy it for your agent.` Copy Brief is filled and Show Brief is secondary. Copying it, here or from the editor's title bar, ends the Review.
 - **Local Change, once the Brief is copied.** The block says so, with Close Change filled and Show Brief secondary.

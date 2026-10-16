@@ -193,7 +193,7 @@
       },
       {
         "command": "dearReviewer.openAllChanges",
-        "title": "Open All Changes",
+        "title": "Open All Diffs",
         "category": "Dear Reviewer",
         "icon": "$(diff-multiple)"
       },

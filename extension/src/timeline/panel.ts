@@ -996,11 +996,16 @@ ${catSymbol}
     if (kind === "writing") {
       text.className = "reading";
       text.append("The Assistant is writing a Brief of " + countOfComments(brief.comments) + "…");
+    } else if (kind === "written" && !brief.canShow) {
+      // Its file was deleted, so there is nothing to copy: write it again.
+      text.append("The file of the Brief of " + countOfComments(brief.comments) + " is gone. Write it again from your Comments.");
+      actions.append(button("primary", "Write Brief…", { type: "finish" }, "Write the Brief again"));
+      actions.append(textButton("Discard pending Comments…", () => vscode.postMessage({ type: "discard" })));
     } else if (kind === "written") {
       text.append("A Brief of " + countOfComments(brief.comments) + " is open in the editor. Read and edit it, then copy it for your agent.");
       actions.append(button("primary", "Copy Brief", { type: "copyBrief" }, "Copy the Brief, with your edits, which ends this Review"));
-      if (brief.canShow) actions.append(button("secondary", "Show Brief", { type: "showBrief" }, "Open the Brief in the editor"));
-      actions.append(textButton("Discard Comments…", () => vscode.postMessage({ type: "discard" })));
+      actions.append(button("secondary", "Show Brief", { type: "showBrief" }, "Open the Brief in the editor"));
+      actions.append(textButton("Discard pending Comments…", () => vscode.postMessage({ type: "discard" })));
     } else if (kind === "clean") {
       text.className = "verdict done review approved";
       const mark = el("span", "mark", "✓");

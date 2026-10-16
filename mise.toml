@@ -5,7 +5,7 @@ vale = "3.24.0"
 # The tests' VSCodium, pinned at engines.vscode's floor: raise both together.
 # Kept out of /Applications, so the tests and your own VSCodium don't share an
 # install, and downloaded by mise, so macOS never quarantines it. CI runs it
-# on Linux too (docs/adr/0029-ci-tests-on-linux.md).
+# on Linux only (docs/adr/0035-integration-tests-on-linux-only.md).
 [tools."github:VSCodium/vscodium"]
 version = "1.135.06055"
 os = ["macos", "linux"]

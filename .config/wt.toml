@@ -11,3 +11,6 @@
 vale-styles = "vale sync"
 # The extension's dependencies, for typecheck, build and test
 extension-deps = "[ -d extension/node_modules ] || npm ci --prefix extension"
+# The git hooks: husky generates .husky/_, which core.hooksPath points at, so
+# without it commitlint never runs on a commit made in the worktree
+husky = "npx husky"

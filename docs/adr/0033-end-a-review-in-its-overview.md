@@ -7,6 +7,8 @@ date: 2026-10-16
 
 Amends [ADR 0018](0018-finish-a-review-from-the-change.md).
 
+Amended by [ADR 0034](0034-a-review-ends-on-a-result-in-its-overview.md): the result after submitting is a block with Close Change filled, and a local Change ends the same way.
+
 ## Context and Problem Statement
 
 Submitting a Review took a quick pick for the verdict, an input box for the summary, and a toast to say it was done. A design critique of the whole extension (2026-10-16) found this the weakest moment of a Review, though it is the only act that can't be undone and the only one others see. The prompts went away as soon as they were answered. Nothing showed which Comments would publish, only how many. The verdict "Feedback Only" was "You commented" everywhere else and "Comment" on GitHub. An empty summary on Request Changes failed only after "Submitting…". The overview, where the Review began, stayed behind it. ADR 0018 had turned down a separate "finish" webview because it would copy the Comments that already show as threads on the diff. Where should a pull request's Review end, and what should the Reviewer see before it publishes?

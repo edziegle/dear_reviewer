@@ -390,6 +390,8 @@ export async function startFakeGitHub(): Promise<{
     return {
       id: fakePullRequestId(pr),
       state: pr.state ?? "OPEN",
+      headRefOid: pr.headSha ?? "0".repeat(40),
+      baseRefName: pr.baseRefName ?? "main",
       title: pr.title,
       body: pr.body ?? "",
       ...(/\btimelineItems\(/.test(query) &&

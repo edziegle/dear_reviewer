@@ -117,6 +117,24 @@ export async function shownChanges(): Promise<readonly string[]> {
   return (await extension.activate()).shownChanges();
 }
 
+/** Sets how long an automatic check waits after the last; without `ms`, the default. */
+export async function setRefreshGap(ms?: number): Promise<void> {
+  const extension = vscode.extensions.getExtension<{
+    refreshGapMs(ms?: number): void;
+  }>("edziegle.dear-reviewer");
+  if (!extension) throw new Error("Dear Reviewer is not installed");
+  (await extension.activate()).refreshGapMs(ms);
+}
+
+/** Does what Dear Reviewer does when the window regains focus. */
+export async function focusWindow(): Promise<void> {
+  const extension = vscode.extensions.getExtension<{
+    windowFocused(): void;
+  }>("edziegle.dear-reviewer");
+  if (!extension) throw new Error("Dear Reviewer is not installed");
+  (await extension.activate()).windowFocused();
+}
+
 /**
  * What this window holds for Changes: the names of those with Findings, the
  * titles of overviews and Assistants, and the count of review threads.

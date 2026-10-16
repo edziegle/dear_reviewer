@@ -123,6 +123,12 @@
         "icon": "$(circle-large-outline)"
       },
       {
+        "command": "dearReviewer.fetchUpdates",
+        "title": "Fetch Updates",
+        "category": "Dear Reviewer",
+        "icon": "$(cloud-download)"
+      },
+      {
         "command": "dearReviewer.refreshChangeFiles",
         "title": "Refresh Change Files",
         "category": "Dear Reviewer",
@@ -361,6 +367,11 @@
           "markdownDescription": "Where a repository is cloned on this machine, as `\"owner/name\": \"/path/to/clone\"`, when it isn't a folder you open. Takes precedence over clones Dear Reviewer found or remembered. Opening a pull request fetches its head into the clone, from the remote whose URL names the repository (or `origin`), and reviews it in worktrees of the clone. The Dashboard also lists the clone's local branches that are ahead of its main branch.",
           "scope": "machine"
         },
+        "dearReviewer.autoRefreshChanges": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Check an open pull request's Change against GitHub when the window regains focus, and bring in its new commits and review threads. Off, a Change stays as you opened it until you run **Fetch Updates**."
+        },
         "dearReviewer.githubApiUrl": {
           "type": "string",
           "default": "https://api.github.com",
@@ -451,6 +462,11 @@
           "command": "dearReviewer.showTimeline",
           "when": "view == dearReviewer.changeFiles && dearReviewer.hasOpenChange",
           "group": "navigation@1"
+        },
+        {
+          "command": "dearReviewer.fetchUpdates",
+          "when": "view == dearReviewer.changeFiles && dearReviewer.hasOpenChange",
+          "group": "navigation@8"
         },
         {
           "command": "dearReviewer.refreshChangeFiles",

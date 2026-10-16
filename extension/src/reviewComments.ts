@@ -220,6 +220,41 @@ export class ReviewComments implements vscode.Disposable {
   }
 
   /**
+   * Loads the Change's threads again from GitHub, and gives how many are new
+   * or have new Comments since they were shown. Leaves them as they are while
+   * a draft is open, which loading again would lose; throws if GitHub can't
+   * be asked.
+   */
+  refreshThreads(change: Change): Promise<number> {
+    const run = this.loading.then(async () => {
+      const shown = this.shown.get(change.id);
+      if (!shown || !this.loaded.has(change.id)) return 0;
+      if ([...shown].some((thread) => !this.states.get(thread))) return 0;
+      const before = this.commentCounts(change);
+      await this.load(change);
+      let changed = 0;
+      for (const [id, count] of this.commentCounts(change))
+        if (before.get(id) !== count) changed++;
+      return changed;
+    });
+    this.loading = run.then(
+      () => undefined,
+      () => undefined
+    );
+    return run;
+  }
+
+  /** How many Comments each of the Change's shown threads has, by the thread's id. */
+  private commentCounts(change: Change): Map<string, number> {
+    const counts = new Map<string, number>();
+    for (const thread of this.shown.get(change.id) ?? []) {
+      const state = this.states.get(thread);
+      if (state) counts.set(state.id, thread.comments.length);
+    }
+    return counts;
+  }
+
+  /**
    * Loads the Change's threads if they aren't, and reports it if they can't
    * be, as a Review's submitting or discarding needs them first.
    */

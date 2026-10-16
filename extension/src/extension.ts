@@ -10,6 +10,7 @@ import {
   changeTitle,
   fetchPullRequest,
   pullRequestName,
+  type PullRequestRef,
   showAllChanges,
 } from "./changeWorkspace";
 import { ChangeFilesNode, ChangeFilesView } from "./changeFiles";
@@ -55,6 +56,7 @@ import {
   ViewedFilesBySource,
 } from "./viewedFiles";
 import { messageOf } from "./errors";
+import { foundText, minimumGapMs, RefreshGate } from "./refreshGate";
 import { ReviewWindowTrust } from "./trust";
 import { LanguageOffer } from "./highlighting";
 import { conversationFolder } from "./conversationName";
@@ -388,12 +390,106 @@ export function activate(context: vscode.ExtensionContext) {
     return { text, ...(url && { url }) };
   }
 
+  /** Keeps checks of one Change from overlapping or following each other closely. */
+  const refreshGate = new RefreshGate();
+  /** What the last check of each Change, by conversation, found, for its overview to say. */
+  const arrivals = new Map<string, string>();
+
+  /**
+   * Checks the pull request's Change against GitHub (ADR 0036) and brings in
+   * what changed: new commits swap the Change in place for the new head, as
+   * opening it again would, and its review threads load again. Gives what it
+   * found in words, or nothing if it didn't check. An automatic check says
+   * nothing of a failure; one the Reviewer asked for throws it.
+   */
+  async function fetchUpdates(
+    change: Change,
+    automatic: boolean
+  ): Promise<string | undefined> {
+    const pullRequest = change.pullRequest;
+    if (!pullRequest) return;
+    const end = refreshGate.begin(change.conversation, automatic);
+    if (!end) return;
+    try {
+      const remote = await github.pullRequestHead(
+        pullRequest.repository,
+        pullRequest.number
+      );
+      if (!remote) return "Not found on GitHub";
+      if (remote.state !== "OPEN") {
+        // Over: the Change closes as it does when the Inbox finds it merged.
+        await lifecycle.tidy();
+        return `Pull request ${remote.state.toLowerCase()}`;
+      }
+      if (remote.headRefOid === change.headSha) {
+        const threads = await review.refreshThreads(change);
+        // The note of earlier arrivals stays until something newer arrives.
+        if (threads > 0)
+          arrivals.set(
+            change.conversation,
+            foundText({ newCommits: 0, threads })
+          );
+        showStanding();
+        return foundText({ newCommits: 0, threads });
+      }
+      return await swapToNewHead(change, pullRequest, remote.baseRefName);
+    } catch (err) {
+      if (!automatic) throw err;
+    } finally {
+      end();
+    }
+  }
+
+  /** Opens the pull request's new head in place of the Change, and the file the Reviewer was on. */
+  async function swapToNewHead(
+    change: Change,
+    pullRequest: PullRequestRef,
+    baseRefName: string
+  ): Promise<string> {
+    const onFile = activeFile();
+    const reopen =
+      onFile?.change.id === change.id ? onFile.file.path : undefined;
+    const request = await fetchPullRequest(change.repository, {
+      ...pullRequest,
+      baseRefName,
+    });
+    const count = await git(
+      change.repository,
+      "rev-list",
+      "--count",
+      `${change.headSha}..${request.head}`
+    ).then(
+      (n) => Number(n),
+      () => 0
+    );
+    // A force push can leave none that git can count from the old head.
+    const newCommits = count > 0 ? count : ("some" as const);
+    const next = await changes.open(request);
+    const text = foundText({ newCommits, threads: 0 });
+    arrivals.set(next.conversation, text);
+    if (reopen) {
+      await showingChange.catch(() => undefined);
+      await changeFiles.openPath(next, reopen);
+    }
+    showStanding();
+    return text;
+  }
+
+  /** Checks every pull request Change this window shows, as it regains focus. */
+  function fetchUpdatesOfShown(): void {
+    if (settings().get<boolean>("autoRefreshChanges", true) === false) return;
+    for (const change of changes.shownHere())
+      if (change.pullRequest) void fetchUpdates(change, true);
+  }
+
   /** Where the Reviewer stands on the Change, for its overview. */
   async function standingOf(change: Change): Promise<Standing> {
     const standing: string[] = [];
     const since = await changeFiles.sinceReview(change);
     const lastReview =
       since && !since.newCommits ? reviewStanding(since.review) : undefined;
+    const arrived = arrivals.get(change.conversation);
+    if (arrived) standing.push(`${arrived} arrived`);
     if (since?.newCommits) standing.push("New commits since your Review");
     else if (since && !lastReview)
       standing.push("Nothing new since your Review");
@@ -1491,6 +1587,36 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("dearReviewer.refreshChangeFiles", () =>
       changeFiles.refresh()
     ),
+    vscode.window.onDidChangeWindowState((state) => {
+      if (state.focused) fetchUpdatesOfShown();
+    }),
+    vscode.commands.registerCommand(
+      "dearReviewer.fetchUpdates",
+      async (target?: ChangeTarget) => {
+        const change = await changeFor(
+          target,
+          "Fetch Updates",
+          (c) => !!c.pullRequest,
+          "No pull request is open in this window."
+        );
+        if (!change) return;
+        try {
+          const found = await vscode.window.withProgress(
+            {
+              location: vscode.ProgressLocation.Notification,
+              title: `Fetching updates for ${changeName(change)}…`,
+            },
+            async () =>
+              (await fetchUpdates(change, false)) ?? "Already checking"
+          );
+          void notify(`${pullRequestName(change.pullRequest!)}: ${found}.`);
+        } catch (err) {
+          void reportProblem(
+            `Couldn't fetch updates for ${changeName(change)}. ${messageOf(err)}`
+          );
+        }
+      }
+    ),
     vscode.commands.registerCommand("dearReviewer.hideViewedFiles", () =>
       changeFiles.setHideViewed(true)
     ),
@@ -1665,6 +1791,12 @@ export function activate(context: vscode.ExtensionContext) {
       assistants: assistants.overviews().map((overview) => overview.title),
       threads: review.threads().length,
     }),
+    /** Shortens how long an automatic check waits after the last; without `ms`, back to the default. */
+    refreshGapMs: (ms: number = minimumGapMs) => {
+      refreshGate.gapMs = ms;
+    },
+    /** Stands in for the window regaining focus, which a test can't give it. */
+    windowFocused: () => fetchUpdatesOfShown(),
     /** Every Change shown the way a review starts, oldest first, by name. */
     shownChanges: (): readonly string[] => [...shownChanges],
     /** A stand-in for the Extensions view's search. */

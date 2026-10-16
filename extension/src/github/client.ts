@@ -103,6 +103,13 @@ export interface PullRequestFiles {
 /** GitHub's name for a side of a pull request's diff: LEFT is the base, RIGHT the head. */
 export type PullRequestState = "OPEN" | "MERGED" | "CLOSED";
 
+/** A pull request's state, head commit and base branch on GitHub. */
+export interface PullRequestHead {
+  state: PullRequestState;
+  headRefOid: string;
+  baseRefName: string;
+}
+
 export type DiffSide = "LEFT" | "RIGHT";
 
 export type ReviewEvent = "APPROVE" | "REQUEST_CHANGES" | "COMMENT";
@@ -480,6 +487,21 @@ ${INBOX_PULL_REQUEST}${withHistory ? `\n${TEAM_HISTORY}` : ""}`;
       repository: { pullRequest: { state: PullRequestState } | null } | null;
     }>(PULL_REQUEST_STATE, { owner, name, number });
     return data.repository?.pullRequest?.state;
+  }
+
+  /**
+   * Where the pull request stands on GitHub now: its state, head commit and
+   * base branch; undefined if GitHub has no such pull request.
+   */
+  async pullRequestHead(
+    repository: string,
+    number: number
+  ): Promise<PullRequestHead | undefined> {
+    const [owner, name] = repository.split("/");
+    const data = await this.graphql<{
+      repository: { pullRequest: PullRequestHead | null } | null;
+    }>(PULL_REQUEST_HEAD, { owner, name, number });
+    return data.repository?.pullRequest ?? undefined;
   }
 
   /** The pull request's title and description; undefined if GitHub has no such pull request. */
@@ -887,6 +909,12 @@ function lastReviewedSha(reviews: ReviewsNode | undefined): string | undefined {
 const PULL_REQUEST_STATE = `query PullRequestState($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) { state }
+  }
+}`;
+
+const PULL_REQUEST_HEAD = `query PullRequestHead($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) { state headRefOid baseRefName }
   }
 }`;
 

@@ -37,16 +37,16 @@ The order the Assistant suggests for reading a Change's files, in a few labeled 
 _Avoid_: File order, review plan, story
 
 **Inbox**:
-The list of Changes waiting for the Reviewer: open pull requests that await their review or that they authored or reviewed, across the repositories they have open in VSCodium, have opened before, or listed, plus local branches ahead of main.
-_Avoid_: Queue, dashboard
+The list of Changes waiting for the Reviewer: open pull requests that await their review or that they authored or reviewed, across the repositories they have open in VSCodium, have opened before, or listed, plus local branches ahead of main. The Dashboard shows it.
+_Avoid_: Queue
 
 **Team request**:
 A request on a pull request for a review from a team the Reviewer is on, rather than from the Reviewer personally. Any one member's review answers it for the whole team.
 _Avoid_: Group request, indirect request
 
-**Home**:
-The review window's page of where the Reviewer stands across their Changes, shown when no Change is in front. Unlike the Inbox, which lists Changes, Home shows their state.
-_Avoid_: Dashboard, start page, landing page
+**Dashboard**:
+The Dear Reviewer side bar in the Reviewer's own windows, outside the review window: where they stand across their Changes, the one next step, the Changes in progress, and the Inbox. Its title in the side bar reads Dear Reviewer: Dashboard.
+_Avoid_: Home, start page, landing page
 
 **Brief**:
 The Reviewer's comments on a local Change, packaged as instructions for an agent to act on. The local counterpart of posting a review to GitHub.

@@ -500,7 +500,7 @@ function html(cspSource: string): string {
   .result .verdict .mark { margin-right: 4px; }
   .result .actions { align-items: baseline; }
   .result .reading { font-style: italic; color: var(--vscode-descriptionForeground); }
-  #resultProblem:empty { display: none; }
+  #resultProblem:empty, #resultText:empty { display: none; }
   #resultProblem { margin: 0 0 8px; }
   #resultProblem .mark { color: var(--vscode-testing-iconFailed); margin-right: 4px; }
   #submitProblem:empty, #submitReason:empty, #submitNote:empty { display: none; }
@@ -523,7 +523,7 @@ ${catSymbol}
   </div>
 </header>
 <section class="result" id="result" aria-label="Review result" hidden>
-  <p class="verdict" id="resultText" role="status"></p>
+  <p class="verdict" id="resultText"></p>
   <div class="problem-line" id="resultProblem" role="alert"></div>
   <div class="actions" id="resultActions"></div>
 </section>
@@ -1022,7 +1022,11 @@ ${catSymbol}
       const mark = el("span", "mark", "✗");
       mark.setAttribute("aria-hidden", "true");
       problem.append(mark, brief.problem);
+      actions.append(button("secondary", "Try again", { type: "finish" }, "Write the Brief again"));
     }
+    // The result is said once, by the page's own status line, which is there
+    // before the block fills; a problem is an alert of its own.
+    if (kind !== "problem") setText(byId("announce"), text.textContent);
   }
 
   // The Submit step (ADR 0033). The verdict and summary are a draft the
@@ -1106,7 +1110,7 @@ ${catSymbol}
     lastStep = step;
     node.hidden = !step;
     if (!step) {
-      if (had) (byId("viewSubmitted") || byId("closeChange") || byId("finish")).focus();
+      if (had) (byId("closeChange") || byId("viewSubmitted") || byId("finish")).focus();
       return;
     }
     const choices = byId("verdicts");
@@ -1214,7 +1218,6 @@ ${catSymbol}
     draft.verdict = undefined;
     draft.summary = "";
     saveDraft();
-    setText(byId("announce"), done.text);
   }
 
   // The checks that failed or are running lead, and the rest wait behind
@@ -1267,7 +1270,7 @@ ${catSymbol}
     finishFocus(state);
     setText(byId("history"), state.history);
     setText(byId("loading"), state.loading ? (state.items.length ? "Refreshing…" : "Loading…") : "");
-    byId("progress").hidden = !state.loading && !(state.submit && state.submit.submitting);
+    byId("progress").hidden = !state.loading && !(state.submit && state.submit.submitting) && !(state.brief && state.brief.phase === "writing");
     const problem = byId("historyProblem");
     problem.hidden = !state.problem;
     const said = JSON.stringify([state.problem, state.problemAction]);

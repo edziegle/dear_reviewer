@@ -19,7 +19,7 @@ export interface DashboardChange {
   id: string;
   /** The pull request's title, or the Change's name. */
   title: string;
-  /** Such as `acme/api #7 · alice → main`, or `local branch in api`. */
+  /** Such as `acme/api #7 · waiting 2 days · alice → main`, or `local branch in api`. */
   byline: string;
   /** The Reviewer's last Review, while no new commits came since. */
   review?: ReviewStanding;

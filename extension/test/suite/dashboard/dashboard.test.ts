@@ -393,7 +393,7 @@ describe("Dashboard", () => {
     }
   });
 
-  it("opens a pull request waiting on the Reviewer, and finishes its Review from In progress", async () => {
+  it("opens a pull request waiting on the Reviewer, moving it to In progress with its wait, and finishes its Review there", async () => {
     await showDashboard();
     await eventually(async () =>
       assert.ok(
@@ -418,16 +418,21 @@ describe("Dashboard", () => {
           [
             {
               title: "Retry failed webhooks",
-              byline: "acme/api #32 · alice → main",
+              byline: "acme/api #32 · waiting 2 hours · alice → main",
               standing: ["0 of 4 viewed"],
               end: { type: "finish", label: "Submit Review…" },
             },
           ]
         );
         assert.deepStrictEqual(
-          dashboard.waiting?.find((w) => w.id === "pull request acme/api#32")
-            ?.notes,
-          ["open"]
+          dashboard.waiting?.map((w) => w.id),
+          ["pull request acme/api#33"],
+          "an open pull request shows only in In progress"
+        );
+        assert.strictEqual(
+          dashboard.facts,
+          "2 waiting on you · oldest 6 days",
+          "the facts line counts it still"
         );
       });
 

@@ -198,35 +198,6 @@ export class Dashboard implements vscode.Disposable {
             change.pullRequest!.repository.toLowerCase() &&
           n.pullRequest.number === change.pullRequest!.number
       )?.pullRequest;
-    const standings = await Promise.all(
-      changes.map((change) => this.standingOf(change))
-    );
-    for (const id of this.standings.keys())
-      if (!changes.some((change) => change.id === id))
-        this.standings.delete(id);
-    for (const change of changes) targets.changes.set(change.id, change);
-    const inProgress: DashboardChange[] = changes.map((change, i) => {
-      const standing = standings[i];
-      const summary = summaryOf(change);
-      return {
-        id: change.id,
-        title: summary?.title ?? changeName(change),
-        byline: bylineOf(change, summary),
-        ...(standing.review && { review: standing.review }),
-        standing:
-          standing.total === 0
-            ? [...standing.notes.slice(0, -1), "Nothing to review"]
-            : standing.notes,
-        end:
-          standing.total === 0
-            ? { type: "close", label: "Close Change" }
-            : {
-                type: "finish",
-                label: change.pullRequest ? "Submit Review…" : "Write Brief…",
-              },
-      };
-    });
-
     const group = (label: string) =>
       groups.find(
         (g): g is Extract<InboxNode, { kind: "group" }> =>
@@ -243,11 +214,57 @@ export class Dashboard implements vscode.Disposable {
           : []
       )
     );
+    /** How long the Change's pull request has waited on the Reviewer, if it does. */
+    const waitOf = (change: Change) => {
+      const pr = change.pullRequest;
+      const found =
+        pr &&
+        waitingNodes.find(
+          ({ node }) =>
+            node.pullRequest.repository.toLowerCase() ===
+              pr.repository.toLowerCase() &&
+            node.pullRequest.number === pr.number
+        );
+      return found && waitedFor(found.since, now);
+    };
+    const standings = await Promise.all(
+      changes.map((change) => this.standingOf(change))
+    );
+    for (const id of this.standings.keys())
+      if (!changes.some((change) => change.id === id))
+        this.standings.delete(id);
+    for (const change of changes) targets.changes.set(change.id, change);
+    const inProgress: DashboardChange[] = changes.map((change, i) => {
+      const standing = standings[i];
+      const summary = summaryOf(change);
+      return {
+        id: change.id,
+        title: summary?.title ?? changeName(change),
+        byline: bylineOf(change, summary, waitOf(change)),
+        ...(standing.review && { review: standing.review }),
+        standing:
+          standing.total === 0
+            ? [...standing.notes.slice(0, -1), "Nothing to review"]
+            : standing.notes,
+        end:
+          standing.total === 0
+            ? { type: "close", label: "Close Change" }
+            : {
+                type: "finish",
+                label: change.pullRequest ? "Submit Review…" : "Write Brief…",
+              },
+      };
+    });
+
+    // A pull request open as a Change is in progress, so it shows there
+    // rather than here too; one still opening stays, marked so.
     const waiting = awaiting
       ? await Promise.all(
-          waitingNodes.map(({ node, since }) =>
-            this.pullRequest(targets, node, waitedFor(since, now))
-          )
+          waitingNodes
+            .filter(({ node }) => !this.inbox.openState(node).includes("open"))
+            .map(({ node, since }) =>
+              this.pullRequest(targets, node, waitedFor(since, now))
+            )
         )
       : undefined;
     const authoredRows = authored
@@ -527,14 +544,23 @@ function pullRequestId(pr: { repository: string; number: number }): string {
   return conversationName({ kind: "pullRequest", pullRequest: pr });
 }
 
-/** `acme/api #7 · alice → main`, or a local Change's branch or commits and repository. */
-function bylineOf(change: Change, summary?: PullRequestSummary): string {
-  if (change.pullRequest) {
-    const name = pullRequestName(change.pullRequest);
-    return summary
-      ? `${name} · ${summary.author.login} → ${summary.baseRefName}`
-      : name;
-  }
+/**
+ * `acme/api #7 · waiting 2 days · alice → main`, the wait while it waits on
+ * the Reviewer, or a local Change's branch or commits and repository.
+ */
+function bylineOf(
+  change: Change,
+  summary?: PullRequestSummary,
+  waited?: string
+): string {
+  if (change.pullRequest)
+    return [
+      pullRequestName(change.pullRequest),
+      waited && `waiting ${waited}`,
+      summary && `${summary.author.login} → ${summary.baseRefName}`,
+    ]
+      .filter(Boolean)
+      .join(" · ");
   const repo = path.basename(change.repository);
   return branchOfConversation(change.conversation)
     ? `local branch in ${repo}`

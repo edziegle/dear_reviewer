@@ -33,6 +33,28 @@ export const verdicts: Record<
   },
 };
 
+/**
+ * The verdicts the Reviewer can give: GitHub takes only a comment on a
+ * pull request they wrote, so their own offers no other.
+ */
+export function verdictsFor(ownPullRequest: boolean): Verdict[] {
+  return ownPullRequest ? ["comment"] : [...verdictOrder];
+}
+
+/**
+ * Why GitHub didn't take the Review, in plain words, from the message its
+ * API gave, which the Reviewer sees only when it says nothing more useful.
+ */
+export function refusalOf(message: string): string {
+  if (/own pull request/i.test(message))
+    return "GitHub takes only a comment on your own pull request. Choose Comment, then submit again.";
+  if (/body .*(required|blank)|(required|blank) .*body/i.test(message))
+    return "Write a summary for this verdict, which GitHub needs, then submit again.";
+  if (/could not resolve to a node|pending review .*not found/i.test(message))
+    return "Your pending Review was submitted or discarded elsewhere, such as on github.com. Refresh the overview, then submit again.";
+  return `GitHub didn't take your Review: ${message}`;
+}
+
 export function isVerdict(value: unknown): value is Verdict {
   return typeof value === "string" && value in verdicts;
 }

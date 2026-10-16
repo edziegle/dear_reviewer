@@ -92,6 +92,10 @@ export interface SubmitStep {
   submitting: boolean;
   /** Why GitHub didn't take it, in words for the Reviewer. */
   problem?: string;
+  /** The label of the button that helps with the problem, such as signing in. */
+  problemAction?: string;
+  /** Why some verdicts aren't offered, such as on the Reviewer's own pull request. */
+  note?: string;
 }
 
 export interface TimelineState {
@@ -176,6 +180,7 @@ export type FromWebview =
   | { type: "finish" }
   | { type: "submit"; verdict: Verdict; summary: string }
   | { type: "cancelSubmit" }
+  | { type: "submitAction" }
   | { type: "openPending"; index: number }
   | { type: "nextFile" }
   | { type: "ask" }
@@ -278,6 +283,7 @@ export class TimelinePanel {
         "suggestReadingOrder",
         "finish",
         "cancelSubmit",
+        "submitAction",
         "nextFile",
         "ask",
         "takeAction",
@@ -464,8 +470,10 @@ function html(cspSource: string): string {
   .submit .actions { margin-top: 12px; align-items: baseline; }
   .submit .actions button.primary { padding: 4px 12px; }
   .submit button[aria-disabled="true"] { opacity: 0.5; cursor: default; }
-  #submitProblem:empty, #submitReason:empty { display: none; }
+  #submitProblem:empty, #submitReason:empty, #submitNote:empty { display: none; }
   #submitProblem { margin-top: 8px; }
+  #submitProblem .mark { color: var(--vscode-testing-iconFailed); margin-right: 4px; }
+  #submitNote { margin: 2px 0 0; }
   #submitReason { margin-top: 4px; }
 </style>
 </head>
@@ -481,13 +489,14 @@ ${catSymbol}
 <section class="submit" id="submitStep" aria-labelledby="submitHeading" hidden>
   <h2 id="submitHeading">Submit Review</h2>
   <fieldset id="verdicts"><legend class="visually-hidden">Verdict</legend></fieldset>
+  <div class="muted" id="submitNote"></div>
   <label class="field" for="summary">Summary <span class="muted">for the author</span></label>
   <textarea id="summary" rows="3" aria-describedby="submitReason"></textarea>
   <div class="muted" id="submitReason"></div>
   <div class="pending" id="pending"><h3 id="pendingHeading"></h3><ul id="pendingComments" aria-labelledby="pendingHeading"></ul></div>
   <div class="problem-line" id="submitProblem" role="alert"></div>
   <div class="actions">
-    <button class="primary" id="submitReview" type="button" aria-describedby="submitReason" title="Publish your Review to GitHub (Ctrl+Enter in the summary)">Submit Review</button>
+    <button class="primary" id="submitReview" type="button" aria-describedby="submitReason" title="Publish your Review to GitHub (Ctrl+Enter)">Submit Review</button>
     <button class="secondary" id="cancelSubmit" type="button">Cancel</button>
   </div>
 </section>
@@ -656,7 +665,7 @@ ${catSymbol}
       node.append(review, ...(notes.length ? [" · "] : []));
     }
     node.append(notes.join(" · "));
-    if (state.review && state.submitted && state.submitted.url) {
+    if (state.submitted && state.submitted.url) {
       const view = link("View on GitHub", state.submitted.url);
       view.id = "viewSubmitted";
       node.append(" · ", view);
@@ -827,14 +836,12 @@ ${catSymbol}
     saveDraft();
     if (lastStep) submitButtons(lastStep);
   });
-  summary.addEventListener("keydown", (event) => {
+  // Ctrl+Enter submits from anywhere in the step, and Escape cancels it.
+  byId("submitStep").addEventListener("keydown", (event) => {
     if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
       event.preventDefault();
       byId("submitReview").click();
-    }
-  });
-  byId("submitStep").addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && lastStep && !lastStep.submitting) {
+    } else if (event.key === "Escape" && lastStep && !lastStep.submitting) {
       event.preventDefault();
       byId("cancelSubmit").click();
     }
@@ -850,7 +857,9 @@ ${catSymbol}
     byId("finish").focus();
     vscode.postMessage({ type: "cancelSubmit" });
   });
-  const reasonOf = (step) => (draft.summary.trim() ? "" : step.needsSummary[draft.verdict] || "");
+  const reasonOf = (step) => !draft.verdict
+    ? "Choose a verdict."
+    : (draft.summary.trim() ? "" : step.needsSummary[draft.verdict] || "");
   function submitButtons(step) {
     const reason = reasonOf(step);
     setText(byId("submitReason"), step.problem ? "" : reason);
@@ -884,13 +893,21 @@ ${catSymbol}
           saveDraft();
           submitButtons(lastStep);
         });
-        label.append(input, el("span", "label", v.label), el("span", "muted", v.detail));
+        // The radio is named by its verdict alone; what it does describes it.
+        const detail = el("span", "muted", v.detail);
+        detail.id = "verdict-" + v.verdict;
+        detail.setAttribute("aria-hidden", "true");
+        input.setAttribute("aria-describedby", detail.id);
+        label.append(input, el("span", "label", v.label), detail);
         return label;
       }));
     }
     const fresh = step.asked !== asked;
     if (fresh && step.verdict) draft.verdict = step.verdict;
-    if (!step.verdicts.some((v) => v.verdict === draft.verdict)) draft.verdict = step.verdicts[0].verdict;
+    // A verdict that publishes is the Reviewer's to choose, unless only one is offered.
+    if (!step.verdicts.some((v) => v.verdict === draft.verdict))
+      draft.verdict = step.verdicts.length === 1 ? step.verdicts[0].verdict : undefined;
+    setText(byId("submitNote"), step.note || "");
     for (const input of choices.querySelectorAll("input")) input.checked = input.value === draft.verdict;
     if (summary.value !== draft.summary) summary.value = draft.summary;
     const comments = step.comments;
@@ -913,14 +930,27 @@ ${catSymbol}
         return li;
       }));
     }
-    setText(byId("submitProblem"), step.problem || "");
+    const problem = byId("submitProblem");
+    const said = JSON.stringify([step.problem, step.problemAction]);
+    if (problem.dataset.said !== said) {
+      problem.dataset.said = said;
+      problem.replaceChildren();
+      if (step.problem) {
+        // The ✗ marks the problem without relying on its color.
+        const mark = el("span", "mark", "✗");
+        mark.setAttribute("aria-hidden", "true");
+        problem.append(mark);
+        appendWithCode(problem, step.problem);
+        if (step.problemAction) problem.append(" ", textButton(step.problemAction, () => vscode.postMessage({ type: "submitAction" })));
+      }
+    }
     if (step.submitting) setText(byId("announce"), "Submitting your Review…");
     submitButtons(step);
     if (fresh) {
       asked = step.asked;
       node.scrollIntoView({ block: "start" });
-      const checked = choices.querySelector("input:checked");
-      if (checked) checked.focus({ preventScroll: true });
+      const first = choices.querySelector("input:checked") || choices.querySelector("input");
+      if (first) first.focus({ preventScroll: true });
     }
   }
   let announced;

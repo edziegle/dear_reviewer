@@ -41,9 +41,10 @@ import type { ShownReadingOrder } from "../readingOrder";
 import type { PendingCommentLine } from "../reviewComments";
 import { checksInOrder } from "../checkRuns";
 import {
+  refusalOf,
   summaryNeeded,
-  verdictOrder,
   verdicts,
+  verdictsFor,
   type Verdict,
 } from "../reviewSubmission";
 
@@ -227,6 +228,8 @@ class ChangeTimeline {
   private loads = 0;
   /** How many times the Reviewer asked for the Submit step. */
   private asked = 0;
+  /** Whether the Reviewer wrote the pull request, once its timeline says. */
+  private ownPullRequest = false;
   /** The Change's files, whose `path:line` references in the take open them. */
   private files = new Set<string>();
   /** The Change's files, with which are binary, once counted. */
@@ -344,11 +347,7 @@ class ChangeTimeline {
     this.update({
       submit: this.pendingOf({
         asked: ++this.asked,
-        verdicts: verdictOrder.map((v) => ({
-          verdict: v,
-          label: verdicts[v].label,
-          detail: verdicts[v].detail,
-        })),
+        verdicts: [],
         needsSummary: {},
         comments: [],
         submitting: step?.submitting ?? false,
@@ -358,21 +357,45 @@ class ChangeTimeline {
     });
   }
 
-  /** The step with the Comments pending now, and what they let it take without a summary. */
+  /**
+   * The step with the verdicts GitHub takes on this pull request, the
+   * Comments pending now, and what they let it take without a summary.
+   */
   private pendingOf(
     step: NonNullable<TimelineState["submit"]>
   ): NonNullable<TimelineState["submit"]> {
     const comments = this.sources.pendingComments(this.change);
-    return { ...step, comments, needsSummary: summaryNeeded(comments.length) };
+    const offered = verdictsFor(this.ownPullRequest);
+    return {
+      ...step,
+      verdicts: offered.map((v) => ({
+        verdict: v,
+        label: verdicts[v].label,
+        detail: verdicts[v].detail,
+      })),
+      note: this.ownPullRequest
+        ? "On your own pull request, GitHub takes only a comment."
+        : undefined,
+      comments,
+      needsSummary: summaryNeeded(comments.length),
+    };
   }
 
   /** Submits the Review from the step, which says why if GitHub doesn't take it. */
   private async submitReview(verdict: Verdict, summary: string): Promise<void> {
     const step = this.state.submit;
     if (!step || step.submitting) return;
+    if (!step.verdicts.some((v) => v.verdict === verdict)) return;
     const refused = !summary.trim() && step.needsSummary[verdict];
     if (refused) return this.update({ submit: { ...step, problem: refused } });
-    this.update({ submit: { ...step, submitting: true, problem: undefined } });
+    this.update({
+      submit: {
+        ...step,
+        submitting: true,
+        problem: undefined,
+        problemAction: undefined,
+      },
+    });
     try {
       const submitted = await this.sources.submit(this.change, verdict, summary);
       await this.showStanding();
@@ -381,13 +404,17 @@ class ChangeTimeline {
     } catch (err) {
       const now = this.state.submit;
       if (!now) return;
+      const signedOut = err instanceof NotSignedInError;
       this.update({
         submit: {
           ...now,
           submitting: false,
-          problem: isUnreachable(err)
-            ? "Couldn't reach GitHub to submit your Review. Check the connection, then submit again."
-            : `GitHub didn't take your Review: ${messageOf(err)}`,
+          problem: signedOut
+            ? "Sign in to GitHub to submit your Review; your draft stays here."
+            : isUnreachable(err)
+              ? "Couldn't reach GitHub to submit your Review. Check the connection, then submit again."
+              : refusalOf(messageOf(err)),
+          problemAction: signedOut ? signIn : undefined,
         },
       });
     }
@@ -441,6 +468,10 @@ class ChangeTimeline {
         return void this.load();
       case "submit":
         return void this.submitReview(action.verdict, action.summary);
+      case "submitAction":
+        if (this.state.submit?.problemAction === signIn)
+          void vscode.commands.executeCommand("dearReviewer.signIn");
+        return;
       case "cancelSubmit":
         if (!this.state.submit?.submitting) this.update({ submit: undefined });
         return;
@@ -504,7 +535,18 @@ class ChangeTimeline {
 
   private async pullRequestState(panel: TimelinePanel): Promise<TimelineState> {
     const { repository, number } = this.change.pullRequest!;
-    const timeline = await this.github.timeline(repository, number);
+    const [timeline, viewer] = await Promise.all([
+      this.github.timeline(repository, number),
+      this.github.viewer().catch(() => undefined),
+    ]);
+    const opener = timeline.events.find((e) => e.kind === "description")
+      ?.author.login;
+    const own = !!viewer && opener === viewer;
+    if (own !== this.ownPullRequest) {
+      this.ownPullRequest = own;
+      if (this.state.submit)
+        this.state = { ...this.state, submit: this.pendingOf(this.state.submit) };
+    }
     const avatars = new Map<string, string | undefined>();
     const author = async (user: GitHubUser) => {
       if (!avatars.has(user.avatarUrl)) {

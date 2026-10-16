@@ -105,6 +105,9 @@ export interface Timeline {
     comments: { path: string; side: "LEFT" | "RIGHT"; line: number; text: string }[];
     submitting: boolean;
     problem?: string;
+    problemAction?: string;
+    /** Why some verdicts aren't offered. */
+    note?: string;
   };
   /** The Review just submitted from the step. */
   submitted?: { text: string; url?: string };

@@ -846,6 +846,37 @@ describe("A pull request's timeline", () => {
     );
   });
 
+  it("offers only Comment on the Reviewer's own pull request, which GitHub takes no other verdict on", async () => {
+    await serveGitHub({
+      viewer,
+      pullRequests: [{ ...structuredClone(fakePullRequest), author: "reviewer" }],
+    });
+    try {
+      await clickRefresh(title);
+      await eventually(async () =>
+        assert.match((await sentTimeline(title)).byline, /reviewer → /)
+      );
+
+      await vscode.commands.executeCommand("dearReviewer.submitReview", change);
+
+      await eventually(async () => {
+        const step = (await sentTimeline(title)).submit;
+        assert.deepStrictEqual(
+          step?.verdicts.map((v) => v.label),
+          ["Comment"]
+        );
+        assert.match(step?.note ?? "", /own pull request/);
+      });
+      await cancelSubmit(title);
+    } finally {
+      await serveGitHub({
+        viewer,
+        pullRequests: [structuredClone(fakePullRequest)],
+      });
+      await clickRefresh(title);
+    }
+  });
+
   it("offers to finish the Review once stepping finds every file viewed", async () => {
     // Change Files lists only the Change in front.
     await openChange(change);

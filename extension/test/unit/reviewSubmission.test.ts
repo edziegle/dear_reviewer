@@ -2,7 +2,9 @@ import * as assert from "assert";
 import {
   firstLineOf,
   isVerdict,
+  refusalOf,
   summaryNeeded,
+  verdictsFor,
   verdictOrder,
   verdicts,
 } from "../../src/reviewSubmission";
@@ -66,5 +68,50 @@ describe("A pending Comment's line in the overview", () => {
     const line = firstLineOf("a".repeat(300));
     assert.strictEqual(line.length, 120);
     assert.ok(line.endsWith("…"));
+  });
+});
+
+describe("The verdicts a pull request takes", () => {
+  it("offers all three on someone else's pull request", () => {
+    assert.deepStrictEqual(verdictsFor(false), [
+      "comment",
+      "approve",
+      "requestChanges",
+    ]);
+  });
+
+  it("offers only Comment on the Reviewer's own, as GitHub takes no other", () => {
+    assert.deepStrictEqual(verdictsFor(true), ["comment"]);
+  });
+});
+
+describe("Why GitHub didn't take a Review, in plain words", () => {
+  it("says a verdict on your own pull request can only be a comment", () => {
+    assert.match(
+      refusalOf("Review Can not approve your own pull request"),
+      /^GitHub takes only a comment on your own pull request/
+    );
+    assert.match(
+      refusalOf("Can not request changes on your own pull request"),
+      /^GitHub takes only a comment/
+    );
+  });
+
+  it("asks for a summary when GitHub wants one", () => {
+    assert.match(refusalOf("Review body is required"), /^Write a summary/);
+  });
+
+  it("says the pending Review is gone when it was submitted or discarded elsewhere", () => {
+    assert.match(
+      refusalOf("Could not resolve to a node with the global id of 'PRR_1'"),
+      /submitted or discarded elsewhere/
+    );
+  });
+
+  it("passes anything else on, saying it is GitHub's", () => {
+    assert.strictEqual(
+      refusalOf("Something odd"),
+      "GitHub didn't take your Review: Something odd"
+    );
   });
 });

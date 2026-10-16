@@ -650,6 +650,11 @@ ${paths
     return new Uint8Array(await res.arrayBuffer());
   }
 
+  /** The signed-in user's login. */
+  viewer(): Promise<string> {
+    return this.viewerLogin();
+  }
+
   /** The signed-in user's login, asked once for each API URL and token. */
   private async viewerLogin(): Promise<string> {
     const apiUrl = this.apiUrl();

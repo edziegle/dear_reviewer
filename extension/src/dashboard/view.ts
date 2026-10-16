@@ -108,8 +108,8 @@ export type DashboardAction = Exclude<FromDashboard, Handshake>;
 /** Extension to webview, besides the state. */
 type ToWebview = { type: "focus" };
 
-/** How many local branches show before Show all. */
-export const branchesShown = 5;
+/** How many rows a long list, such as Waiting on you or Local branches, shows before Show all. */
+export const shownAtFirst = 5;
 
 export class DashboardView implements vscode.WebviewViewProvider {
   static readonly viewType = "dearReviewer.dashboard";
@@ -288,15 +288,15 @@ function html(cspSource: string): string {
 <div role="status"><div class="muted problem-line" id="loading"></div><div id="setup" hidden></div></div>
 <div id="problems"></div>
 <section id="inProgress" aria-labelledby="inProgressHeading" hidden><h2 id="inProgressHeading">In progress <span class="muted count" id="inProgressCount"></span></h2><div id="changes" role="list"></div></section>
-<section id="waitingSection" aria-labelledby="waitingHeading" hidden><h2 id="waitingHeading">Waiting on you <span class="muted count" id="waitingCount"></span></h2><div id="waiting" role="list"></div></section>
-<section id="authoredSection" aria-labelledby="authoredHeading" hidden><h2 id="authoredHeading">Your pull requests <span class="muted count" id="authoredCount"></span></h2><div id="authored" role="list"></div></section>
-<section id="reviewedSection" aria-labelledby="reviewedHeading" hidden><h2 id="reviewedHeading">Reviewed by me <span class="muted count" id="reviewedCount"></span></h2><div id="reviewed" role="list"></div></section>
-<section id="branchesSection" aria-labelledby="branchesHeading" hidden><h2 id="branchesHeading">Local branches <span class="muted count" id="branchesCount"></span></h2><div id="branchProblems"></div><div id="branches" role="list"></div><button class="link more" id="moreBranches" type="button" aria-controls="branches" aria-expanded="false" hidden></button></section>
+<section id="waitingSection" aria-labelledby="waitingHeading" hidden><h2 id="waitingHeading">Waiting on you <span class="muted count" id="waitingCount"></span></h2><div id="waiting" role="list"></div><button class="link more" id="waitingMore" type="button" aria-controls="waiting" aria-expanded="false" hidden></button></section>
+<section id="authoredSection" aria-labelledby="authoredHeading" hidden><h2 id="authoredHeading">Your pull requests <span class="muted count" id="authoredCount"></span></h2><div id="authored" role="list"></div><button class="link more" id="authoredMore" type="button" aria-controls="authored" aria-expanded="false" hidden></button></section>
+<section id="reviewedSection" aria-labelledby="reviewedHeading" hidden><h2 id="reviewedHeading">Reviewed by me <span class="muted count" id="reviewedCount"></span></h2><div id="reviewed" role="list"></div><button class="link more" id="reviewedMore" type="button" aria-controls="reviewed" aria-expanded="false" hidden></button></section>
+<section id="branchesSection" aria-labelledby="branchesHeading" hidden><h2 id="branchesHeading">Local branches <span class="muted count" id="branchesCount"></span></h2><div id="branchProblems"></div><div id="branches" role="list"></div><button class="link more" id="branchesMore" type="button" aria-controls="branches" aria-expanded="false" hidden></button></section>
 <footer><button class="link" id="openRange" type="button" title="Open any commit range of a repository as a Change">Open a commit range…</button></footer>
 <script nonce="${nonce}">${sharedScript}
   const vscode = acquireVsCodeApi();
   const byId = (id) => document.getElementById(id);
-  const branchesShown = ${branchesShown};
+  const shownAtFirst = ${shownAtFirst};
   const el = (tag, className, text) => {
     const node = document.createElement(tag);
     if (className) node.className = className;
@@ -338,11 +338,13 @@ function html(cspSource: string): string {
   };
   byId("next").addEventListener("click", () => vscode.postMessage({ type: "next" }));
   byId("openRange").addEventListener("click", () => vscode.postMessage({ type: "openRange" }));
-  let allBranches = false;
-  byId("moreBranches").addEventListener("click", () => {
-    allBranches = !allBranches;
-    keepFocus(() => branches(lastState));
-  });
+  // A long list shows its first rows, then Show all with the count.
+  const showsAll = {};
+  for (const id of ["waiting", "authored", "reviewed", "branches"])
+    byId(id + "More").addEventListener("click", () => {
+      showsAll[id] = !showsAll[id];
+      keepFocus(() => lists(lastState));
+    });
 
   // Up and down move between a list's rows, to each row's first button.
   document.body.addEventListener("keydown", (event) => {
@@ -459,13 +461,26 @@ function html(cspSource: string): string {
     setText(byId(countId), String(entries.length));
   }
 
-  function branches(state) {
-    const all = state.branches;
-    const more = byId("moreBranches");
-    more.hidden = all.length <= branchesShown;
-    setText(more, allBranches ? "Show fewer" : "Show all " + all.length);
-    more.setAttribute("aria-expanded", String(allBranches));
-    list("branches", allBranches ? all : all.slice(0, branchesShown), branch);
+  function capped(id, entries, build) {
+    const all = !!showsAll[id];
+    const more = byId(id + "More");
+    more.hidden = entries.length <= shownAtFirst;
+    setText(more, all ? "Show fewer" : "Show all " + entries.length);
+    more.setAttribute("aria-expanded", String(all));
+    list(id, all ? entries : entries.slice(0, shownAtFirst), build);
+  }
+
+  function lists(state) {
+    section("waitingSection", state.waiting || [], "waitingCount");
+    capped("waiting", state.waiting || [], pullRequest);
+    section("authoredSection", state.authored || [], "authoredCount");
+    capped("authored", state.authored || [], pullRequest);
+    section("reviewedSection", state.reviewed || [], "reviewedCount");
+    capped("reviewed", state.reviewed || [], pullRequest);
+    byId("branchesSection").hidden = state.branches.length === 0 && state.branchProblems.length === 0;
+    setText(byId("branchesCount"), state.branches.length ? String(state.branches.length) : "");
+    list("branchProblems", state.branchProblems, problem);
+    capped("branches", state.branches, branch);
   }
 
   let lastState;
@@ -495,16 +510,7 @@ function html(cspSource: string): string {
       setup.replaceChildren(...(state.setup ? [setupLine(state.setup)] : []));
     }
     list("problems", state.problems, problem);
-    section("waitingSection", state.waiting || [], "waitingCount");
-    list("waiting", state.waiting || [], pullRequest);
-    section("authoredSection", state.authored || [], "authoredCount");
-    list("authored", state.authored || [], pullRequest);
-    section("reviewedSection", state.reviewed || [], "reviewedCount");
-    list("reviewed", state.reviewed || [], pullRequest);
-    byId("branchesSection").hidden = state.branches.length === 0 && state.branchProblems.length === 0;
-    setText(byId("branchesCount"), state.branches.length ? String(state.branches.length) : "");
-    list("branchProblems", state.branchProblems, problem);
-    branches(state);
+    lists(state);
   }
 
   // The next step, or else the first thing to act on.

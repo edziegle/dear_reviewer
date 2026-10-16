@@ -34,6 +34,7 @@ import {
 } from "./readingOrder";
 import { ViewedFiles } from "./viewedFiles";
 import { viewedProgress } from "./viewedProgress";
+import { fileTree, type FileTreeNode } from "./fileTree";
 
 export type ChangeFilesNode =
   | {
@@ -51,6 +52,8 @@ export type ChangeFilesNode =
       kind: "directory";
       change: Change;
       path: string;
+      /** Its row's label: its name, or the names of the folders compacted into it. */
+      name: string;
       files: ChangedFile[];
       children: ChangeFilesNode[];
     }
@@ -421,7 +424,7 @@ export class ChangeFilesView
       }
       case "directory": {
         const item = new vscode.TreeItem(
-          path.posix.basename(node.path),
+          node.name,
           vscode.TreeItemCollapsibleState.Expanded
         );
         item.id = `${node.change.id}:${node.path}/`;
@@ -617,7 +620,7 @@ export function inTreeOrder(
           ? flat(node.children)
           : []
     );
-  return flat(directoryTree(change, files, new Set(), false));
+  return flat(directoryTree(change, files, new Set(), false, false));
 }
 
 /** The Change's files in each step, which lists only the Change's files. */
@@ -670,56 +673,49 @@ function stepNodes(
   );
 }
 
-interface Directory {
-  dirs: Map<string, Directory>;
-  files: ChangedFile[];
-}
-
-/** Directories first, then files, each by name; empty directories are left out. */
+/**
+ * The Change's folders and files, folders first, then files, each by name;
+ * empty folders are left out. With `compact`, as `explorer.compactFolders`
+ * sets it, a folder whose only child is a folder joins it in one row.
+ */
 function directoryTree(
   change: Change,
   files: ChangedFile[],
   viewed: ReadonlySet<string>,
-  hideViewed: boolean
+  hideViewed: boolean,
+  compact = compactFolders()
 ): ChangeFilesNode[] {
-  const root: Directory = { dirs: new Map(), files: [] };
-  for (const file of files) {
-    let dir = root;
-    for (const name of file.path.split("/").slice(0, -1)) {
-      let next = dir.dirs.get(name);
-      if (!next) dir.dirs.set(name, (next = { dirs: new Map(), files: [] }));
-      dir = next;
-    }
-    dir.files.push(file);
-  }
-  const byName = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
-  const nodes = (dir: Directory, prefix: string): ChangeFilesNode[] => {
-    const dirs = [...dir.dirs.keys()].sort(byName).flatMap((name) => {
-      const dirPath = prefix + name;
-      const children = nodes(dir.dirs.get(name)!, `${dirPath}/`);
-      if (children.length === 0) return [];
-      return [
-        {
-          kind: "directory" as const,
-          change,
-          path: dirPath,
-          files: files.filter((f) => f.path.startsWith(`${dirPath}/`)),
-          children,
-        },
-      ];
-    });
-    const shown = dir.files
-      .filter((file) => !(hideViewed && viewed.has(file.path)))
-      .sort((a, b) => byName(a.path, b.path))
-      .map((file) => ({
-        kind: "file" as const,
-        change,
-        file,
-        viewed: viewed.has(file.path),
-      }));
-    return [...dirs, ...shown];
-  };
-  return nodes(root, "");
+  const nodes = (tree: FileTreeNode<ChangedFile>[]): ChangeFilesNode[] =>
+    tree.map((node) =>
+      node.kind === "file"
+        ? {
+            kind: "file" as const,
+            change,
+            file: node.file,
+            viewed: viewed.has(node.file.path),
+          }
+        : {
+            kind: "directory" as const,
+            change,
+            path: node.path,
+            name: node.name,
+            files: node.files,
+            children: nodes(node.children),
+          }
+    );
+  return nodes(
+    fileTree(files, {
+      compact,
+      shown: (file) => !(hideViewed && viewed.has(file.path)),
+    })
+  );
+}
+
+/** Whether the Explorer joins a folder whose only child is a folder into one row, as Change Files follows it. */
+function compactFolders(): boolean {
+  return vscode.workspace
+    .getConfiguration("explorer")
+    .get<boolean>("compactFolders", true);
 }
 
 function resourceUri(

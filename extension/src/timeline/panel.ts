@@ -133,7 +133,12 @@ export interface TimelineState {
   checks?: {
     commit: string;
     status?: CheckStatus;
+    /** Failed checks first, then running ones, then the rest. */
     runs: { name: string; status: CheckRunStatus; url?: string }[];
+    /** How many lead the list because they failed or are still running; the rest wait behind Show all. */
+    attention: number;
+    /** Such as "1 failed · 2 running · 38 passed". */
+    summary: string;
   };
   /** What went wrong, in words for the Reviewer. */
   problem?: string;
@@ -430,6 +435,8 @@ function html(cspSource: string): string {
   .order .file { font-family: var(--vscode-editor-font-family); overflow-wrap: anywhere; }
   .order .viewed .file { color: var(--vscode-descriptionForeground); }
   .order .reading { font-style: italic; }
+  #checksSummary { margin: 0 0 4px; }
+  #checks .more { margin-top: 4px; font-size: 0.9em; }
   .checks li { display: flex; flex-wrap: wrap; gap: 0 8px; align-items: baseline; padding: 2px 0; }
   .checks .name { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; }
   .item .body { white-space: pre-wrap; line-height: 1.5; margin-top: 6px; overflow-wrap: anywhere; }
@@ -509,7 +516,7 @@ ${catSymbol}
     <button class="secondary" id="ask" type="button" title="Open the Assistant's chat about this Change (Ctrl+Alt+R A)">Ask the Assistant</button>
   </div>
 </section>
-<section id="checks" hidden><h2 id="checksHeading"></h2><ul class="checks" id="checkRuns"></ul></section>
+<section id="checks" hidden><h2 id="checksHeading"></h2><p class="muted facts" id="checksSummary"></p><ul class="checks" id="checkRuns"></ul><button class="link more" id="moreChecks" type="button" aria-controls="checkRuns" aria-expanded="false" hidden></button></section>
 <div class="progress" id="progress" aria-hidden="true" hidden></div>
 <section aria-labelledby="history"><h2 id="history"></h2><div class="muted" id="loading" role="status"></div><div class="muted problem-line" id="historyProblem" role="status" hidden></div><div id="items" role="list"></div></section>
 <script nonce="${nonce}">${sharedScript}
@@ -914,6 +921,34 @@ ${catSymbol}
     setText(byId("announce"), done.text);
   }
 
+  // The checks that failed or are running lead, and the rest wait behind
+  // Show all, so a pull request with many checks doesn't push its history
+  // down; a few show whole.
+  const fewChecks = 5;
+  let allChecks = false;
+  byId("moreChecks").addEventListener("click", () => {
+    allChecks = !allChecks;
+    keepFocus(() => checks(lastState.checks, true));
+  });
+  function checks(state, changed) {
+    byId("checks").hidden = !state;
+    if (!state || !changed) return;
+    setText(byId("checksHeading"), "Checks on " + state.commit + (state.status ? ": " + state.status : ""));
+    setText(byId("checksSummary"), state.summary);
+    const whole = state.runs.length <= fewChecks;
+    const runs = whole || allChecks ? state.runs : state.runs.slice(0, state.attention);
+    byId("checkRuns").replaceChildren(...runs.map((run) => {
+      const li = el("li");
+      li.append(el("span", "status " + run.status, run.status), el("span", "name", run.name));
+      if (run.url) li.append(link("Details", run.url));
+      return li;
+    }));
+    const more = byId("moreChecks");
+    more.hidden = whole || state.attention === state.runs.length;
+    setText(more, allChecks ? "Show fewer" : "Show all " + state.runs.length);
+    more.setAttribute("aria-expanded", String(allChecks));
+  }
+
   function render(message) {
     const state = message.state;
     const was = lastState || { items: [] };
@@ -945,17 +980,7 @@ ${catSymbol}
         if (state.problemAction) problem.append(" ", textButton(state.problemAction, () => vscode.postMessage({ type: "problemAction" })));
       }
     }
-    const checks = state.checks;
-    byId("checks").hidden = !checks;
-    if (checks && JSON.stringify(checks) !== JSON.stringify(was.checks)) {
-      byId("checksHeading").textContent = "Checks on " + checks.commit + (checks.status ? ": " + checks.status : "");
-      byId("checkRuns").replaceChildren(...checks.runs.map((run) => {
-        const li = el("li");
-        li.append(el("span", "status " + run.status, run.status), el("span", "name", run.name));
-        if (run.url) li.append(link("Details", run.url));
-        return li;
-      }));
-    }
+    checks(state.checks, JSON.stringify(state.checks) !== JSON.stringify(was.checks));
     // Only a changed history is built again, so the focus in it stays put.
     if (JSON.stringify(state.items) !== JSON.stringify(was.items))
       byId("items").replaceChildren(...state.items.map(item));

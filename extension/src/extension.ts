@@ -1456,6 +1456,9 @@ export function activate(context: vscode.ExtensionContext) {
       return inbox.refresh();
     }),
     vscode.workspace.onDidChangeConfiguration((e) => {
+      // Change Files compacts folders as the Explorer does.
+      if (e.affectsConfiguration("explorer.compactFolders"))
+        changeFiles.refresh();
       if (e.affectsConfiguration("dearReviewer.githubApiUrl")) {
         // Which remotes are on GitHub depends on the API's host.
         void repositories.scanWindow();

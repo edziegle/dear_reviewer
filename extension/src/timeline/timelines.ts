@@ -39,6 +39,7 @@ import {
 import { isUnreachable, messageOf } from "../errors";
 import type { ShownReadingOrder } from "../readingOrder";
 import type { PendingCommentLine } from "../reviewComments";
+import { checksInOrder } from "../checkRuns";
 import {
   summaryNeeded,
   verdictOrder,
@@ -523,7 +524,10 @@ class ChangeTimeline {
       url: timeline.url,
       loading: false,
       items,
-      checks: timeline.checks,
+      checks: timeline.checks && {
+        ...timeline.checks,
+        ...checksInOrder(timeline.checks.runs),
+      },
     };
   }
 

@@ -119,6 +119,10 @@ export interface Timeline {
       status: "passed" | "failed" | "running" | "skipped" | "neutral";
       url?: string;
     }[];
+    /** How many lead the list because they failed or are still running. */
+    attention: number;
+    /** Such as "1 failed · 2 running · 38 passed". */
+    summary: string;
   };
   problem?: string;
   /** The button that goes with the problem, by its label. */

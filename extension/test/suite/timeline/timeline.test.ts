@@ -260,12 +260,8 @@ describe("A pull request's timeline", () => {
     checks: {
       commit: short(pr.head),
       status: "failed",
+      // What needs the Reviewer leads.
       runs: [
-        {
-          name: "test",
-          status: "passed",
-          url: "https://ci.example.com/runs/1",
-        },
         {
           name: "lint",
           status: "failed",
@@ -273,16 +269,23 @@ describe("A pull request's timeline", () => {
         },
         { name: "deploy preview", status: "running" },
         {
-          name: "docs",
-          status: "skipped",
-          url: "https://ci.example.com/runs/4",
+          name: "test",
+          status: "passed",
+          url: "https://ci.example.com/runs/1",
         },
         {
           name: "ci/legacy",
           status: "passed",
           url: "https://legacy-ci.example.com/build/9",
         },
+        {
+          name: "docs",
+          status: "skipped",
+          url: "https://ci.example.com/runs/4",
+        },
       ],
+      attention: 2,
+      summary: "1 failed · 1 running · 2 passed · 1 skipped",
     },
   };
   const found = new Map<string, unknown>();
@@ -531,6 +534,8 @@ describe("A pull request's timeline", () => {
               url: "https://ci.example.com/runs/5",
             },
           ],
+          attention: 0,
+          summary: "1 passed",
         },
       })
     );

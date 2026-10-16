@@ -444,6 +444,7 @@ function html(cspSource: string): string {
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${cspSource}; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}';">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style nonce="${nonce}">${sharedStyles}${pageStyles}
+  #highlighting { margin: 0; padding: 10px 0; border-bottom: 1px solid var(--vscode-panel-border); }
   #highlighting code { font-family: var(--vscode-editor-font-family); }
   #start code { font-family: var(--vscode-editor-font-family); color: inherit; background: none; padding: 0; }
   .overview .hand { margin-top: 14px; }
@@ -546,7 +547,6 @@ ${catSymbol}
 <section class="overview" aria-label="Overview">
   <p class="facts" id="facts" hidden></p>
   <p class="muted" id="standing" hidden></p>
-  <p class="muted" id="highlighting" hidden></p>
   <button class="link" id="showTake" type="button" aria-controls="take" aria-expanded="false" hidden></button>
   <div class="hand">
     <div class="take">
@@ -571,6 +571,7 @@ ${catSymbol}
   </div>
 </section>
 <section id="checks" hidden><h2 id="checksHeading"></h2><p class="muted facts" id="checksSummary"></p><ul class="checks" id="checkRuns"></ul><button class="link more" id="moreChecks" type="button" aria-controls="checkRuns" aria-expanded="false" hidden></button></section>
+<p class="muted" id="highlighting" hidden></p>
 <div class="progress" id="progress" aria-hidden="true" hidden></div>
 <section aria-labelledby="history"><h2 id="history"></h2><div class="muted" id="loading" role="status"></div><div class="muted problem-line" id="historyProblem" role="status" hidden></div><div id="items" role="list"></div></section>
 <script nonce="${nonce}">${sharedScript}

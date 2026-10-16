@@ -270,7 +270,8 @@ function html(cspSource: string): string {
   .item .title { font-weight: 600; overflow-wrap: anywhere; }
   .item .link.title { color: var(--vscode-textLink-foreground); }
   .item .branch { font-family: var(--vscode-editor-font-family); font-weight: 400; }
-  .item .muted, #place { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 1px 0; }
+  .item .muted { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 1px 0; }
+  #place { overflow-wrap: anywhere; }
   .item .muted.notes { white-space: normal; overflow: visible; overflow-wrap: anywhere; }
   .item .notes > span { display: inline-block; max-width: 100%; }
   .problem-line { margin: 6px 0 0; }

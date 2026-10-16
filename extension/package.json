@@ -929,8 +929,13 @@
             "title": "Sign in to GitHub",
             "description": "Dear Reviewer uses VS Code's GitHub sign-in to list your pull requests, comment and submit Reviews.\n[Sign In to GitHub](command:dearReviewer.signIn)\nWhere that sign-in isn't available, [use a personal access token](command:dearReviewer.setToken) instead; it is kept in the OS keychain.",
             "media": {
-              "image": "media/dear-reviewer.svg",
-              "altText": "The Dear Reviewer icon"
+              "image": {
+                "dark": "media/walkthrough/signin-dark.png",
+                "light": "media/walkthrough/signin-light.png",
+                "hc": "media/walkthrough/signin-dark.png",
+                "hcLight": "media/walkthrough/signin-light.png"
+              },
+              "altText": "The Dashboard before sign-in, with Sign In to GitHub as its one filled button"
             },
             "completionEvents": [
               "onContext:dearReviewer.signedIn"
@@ -942,12 +947,12 @@
             "description": "Every folder you have open that is a clone of a GitHub repository adds that repository to the Dashboard, with the folder as its clone, and Dear Reviewer remembers it. Add a clone you don't have open, or forget one, from the Dashboard's toolbar.\n[Add Repository](command:dearReviewer.addRepository)",
             "media": {
               "image": {
-                "dark": "media/walkthrough/dashboard-dark.png",
-                "light": "media/walkthrough/dashboard-light.png",
-                "hc": "media/walkthrough/dashboard-dark.png",
-                "hcLight": "media/walkthrough/dashboard-light.png"
+                "dark": "media/walkthrough/repos-dark.png",
+                "light": "media/walkthrough/repos-light.png",
+                "hc": "media/walkthrough/repos-dark.png",
+                "hcLight": "media/walkthrough/repos-light.png"
               },
-              "altText": "The Dashboard in the side bar: a pull request in progress, and pull requests waiting on you, each with its size and checks"
+              "altText": "The Dashboard with no repository yet, offering Add Repository…, Open Folder… and the Repositories setting"
             },
             "completionEvents": [
               "onContext:dearReviewer.hasRepositories"
@@ -959,12 +964,12 @@
             "description": "The Assistant runs the claude CLI you already have, with its own login: install Claude Code and sign in by running claude in a terminal. Point the Claude Path setting at it if it isn't on the PATH.\n[Check Claude Login](command:dearReviewer.checkClaudeLogin)",
             "media": {
               "image": {
-                "dark": "media/walkthrough/overview-dark.png",
-                "light": "media/walkthrough/overview-light.png",
-                "hc": "media/walkthrough/overview-dark.png",
-                "hcLight": "media/walkthrough/overview-light.png"
+                "dark": "media/walkthrough/claude-dark.png",
+                "light": "media/walkthrough/claude-light.png",
+                "hc": "media/walkthrough/claude-dark.png",
+                "hcLight": "media/walkthrough/claude-light.png"
               },
-              "altText": "A Change's overview, with the Assistant's three-sentence take and where to start reading"
+              "altText": "The Assistant's panel, showing the Claude login in its header and the Assistant's reply beside its rule"
             },
             "completionEvents": [
               "onContext:dearReviewer.claudeSignedIn"
@@ -973,10 +978,15 @@
           {
             "id": "trust",
             "title": "Trust the review window",
-            "description": "Changes open in the review window, which the editor doesn't trust yet. Until you trust it, it is in Restricted Mode: no language servers and no code navigation. Trusting it turns them on for every Change you open, and also lets the reviewed code's workspace settings and tasks apply there, including for pull requests from people you don't know. The editor asks once, when the review window first opens, and you can choose here later. The button shows Workspace Trust in the review window; choose Trust there.\n[Trust the Review Window…](command:dearReviewer.trustReviewWindow)",
+            "description": "Changes open in the review window, which the editor doesn't trust yet, so it is in Restricted Mode: no language servers and no code navigation. Trusting it turns them on for every Change, and lets the reviewed code's workspace settings and tasks apply there, including for pull requests from people you don't know. The editor asks once; you can choose here later. The button shows Workspace Trust in the review window; choose Trust there.\n[Trust the Review Window…](command:dearReviewer.trustReviewWindow)",
             "media": {
-              "image": "media/dear-reviewer.svg",
-              "altText": "The Dear Reviewer icon"
+              "image": {
+                "dark": "media/walkthrough/trust-dark.png",
+                "light": "media/walkthrough/trust-light.png",
+                "hc": "media/walkthrough/trust-dark.png",
+                "hcLight": "media/walkthrough/trust-light.png"
+              },
+              "altText": "A Change's overview in a review window that isn't trusted yet, with a Trust the review window… link in its standing line"
             },
             "completionEvents": [
               "onContext:dearReviewer.reviewWindowTrusted"
@@ -988,12 +998,12 @@
             "description": "Click a pull request in the Dashboard. It opens as a Change in the review window, with its overview alone: what the Change is, where you stand on it, and the Assistant's short take, with where to start reading.\n[Show the Dashboard](command:dearReviewer.showDashboard)",
             "media": {
               "image": {
-                "dark": "media/walkthrough/dashboard-dark.png",
-                "light": "media/walkthrough/dashboard-light.png",
-                "hc": "media/walkthrough/dashboard-dark.png",
-                "hcLight": "media/walkthrough/dashboard-light.png"
+                "dark": "media/walkthrough/open-dark.png",
+                "light": "media/walkthrough/open-light.png",
+                "hc": "media/walkthrough/open-dark.png",
+                "hcLight": "media/walkthrough/open-light.png"
               },
-              "altText": "The Dashboard, with a pull request in progress as its filled button"
+              "altText": "The Dashboard with two pull requests waiting, and Review acme/infra #1203 as its filled button"
             },
             "completionEvents": [
               "onCommand:dearReviewer.openPullRequest",
@@ -1006,12 +1016,12 @@
             "description": "Start where the take says, then step through the files with Next unviewed file (Ctrl+Alt+R N, or ⌃⌥R N on a Mac). Comment in the gutter of the diff. Go to definition and find usages work on both sides of the diff once you trust the review window.",
             "media": {
               "image": {
-                "dark": "media/walkthrough/overview-dark.png",
-                "light": "media/walkthrough/overview-light.png",
-                "hc": "media/walkthrough/overview-dark.png",
-                "hcLight": "media/walkthrough/overview-light.png"
+                "dark": "media/walkthrough/read-dark.png",
+                "light": "media/walkthrough/read-light.png",
+                "hc": "media/walkthrough/read-dark.png",
+                "hcLight": "media/walkthrough/read-light.png"
               },
-              "altText": "A Change's overview, with its Reading Order and the Start at button"
+              "altText": "A Change's overview, with Start at, Next unviewed file and Ask the Assistant, each showing its key"
             },
             "completionEvents": [
               "onCommand:dearReviewer.nextUnviewedFile"
@@ -1020,13 +1030,13 @@
           {
             "id": "finish",
             "title": "Finish your Review",
-            "description": "When every file is viewed, the overview offers Submit Review…: your verdict, a summary, and every Comment that publishes with it. A local Change ends with Write Brief… instead, and a Brief you copy for your agent. Ctrl+Alt+R S does either.\nEvery key is in Keyboard Shortcuts, where you can rebind it.\n[Show the Review Keys](command:dearReviewer.showReviewKeys)",
+            "description": "When every file is viewed, the overview offers Submit Review…: your verdict, a summary, and every Comment that publishes with it. A local Change ends with Write Brief… instead, and a Brief you copy for your agent. Ctrl+Alt+R S does either.\nEvery key is in Keyboard Shortcuts, where you can rebind it; the hints beside the overview's buttons show the defaults.\n[Show the Review Keys](command:dearReviewer.showReviewKeys)",
             "media": {
               "image": {
-                "dark": "media/walkthrough/submit-dark.png",
-                "light": "media/walkthrough/submit-light.png",
-                "hc": "media/walkthrough/submit-dark.png",
-                "hcLight": "media/walkthrough/submit-light.png"
+                "dark": "media/walkthrough/finish-dark.png",
+                "light": "media/walkthrough/finish-light.png",
+                "hc": "media/walkthrough/finish-dark.png",
+                "hcLight": "media/walkthrough/finish-light.png"
               },
               "altText": "The Submit step in a Change's overview: a verdict, a summary and the Comments that publish"
             },

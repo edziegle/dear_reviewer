@@ -6,4 +6,4 @@
 
 ## Walkthrough images
 
-`walkthrough/*.png` are renders of Dear Reviewer's own overview, Submit step and Dashboard, with sample data and approximate theme colors. They show the Reading Cat above, as the Assistant's mark, and nothing else from outside the extension.
+`walkthrough/*.png` are renders of Dear Reviewer's own overview, Submit step, Assistant panel and Dashboard, with sample data and approximate theme colors. They show the Reading Cat above, as the Assistant's mark, and nothing else from outside the extension.

@@ -390,7 +390,7 @@ function sentencesOf(text: string): string[] {
  * an avatar and a hairline below.
  */
 export const pageStyles = `
-  html { scroll-padding-top: 6em; }
+  html { scroll-padding-top: 9em; }
   body { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); padding: 0 24px 24px; max-width: 64em; margin: 0 auto; }
   header { position: sticky; top: 0; z-index: 1; background: var(--vscode-editor-background); padding: 12px 0 8px; border-bottom: 1px solid var(--vscode-panel-border); display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
   header .heading { flex: 1 1 16em; min-width: 0; }
@@ -507,7 +507,7 @@ function html(cspSource: string): string {
   #submitProblem { margin-top: 8px; }
   #submitProblem .mark { color: var(--vscode-testing-iconFailed); margin-right: 4px; }
   #submitProblem .detail { margin-top: 4px; font-size: 0.9em; color: var(--vscode-descriptionForeground); }
-  #submitProblem .detail summary { cursor: pointer; }
+  #submitProblem .detail summary { cursor: pointer; color: var(--vscode-textLink-foreground); text-decoration: underline; text-underline-offset: 2px; }
   #submitProblem .detail code { display: block; margin-top: 2px; font-family: var(--vscode-editor-font-family); overflow-wrap: anywhere; white-space: pre-wrap; }
   #submitNote { margin: 2px 0 0; }
   #submitReason { margin-top: 4px; }
@@ -567,7 +567,7 @@ ${catSymbol}
   <div class="actions" id="ways">
     <button class="primary" id="start" type="button" hidden></button>
     <button class="secondary" id="nextFile" type="button" hidden></button>
-    <button class="secondary" id="ask" type="button" title="Open the Assistant's chat about this Change (Ctrl+Alt+R A)"></button>
+    <button class="secondary" id="ask" type="button" title="Open the Assistant's chat about this Change"></button>
   </div>
 </section>
 <section id="checks" hidden><h2 id="checksHeading"></h2><p class="muted facts" id="checksSummary"></p><ul class="checks" id="checkRuns"></ul><button class="link more" id="moreChecks" type="button" aria-controls="checkRuns" aria-expanded="false" hidden></button></section>
@@ -599,11 +599,13 @@ ${catSymbol}
   // A button's key shows beside its label, in the Reviewer's own notation;
   // the key isn't part of the name a screen reader gives the button.
   const mac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
+  // The default chord, in the Reviewer's own notation; a rebinding isn't known here.
+  const keyOf = (letter) => (mac ? "⌃⌥R " : "Ctrl+Alt+R ") + letter;
   function setLabel(node, text, letter) {
     const said = text + "\0" + letter;
     if (node.dataset.label === said) return;
     node.dataset.label = said;
-    const key = el("span", "key", (mac ? "⌃⌥R " : "Ctrl+Alt+R ") + letter);
+    const key = el("span", "key", keyOf(letter));
     key.setAttribute("aria-hidden", "true");
     node.replaceChildren(text, key);
     node.setAttribute("aria-label", text);
@@ -879,7 +881,8 @@ ${catSymbol}
     setLabel(next, "Next unviewed file", "N");
     setLabel(byId("ask"), "Ask the Assistant", "A");
     next.hidden = !progress || progress.viewed >= progress.total || back;
-    next.title = "Open the diff of the next file you haven't viewed (Ctrl+Alt+R N)";
+    next.title = "Open the diff of the next file you haven't viewed (" + keyOf("N") + ")";
+    byId("ask").title = "Open the Assistant's chat about this Change (" + keyOf("A") + ")";
     const first = t.start ? start : next;
     start.className = reading && first === start ? "primary" : "secondary";
     next.className = reading && first === next ? "primary" : "secondary";
@@ -900,7 +903,7 @@ ${catSymbol}
       finish.removeAttribute("aria-controls");
     }
     finish.setAttribute("aria-disabled", String(notReady(state)));
-    finish.title = notReady(state) ? "Loading your Review…" : (state.finish.startsWith("Submit") ? "Submit your Review to GitHub" : "Write a Brief of your Comments for an agent") + " (Ctrl+Alt+R S)";
+    finish.title = notReady(state) ? "Loading your Review…" : (state.finish.startsWith("Submit") ? "Submit your Review to GitHub" : "Write a Brief of your Comments for an agent") + " (" + keyOf("S") + ")";
     // While the Submit step is open, its own button is the one filled; once
     // a Review covers the head, there is nothing to finish.
     const allViewed = !!progress && progress.viewed >= progress.total;

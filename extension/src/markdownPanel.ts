@@ -8,7 +8,7 @@ import * as vscode from "vscode";
 import { renderMarkdown, type RenderOptions } from "./markdown";
 
 /**
- * The styles both webviews share: rendered Markdown, the problem banner and
+ * The styles the webviews share: rendered Markdown, the problem banner and
  * its button, the Assistant's hand, the message box, the focus outline on
  * every button, link and summary, and the theme's button border, which only
  * high-contrast themes draw (DESIGN.md).
@@ -49,7 +49,7 @@ export const sharedStyles = `
   @media (prefers-reduced-motion: reduce) { .progress::before { width: 100%; opacity: 0.6; animation: none; } }`;
 
 /**
- * The script both webviews share: `keepFocus` runs a render and, if the
+ * The script the webviews share: `keepFocus` runs a render and, if the
  * render replaced, hid or disabled the focused element, puts the focus on the
  * element at the same place, else the panel's `data-focus-default`, else
  * the nearest one before it; `setText` changes a node's text only when it

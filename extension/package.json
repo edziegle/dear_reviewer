@@ -336,6 +336,12 @@
         "category": "Dear Reviewer"
       },
       {
+        "command": "dearReviewer.showCodeFlow",
+        "title": "Show Code Flow",
+        "category": "Dear Reviewer",
+        "icon": "$(type-hierarchy)"
+      },
+      {
         "command": "dearReviewer.nextFinding",
         "title": "Next Finding",
         "category": "Dear Reviewer"
@@ -464,6 +470,11 @@
           "command": "dearReviewer.showTimeline",
           "when": "view == dearReviewer.changeFiles && dearReviewer.hasOpenChange",
           "group": "navigation@1"
+        },
+        {
+          "command": "dearReviewer.showCodeFlow",
+          "when": "view == dearReviewer.changeFiles && dearReviewer.hasOpenChange",
+          "group": "navigation@2"
         },
         {
           "command": "dearReviewer.fetchUpdates",
@@ -632,6 +643,10 @@
         },
         {
           "command": "dearReviewer.markViewedAndNext",
+          "when": "dearReviewer.hasOpenChange"
+        },
+        {
+          "command": "dearReviewer.showCodeFlow",
           "when": "dearReviewer.hasOpenChange"
         },
         {
@@ -882,6 +897,11 @@
       {
         "command": "dearReviewer.markViewedAndNext",
         "key": "ctrl+alt+r v",
+        "when": "dearReviewer.hasOpenChange"
+      },
+      {
+        "command": "dearReviewer.showCodeFlow",
+        "key": "ctrl+alt+r g",
         "when": "dearReviewer.hasOpenChange"
       },
       {

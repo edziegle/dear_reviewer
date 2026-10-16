@@ -1,0 +1,282 @@
+import * as assert from "assert";
+import * as fs from "fs";
+import * as path from "path";
+import * as vscode from "vscode";
+import {
+  codeFlowPanel,
+  fakeShellServer,
+  showCodeFlow,
+  waitForLanguageServer,
+  type CodeFlowState,
+} from "../codeFlow";
+import { buildFixtureRepo } from "../fixtures";
+import { closeChange, eventually, openChange, short } from "../reviewer";
+
+/** The Change's title, as Code Flow names its tab. */
+function titled(request: { repository: string; base: string; head: string }) {
+  return `${path.basename(request.repository)} ${short(request.base)}..${short(request.head)}`;
+}
+
+/** Commits what `edit` changes in the repository, and gives the commit. */
+function commitAfter(
+  repo: ReturnType<typeof buildFixtureRepo>,
+  message: string,
+  edit: (write: (file: string, text: string) => void) => void
+): string {
+  edit((file, text) => fs.writeFileSync(path.join(repo.path, file), text));
+  repo.git("add", "-A");
+  repo.git("commit", "-q", "-m", message);
+  return repo.git("rev-parse", "HEAD");
+}
+
+/**
+ * A Change of its own, whose one changed file is a shell script with a
+ * function, and whose `main.sh` is left alone. No language server for shell
+ * scripts is installed in the test run, so only the fake answers.
+ */
+function newChange() {
+  const repo = buildFixtureRepo("codeFlow");
+  const base = commitAfter(repo, "add scripts", (write) => {
+    write("lib.sh", "helper() {\n  echo one\n}\n");
+    write("main.sh", ". ./lib.sh\n\nhelper\n");
+  });
+  const head = commitAfter(repo, "change the helper", (write) =>
+    write("lib.sh", "helper() {\n  echo two\n}\n")
+  );
+  const request = { repository: repo.path, base, head };
+  return { request, title: titled(request) };
+}
+
+/** A Change that deletes `legacy.sh`, a script with a function that `main.sh` called. */
+function deletingChange() {
+  const repo = buildFixtureRepo("codeFlowDeleted");
+  const base = commitAfter(repo, "add scripts", (write) => {
+    write("legacy.sh", "legacy() {\n  echo old\n}\n");
+    write("main.sh", ". ./legacy.sh\n\nlegacy\n");
+  });
+  const head = commitAfter(repo, "drop legacy", () =>
+    fs.rmSync(path.join(repo.path, "legacy.sh"))
+  );
+  const request = { repository: repo.path, base, head };
+  return { request, title: titled(request) };
+}
+
+/** A Change that deletes `gone.py`, a Python function that `user.py` called, for the real language server. */
+function deletingPythonChange() {
+  const repo = buildFixtureRepo("codeFlowPython");
+  const base = commitAfter(repo, "add modules", (write) => {
+    write("gone.py", "def gone():\n    return 1\n");
+    write("user.py", "from gone import gone\n\n\ndef use():\n    return gone()\n");
+  });
+  const head = commitAfter(repo, "drop gone", () =>
+    fs.rmSync(path.join(repo.path, "gone.py"))
+  );
+  const request = { repository: repo.path, base, head };
+  return { request, title: titled(request) };
+}
+
+/** Waits for the tab to finish asking the language servers, and gives what it was sent. */
+async function settled(title: string): Promise<CodeFlowState> {
+  let state: CodeFlowState | undefined;
+  await eventually(async () => {
+    const panel = await codeFlowPanel(title);
+    assert.ok(panel, "the Code Flow tab is open");
+    assert.strictEqual(panel.sent.loading, false);
+    state = panel.sent;
+  });
+  return state!;
+}
+
+describe("Code Flow", () => {
+  const disposables: vscode.Disposable[] = [];
+  const open: ReturnType<typeof newChange>[] = [];
+
+  async function start(
+    over?: Parameters<typeof fakeShellServer>[0],
+    make: typeof newChange = newChange
+  ) {
+    const change = make();
+    open.push(change);
+    if (over) {
+      disposables.push(fakeShellServer(over));
+    }
+    await openChange(change.request);
+    await showCodeFlow(change.request);
+    return change;
+  }
+
+  afterEach(async () => {
+    await waitForLanguageServer(undefined);
+    disposables.splice(0).forEach((d) => d.dispose());
+    for (const change of open.splice(0)) {
+      await closeChange(change.request);
+    }
+  });
+
+  it("opens beside the code, with the changed function and what it calls", async () => {
+    const { title } = await start({ callees: { helper: ["run_main"] } });
+    const state = await settled(title);
+    assert.deepStrictEqual(
+      state.flow.nodes.map((n) => [n.name, n.status]),
+      [
+        ["helper", "changed"],
+        ["run_main", "unchanged"],
+      ]
+    );
+    assert.deepStrictEqual(state.flow.edges.map((e) => e.label), ["run_main()"]);
+    assert.deepStrictEqual(state.languages, [{ language: "shellscript", outcome: "answered" }]);
+    assert.ok((await codeFlowPanel(title))!.viewColumn, "the tab is shown");
+    // The webview's script ran and drew the state it was sent.
+    await eventually(async () =>
+      assert.deepStrictEqual(
+        (await codeFlowPanel(title))!.rendered,
+        (await codeFlowPanel(title))!.sent
+      )
+    );
+  });
+
+  it("shows only the changed symbols at zero hops, and more at two", async () => {
+    const { title } = await start({
+      callees: { helper: ["run_main"], run_main: ["deeper"] },
+    });
+    await settled(title);
+    const panel = (await codeFlowPanel(title))!;
+    panel.receive({ type: "setHops", hops: 0 });
+    await eventually(async () =>
+      assert.deepStrictEqual(
+        (await codeFlowPanel(title))!.sent.flow.nodes.map((n) => n.name),
+        ["helper"]
+      )
+    );
+    panel.receive({ type: "setHops", hops: 2 });
+    await eventually(async () =>
+      assert.ok(
+        (await codeFlowPanel(title))!.sent.flow.nodes.length >= 2,
+        "a second hop adds symbols"
+      )
+    );
+  });
+
+  it("draws swimlanes for the calls from a changed symbol", async () => {
+    const { title } = await start({ callees: { helper: ["run_main"] } });
+    await settled(title);
+    (await codeFlowPanel(title))!.receive({ type: "setView", view: "lanes" });
+    await eventually(async () => {
+      const { flow } = (await codeFlowPanel(title))!.sent;
+      assert.deepStrictEqual(flow.lanes, ["lib.sh", "main.sh"]);
+      assert.deepStrictEqual(
+        flow.calls.map((c) => [c.from.split(":").pop(), c.to.split(":").pop(), c.label]),
+        [["helper", "run_main", "run_main()"]]
+      );
+    });
+  });
+
+  it("jumps the diff to a selected symbol", async () => {
+    const { title } = await start({ callees: { helper: ["run_main"] } });
+    const state = await settled(title);
+    const helper = state.flow.nodes.find((n) => n.name === "helper")!;
+    (await codeFlowPanel(title))!.receive({ type: "select", id: helper.id });
+    await eventually(() => {
+      const input = vscode.window.tabGroups.all
+        .flatMap((group) => group.tabs)
+        .map((tab) => tab.input)
+        .find(
+          (input): input is vscode.TabInputTextDiff =>
+            input instanceof vscode.TabInputTextDiff &&
+            input.modified.fsPath.endsWith("lib.sh")
+        );
+      assert.ok(input, "lib.sh's diff is open");
+      const editor = vscode.window.visibleTextEditors.find(
+        (e) => e.document.uri.toString() === input.modified.toString()
+      );
+      assert.strictEqual(editor?.selection.active.line, 0);
+    });
+    assert.strictEqual((await codeFlowPanel(title))!.sent.selected, helper.id);
+    // The diff opens in another editor group than the Code Flow, so both stay in view.
+    const diffGroup = vscode.window.tabGroups.all.find((group) =>
+      group.tabs.some(
+        (tab) =>
+          tab.input instanceof vscode.TabInputTextDiff &&
+          tab.input.modified.fsPath.endsWith("lib.sh")
+      )
+    );
+    assert.notStrictEqual(
+      diffGroup?.viewColumn,
+      (await codeFlowPanel(title))!.viewColumn
+    );
+  });
+
+  it("says there is no language server when none answers for the language", async () => {
+    const { title } = await start();
+    const state = await settled(title);
+    assert.deepStrictEqual(state.flow.nodes, []);
+    assert.deepStrictEqual(state.languages, [{ language: "shellscript", outcome: "none" }]);
+  });
+
+  it("says the language server did not answer when it knows symbols but no calls", async () => {
+    const { title } = await start({ withoutHierarchy: true });
+    const state = await settled(title);
+    assert.deepStrictEqual(state.languages, [{ language: "shellscript", outcome: "silent" }]);
+  });
+
+  it("stops waiting for a language server that never answers", async () => {
+    await waitForLanguageServer(200);
+    const { title } = await start({ slow: true });
+    const state = await settled(title);
+    assert.deepStrictEqual(state.languages, [{ language: "shellscript", outcome: "silent" }]);
+  });
+
+  it("draws the functions of a deleted file as removed, with who called them before the Change", async () => {
+    const { title } = await start(
+      { callers: { legacy: ["run_main"] } },
+      deletingChange
+    );
+    const state = await settled(title);
+    assert.deepStrictEqual(
+      state.flow.nodes.map((n) => [n.name, n.status, n.side]),
+      [
+        ["legacy", "removed", "base"],
+        ["run_main", "unchanged", "base"],
+      ]
+    );
+    assert.deepStrictEqual(
+      state.flow.edges.map((e) => [e.from.split(":").pop(), e.to.split(":").pop()]),
+      [["run_main", "legacy"]]
+    );
+    assert.deepStrictEqual(state.languages, [{ language: "shellscript", outcome: "answered" }]);
+  });
+
+  it("opens a removed function in the base worktree, where the file still is", async () => {
+    const { title } = await start({}, deletingChange);
+    const state = await settled(title);
+    const legacy = state.flow.nodes.find((n) => n.name === "legacy")!;
+    (await codeFlowPanel(title))!.receive({ type: "select", id: legacy.id });
+    await eventually(() => {
+      const editor = vscode.window.visibleTextEditors.find((e) =>
+        e.document.uri.fsPath.endsWith("legacy.sh")
+      );
+      assert.ok(editor, "legacy.sh is open");
+      assert.ok(editor.document.getText().includes("legacy()"));
+    });
+  });
+
+  it("asks a real language server about the base worktree", async function () {
+    this.timeout(180_000);
+    await waitForLanguageServer(8_000);
+    const { title } = await start(undefined, deletingPythonChange);
+    // The server starts lazily and indexes before it answers, so ask again until it does.
+    await eventually(async () => {
+      const panel = (await codeFlowPanel(title))!;
+      const { sent } = panel;
+      const seen = sent.flow.nodes.map((n) => [n.name, n.status, n.side]);
+      const found =
+        !sent.loading &&
+        seen.some((n) => n[0] === "gone" && n[1] === "removed" && n[2] === "base") &&
+        seen.some((n) => n[0] === "use" && n[1] === "unchanged" && n[2] === "base");
+      if (!sent.loading && !found) {
+        panel.receive({ type: "retry" });
+      }
+      assert.ok(found, `base-side call hierarchy answered: ${JSON.stringify(seen)}`);
+    }, 150_000);
+  });
+});

@@ -1,0 +1,246 @@
+<!doctype html>
+<!--
+PROTOTYPE, throwaway. Question: what could a "flow of this Change" view look like beside the editor?
+Three structurally different variants on one page, switch with ?variant=A|B|C or the arrows (← →).
+One made-up Change ("approving over failing checks asks first") drives all three. No real data, no vscode.
+Real version would use the --vscode-* tokens from DESIGN.md; the tokens below only stand in for them.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE – Change flow</title>
+<style>
+  :root {
+    --bg:#1e1e1e; --fg:#cccccc; --muted:#9d9d9d; --line:#3c3c3c; --tint:#2a2d2e; --code:#252526;
+    --link:#4daafc; --btn:#0e639c; --btn-fg:#fff; --changed:#e2c08d; --new:#89d185; --bad:#f48771;
+    --assistant:#c586c0;
+    --font: var(--vscode-font-family, system-ui, sans-serif); --mono: var(--vscode-editor-font-family, monospace);
+  }
+  [data-theme=light] {
+    --bg:#ffffff; --fg:#3b3b3b; --muted:#6b6b6b; --line:#d4d4d4; --tint:#f0f0f0; --code:#f5f5f5;
+    --link:#005fb8; --btn:#005fb8; --changed:#946b00; --new:#2e7d32; --bad:#c62828; --assistant:#8e3a8a;
+  }
+  * { box-sizing:border-box }
+  body { margin:0; background:var(--bg); color:var(--fg); font:13px/1.5 var(--font); padding-bottom:80px }
+  code, .mono { font-family:var(--mono); font-size:12px }
+  .wrap { display:grid; grid-template-columns: 300px minmax(0,1fr); min-height:100vh }
+  @media (max-width:900px){ .wrap{grid-template-columns:1fr} aside{border-right:0!important;border-bottom:1px solid var(--line)} }
+  aside { border-right:1px solid var(--line); padding:14px 16px }
+  main { padding:14px 20px; min-width:0 }
+  h1 { font-size:1.1em; margin:0 0 2px }
+  h2 { font-size:1em; margin:18px 0 6px }
+  .muted { color:var(--muted) }
+  .pill { display:inline-block; font-size:.85em; padding:0 8px; border-radius:8px; border:1px solid var(--line) }
+  .pill.failed { color:var(--bad); border-color:var(--bad) }
+  .file { display:flex; gap:6px; align-items:baseline; padding:2px 0 }
+  .file .tag { width:14px; text-align:center; font-weight:700 }
+  .tag.M { color:var(--changed) } .tag.A { color:var(--new) }
+  .assistant-note { border:1px solid var(--assistant); background:var(--tint); padding:6px 10px; margin:10px 0; border-radius:4px }
+  .assistant-note b { color:var(--assistant) }
+  .toolbar { display:flex; gap:12px; align-items:center; margin-bottom:10px; flex-wrap:wrap }
+  .seg { display:inline-flex; border:1px solid var(--line); border-radius:2px; overflow:hidden }
+  .seg button { background:none; color:var(--fg); border:0; padding:2px 10px; cursor:pointer; font:inherit }
+  .seg button[aria-pressed=true] { background:var(--btn); color:var(--btn-fg) }
+  button:focus-visible { outline:1px solid var(--link); outline-offset:1px }
+  .legend { display:flex; gap:14px; font-size:.9em; color:var(--muted); flex-wrap:wrap }
+  .sw { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:4px; vertical-align:-1px; border:2px solid }
+  .sw.u{border-color:var(--line)} .sw.m{border-color:var(--changed)} .sw.n{border-color:var(--new);border-style:dashed}
+  svg text { font-family:var(--font); fill:var(--fg) }
+  svg .mono { font-family:var(--mono) }
+  svg .sub { fill:var(--muted); font-size:10.5px }
+  .detail { margin-top:12px; border:1px solid var(--line); border-radius:4px; padding:10px 12px; background:var(--tint) }
+  .detail pre { margin:6px 0 0; background:var(--code); padding:6px 8px; border-radius:3px; overflow:auto }
+  .del { color:var(--bad) } .add { color:var(--new) }
+  .chip { display:inline-block; font-family:var(--mono); font-size:11px; padding:1px 6px; border-radius:3px; background:var(--code); border:1px solid var(--line) }
+  .chip.new { border-color:var(--new); color:var(--new) }
+  /* variant C */
+  ol.story { list-style:none; margin:0; padding:0; position:relative }
+  ol.story > li { position:relative; padding:0 0 18px 40px }
+  ol.story > li::before { content:""; position:absolute; left:13px; top:26px; bottom:0; width:2px; background:var(--line) }
+  ol.story > li:last-child::before { display:none }
+  .num { position:absolute; left:0; top:0; width:28px; height:28px; border-radius:50%; border:2px solid var(--line); display:grid; place-items:center; font-weight:700; background:var(--bg) }
+  li.m .num { border-color:var(--changed) } li.n .num { border-color:var(--new); border-style:dashed }
+  .step-title { font-weight:700 } .step-title a { color:var(--link); text-decoration:none; font-weight:400; font-family:var(--mono); font-size:12px; margin-left:6px }
+  .io { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin:4px 0; font-size:.9em; color:var(--muted) }
+  .branch { margin:8px 0 0 0; border:1px dashed var(--new); border-radius:4px; padding:8px 12px }
+  .branch > .head { color:var(--new); font-weight:700; font-size:.9em; margin-bottom:4px }
+  .delta { font-size:.9em; margin-top:2px } .delta b { color:var(--changed) } .delta.n b { color:var(--new) }
+  /* switcher (prototype chrome, not part of the design) */
+  .switcher { position:fixed; left:50%; bottom:18px; transform:translateX(-50%); display:flex; gap:10px; align-items:center;
+    background:#111; color:#fff; padding:6px 10px; border-radius:999px; box-shadow:0 4px 18px rgba(0,0,0,.5); z-index:9; font:13px var(--font); border:1px solid #555 }
+  .switcher button { background:#333; color:#fff; border:0; border-radius:50%; width:26px; height:26px; cursor:pointer }
+  .switcher .theme { border-radius:999px; width:auto; padding:0 10px; font-size:12px }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <aside>
+    <h1>fix: ask before approving over failing checks</h1>
+    <div class="muted">#212 · edziegle → main · <span class="pill failed">1 check failed</span></div>
+    <div class="assistant-note"><b>Assistant</b><br>Approving used to post straight to GitHub. Now <code>submitReview</code> looks up the latest checks first and, when you approve over a failure, asks you to confirm. Nothing else about posting changed.</div>
+    <h2>Files in reading order</h2>
+    <div class="file"><span class="tag M">M</span><code>reviewSubmission.ts</code></div>
+    <div class="file"><span class="tag A">A</span><code>confirmOverFailures.ts</code></div>
+    <div class="file"><span class="tag M">M</span><code>reviewStanding.ts</code></div>
+    <div class="file"><span class="tag M">M</span><code>test/suite/review/approve.test.ts</code></div>
+    <p class="muted" style="margin-top:14px">Prototype: the sidebar is stand-in context so each variant is judged next to something. The flow view is the thing being sketched.</p>
+  </aside>
+  <main id="root"></main>
+</div>
+<div class="switcher" id="switcher"></div>
+
+<script>
+// ---------- one made-up Change ----------
+const STATUS = { u:'unchanged', m:'changed', n:'new' };
+const NODES = [
+  { id:'cmd',   name:'submitReviewCommand', file:'extension.ts',            col:0, y:150, s:'u', note:'Palette and button entry point. Passes the verdict and body through untouched.',
+    in:'verdict, body', out:'verdict, body' },
+  { id:'sub',   name:'submitReview',        file:'reviewSubmission.ts',     col:1, y:150, s:'m', note:'Now fetches checks before posting, and branches when you approve over a failure.',
+    in:'verdict, body', out:'ReviewPayload',
+    hunk:[['','async function submitReview(change, verdict, body) {'],['add','  const checks = await latestFor(change.head);'],['add','  if (verdict === "approve" && checks.some(failed)) {'],['add','    if (!(await confirmOverFailures(checks))) return;'],['add','  }'],['','  const comments = drainPending(change);']] },
+  { id:'chk',   name:'latestFor',           file:'checkRuns.ts',            col:2, y:40,  s:'u', note:'Already existed for the checks badge. Now has a second caller.',
+    in:'head sha', out:'CheckRun[]' },
+  { id:'ask',   name:'confirmOverFailures', file:'confirmOverFailures.ts',  col:2, y:150, s:'n', note:'Modal that names the failing checks and asks to approve anyway. Returns false on cancel.',
+    in:'failing CheckRun[]', out:'boolean',
+    hunk:[['add','export async function confirmOverFailures(checks) {'],['add','  const names = checks.filter(failed).map(c => c.name);'],['add','  return await ask(`Approve with ${names.length} failing?`, names);'],['add','}']] },
+  { id:'drn',   name:'drainPending',        file:'pendingReview.ts',        col:2, y:260, s:'u', note:'Empties the pending review into a list of comments.',
+    in:'Change', out:'ReviewComment[]' },
+  { id:'rec',   name:'recordStanding',      file:'reviewStanding.ts',       col:3, y:150, s:'m', note:'Standing now remembers "approved over failures" so the Dashboard can say so.',
+    in:'review id, state', out:'Standing',
+    hunk:[['','export function recordStanding(id, state) {'],['del','  standing.set(id, state);'],['add','  standing.set(id, { state, overFailures });'],['','}']] },
+  { id:'gh',    name:'postReview',          file:'github/client.ts',        col:3, y:260, s:'u', note:'Single POST to the pull request reviews endpoint.',
+    in:'ReviewPayload', out:'review id, state' },
+];
+const EDGES = [
+  ['cmd','sub','verdict, body'], ['sub','chk','head sha'], ['sub','ask','failing checks'],
+  ['sub','drn','Change'], ['drn','gh','ReviewPayload'], ['gh','rec','review id, state'],
+];
+const byId = Object.fromEntries(NODES.map(n => [n.id, n]));
+function dist(){ // hops from the nearest changed node, undirected
+  const d = {}; const q = NODES.filter(n=>n.s!=='u').map(n=>(d[n.id]=0,n.id));
+  while(q.length){ const a=q.shift(); EDGES.forEach(([x,y])=>{ const o = x===a?y:y===a?x:null; if(o && d[o]===undefined){ d[o]=d[a]+1; q.push(o);} }); }
+  return d;
+}
+const DIST = dist();
+
+// ---------- tiny helpers ----------
+const esc = s => String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const stroke = s => s==='m' ? 'var(--changed)' : s==='n' ? 'var(--new)' : 'var(--line)';
+const hunkHtml = h => h ? `<pre class="mono">${h.map(([k,t])=>`<span class="${k}">${k==='add'?'+ ':k==='del'?'- ':'  '}${esc(t)}</span>`).join('\n')}</pre>` : '';
+const legend = `<div class="legend"><span><i class="sw u"></i>unchanged</span><span><i class="sw m"></i>changed</span><span><i class="sw n"></i>new</span></div>`;
+const detailHtml = n => `<div class="detail"><b>${esc(n.name)}</b> <span class="muted mono">${esc(n.file)}</span> <span class="pill">${STATUS[n.s]}</span>
+  <div style="margin:4px 0">${esc(n.note)}</div>
+  <div class="io"><span>in</span><span class="chip">${esc(n.in)}</span><span>→ out</span><span class="chip">${esc(n.out)}</span></div>${hunkHtml(n.hunk)}</div>`;
+
+// ---------- Variant A: call map, scoped by hops ----------
+const state = { hops:1, sel:'sub' };
+function variantA(){
+  const W=180,H=54,X=[20,260,500,740];
+  const vis = n => DIST[n.id] <= state.hops;
+  const nodes = NODES.filter(vis);
+  const pos = id => { const n=byId[id]; return {x:X[n.col], y:n.y+30}; };
+  const edges = EDGES.filter(([a,b])=>vis(byId[a])&&vis(byId[b])).map(([a,b,l])=>{
+    const p=pos(a), q=pos(b), x1=p.x+W, y1=p.y+H/2, x2=q.x, y2=q.y+H/2, mx=(x1+x2)/2;
+    return `<path d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2-3},${y2}" fill="none" stroke="var(--muted)" stroke-width="1.4" marker-end="url(#ar)"/>
+      <text class="sub mono" x="${mx}" y="${(y1+y2)/2-5}" text-anchor="middle">${esc(l)}</text>`;
+  }).join('');
+  const boxes = nodes.map(n=>{ const p=pos(n.id), sel=n.id===state.sel;
+    return `<g data-node="${n.id}" style="cursor:pointer" tabindex="0" role="button" aria-label="${esc(n.name)}, ${STATUS[n.s]}">
+      <rect x="${p.x}" y="${p.y}" width="${W}" height="${H}" rx="4" fill="${sel?'var(--tint)':'var(--bg)'}" stroke="${stroke(n.s)}" stroke-width="${n.s==='u'?1:2}" ${n.s==='n'?'stroke-dasharray="5 3"':''}/>
+      <text x="${p.x+10}" y="${p.y+22}" font-weight="700" font-size="12.5">${esc(n.name)}</text>
+      <text class="sub mono" x="${p.x+10}" y="${p.y+40}">${esc(n.file)}</text></g>`; }).join('');
+  return `<h1>Where the change sits in the call graph</h1>
+    <div class="muted" style="margin-bottom:10px">Only the changed symbols and their neighbours. Edges are real call-hierarchy edges; the labels are the data crossing them.</div>
+    <div class="toolbar"><span>Show</span><span class="seg" role="group" aria-label="Hops">
+      ${[0,1,2].map(h=>`<button data-hops="${h}" aria-pressed="${state.hops===h}">${h===0?'changed only':'+'+h+' hop'+(h>1?'s':'')}</button>`).join('')}</span>${legend}</div>
+    <svg viewBox="0 0 940 370" width="100%" role="img" aria-label="Call graph of the change">
+      <defs><marker id="ar" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8z" fill="var(--muted)"/></marker></defs>
+      ${edges}${boxes}</svg>
+    ${detailHtml(byId[state.sel])}`;
+}
+
+// ---------- Variant B: one request, in swimlanes ----------
+const LANES = ['Reviewer','submitReview','checkRuns','confirm modal','pendingReview','GitHub'];
+const STEPS = [
+  { f:0,t:1,label:'Approve',data:'verdict, body', s:'u' },
+  { f:1,t:2,label:'latest checks?',data:'head sha', s:'m' },
+  { f:2,t:1,label:'1 failed',data:'CheckRun[]', s:'m', ret:true },
+  { f:1,t:3,label:'approve anyway?',data:'failing checks', s:'n', alt:true },
+  { f:3,t:0,label:'name the failures',data:'', s:'n', alt:true, ret:true },
+  { f:0,t:3,label:'Approve anyway',data:'true', s:'n', alt:true },
+  { f:1,t:4,label:'drain',data:'Change', s:'u' },
+  { f:4,t:1,label:'comments',data:'ReviewComment[]', s:'u', ret:true },
+  { f:1,t:5,label:'POST review',data:'ReviewPayload', s:'u' },
+];
+function variantB(){
+  const LX=i=>70+i*150, RH=50, top=70, H=top+STEPS.length*RH+30, Wd=LX(5)+80;
+  const lanes = LANES.map((n,i)=>`<text x="${LX(i)}" y="30" text-anchor="middle" font-weight="700" font-size="12">${esc(n)}</text>
+    <line x1="${LX(i)}" y1="42" x2="${LX(i)}" y2="${H-10}" stroke="var(--line)" stroke-dasharray="3 4"/>`).join('');
+  const altTop = top+3*RH-18, altBot = top+6*RH-18+6;
+  const alt = `<rect x="${LX(1)-20}" y="${altTop}" width="${LX(3)-LX(1)+ (LX(0)-LX(0)) + 40}" height="${altBot-altTop}" fill="none" stroke="var(--new)" stroke-dasharray="5 3" rx="4"/>
+    <text x="${LX(1)-14}" y="${altTop+12}" class="sub" style="fill:var(--new)">alt · approve and a check failed</text>`;
+  const rows = STEPS.map((s,i)=>{ const y=top+i*RH, x1=LX(s.f), x2=LX(s.t), dir=x2>x1?1:-1;
+    return `<g><rect x="6" y="${y-20}" width="3" height="40" fill="${s.s==='u'?'transparent':stroke(s.s)}"/>
+      <line x1="${x1}" y1="${y}" x2="${x2-dir*4}" y2="${y}" stroke="${s.s==='u'?'var(--muted)':stroke(s.s)}" stroke-width="1.6" ${s.ret?'stroke-dasharray="4 3"':''} marker-end="url(#ar2)"/>
+      <text x="${(x1+x2)/2}" y="${y-8}" text-anchor="middle" font-size="11.5">${esc(s.label)}</text>
+      ${s.data?`<text class="sub mono" x="${(x1+x2)/2}" y="${y+14}" text-anchor="middle">${esc(s.data)}</text>`:''}</g>`; }).join('');
+  return `<h1>One approval, end to end</h1>
+    <div class="muted" style="margin-bottom:10px">Time runs down. Coloured bars on the left mark steps this Change added or altered, so the reviewer sees what moved against the part that didn't.</div>
+    <div class="toolbar">${legend}</div>
+    <div style="overflow:auto"><svg viewBox="0 0 ${Wd} ${H}" width="100%" style="min-width:820px" role="img" aria-label="Sequence of an approval">
+      <defs><marker id="ar2" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8z" fill="var(--muted)"/></marker></defs>
+      ${lanes}${alt}${rows}</svg></div>
+    <div class="detail"><b>What to look at</b><br>Step 2 is the new lookup, step 4 the new modal. Step 3 is a dashed return: <code>latestFor</code> is unchanged, so only the caller needs review.</div>`;
+}
+
+// ---------- Variant C: the story, as a guided outline ----------
+function variantC(){
+  const S = [
+    { c:'u', t:'You approve', f:'extension.ts', i:'', o:['verdict','body'], d:'' },
+    { c:'m', t:'Look up the latest checks', f:'reviewSubmission.ts', i:['head sha'], o:['CheckRun[]'], d:'<b>Changed:</b> submitReview now calls <code>latestFor</code> before it posts anything.' },
+    { c:'n', t:'Ask, but only if you approve over a failure', f:'confirmOverFailures.ts', i:['failing CheckRun[]'], o:['boolean'], d:'<b>New:</b> cancel returns here and nothing is posted.', branch:true },
+    { c:'u', t:'Gather your pending comments', f:'pendingReview.ts', i:['Change'], o:['ReviewComment[]'], d:'' },
+    { c:'u', t:'Post the review to GitHub', f:'github/client.ts', i:['ReviewPayload'], o:['review id','state'], d:'' },
+    { c:'m', t:'Remember how it was approved', f:'reviewStanding.ts', i:['review id','state'], o:['Standing + overFailures'], d:'<b>Changed:</b> Standing gains an <code>overFailures</code> flag; the Dashboard reads it.' },
+  ];
+  const chips = a => a ? a.map(x=>`<span class="chip ${/overFailures/.test(x)?'new':''}">${esc(x)}</span>`).join('') : '';
+  return `<h1>The change as a walkthrough</h1>
+    <div class="muted" style="margin-bottom:12px">The Assistant's account of what happens, in order, with the data each step takes and gives. Quiet steps stay collapsed in spirit; the ones that moved carry a note. No diagram to read.</div>
+    <ol class="story">${S.map((s,i)=>`<li class="${s.c}"><span class="num">${i+1}</span>
+      <div class="step-title">${esc(s.t)}<a href="#" onclick="return false">${esc(s.f)}</a></div>
+      <div class="io">${s.i?`<span>takes</span>${chips(s.i)}`:''}<span>gives</span>${chips(s.o)}</div>
+      ${s.d?`<div class="delta ${s.c}">${s.d}</div>`:''}
+      ${s.branch?`<div class="branch"><div class="head">only when verdict is approve and a check failed</div>
+        <div class="mono muted">modal lists the failing checks → <b style="color:var(--fg)">Approve anyway</b> continues · <b style="color:var(--fg)">Cancel</b> stops here</div></div>`:''}
+    </li>`).join('')}</ol>`;
+}
+
+// ---------- shell: variant switcher ----------
+const VARIANTS = { A:['Call map', variantA], B:['Swimlanes', variantB], C:['Walkthrough', variantC] };
+const keys = Object.keys(VARIANTS);
+let cur = new URLSearchParams(location.search).get('variant'); if(!VARIANTS[cur]) cur='A';
+function render(){
+  document.getElementById('root').innerHTML = VARIANTS[cur][1]();
+  document.getElementById('switcher').innerHTML =
+    `<button id="prev" aria-label="Previous variant">←</button><span>${cur} (${VARIANTS[cur][0]})</span><button id="next" aria-label="Next variant">→</button>
+     <button class="theme" id="theme">light/dark</button>`;
+  document.getElementById('prev').onclick = () => go(-1);
+  document.getElementById('next').onclick = () => go(1);
+  document.getElementById('theme').onclick = () => { const r=document.documentElement; r.dataset.theme = r.dataset.theme==='light'?'dark':'light'; };
+  document.querySelectorAll('[data-hops]').forEach(b => b.onclick = () => { state.hops=+b.dataset.hops; if(DIST[state.sel]>state.hops) state.sel='sub'; render(); });
+  document.querySelectorAll('[data-node]').forEach(g => {
+    const pick = () => { state.sel = g.dataset.node; render(); };
+    g.onclick = pick; g.onkeydown = e => { if(e.key==='Enter'||e.key===' '){ e.preventDefault(); pick(); } };
+  });
+}
+function go(d){ cur = keys[(keys.indexOf(cur)+d+keys.length)%keys.length];
+  const u=new URL(location); u.searchParams.set('variant',cur); history.replaceState(null,'',u); render(); }
+addEventListener('keydown', e => {
+  if(/^(INPUT|TEXTAREA)$/.test(e.target.tagName)||e.target.isContentEditable) return;
+  if(e.key==='ArrowLeft') go(-1); if(e.key==='ArrowRight') go(1);
+});
+render();
+</script>
+</body>
+</html>

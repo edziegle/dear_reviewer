@@ -49,6 +49,8 @@ import {
 } from "./reviews";
 import { countOf, reviewStanding } from "./reviewStanding";
 import type { FromWebview } from "./timeline/panel";
+import { CodeFlows } from "./codeFlows";
+import type { FromCodeFlow } from "./codeFlowPanel";
 import { LinkOpener, Standing, Timelines } from "./timeline/timelines";
 import {
   GitHubViewedFiles,
@@ -225,6 +227,8 @@ export function activate(context: vscode.ExtensionContext) {
     () => reviewWindow.isThisWindow(),
     () => changes.showReviewWindow()
   );
+  const codeFlows = new CodeFlows((change) => codeColumnOf(change));
+  context.subscriptions.push(codeFlows);
   const languageOffer = new LanguageOffer(context.globalState);
   context.subscriptions.push(languageOffer);
   const timelines = new Timelines(github, avatars, (uri) => openLink(uri), {
@@ -544,6 +548,7 @@ export function activate(context: vscode.ExtensionContext) {
   async function letGo(change: Change): Promise<void> {
     assistants.close(change);
     timelines.close(change);
+    codeFlows.close(change);
     review.forget(change);
     findings.forget(change);
     await viewedFiles.forget(change);
@@ -1417,6 +1422,13 @@ export function activate(context: vscode.ExtensionContext) {
         else showNoFinding();
       }
     ),
+    vscode.commands.registerCommand(
+      "dearReviewer.showCodeFlow",
+      async (target?: ChangeTarget) => {
+        const change = await changeFor(target, "Show Code Flow");
+        if (change) await codeFlows.show(change);
+      }
+    ),
     vscode.commands.registerCommand("dearReviewer.nextFinding", () =>
       stepFinding(1)
     ),
@@ -1759,6 +1771,18 @@ export function activate(context: vscode.ExtensionContext) {
           rendered: panel.rendered,
           receive: (message: FromWebview) => panel.receive(message),
         })),
+    },
+    codeFlow: {
+      panels: () =>
+        codeFlows.panels().map(({ title, panel }) => ({
+          title,
+          viewColumn: panel.viewColumn,
+          sent: panel.sent,
+          rendered: panel.rendered,
+          receive: (message: FromCodeFlow) => panel.receive(message),
+        })),
+      /** Shortens how long Code Flow waits for a language server to answer. */
+      setWaitMs: (ms: number | undefined) => codeFlows.setWaitMs(ms),
     },
     dashboard: {
       views: () =>

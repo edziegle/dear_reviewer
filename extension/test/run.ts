@@ -204,6 +204,7 @@ const phases: [phase: string, open: () => string][] = [
   ["localReview", localReview],
   ["localReview/afterReload", localReview],
   ["findings", () => multiRootWorkspace("findings", "findings")],
+  ["codeFlow", () => multiRootWorkspace("code-flow", "code-flow")],
   ["readingOrder", readingOrder],
   ["readingOrder/afterReload", readingOrder],
   ["dashboard", dashboard],

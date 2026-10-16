@@ -36,6 +36,10 @@ _Avoid_: Active Change, current Change
 The order the Assistant suggests for reading a Change's files, in a few labeled steps, starting where its summary says to start. A suggestion the Reviewer can follow or set aside for tree order.
 _Avoid_: File order, review plan, story
 
+**Code Flow**:
+A picture of how the code a Change touches calls and is called by the code around it, drawn from the language server's call hierarchy: the changed symbols and their neighbours a hop or two out, each marked changed, new, removed (a function of a deleted file, drawn as the base worktree had it) or unchanged. Shown as a call map, as a trace down swimlanes, or as a list for a screen reader. Where no language server answers, there is no Code Flow, and the view says so.
+_Avoid_: Diagram, call graph (that's the whole codebase; a Code Flow is scoped to a Change), data flow (a Code Flow shows calls, not where a value ends up)
+
 **Inbox**:
 The list of Changes waiting for the Reviewer: open pull requests that await their review, that they authored or reviewed, or whose Team request a teammate's review answered. It spans the repositories they have open in VSCodium, have opened before, or listed, plus local branches ahead of main. The Dashboard shows it.
 _Avoid_: Queue

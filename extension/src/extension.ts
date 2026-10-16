@@ -54,8 +54,18 @@ import { messageOf } from "./errors";
 import { ReviewWindowTrust } from "./trust";
 import { LanguageOffer } from "./highlighting";
 import { conversationFolder } from "./conversationName";
-import { Home } from "./home/home";
-import type { FromHome } from "./home/panel";
+import {
+  baseChoices,
+  headChoices,
+  mainOf,
+  parseRefs,
+  refFormat,
+  type Ref,
+} from "./commitRange";
+import { git } from "./git";
+import { Dashboard } from "./dashboard/dashboard";
+import type { FromDashboard } from "./dashboard/view";
+import { WindowRequests, type WindowAction } from "./windowRequests";
 
 export function activate(context: vscode.ExtensionContext) {
   const changes = new ChangeWorkspace(context.globalStorageUri.fsPath);
@@ -187,8 +197,9 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
   const reviewWindow = new ReviewWindow(context.globalStorageUri.fsPath);
-  // Home takes the Inbox's place in the review window (ADR 0025); tests,
-  // which can't run there, stand in for it.
+  // The review window shows the Change in front, and the Reviewer's own
+  // windows the Dashboard (ADR 0032); tests, which can't run in the review
+  // window, stand in for it.
   let inReviewWindow = () => reviewWindow.isThisWindow();
   const showInReviewWindow = () =>
     setContext("dearReviewer.inReviewWindow", inReviewWindow());
@@ -226,15 +237,70 @@ export function activate(context: vscode.ExtensionContext) {
     },
   });
 
-  const home = new Home(inbox, avatars, {
-    inProgress: () => changes.shownHere(),
+  const windowRequests = new WindowRequests(context.globalStorageUri.fsPath);
+  /** Whether this window shows the Change, so it can act on it itself. */
+  const showsHere = (change: Change) =>
+    changes.shownHere().some((c) => c.id === change.id);
+  /**
+   * Asks the review window to act on a Change it shows, and brings it
+   * forward, opening it if it's closed: it carries the request out once it
+   * reads it.
+   */
+  function askReviewWindow(change: Change, action: WindowAction): void {
+    windowRequests.ask(change.id, action);
+    void changes.showReviewWindow();
+  }
+  /**
+   * In the review window, carries out what the Reviewer's own window asked
+   * of the Changes shown here. A request for a Change whose folders are
+   * still on their way waits for them; one for a Change no longer open is
+   * dropped.
+   */
+  function carryOutRequests(): void {
+    if (!inReviewWindow()) return;
+    const done = new Set<string>();
+    for (const request of windowRequests.all()) {
+      const open = changes.list().find((c) => c.id === request.change);
+      const change = open && changes.shownHere().find((c) => c.id === open.id);
+      if (open && !change) continue;
+      done.add(request.id);
+      if (!change) continue;
+      void changes.bringToFront(change).then(() => {
+        if (request.action === "finish")
+          void vscode.commands.executeCommand(
+            "dearReviewer.finishReview",
+            requestOf(change)
+          );
+      });
+    }
+    if (done.size > 0) windowRequests.done(done);
+  }
+  const requestsWatcher = vscode.workspace.createFileSystemWatcher(
+    new vscode.RelativePattern(
+      vscode.Uri.file(path.dirname(windowRequests.file)),
+      path.basename(windowRequests.file)
+    )
+  );
+  context.subscriptions.push(
+    requestsWatcher,
+    requestsWatcher.onDidCreate(() => carryOutRequests()),
+    requestsWatcher.onDidChange(() => carryOutRequests())
+  );
+
+  const dashboard = new Dashboard(inbox, avatars, {
+    inProgress: () => changes.list(),
     standing: (change) => standingOf(change),
-    resume: (change) => void changes.bringToFront(change),
+    resume: (change) =>
+      showsHere(change)
+        ? void changes.bringToFront(change)
+        : askReviewWindow(change, "resume"),
     finish: (change) =>
-      void vscode.commands.executeCommand(
-        "dearReviewer.finishReview",
-        requestOf(change)
-      ),
+      showsHere(change)
+        ? void vscode.commands.executeCommand(
+            "dearReviewer.finishReview",
+            requestOf(change)
+          )
+        : askReviewWindow(change, "finish"),
     open: (node) =>
       void vscode.commands.executeCommand(
         node.kind === "localBranch"
@@ -242,23 +308,11 @@ export function activate(context: vscode.ExtensionContext) {
           : "dearReviewer.openPullRequest",
         node
       ),
-    refresh: () =>
-      void vscode.commands.executeCommand("dearReviewer.refreshInbox"),
+    openRange: () =>
+      void vscode.commands.executeCommand("dearReviewer.openChange"),
+    trusted: () => vscode.workspace.isTrusted,
   });
-  context.subscriptions.push(home);
-
-  /** Shows Home in the review window while no Change is in front there, or on its way. */
-  function showHomeIfNothingInFront(): void {
-    if (
-      inReviewWindow() &&
-      !changes.inFront() &&
-      !changes.busy &&
-      !changes.waitingHere()
-    )
-      void home.show();
-  }
-  /** Whether the Change shown last closed, leaving none in front, so Home is due once things settle. */
-  let homeDue = false;
+  context.subscriptions.push(dashboard);
 
   /** Where the Reviewer stands on the Change, for its overview. */
   async function standingOf(change: Change): Promise<Standing> {
@@ -269,7 +323,7 @@ export function activate(context: vscode.ExtensionContext) {
     if (since?.newCommits) standing.push("New commits since your Review");
     else if (since && !lastReview)
       standing.push("Nothing new since your Review");
-    const pending = review.pendingCount(change);
+    const pending = await review.pendingCountOf(change);
     if (pending > 0) standing.push(countOf(pending, "pending Comment"));
     const { viewed, total } = await changeFiles.viewedCount(change);
     standing.push(`${viewed} of ${total} viewed`);
@@ -293,7 +347,7 @@ export function activate(context: vscode.ExtensionContext) {
     clearTimeout(standingTimer);
     standingTimer = setTimeout(() => {
       void timelines.refreshStanding();
-      home.refresh();
+      dashboard.refresh();
     }, 50);
   }
   const findings = new Findings(
@@ -349,7 +403,6 @@ export function activate(context: vscode.ExtensionContext) {
       .catch(() => undefined)
       .then(async () => {
         await vscode.commands.executeCommand("workbench.action.closePanel");
-        home.close();
         await closeOtherChangesEditors(change);
         timelines.closeOthers(change);
         assistants.closePanelsExcept(change);
@@ -440,7 +493,7 @@ export function activate(context: vscode.ExtensionContext) {
     changeFiles.refresh();
     findings.refresh();
     inbox.redraw();
-    home.refresh();
+    dashboard.refresh();
     void setContext("dearReviewer.hasOpenChange", !!changes.inFront());
   }
 
@@ -455,14 +508,9 @@ export function activate(context: vscode.ExtensionContext) {
   function syncOpenChanges(): Promise<void> {
     showOpenChanges();
     const front = changes.inFront();
-    if (!front) {
-      if (shownLast) homeDue = true;
-      shownLast = undefined;
-      if (homeDue && !changes.busy && !changes.waitingHere()) {
-        homeDue = false;
-        showHomeIfNothingInFront();
-      }
-    } else if (
+    carryOutRequests();
+    if (!front) shownLast = undefined;
+    else if (
       !changes.busy &&
       !changes.waitingHere() &&
       shownLast &&
@@ -601,7 +649,11 @@ export function activate(context: vscode.ExtensionContext) {
     const looking = activeChange();
     if (looking && fits(looking)) return looking;
     const front = changes.inFront();
-    return pickChange(front && fits(front) ? [front] : [], title, none);
+    // The way to a Change: the Dashboard, or in the review window, a commit range.
+    const way = inReviewWindow()
+      ? { title: "Open Commit Range…", command: "dearReviewer.openChange" }
+      : { title: "Show Dashboard", command: "dearReviewer.showDashboard" };
+    return pickChange(front && fits(front) ? [front] : [], title, none, way);
   }
 
   /** The file of the Change shown in front of its code column. */
@@ -852,7 +904,9 @@ export function activate(context: vscode.ExtensionContext) {
         });
       }
     ),
-    vscode.commands.registerCommand("dearReviewer.showHome", () => home.show()),
+    vscode.commands.registerCommand("dearReviewer.showDashboard", () =>
+      dashboard.show()
+    ),
     vscode.commands.registerCommand(
       "dearReviewer.openLocalBranch",
       async (node?: InboxNode) => {
@@ -1314,7 +1368,6 @@ export function activate(context: vscode.ExtensionContext) {
         if (change) await assistants.suggestReadingOrder(change);
       }
     ),
-    vscode.window.registerTreeDataProvider("dearReviewer.inbox", inbox),
     vscode.commands.registerCommand(
       "dearReviewer.addRepository",
       (folder?: string) => addRepository(folder)
@@ -1400,7 +1453,7 @@ export function activate(context: vscode.ExtensionContext) {
   // After a reload, the review starts quiet again, at the Change opened last.
   const latest = changes.shownHere().at(-1);
   if (latest) void showChange(latest);
-  else showHomeIfNothingInFront();
+  carryOutRequests();
   // The views are how the Reviewer sees the Inbox, a Change's files, the
   // Assistant and their Comments; tests read them the same way.
   return {
@@ -1432,21 +1485,28 @@ export function activate(context: vscode.ExtensionContext) {
           receive: (message: FromWebview) => panel.receive(message),
         })),
     },
-    home: {
-      panels: () =>
-        home.panels().map((panel) => ({
-          title: panel.title,
-          active: panel.active,
-          sent: panel.sent,
-          rendered: panel.rendered,
-          receive: (message: FromHome) => panel.receive(message),
+    dashboard: {
+      views: () =>
+        dashboard.views().map((view) => ({
+          visible: view.visible,
+          sent: view.sent,
+          rendered: view.rendered,
+          receive: (message: FromDashboard) => view.receive(message),
         })),
+      /** Asks the review window to act on an open Change, as another window's Dashboard would. */
+      askReviewWindow: (id: string, action: WindowAction) =>
+        windowRequests.ask(id, action),
+      /** The requests to close every open Change by, in any window. */
+      openChanges: (): ChangeRequest[] => changes.list().map(requestOf),
+    },
+    reviewWindow: {
       /** Stands in for the review window, which the tests can't run in, or stops. */
-      actAsReviewWindow: async (acting: boolean) => {
+      actAs: async (acting: boolean) => {
         inReviewWindow = acting
           ? () => true
           : () => reviewWindow.isThisWindow();
         await showInReviewWindow();
+        carryOutRequests();
       },
     },
     /** Every Change shown the way a review starts, oldest first, by name. */
@@ -1490,19 +1550,77 @@ async function askForChange(
 ): Promise<ChangeRequest | undefined> {
   const repository = await pickRepository(storageDir, remembered);
   if (!repository) return;
-  const base = await vscode.window.showInputBox({
-    title: "Open Change",
-    prompt: "Base: the branch, tag or commit the Change starts from",
-    value: "main",
-  });
+  const refs = parseRefs(
+    await git(
+      repository,
+      "for-each-ref",
+      "--sort=-committerdate",
+      `--format=${refFormat}`,
+      "refs/heads",
+      "refs/remotes",
+      "refs/tags"
+    ).catch(() => "")
+  );
+  const base = await pickRef(
+    "Base: the branch, tag or commit the Change starts from",
+    baseChoices(refs, mainOf(refs))
+  );
   if (!base) return;
-  const head = await vscode.window.showInputBox({
-    title: "Open Change",
-    prompt: "Head: the branch, tag or commit to review",
-    value: "HEAD",
-  });
+  const current = await git(repository, "symbolic-ref", "--short", "-q", "HEAD")
+    .then((name) => name || undefined)
+    .catch(() => undefined);
+  const head = await pickRef(
+    "Head: the branch, tag or commit to review",
+    headChoices(refs, current)
+  );
   if (!head) return;
+  // Worktrees take a while to make; an empty or unknown range is said first.
+  let ahead: number;
+  try {
+    ahead = Number(
+      await git(repository, "rev-list", "--count", `${base}..${head}`)
+    );
+  } catch (err) {
+    void vscode.window.showErrorMessage(
+      `Couldn't open ${base}..${head}: ${messageOf(err)}`
+    );
+    return;
+  }
+  if (ahead === 0) {
+    void vscode.window.showWarningMessage(
+      `${head} has no commits that ${base} doesn't, so there's nothing to review.`
+    );
+    return;
+  }
   return { repository, base, head };
+}
+
+/** Asks for a ref from the repository's, or any commit by name. */
+async function pickRef(
+  prompt: string,
+  refs: Ref[]
+): Promise<string | undefined> {
+  const other = "Another Commit…";
+  const kinds = { branch: "branch", remote: "remote branch", tag: "tag" };
+  const picked = await vscode.window.showQuickPick(
+    [
+      ...refs.map((ref) => ({
+        label: ref.name,
+        description: kinds[ref.kind],
+        detail: ref.subject,
+      })),
+      { label: other, description: "a commit ID or any revision" },
+    ],
+    { title: "Open Commit Range", placeHolder: prompt, matchOnDetail: true }
+  );
+  if (!picked) return;
+  if (picked.label !== other) return picked.label;
+  return (
+    (await vscode.window.showInputBox({
+      title: "Open Commit Range",
+      prompt,
+    })) || undefined
+  );
 }
 
 /**
@@ -1636,14 +1754,23 @@ async function pickVerdict(
   return picked?.verdict;
 }
 
-/** The only Change of these, or one the Reviewer picks; `none` says why there is none. */
+/**
+ * The only Change of these, or one the Reviewer picks; `none` says why there
+ * is none, offering `way` to one.
+ */
 async function pickChange(
   open: Change[],
   title: string,
-  none: string
+  none: string,
+  way?: vscode.Command
 ): Promise<Change | undefined> {
   if (open.length === 0) {
-    void vscode.window.showInformationMessage(none);
+    void vscode.window
+      .showInformationMessage(none, ...(way ? [way.title] : []))
+      .then((chosen) => {
+        if (way && chosen === way.title)
+          void vscode.commands.executeCommand(way.command);
+      });
     return;
   }
   if (open.length === 1) return open[0];

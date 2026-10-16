@@ -1,5 +1,6 @@
 // When a pull request last asked the Reviewer for a review, from its review
-// requests on the timeline, so Home can say how long it has waited on them.
+// requests on the timeline, so the Dashboard can say how long it has waited
+// on them.
 
 /** A review request on a pull request's timeline. */
 export interface ReviewRequest {

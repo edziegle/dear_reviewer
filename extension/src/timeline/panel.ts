@@ -318,10 +318,10 @@ function sentencesOf(text: string): string[] {
 }
 
 /**
- * The styles of a page in the main column, which the overview and Home
- * share: a centred column under a sticky header, which scrolling to the
- * focus keeps clear of (WCAG 2.4.11), the theme's buttons, the
- * facts line, status pills, and rows with an avatar and a hairline below.
+ * The styles of the overview, a page in the main column: a centred column
+ * under a sticky header, which scrolling to the focus keeps clear of (WCAG
+ * 2.4.11), the theme's buttons, the facts line, status pills, and rows with
+ * an avatar and a hairline below.
  */
 export const pageStyles = `
   html { scroll-padding-top: 6em; }

@@ -477,6 +477,25 @@ export class ReviewComments implements vscode.Disposable {
   }
 
   /**
+   * How many of the Change's Comments are in the Review under way: as last
+   * loaded where this window shows the Change, or else as its source keeps
+   * them, for a Change another window shows.
+   */
+  async pendingCountOf(change: Change): Promise<number> {
+    if (this.shown.has(change.id)) return this.pendingCount(change);
+    try {
+      const threads = await this.pending.threads(change);
+      return threads.reduce(
+        (count, thread) =>
+          count + thread.comments.filter((c) => c.pending).length,
+        0
+      );
+    } catch {
+      return 0;
+    }
+  }
+
+  /**
    * Drops the Review under way with its Comments, unpublished. Gives whether
    * it was dropped.
    */

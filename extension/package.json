@@ -28,7 +28,7 @@
     "commands": [
       {
         "command": "dearReviewer.openChange",
-        "title": "Open Change",
+        "title": "Open Commit Range…",
         "category": "Dear Reviewer"
       },
       {
@@ -56,7 +56,7 @@
       },
       {
         "command": "dearReviewer.refreshInbox",
-        "title": "Refresh Inbox",
+        "title": "Refresh Dashboard",
         "category": "Dear Reviewer",
         "icon": "$(refresh)"
       },
@@ -181,10 +181,10 @@
         "icon": "$(info)"
       },
       {
-        "command": "dearReviewer.showHome",
-        "title": "Show Home",
+        "command": "dearReviewer.showDashboard",
+        "title": "Show Dashboard",
         "category": "Dear Reviewer",
-        "icon": "$(home)"
+        "icon": "$(dashboard)"
       },
       {
         "command": "dearReviewer.openAllChanges",
@@ -340,7 +340,7 @@
             "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
           },
           "default": [],
-          "markdownDescription": "More GitHub repositories, as `owner/name`, whose pull requests feed the Inbox. You rarely need this: every folder you have open that is a clone of a GitHub repository adds that repository by itself, and Dear Reviewer remembers it for the review window."
+          "markdownDescription": "More GitHub repositories, as `owner/name`, whose pull requests feed the Dashboard. You rarely need this: every folder you have open that is a clone of a GitHub repository adds that repository by itself, and Dear Reviewer remembers it for the review window."
         },
         "dearReviewer.localClones": {
           "type": "object",
@@ -348,7 +348,7 @@
             "type": "string"
           },
           "default": {},
-          "markdownDescription": "Where a repository is cloned on this machine, as `\"owner/name\": \"/path/to/clone\"`, when it isn't a folder you open. Takes precedence over clones Dear Reviewer found or remembered. Opening a pull request fetches its head into the clone, from the remote whose URL names the repository (or `origin`), and reviews it in worktrees of the clone. The Inbox also lists the clone's local branches that are ahead of its main branch.",
+          "markdownDescription": "Where a repository is cloned on this machine, as `\"owner/name\": \"/path/to/clone\"`, when it isn't a folder you open. Takes precedence over clones Dear Reviewer found or remembered. Opening a pull request fetches its head into the clone, from the remote whose URL names the repository (or `origin`), and reviews it in worktrees of the clone. The Dashboard also lists the clone's local branches that are ahead of its main branch.",
           "scope": "machine"
         },
         "dearReviewer.githubApiUrl": {
@@ -398,45 +398,43 @@
     "views": {
       "dearReviewer": [
         {
-          "id": "dearReviewer.inbox",
-          "name": "Inbox",
+          "type": "webview",
+          "id": "dearReviewer.dashboard",
+          "name": "Dashboard",
           "when": "!dearReviewer.inReviewWindow"
         },
         {
           "id": "dearReviewer.changeFiles",
-          "name": "Change Files"
+          "name": "Change Files",
+          "when": "dearReviewer.inReviewWindow || dearReviewer.hasOpenChange"
         },
         {
           "id": "dearReviewer.findings",
-          "name": "Findings"
+          "name": "Findings",
+          "when": "dearReviewer.inReviewWindow || dearReviewer.hasOpenChange"
         }
       ]
     },
     "menus": {
       "view/title": [
         {
-          "command": "dearReviewer.showHome",
-          "when": "(view == dearReviewer.changeFiles || view == dearReviewer.findings) && dearReviewer.inReviewWindow",
-          "group": "navigation@0"
-        },
-        {
           "command": "dearReviewer.refreshInbox",
-          "when": "view == dearReviewer.inbox",
+          "when": "view == dearReviewer.dashboard",
           "group": "navigation@2"
         },
         {
           "command": "dearReviewer.addRepository",
-          "when": "view == dearReviewer.inbox",
+          "when": "view == dearReviewer.dashboard",
           "group": "navigation@1"
         },
         {
           "command": "dearReviewer.forgetRepository",
-          "when": "view == dearReviewer.inbox",
+          "when": "view == dearReviewer.dashboard",
           "group": "repositories@1"
         },
         {
           "command": "dearReviewer.openSetup",
-          "when": "view == dearReviewer.inbox",
+          "when": "view == dearReviewer.dashboard",
           "group": "setup@1"
         },
         {
@@ -451,17 +449,17 @@
         },
         {
           "command": "dearReviewer.refreshChangeFiles",
-          "when": "view == dearReviewer.changeFiles",
+          "when": "view == dearReviewer.changeFiles && dearReviewer.hasOpenChange",
           "group": "navigation@9"
         },
         {
           "command": "dearReviewer.hideViewedFiles",
-          "when": "view == dearReviewer.changeFiles && !dearReviewer.hideViewedFiles",
+          "when": "view == dearReviewer.changeFiles && !dearReviewer.hideViewedFiles && dearReviewer.hasOpenChange",
           "group": "navigation"
         },
         {
           "command": "dearReviewer.showViewedFiles",
-          "when": "view == dearReviewer.changeFiles && dearReviewer.hideViewedFiles",
+          "when": "view == dearReviewer.changeFiles && dearReviewer.hideViewedFiles && dearReviewer.hasOpenChange",
           "group": "navigation"
         },
         {
@@ -476,7 +474,7 @@
         },
         {
           "command": "dearReviewer.findIssues",
-          "when": "view == dearReviewer.findings",
+          "when": "view == dearReviewer.findings && dearReviewer.hasOpenChange",
           "group": "navigation"
         }
       ],
@@ -618,8 +616,8 @@
           "when": "dearReviewer.hasOpenChange"
         },
         {
-          "command": "dearReviewer.showHome",
-          "when": "dearReviewer.inReviewWindow"
+          "command": "dearReviewer.showDashboard",
+          "when": "!dearReviewer.inReviewWindow"
         }
       ],
       "editor/title": [
@@ -679,26 +677,6 @@
         }
       ],
       "view/item/context": [
-        {
-          "command": "dearReviewer.openPullRequest",
-          "when": "view == dearReviewer.inbox && viewItem == pullRequest",
-          "group": "inline"
-        },
-        {
-          "command": "dearReviewer.openPullRequest",
-          "when": "view == dearReviewer.inbox && viewItem == pullRequest",
-          "group": "open@1"
-        },
-        {
-          "command": "dearReviewer.openLocalBranch",
-          "when": "view == dearReviewer.inbox && viewItem == localBranch",
-          "group": "inline"
-        },
-        {
-          "command": "dearReviewer.openLocalBranch",
-          "when": "view == dearReviewer.inbox && viewItem == localBranch",
-          "group": "open@1"
-        },
         {
           "command": "dearReviewer.markViewed",
           "when": "view == dearReviewer.changeFiles && viewItem =~ /^(file\\.unviewed|directory|change(\\..+)?)$/",
@@ -901,9 +879,9 @@
         "when": "dearReviewer.hasOpenChange"
       },
       {
-        "command": "dearReviewer.showHome",
+        "command": "dearReviewer.showDashboard",
         "key": "ctrl+alt+r h",
-        "when": "dearReviewer.inReviewWindow"
+        "when": "!dearReviewer.inReviewWindow"
       },
       {
         "command": "dearReviewer.openAllChanges",
@@ -913,27 +891,18 @@
     ],
     "viewsWelcome": [
       {
-        "view": "dearReviewer.inbox",
-        "when": "dearReviewer.inboxWelcome == signedOut",
-        "contents": "Sign in to GitHub to see the pull requests awaiting your review and the ones you authored.\n[Sign In to GitHub](command:dearReviewer.signIn)\nIf VS Code's GitHub sign-in isn't available, use a personal access token instead.\n[Use a Personal Access Token](command:dearReviewer.setToken)\n[Set up Dear Reviewer](command:dearReviewer.openSetup) step by step."
-      },
-      {
-        "view": "dearReviewer.inbox",
-        "when": "dearReviewer.inboxWelcome == noRepositories",
-        "contents": "The Inbox lists pull requests from the GitHub repositories you have open in your windows. Open a folder that is a clone of a GitHub repository, or add a clone from elsewhere on this machine.\n[Add Repository](command:dearReviewer.addRepository)\n[Open Folder](command:vscode.openFolder)\nYou can also list repositories in the [Repositories setting](command:workbench.action.openSettings?%22dearReviewer.repositories%22), or [Set up Dear Reviewer](command:dearReviewer.openSetup) step by step."
-      },
-      {
-        "view": "dearReviewer.inbox",
-        "when": "dearReviewer.inboxWelcome == noRepositories && !isWorkspaceTrusted",
-        "contents": "This window is in Restricted Mode, so Dear Reviewer doesn't read the repositories of its folders.\n[Manage Workspace Trust](command:workbench.trust.manage)"
+        "view": "dearReviewer.findings",
+        "contents": "The Assistant raises Findings only when you ask: spots in a Change it thinks deserve your attention. Each one is marked in the gutter of the diff, where you dismiss it or turn it into a Comment. Nothing is published until you submit your Review.\n[Ask for Findings](command:dearReviewer.findIssues)",
+        "when": "dearReviewer.hasOpenChange"
       },
       {
         "view": "dearReviewer.findings",
-        "contents": "The Assistant raises Findings only when you ask: spots in a Change it thinks deserve your attention. Each one is marked in the gutter of the diff, where you dismiss it or turn it into a Comment. Nothing is published until you submit your Review.\n[Ask for Findings](command:dearReviewer.findIssues)"
+        "when": "!dearReviewer.hasOpenChange",
+        "contents": "The Assistant raises Findings only when you ask: spots in a Change it thinks deserve your attention. Open a Change to ask for them."
       },
       {
         "view": "dearReviewer.changeFiles",
-        "contents": "No Change is open in this window. Open a pull request or a local branch from the Inbox with a click, or open any commit range of a repository as a Change.\n[Open Change](command:dearReviewer.openChange)"
+        "contents": "No Change is in front. Open a pull request or a local branch from the Dear Reviewer Dashboard in your own window, or [open a commit range](command:dearReviewer.openChange) as a Change."
       }
     ],
     "walkthroughs": [
@@ -957,7 +926,7 @@
           {
             "id": "repositories",
             "title": "Open your repositories",
-            "description": "Every folder you have open that is a clone of a GitHub repository adds that repository to the Inbox, with the folder as its clone. Dear Reviewer remembers it, so the review window's Inbox lists it too. Add a clone you don't have open, or forget one, from the Inbox's toolbar.\n[Add Repository](command:dearReviewer.addRepository)",
+            "description": "Every folder you have open that is a clone of a GitHub repository adds that repository to the Dashboard, with the folder as its clone, and Dear Reviewer remembers it. Add a clone you don't have open, or forget one, from the Dashboard's toolbar.\n[Add Repository](command:dearReviewer.addRepository)",
             "media": {
               "image": "media/dear-reviewer.svg",
               "altText": "The Dear Reviewer icon"
@@ -993,7 +962,7 @@
           {
             "id": "review",
             "title": "Review a pull request",
-            "description": "Click a pull request in the Inbox to open it as a Change, in the review window. It opens with its overview alone: what the Change is, where you stand on it, and the Assistant's short take, with where to start reading. The diff opens when you start, beside the overview. Until you trust the review window, it is in Restricted Mode, without language servers and navigation. Comment in the diff's gutter, then submit your Review from the overview or from the Change in Change Files. Ctrl+Alt+R then N opens the next unviewed file, and Ctrl+Alt+R then S finishes the Review.\n[Show the Inbox](command:dearReviewer.inbox.focus)",
+            "description": "Click a pull request in the Dashboard to open it as a Change, in the review window. It opens with its overview alone: what the Change is, where you stand on it, and the Assistant's short take, with where to start reading. The diff opens when you start, beside the overview. Until you trust the review window, it is in Restricted Mode, without language servers and navigation. Comment in the diff's gutter, then submit your Review from the overview or from the Change in Change Files. Ctrl+Alt+R then N opens the next unviewed file, and Ctrl+Alt+R then S finishes the Review.\n[Show the Dashboard](command:dearReviewer.showDashboard)",
             "media": {
               "image": "media/dear-reviewer.svg",
               "altText": "The Dear Reviewer icon"

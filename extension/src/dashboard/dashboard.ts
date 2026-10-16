@@ -1,8 +1,8 @@
-// Home (ADR 0025): the review window's page of where the Reviewer stands
-// across their Changes. It shows when no Change is in front, and when the
-// Reviewer asks for it. Its lists come from the Inbox's own load and the
-// overview's standing, so Home, the Inbox and the overview never disagree,
-// and it shows them afresh whenever those change.
+// The Dashboard (ADR 0032): the Dear Reviewer side bar in the Reviewer's own
+// windows, where they see where they stand across their Changes and start
+// the next review. Its lists come from the Inbox's own load and the
+// overview's standing, so the Dashboard and the overview never disagree, and
+// it shows them afresh whenever those change while it's in sight.
 
 import * as path from "path";
 import * as vscode from "vscode";
@@ -13,44 +13,53 @@ import type { PullRequestSummary } from "../github/client";
 import {
   authoredByMe,
   awaitingMyReview,
+  reviewedByMe,
   type Avatars,
   type InboxNode,
   type InboxTree,
   type Welcome,
 } from "../inbox";
 import type { Standing } from "../timeline/timelines";
-import { byLongestWait, homeFacts, nextStep, waitedFor } from "./homeState";
 import {
-  HomePanel,
-  type FromHome,
-  type HomeAction,
-  type HomeBranch,
-  type HomeChange,
-  type HomeProblem,
-  type HomePullRequest,
-  type HomeState,
-} from "./panel";
+  byLongestWait,
+  dashboardFacts,
+  nextStep,
+  waitedFor,
+} from "./dashboardState";
+import {
+  DashboardView,
+  type DashboardAction,
+  type DashboardBranch,
+  type DashboardChange,
+  type DashboardProblem,
+  type DashboardPullRequest,
+  type DashboardSetup,
+  type DashboardState,
+  type FromDashboard,
+} from "./view";
 
-/** What Home learns from the rest of Dear Reviewer, and how it acts. */
-export interface HomeSources {
-  /** The Changes this window shows, the one shown last last. */
+/** What the Dashboard learns from the rest of Dear Reviewer, and how it acts. */
+export interface DashboardSources {
+  /** The Changes open in any window, the one shown last last. */
   inProgress(): Change[];
   /** Where the Reviewer stands on the Change. */
   standing(change: Change): Promise<Standing>;
-  /** Brings the Change to the front, with its overview. */
+  /** Brings the Change to the front in the review window, with its overview. */
   resume(change: Change): void;
-  /** Starts finishing the Change's Review: Submit Review… or Write Brief…. */
+  /** Starts finishing the Change's Review there: Submit Review… or Write Brief…. */
   finish(change: Change): void;
   /** Opens the Inbox's pull request or branch as a Change. */
   open(node: InboxNode): void;
-  /** Loads the Inbox again, as its Refresh does. */
-  refresh(): void;
+  /** Asks for any commit range of a repository to open as a Change. */
+  openRange(): void;
+  /** Whether the window trusts its folders, so their repositories are read. */
+  trusted(): boolean;
 }
 
-export class Home implements vscode.Disposable {
-  private panel?: HomePanel;
-  private state: HomeState = emptyState();
-  /** What Home's buttons act on, by the id the webview names them by. */
+export class Dashboard implements vscode.Disposable {
+  private readonly view: DashboardView;
+  private state: DashboardState = emptyState();
+  /** What the Dashboard's buttons act on, by the id the webview names them by. */
   private targets = emptyTargets();
   private timer?: NodeJS.Timeout;
   /** The Inbox's latest load, once one is in. */
@@ -62,57 +71,50 @@ export class Home implements vscode.Disposable {
   constructor(
     private readonly inbox: InboxTree,
     private readonly avatars: Avatars,
-    private readonly sources: HomeSources
+    private readonly sources: DashboardSources
   ) {
-    this.subscriptions = [inbox.onDidChangeTreeData(() => this.refresh())];
+    this.view = new DashboardView(
+      this.state,
+      vscode.Uri.file(avatars.dir),
+      (action) => this.act(action)
+    );
+    this.subscriptions = [
+      this.view,
+      vscode.window.registerWebviewViewProvider(
+        DashboardView.viewType,
+        this.view,
+        { webviewOptions: { retainContextWhenHidden: true } }
+      ),
+      this.view.onDidShow(() => void this.update()),
+      inbox.onDidChangeTreeData(() => this.refresh()),
+    ];
   }
 
-  /** Whether Home is open. */
-  get isOpen(): boolean {
-    return !!this.panel;
+  /** Shows the Dear Reviewer side bar with the Dashboard, its next step taking the focus. */
+  async show(): Promise<void> {
+    await vscode.commands.executeCommand(`${DashboardView.viewType}.focus`);
+    this.view.focus();
   }
 
-  /** Shows Home alone in the main column, with the focus, and its lists afresh. */
-  show(): Promise<void> {
-    if (this.panel) this.panel.reveal();
-    else {
-      this.panel = new HomePanel(
-        this.state,
-        vscode.Uri.file(this.avatars.dir),
-        (action) => this.act(action)
-      );
-      this.panel.onDidDispose(() => {
-        this.panel = undefined;
-      });
-    }
-    return this.update();
-  }
-
-  /** Closes Home, as a Change comes to the front; Show Home brings it back. */
-  close(): void {
-    this.panel?.dispose();
-  }
-
-  /** Shows the lists afresh soon, once a burst of changes has passed. */
+  /** Shows the lists afresh soon, while the Dashboard is in sight, once a burst of changes has passed. */
   refresh(): void {
-    if (!this.panel) return;
+    if (!this.view.visible) return;
     clearTimeout(this.timer);
     this.timer = setTimeout(() => void this.update(), 50);
   }
 
-  /** The panel, for the tests. */
-  panels(): HomePanel[] {
-    return this.panel ? [this.panel] : [];
+  /** The view, for the tests. */
+  views(): DashboardView[] {
+    return [this.view];
   }
 
   dispose(): void {
     clearTimeout(this.timer);
-    this.panel?.dispose();
     for (const subscription of this.subscriptions) subscription.dispose();
   }
 
   /**
-   * Sends the panel the open Changes and what the Inbox lists: first with
+   * Sends the view the open Changes and what the Inbox lists: first with
    * the Inbox's last load, marked loading, and again once the latest is in.
    */
   private async update(): Promise<void> {
@@ -122,25 +124,25 @@ export class Home implements vscode.Disposable {
     try {
       this.lastContents = await contents;
     } catch {
-      // The Inbox shows its own problem; Home keeps its last lists.
+      // The Inbox's problems are in its groups; the Dashboard keeps its last lists.
     }
     this.send(await this.build(this.lastContents, false), thisUpdate);
   }
 
   private send(
-    { state, targets }: { state: HomeState; targets: Targets },
+    { state, targets }: { state: DashboardState; targets: Targets },
     thisUpdate: number
   ): void {
-    if (thisUpdate !== this.latest || !this.panel) return;
+    if (thisUpdate !== this.latest) return;
     this.state = state;
     this.targets = targets;
-    this.panel.update(state);
+    this.view.update(state);
   }
 
   private async build(
     contents: { groups: InboxNode[]; welcome: Welcome } | undefined,
     loading: boolean
-  ): Promise<{ state: HomeState; targets: Targets }> {
+  ): Promise<{ state: DashboardState; targets: Targets }> {
     const now = Date.now();
     const targets = emptyTargets();
     const changes = this.sources.inProgress();
@@ -161,7 +163,7 @@ export class Home implements vscode.Disposable {
       changes.map((change) => this.sources.standing(change))
     );
     for (const change of changes) targets.changes.set(change.id, change);
-    const inProgress: HomeChange[] = changes.map((change, i) => {
+    const inProgress: DashboardChange[] = changes.map((change, i) => {
       const standing = standings[i];
       const summary = summaryOf(change);
       return {
@@ -181,6 +183,7 @@ export class Home implements vscode.Disposable {
       );
     const awaiting = group(awaitingMyReview);
     const authored = group(authoredByMe);
+    const reviewed = group(reviewedByMe);
     const local = group("Local branches");
     const waitingNodes = byLongestWait(
       (awaiting?.children ?? []).flatMap((node) =>
@@ -203,8 +206,15 @@ export class Home implements vscode.Disposable {
           )
         )
       : undefined;
-    const branches: HomeBranch[] = [];
-    const branchProblems: HomeProblem[] = [];
+    const reviewedRows = reviewed
+      ? await Promise.all(
+          reviewed.children.flatMap((node) =>
+            node.kind === "pullRequest" ? [this.pullRequest(targets, node)] : []
+          )
+        )
+      : undefined;
+    const branches: DashboardBranch[] = [];
+    const branchProblems: DashboardProblem[] = [];
     for (const node of local?.children ?? []) {
       if (node.kind === "problem")
         branchProblems.push(
@@ -225,7 +235,11 @@ export class Home implements vscode.Disposable {
     const problems = groups.flatMap((node, i) =>
       node.kind === "problem" ? [problemOf(targets, node, `${i}`)] : []
     );
-    const setup = setupFor(targets, contents?.welcome ?? "none");
+    const setup = setupFor(
+      targets,
+      contents?.welcome ?? "none",
+      this.sources.trusted()
+    );
     const next = nextStep(
       changes.map((change, i) => ({
         id: change.id,
@@ -244,8 +258,8 @@ export class Home implements vscode.Disposable {
       })),
       now
     );
-    const state: HomeState = {
-      facts: homeFacts(
+    const state: DashboardState = {
+      facts: dashboardFacts(
         changes.length,
         waiting && waitingNodes.map(({ since }) => ({ since })),
         now
@@ -254,6 +268,7 @@ export class Home implements vscode.Disposable {
       inProgress,
       ...(waiting && { waiting }),
       ...(authoredRows && { authored: authoredRows }),
+      ...(reviewedRows && { reviewed: reviewedRows }),
       branches,
       loading,
       ...(setup && { setup }),
@@ -267,12 +282,13 @@ export class Home implements vscode.Disposable {
     targets: Targets,
     node: Extract<InboxNode, { kind: "pullRequest" }>,
     waited?: string
-  ): Promise<HomePullRequest> {
+  ): Promise<DashboardPullRequest> {
     const pr = node.pullRequest;
     const id = pullRequestId(pr);
     targets.nodes.set(id, node);
-    const avatar =
+    const avatarFile =
       waited !== undefined && (await this.avatars.file(pr.author.avatarUrl));
+    const avatar = avatarFile && this.view.webviewUri(avatarFile);
     const states = node.authoredByMe
       ? authoredStates(pr)
           // The checks already say when they failed.
@@ -286,7 +302,7 @@ export class Home implements vscode.Disposable {
       title: pr.title,
       name: pullRequestName(pr),
       author: pr.author.login,
-      ...(avatar && this.panel && { avatar: this.panel.webviewUri(avatar) }),
+      ...(avatar && { avatar }),
       ...(waited !== undefined && { waited }),
       size: pr.size,
       ...(pr.checks && { checks: pr.checks }),
@@ -298,8 +314,8 @@ export class Home implements vscode.Disposable {
     };
   }
 
-  private act(action: HomeAction): void {
-    if (action.type === "refresh") return this.sources.refresh();
+  private act(action: DashboardAction): void {
+    if (action.type === "openRange") return this.sources.openRange();
     if (action.type === "next") {
       const next = this.state.next;
       if (next) this.act({ type: next.kind, id: next.id });
@@ -325,9 +341,9 @@ export class Home implements vscode.Disposable {
   }
 }
 
-export type { FromHome, HomeState };
+export type { DashboardState, FromDashboard };
 
-/** What Home's buttons act on, by the id the webview names them by. */
+/** What the Dashboard's buttons act on, by the id the webview names them by. */
 interface Targets {
   changes: Map<string, Change>;
   nodes: Map<string, InboxNode>;
@@ -342,7 +358,7 @@ function problemOf(
   targets: Targets,
   node: Extract<InboxNode, { kind: "problem" }>,
   key: string
-): HomeProblem {
+): DashboardProblem {
   const id = `problem ${key}`;
   if (node.action) targets.commands.set(id, node.action);
   return {
@@ -352,29 +368,94 @@ function problemOf(
   };
 }
 
-/** What to set up before GitHub's pull requests can be listed. */
-function setupFor(targets: Targets, welcome: Welcome): HomeProblem | undefined {
+/** What to set up before GitHub's pull requests can be listed, and the links that help. */
+function setupFor(
+  targets: Targets,
+  welcome: Welcome,
+  trusted: boolean
+): DashboardSetup | undefined {
   if (welcome === "none") return;
-  const { command, ...setup } = setups[welcome];
-  targets.commands.set(setup.id, { title: setup.action, command });
-  return setup;
+  const setup =
+    welcome === "noRepositories" && !trusted
+      ? setups.untrusted
+      : setups[welcome];
+  for (const action of setup.actions)
+    targets.commands.set(action.id, {
+      title: action.label,
+      command: action.command,
+      ...(action.arguments && { arguments: action.arguments }),
+    });
+  return {
+    text: setup.text,
+    actions: setup.actions.map(({ id, label }) => ({ id, label })),
+  };
 }
 
+interface SetupLink {
+  id: string;
+  label: string;
+  command: string;
+  arguments?: unknown[];
+}
+
+const setUpStepByStep: SetupLink = {
+  id: "openSetup",
+  label: "Set Up Dear Reviewer",
+  command: "dearReviewer.openSetup",
+};
+
 const setups: Record<
-  Exclude<Welcome, "none">,
-  HomeProblem & { action: string; command: string }
+  Exclude<Welcome, "none"> | "untrusted",
+  { text: string; actions: SetupLink[] }
 > = {
   signedOut: {
-    id: "signIn",
-    text: "Sign in to GitHub to list the pull requests waiting on you.",
-    action: "Sign In to GitHub",
-    command: "dearReviewer.signIn",
+    text: "Sign in to GitHub to list the pull requests waiting on you and the ones you authored.",
+    actions: [
+      {
+        id: "signIn",
+        label: "Sign In to GitHub",
+        command: "dearReviewer.signIn",
+      },
+      {
+        id: "setToken",
+        label: "Use a Personal Access Token",
+        command: "dearReviewer.setToken",
+      },
+      setUpStepByStep,
+    ],
   },
   noRepositories: {
-    id: "addRepository",
-    text: "Add a repository to list its pull requests and branches here.",
-    action: "Add Repository…",
-    command: "dearReviewer.addRepository",
+    text: "The Dashboard lists pull requests from the GitHub repositories you have open in your windows. Open a clone of one, or add a clone from elsewhere on this machine.",
+    actions: [
+      {
+        id: "addRepository",
+        label: "Add Repository…",
+        command: "dearReviewer.addRepository",
+      },
+      { id: "openFolder", label: "Open Folder…", command: "vscode.openFolder" },
+      {
+        id: "repositoriesSetting",
+        label: "Repositories Setting",
+        command: "workbench.action.openSettings",
+        arguments: ["dearReviewer.repositories"],
+      },
+      setUpStepByStep,
+    ],
+  },
+  untrusted: {
+    text: "This window is in Restricted Mode, so Dear Reviewer doesn't read the repositories of its folders.",
+    actions: [
+      {
+        id: "manageTrust",
+        label: "Manage Workspace Trust",
+        command: "workbench.trust.manage",
+      },
+      {
+        id: "addRepository",
+        label: "Add Repository…",
+        command: "dearReviewer.addRepository",
+      },
+    ],
   },
 };
 
@@ -406,7 +487,7 @@ function bylineOf(change: Change, summary?: PullRequestSummary): string {
     : repo;
 }
 
-function emptyState(): HomeState {
+function emptyState(): DashboardState {
   return {
     facts: "",
     inProgress: [],

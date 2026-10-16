@@ -1,11 +1,12 @@
-// What Home says about the Reviewer's Changes, worked out from the Inbox's
-// pull requests and branches and the open Changes' standing: how long each
-// pull request has waited, the order they wait in, the facts line, and the
-// one next step Home offers (the Next Step Rule in DESIGN.md).
+// What the Dashboard says about the Reviewer's Changes, worked out from the
+// Inbox's pull requests and branches and the open Changes' standing: how
+// long each pull request has waited, the order they wait in, the facts line,
+// and the one next step the Dashboard offers (the Next Step Rule in
+// DESIGN.md).
 
 import { countOf } from "../reviewStanding";
 
-/** A Change open in the review window, as Home weighs it. */
+/** A Change open in the review window, as the Dashboard weighs it. */
 export interface InProgress {
   id: string;
   /** Such as `acme/api #7`, or a local branch's name. */
@@ -19,7 +20,7 @@ export interface InProgress {
   finish: string;
 }
 
-/** A pull request waiting on the Reviewer, as Home weighs it. */
+/** A pull request waiting on the Reviewer, as the Dashboard weighs it. */
 export interface Waiting {
   id: string;
   name: string;
@@ -58,9 +59,9 @@ export function byLongestWait<T extends { since: string }>(
  * The facts line: how many Changes are in progress, how many pull requests
  * wait on the Reviewer and for how long the oldest has, such as
  * "2 in progress · 5 waiting on you · oldest 6 days". `waiting` is
- * undefined while Home can't tell, such as before GitHub sign-in.
+ * undefined while the Dashboard can't tell, such as before GitHub sign-in.
  */
-export function homeFacts(
+export function dashboardFacts(
   inProgress: number,
   waiting: readonly { since: string }[] | undefined,
   now: number
@@ -81,7 +82,7 @@ export function homeFacts(
 }
 
 /**
- * What comes next, which Home fills the one button for: the Change in
+ * What comes next, which the Dashboard fills the one button for: the Change in
  * progress shown last that still needs the Reviewer, to resume, or to
  * finish once every file is viewed; or else the pull request that has
  * waited longest and isn't open yet. A Change whose last Review covers its

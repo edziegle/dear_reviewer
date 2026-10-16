@@ -1,5 +1,6 @@
-// The Inbox tree view: the Changes waiting for the Reviewer, in groups, each
-// marked while it opens and once it is open.
+// The Inbox: the Changes waiting for the Reviewer, in groups, each marked
+// while it opens and once it is open. The Dashboard lists them (ADR 0032);
+// the Inbox keeps the shape of a tree's data, which the tests read.
 
 import * as crypto from "crypto";
 import * as fs from "fs";
@@ -166,8 +167,8 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
 
   /**
    * The groups as the Inbox shows them once the latest load is in, and
-   * whether it found the Reviewer signed out or without repositories. Home
-   * lists them from here, so it and the Inbox never disagree.
+   * whether it found the Reviewer signed out or without repositories. The
+   * Dashboard lists them from here.
    */
   async contents(): Promise<{ groups: InboxNode[]; welcome: Welcome }> {
     const groups = await this.getChildren();
@@ -467,7 +468,7 @@ const keepReviewed = 120_000;
 
 export const awaitingMyReview = "Awaiting my review";
 export const authoredByMe = "Authored by me";
-const reviewedByMe = "Reviewed by me";
+export const reviewedByMe = "Reviewed by me";
 
 function pullRequestKey(pullRequest: {
   repository: string;

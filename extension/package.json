@@ -910,13 +910,13 @@
     "viewsWelcome": [
       {
         "view": "dearReviewer.findings",
-        "contents": "The Assistant raises Findings only when you ask: spots in a Change it thinks deserve your attention. Each one is marked in the gutter of the diff, where you dismiss it or turn it into a Comment. Nothing is published until you submit your Review.\n[Ask for Findings](command:dearReviewer.findIssues)",
+        "contents": "The Assistant looks for spots worth a second look, only when you ask. Each shows in the diff's gutter, where you can dismiss it or turn it into a Comment.\n[Ask for Findings](command:dearReviewer.findIssues)",
         "when": "dearReviewer.hasOpenChange"
       },
       {
         "view": "dearReviewer.findings",
         "when": "!dearReviewer.hasOpenChange",
-        "contents": "The Assistant raises Findings only when you ask: spots in a Change it thinks deserve your attention. Open a Change to ask for them."
+        "contents": "The Assistant looks for spots worth a second look, only when you ask. Open a Change to ask for them."
       },
       {
         "view": "dearReviewer.changeFiles",

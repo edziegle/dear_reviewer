@@ -756,9 +756,9 @@ export function activate(context: vscode.ExtensionContext) {
     else void offerToFinish(change);
   }
 
-  /** Says every file of the Change is viewed, with ways to finish its Review. */
+  /** Says every file of the Change is viewed, with the way to finish its Review. */
   async function offerToFinish(change: Change): Promise<void> {
-    const finish = "Finish Review…";
+    const finish = change.pullRequest ? "Submit Review…" : "Write Brief…";
     const overview = "Show Overview";
     const picked = await vscode.window.showInformationMessage(
       `Every file of ${changeName(change)} is viewed.`,
@@ -1164,7 +1164,7 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand(
       "dearReviewer.finishReview",
       async (target?: ChangeTarget | vscode.Uri) => {
-        const change = await changeFor(target, "Finish Review");
+        const change = await changeFor(target, "Submit Review or Write Brief");
         if (!change) return;
         await vscode.commands.executeCommand(
           change.pullRequest

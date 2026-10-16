@@ -672,7 +672,7 @@ describe("A pull request's timeline", () => {
     ).length;
   }
 
-  it("offers Show Overview on a Change's files and Change Files, and Finish Review… in the palette", () => {
+  it("offers Show Overview on a Change's files and Change Files, and Submit Review… and Write Brief… in the palette", () => {
     const menus = vscode.extensions.getExtension("edziegle.dear-reviewer")!
       .packageJSON.contributes.menus as Record<
       string,
@@ -694,9 +694,19 @@ describe("A pull request's timeline", () => {
       // the overview it brings back.
       [["dearReviewer.showTimeline", onChangeFile, "1_dearReviewer@1"]]
     );
+    // One name for each way to finish; the key runs whichever fits.
     assert.deepStrictEqual(
-      entries("commandPalette", "dearReviewer.finishReview"),
-      [["dearReviewer.finishReview", "dearReviewer.hasOpenChange", undefined]]
+      entries(
+        "commandPalette",
+        "dearReviewer.submitReview",
+        "dearReviewer.writeBrief",
+        "dearReviewer.finishReview"
+      ),
+      [
+        ["dearReviewer.submitReview", "dearReviewer.hasOpenChange", undefined],
+        ["dearReviewer.writeBrief", "dearReviewer.hasOpenChange", undefined],
+        ["dearReviewer.finishReview", "false", undefined],
+      ]
     );
     const onChangeFiles =
       "view == dearReviewer.changeFiles && dearReviewer.hasOpenChange";
@@ -792,7 +802,7 @@ describe("A pull request's timeline", () => {
     }, 20_000);
   });
 
-  it("opens the Submit step for a file's Change from Finish Review…, and says why GitHub would refuse a verdict", async () => {
+  it("opens the Submit step for a file's Change from its finishing key, and says why GitHub would refuse a verdict", async () => {
     await inFrontOfOtherChange();
     const before = await submittedReviews();
 
@@ -846,7 +856,7 @@ describe("A pull request's timeline", () => {
       "dearReviewer.nextUnviewedFile",
       change
     );
-    // Finish Review… is the message's first button.
+    // Submit Review… is the message's first button.
     await eventually(async () => {
       await vscode.commands.executeCommand("notification.acceptPrimaryAction");
       assert.ok((await sentTimeline(title)).submit, "the Submit step is open");

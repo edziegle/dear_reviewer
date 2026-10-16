@@ -22,7 +22,7 @@ function inProgress(fields: Partial<InProgress> = {}): InProgress {
     pending: 0,
     viewed: 3,
     total: 12,
-    finish: "Submit Review…",
+    finish: "submit",
     ...fields,
   };
 }
@@ -118,23 +118,23 @@ describe("The Dashboard's next step", () => {
     );
   });
 
-  it("finishes the Review once every file is viewed", () => {
+  it("finishes the Review once every file is viewed, naming the Change", () => {
     assert.deepStrictEqual(
       nextStep([inProgress({ viewed: 12, pending: 1 })], [], now),
       {
         kind: "finish",
         id: "api-7",
-        label: "Submit Review…",
+        label: "Submit Review of acme/api #7…",
         place: "You've viewed every file of acme/api #7 · 1 pending Comment",
       }
     );
     assert.strictEqual(
       nextStep(
-        [inProgress({ name: "fix-retry", viewed: 12, finish: "Write Brief…" })],
+        [inProgress({ name: "fix-retry", viewed: 12, finish: "brief" })],
         [],
         now
       )?.label,
-      "Write Brief…"
+      "Write Brief for fix-retry…"
     );
   });
 

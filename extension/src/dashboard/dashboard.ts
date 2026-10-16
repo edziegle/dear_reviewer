@@ -312,7 +312,7 @@ export class Dashboard implements vscode.Disposable {
         pending: standings[i].pending,
         ...(standings[i].viewed >= 0 && { viewed: standings[i].viewed }),
         total: standings[i].total,
-        finish: change.pullRequest ? "Submit Review…" : "Write Brief…",
+        finish: change.pullRequest ? "submit" : "brief",
       })),
       waitingNodes.map(({ node, since }) => ({
         id: pullRequestId(node.pullRequest),

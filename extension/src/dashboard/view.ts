@@ -463,7 +463,7 @@ function html(cspSource: string): string {
       setText(byId("place"), next.place);
       byId("place").title = next.place;
       setText(byId("next"), next.label);
-      byId("next").title = next.kind === "open" ? "Open it as a Change in the review window" : next.kind === "resume" ? "Show its overview in the review window" : "Finish the Review in the review window";
+      byId("next").title = next.kind === "open" ? "Open it as a Change in the review window" : next.kind === "resume" ? "Show its overview in the review window" : "Finish the Review in its overview, in the review window";
     }
     section("inProgress", state.inProgress, "inProgressCount");
     list("changes", state.inProgress, change);

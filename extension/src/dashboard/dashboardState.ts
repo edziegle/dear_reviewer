@@ -17,8 +17,8 @@ export interface InProgress {
   /** Undefined while unknown, such as while GitHub hasn't said. */
   viewed?: number;
   total: number;
-  /** "Submit Review…" or "Write Brief…". */
-  finish: string;
+  /** How its Review ends: a pull request's is submitted, a local Change's ends with a Brief. */
+  finish: "submit" | "brief";
 }
 
 /** A pull request waiting on the Reviewer, as the Dashboard weighs it. */
@@ -99,7 +99,10 @@ export function nextStep(
       return {
         kind: "finish",
         id: change.id,
-        label: change.finish,
+        label:
+          change.finish === "submit"
+            ? `Submit Review of ${change.name}…`
+            : `Write Brief for ${change.name}…`,
         place: [`You've viewed every file of ${change.name}`, ...pending].join(
           " · "
         ),

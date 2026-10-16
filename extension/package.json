@@ -275,13 +275,13 @@
       },
       {
         "command": "dearReviewer.writeBrief",
-        "title": "Write Brief",
+        "title": "Write Brief…",
         "category": "Dear Reviewer",
         "icon": "$(note)"
       },
       {
         "command": "dearReviewer.finishReview",
-        "title": "Finish Review…",
+        "title": "Submit Review… or Write Brief…",
         "category": "Dear Reviewer",
         "icon": "$(check-all)"
       },
@@ -583,8 +583,16 @@
           "when": "false"
         },
         {
-          "command": "dearReviewer.finishReview",
+          "command": "dearReviewer.submitReview",
           "when": "dearReviewer.hasOpenChange"
+        },
+        {
+          "command": "dearReviewer.writeBrief",
+          "when": "dearReviewer.hasOpenChange"
+        },
+        {
+          "command": "dearReviewer.finishReview",
+          "when": "false"
         },
         {
           "command": "dearReviewer.nextUnviewedFile",

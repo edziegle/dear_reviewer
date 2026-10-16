@@ -450,7 +450,7 @@ function html(cspSource: string): string {
   .problem-line .link { margin-left: 4px; }
   /* A link inside a sentence is underlined, so it doesn't rely on color alone. */
   .problem-line .link, #standing .link, #highlighting .link, #orderNote .link { text-decoration: underline; text-underline-offset: 2px; }
-  .order h2 { margin-top: 14px; margin-bottom: 4px; }
+  .order h3 { font-size: 1em; margin: 14px 0 4px; }
   .order ol { margin: 0; padding-left: 1.6em; }
   .order ol > li { margin: 6px 0 0; }
   .order .step { font-weight: 600; }
@@ -476,6 +476,8 @@ function html(cspSource: string): string {
   body.vscode-dark, body.vscode-high-contrast { color-scheme: dark; }
   body.vscode-light, body.vscode-high-contrast-light { color-scheme: light; }
   .submit .choice .label { flex: none; }
+  .submit .choice.only { padding: 2px 0; }
+  #morePending { margin-top: 4px; font-size: 0.9em; }
   .submit .choice .muted { min-width: 0; }
   .submit .field { display: block; margin: 12px 0 4px; }
   .submit textarea { display: block; box-sizing: border-box; width: 100%; max-width: 40em; }
@@ -485,7 +487,7 @@ function html(cspSource: string): string {
   .submit .pending .muted { min-width: 0; overflow-wrap: anywhere; }
   .submit .actions { margin-top: 12px; align-items: baseline; }
   .submit .actions button.primary { padding: 4px 12px; }
-  .submit button[aria-disabled="true"] { opacity: 0.5; cursor: default; }
+  .submit button[aria-disabled="true"], header button[aria-disabled="true"] { opacity: 0.5; cursor: default; }
   .result { padding: 12px 0 14px; border-bottom: 1px solid var(--vscode-panel-border); }
   .result p { margin: 0 0 8px; line-height: 1.5; }
   .result .verdict .mark { margin-right: 4px; }
@@ -525,11 +527,11 @@ ${catSymbol}
   <div class="muted" id="submitNote"></div>
   <label class="field" for="summary">Summary <span class="muted">shown with your Review</span></label>
   <textarea id="summary" rows="3" aria-describedby="submitReason"></textarea>
-  <div class="muted" id="submitReason"></div>
-  <div class="pending" id="pending"><h3 id="pendingHeading"></h3><ul id="pendingComments" aria-labelledby="pendingHeading"></ul></div>
+  <div class="muted" id="submitReason" role="status"></div>
+  <div class="pending" id="pending"><h3 id="pendingHeading"></h3><ul id="pendingComments" aria-labelledby="pendingHeading"></ul><button class="link more" id="morePending" type="button" aria-controls="pendingComments" aria-expanded="false" hidden></button></div>
   <div class="problem-line" id="submitProblem" role="alert"></div>
   <div class="actions">
-    <button class="primary" id="submitReview" type="button" aria-describedby="submitReason" title="Publish your Review to GitHub (Ctrl+Enter)">Submit Review</button>
+    <button class="primary" id="submitReview" type="button" aria-label="Submit Review to GitHub" aria-describedby="submitReason" title="Publish your Review to GitHub (Ctrl+Enter)">Submit Review</button>
     <button class="secondary" id="cancelSubmit" type="button">Cancel</button>
     <button class="link" id="discardPending" type="button" title="Delete your pending Comments without publishing them" hidden>Discard pending Comments…</button>
   </div>
@@ -550,7 +552,7 @@ ${catSymbol}
       </div>
     </div>
     <div class="order" id="order" hidden>
-      <h2>Reading Order</h2>
+      <h3>Reading Order</h3>
       <div class="muted" id="orderNote" role="status"></div>
       <ol id="orderSteps"></ol>
     </div>
@@ -603,6 +605,7 @@ ${catSymbol}
   for (const type of ["refresh", "nextFile", "ask"])
     byId(type).addEventListener("click", () => vscode.postMessage({ type }));
   byId("finish").addEventListener("click", () => {
+    if (lastState && notReady(lastState)) return;
     if (lastState && lastState.submit && !lastState.submit.submitting) vscode.postMessage({ type: "cancelSubmit" });
     else vscode.postMessage({ type: "finish" });
   });
@@ -875,7 +878,8 @@ ${catSymbol}
       finish.removeAttribute("aria-expanded");
       finish.removeAttribute("aria-controls");
     }
-    finish.title = (state.finish.startsWith("Submit") ? "Submit your Review to GitHub" : "Write a Brief of your Comments for an agent") + " (Ctrl+Alt+R S)";
+    finish.setAttribute("aria-disabled", String(notReady(state)));
+    finish.title = notReady(state) ? "Loading your Review…" : (state.finish.startsWith("Submit") ? "Submit your Review to GitHub" : "Write a Brief of your Comments for an agent") + " (Ctrl+Alt+R S)";
     // While the Submit step is open, its own button is the one filled; once
     // a Review covers the head, there is nothing to finish.
     const allViewed = !!progress && progress.viewed >= progress.total;
@@ -985,8 +989,15 @@ ${catSymbol}
   // Submit Review and Cancel are aria-disabled rather than disabled, so the
   // focus stays on them while GitHub takes the Review.
   byId("submitReview").addEventListener("click", () => {
-    if (!lastStep || lastStep.submitting || reasonOf(lastStep)) return;
+    if (!lastStep || lastStep.submitting) return;
+    const reason = reasonOf(lastStep);
+    if (reason) return blocked(reason);
     vscode.postMessage({ type: "submit", verdict: draft.verdict, summary: draft.summary });
+  });
+  let allPending = false;
+  byId("morePending").addEventListener("click", () => {
+    allPending = !allPending;
+    keepFocus(() => submitStep(lastState));
   });
   byId("discardPending").addEventListener("click", () => vscode.postMessage({ type: "discard" }));
   byId("cancelSubmit").addEventListener("click", () => {
@@ -994,14 +1005,34 @@ ${catSymbol}
     byId("finish").focus();
     vscode.postMessage({ type: "cancelSubmit" });
   });
-  const reasonOf = (step) => !draft.verdict
-    ? "Choose a verdict."
-    : (draft.summary.trim() ? "" : step.needsSummary[draft.verdict] || "");
+  // Until the overview has loaded, its pending Comments aren't known, so
+  // nothing can be submitted from it yet.
+  const notReady = (state) => !!state && state.loading && state.items.length === 0 && !state.problem;
+  const reasonOf = (step) => notReady(lastState)
+    ? "Loading your Review…"
+    : !draft.verdict
+      ? "Choose a verdict."
+      : (draft.summary.trim() ? "" : step.needsSummary[draft.verdict] || "");
+  // A blocked Submit says why, again even in the same words, and takes the
+  // focus to what is missing.
+  function blocked(reason) {
+    const node = byId("submitReason");
+    node.textContent = "";
+    setTimeout(() => { node.textContent = reason; }, 60);
+    const first = !draft.verdict ? byId("verdicts").querySelector("input") : undefined;
+    (first || summary).focus();
+  }
+  // Checks that failed are worth knowing before approving, though they don't block it.
+  const checksNote = () => draft.verdict === "approve" && lastState && lastState.checks && lastState.checks.status === "failed"
+    ? "Checks failed on " + lastState.checks.commit + "."
+    : "";
   function submitButtons(step) {
     const reason = reasonOf(step);
     setText(byId("submitReason"), step.problem ? "" : reason);
+    setText(byId("submitNote"), step.note || checksNote());
     const submit = byId("submitReview");
     submit.setAttribute("aria-disabled", String(step.submitting || !!reason));
+    submit.setAttribute("aria-label", step.submitting ? "Submitting your Review to GitHub" : "Submit Review to GitHub");
     setText(submit, step.submitting ? "Submitting…" : "Submit Review");
     byId("cancelSubmit").setAttribute("aria-disabled", String(step.submitting));
     byId("discardPending").hidden = step.submitting || step.comments.length === 0;
@@ -1021,6 +1052,12 @@ ${catSymbol}
     if (choices.dataset.said !== offered) {
       choices.dataset.said = offered;
       choices.replaceChildren(choices.firstElementChild, ...step.verdicts.map((v) => {
+        // A verdict that is the only one is no choice, so it is no radio.
+        if (step.verdicts.length === 1) {
+          const only = el("div", "choice only");
+          only.append(el("span", "label", v.label), el("span", "muted", v.detail));
+          return only;
+        }
         const label = el("label", "choice");
         const input = el("input");
         input.type = "radio";
@@ -1045,7 +1082,6 @@ ${catSymbol}
     // A verdict that publishes is the Reviewer's to choose, unless only one is offered.
     if (!step.verdicts.some((v) => v.verdict === draft.verdict))
       draft.verdict = step.verdicts.length === 1 ? step.verdicts[0].verdict : undefined;
-    setText(byId("submitNote"), step.note || "");
     for (const input of choices.querySelectorAll("input")) input.checked = input.value === draft.verdict;
     if (summary.value !== draft.summary) summary.value = draft.summary;
     const comments = step.comments;
@@ -1053,10 +1089,18 @@ ${catSymbol}
       ? "No pending Comments: only your summary and verdict publish."
       : (comments.length === 1 ? "1 Comment publishes with it:" : comments.length + " Comments publish with it:"));
     const list = byId("pendingComments");
-    const listed = JSON.stringify(comments);
+    // A long Review lists its first Comments, so Submit stays in reach.
+    const fewPending = 5;
+    const whole = comments.length <= fewPending;
+    const listed = JSON.stringify([comments, allPending]);
+    const more = byId("morePending");
+    more.hidden = whole;
+    setText(more, allPending ? "Show less" : "Show all " + comments.length);
+    more.setAttribute("aria-expanded", String(allPending));
     if (list.dataset.said !== listed) {
       list.dataset.said = listed;
-      list.replaceChildren(...comments.map((comment, index) => {
+      list.replaceChildren(...comments.flatMap((comment, index) => whole || allPending || index < fewPending ? [comment] : []).map((comment) => {
+        const index = comments.indexOf(comment);
         const li = el("li");
         const where = comment.path + ":" + comment.line;
         const open = textButton(where, () => vscode.postMessage({ type: "openPending", index }));
@@ -1094,8 +1138,8 @@ ${catSymbol}
     if (fresh) {
       asked = step.asked;
       node.scrollIntoView({ block: "start" });
-      const first = choices.querySelector("input:checked") || choices.querySelector("input");
-      if (first) first.focus({ preventScroll: true });
+      const first = choices.querySelector("input:checked") || choices.querySelector("input") || summary;
+      first.focus({ preventScroll: true });
     }
   }
   let announced;

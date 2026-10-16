@@ -427,11 +427,13 @@
         {
           "id": "dearReviewer.changeFiles",
           "name": "Change Files",
+          "size": 5,
           "when": "dearReviewer.inReviewWindow || dearReviewer.hasOpenChange"
         },
         {
           "id": "dearReviewer.findings",
           "name": "Findings",
+          "size": 1,
           "when": "dearReviewer.inReviewWindow || dearReviewer.hasOpenChange"
         }
       ]

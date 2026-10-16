@@ -593,7 +593,7 @@
         },
         {
           "command": "dearReviewer.writeBrief",
-          "when": "dearReviewer.hasOpenChange && !dearReviewer.frontIsPullRequest"
+          "when": "dearReviewer.hasOpenChange && !dearReviewer.frontIsPullRequest && dearReviewer.frontHasComments"
         },
         {
           "command": "dearReviewer.finishReview",

@@ -342,6 +342,7 @@ class ChangeTimeline {
       review: found?.review,
       navigationOff: this.sources.navigationOff(),
       ...(found && { progress: { viewed: found.viewed, total: found.total } }),
+      pending: found?.pending,
       finished: !!found?.reviewed && found.pending === 0,
     });
   }

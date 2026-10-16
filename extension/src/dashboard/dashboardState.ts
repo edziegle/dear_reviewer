@@ -32,6 +32,7 @@ export interface Waiting {
 export type NextStep =
   | { kind: "resume"; id: string; label: string }
   | { kind: "finish"; id: string; label: string }
+  | { kind: "close"; id: string; label: string }
   | { kind: "open"; id: string; label: string; place: string };
 
 /**
@@ -94,7 +95,12 @@ export function nextStep(
   if (change) {
     // The button names the Change, and its row below says where the Reviewer
     // stands on it, so neither is said a third time.
-    if (change.viewed !== undefined && change.viewed >= change.total)
+    const viewedAll = change.viewed !== undefined && change.viewed >= change.total;
+    // A local Change with every file viewed and no Comments has no Brief to
+    // write: nothing needs changing, so closing it is the next step.
+    if (viewedAll && change.finish === "brief" && change.pending === 0)
+      return { kind: "close", id: change.id, label: `Close ${change.name}` };
+    if (viewedAll)
       return {
         kind: "finish",
         id: change.id,

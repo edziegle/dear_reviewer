@@ -325,6 +325,11 @@ export function activate(context: vscode.ExtensionContext) {
             requestOf(change)
           )
         : askReviewWindow(change, "finish"),
+    close: (change) =>
+      void vscode.commands.executeCommand(
+        "dearReviewer.closeChange",
+        requestOf(change)
+      ),
     open: (node) =>
       void vscode.commands.executeCommand(
         node.kind === "localBranch"
@@ -552,6 +557,16 @@ export function activate(context: vscode.ExtensionContext) {
     void setContext("dearReviewer.hasOpenChange", !!front);
     // The palette offers the one way to finish that fits the Change in front.
     void setContext("dearReviewer.frontIsPullRequest", !!front?.pullRequest);
+    showFrontComments();
+  }
+
+  /** Whether the Change in front has Comments pending, for Write Brief…, which has nothing to write from without one. */
+  function showFrontComments(): void {
+    const front = changes.inFront();
+    void setContext(
+      "dearReviewer.frontHasComments",
+      !!front && review.pendingCount(front) > 0
+    );
   }
 
   /**
@@ -1019,7 +1034,10 @@ export function activate(context: vscode.ExtensionContext) {
     // Change Files lists the Reading Order, and the overview follows it.
     assistants.onDidChangeReadingOrder(() => changeFiles.refresh()),
     changeFiles.onDidChangeTreeData(() => showStanding()),
-    review.onDidChange(() => showStanding()),
+    review.onDidChange(() => {
+      showStanding();
+      showFrontComments();
+    }),
     review,
     threadsFiles,
     reviewInProgress,
@@ -1167,6 +1185,15 @@ export function activate(context: vscode.ExtensionContext) {
             "A pull request's Review ends when you submit it; a Brief ends a local Change's Review."
           );
           return;
+        }
+        // A Change fully viewed with no Comments has nothing to brief: its
+        // overview says so, with Close Change as the next step.
+        if (review.pendingCount(change) === 0) {
+          const { viewed, total } = await changeFiles.viewedCount(change);
+          if (total > 0 && viewed >= total) {
+            await timelines.finish(change);
+            return;
+          }
         }
         // The overview shows the Brief being written, and then waiting to be copied.
         await timelines.open(change, true);

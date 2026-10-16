@@ -116,6 +116,8 @@ export interface TimelineState {
   standing: string[];
   /** How many of the Change's files the Reviewer has viewed, once counted. */
   progress?: { viewed: number; total: number };
+  /** How many Comments are pending, once counted. */
+  pending?: number;
   /** Whether the Reviewer's last Review covers the head, with no Comments pending, so there is nothing to finish. */
   finished?: boolean;
   /** Whether the review window is untrusted, so code navigation is off. */
@@ -878,7 +880,7 @@ ${catSymbol}
     next.className = reading && first === next ? "primary" : "secondary";
     const finish = byId("finish");
     // There is nothing to finish while the result block says how it ended.
-    finish.hidden = back;
+    finish.hidden = back || noBrief(state);
     setLabel(finish, state.finish, "S");
     // While the Submit step is open, the button is its disclosure: pressing
     // it again closes the step.
@@ -909,12 +911,19 @@ ${catSymbol}
     if (brief && brief.phase === "writing") return "writing";
     if (brief && brief.phase === "written") return "written";
     if (state.submitted || state.finished) return "ended";
+    if (clean(state)) return "clean";
     if (brief && brief.phase === "problem") return "problem";
   }
+  // A local Change fully viewed with no Comments has nothing to brief: the
+  // agent's work needs no changes, so there is only closing it.
+  const isLocal = (state) => state.finish.startsWith("Write");
+  const clean = (state) => isLocal(state) && state.pending === 0 && !!state.progress && state.progress.viewed >= state.progress.total;
+  // Write Brief… has nothing to write from until a Comment exists.
+  const noBrief = (state) => isLocal(state) && state.pending === 0;
   // Whether the result block shows what the Reviewer has done, so the way
   // in and the finishing button step back.
   const showing = (state) => resultOf(state) !== undefined;
-  const stepsBack = (state) => ["writing", "written", "ended"].includes(resultOf(state));
+  const stepsBack = (state) => ["writing", "written", "ended", "clean"].includes(resultOf(state));
   const countOfComments = (n) => n === 1 ? "1 Comment" : n + " Comments";
 
   // Once the Reviewer is brought here to finish, the focus goes to the
@@ -960,6 +969,12 @@ ${catSymbol}
       actions.append(button("primary", "Copy Brief", { type: "copyBrief" }, "Copy the Brief, with your edits, which ends this Review"));
       if (brief.canShow) actions.append(button("secondary", "Show Brief", { type: "showBrief" }, "Open the Brief in the editor"));
       actions.append(textButton("Discard Comments…", () => vscode.postMessage({ type: "discard" })));
+    } else if (kind === "clean") {
+      text.className = "verdict review approved";
+      const mark = el("span", "mark", "✓");
+      mark.setAttribute("aria-hidden", "true");
+      text.append(mark, "Nothing to brief. You found nothing to change.");
+      actions.append(button("primary", "Close Change", { type: "closeChange" }, "Close this Change and its worktrees, and go back to the Dashboard", "closeChange"));
     } else if (kind === "ended") {
       const review = state.review;
       const done = state.submitted;

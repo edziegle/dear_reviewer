@@ -72,6 +72,7 @@ function withoutAvatars(
     progress: _progress,
     navigationOff: _navigationOff,
     finished: _finished,
+    pending: _pending,
     brief: _brief,
     finishAsked: _finishAsked,
     size: _size,
@@ -718,7 +719,7 @@ describe("A pull request's timeline", () => {
         ],
         [
           "dearReviewer.writeBrief",
-          "dearReviewer.hasOpenChange && !dearReviewer.frontIsPullRequest",
+          "dearReviewer.hasOpenChange && !dearReviewer.frontIsPullRequest && dearReviewer.frontHasComments",
           undefined,
         ],
         ["dearReviewer.finishReview", "false", undefined],
@@ -916,6 +917,19 @@ describe("A pull request's timeline", () => {
     await clickOverview(title, "closeChange");
 
     await eventually(() => assert.strictEqual(timelineTab(title), undefined));
+  });
+
+  it("counts a local Change's pending Comments for its overview, none before its first", async () => {
+    const local = { repository: pr.clone, base: pr.base, head: pr.head };
+    const localTitle = `${path.basename(pr.clone)} ${short(pr.base)}..${short(pr.head)}`;
+    await openChange(local);
+    try {
+      await eventually(async () =>
+        assert.strictEqual((await sentTimeline(localTitle)).pending, 0)
+      );
+    } finally {
+      await closeChange(local);
+    }
   });
 
   it("has no timeline for a local Change", async () => {

@@ -51,6 +51,8 @@ export interface DashboardSources {
   resume(change: Change): void;
   /** Starts finishing the Change's Review there: Submit Review… or Write Brief…. */
   finish(change: Change): void;
+  /** Closes the Change, wherever it is open. */
+  close(change: Change): void;
   /** Opens the Inbox's pull request or branch as a Change. */
   open(node: InboxNode): void;
   /** Asks for any commit range of a repository to open as a Change. */
@@ -402,6 +404,7 @@ export class Dashboard implements vscode.Disposable {
     const change = this.targets.changes.get(action.id);
     if (action.type === "resume" && change) this.sources.resume(change);
     else if (action.type === "finish" && change) this.sources.finish(change);
+    else if (action.type === "close" && change) this.sources.close(change);
     else if (action.type === "open") {
       const node = this.targets.nodes.get(action.id);
       if (node) this.sources.open(node);

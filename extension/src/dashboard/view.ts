@@ -99,6 +99,7 @@ export type FromDashboard =
   | { type: "openRange" }
   | { type: "resume"; id: string }
   | { type: "finish"; id: string }
+  | { type: "close"; id: string }
   | { type: "open"; id: string }
   | { type: "fix"; id: string };
 
@@ -189,6 +190,7 @@ export class DashboardView implements vscode.WebviewViewProvider {
     else if (
       (message.type === "resume" ||
         message.type === "finish" ||
+        message.type === "close" ||
         message.type === "open" ||
         message.type === "fix") &&
       typeof message.id === "string"
@@ -503,7 +505,7 @@ function html(cspSource: string): string {
       setText(byId("place"), next.place || "");
       byId("place").title = next.place || "";
       setText(byId("next"), next.label);
-      byId("next").title = next.kind === "open" ? "Open it as a Change in the review window" : next.kind === "resume" ? "Show its overview in the review window" : (next.label.startsWith("Write") ? "Write a Brief of your Comments for an agent, in the review window" : "Submit your Review from its overview, in the review window");
+      byId("next").title = next.kind === "open" ? "Open it as a Change in the review window" : next.kind === "resume" ? "Show its overview in the review window" : next.kind === "close" ? "Nothing needs changing, so close this Change" : (next.label.startsWith("Write") ? "Write a Brief of your Comments for an agent, in the review window" : "Submit your Review from its overview, in the review window");
     }
     section("inProgress", state.inProgress, "inProgressCount");
     list("changes", state.inProgress, change);

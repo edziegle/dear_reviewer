@@ -89,6 +89,8 @@ export interface Timeline {
   progress?: { viewed: number; total: number };
   /** Whether the last Review covers the head, with no Comments pending. */
   finished?: boolean;
+  /** How many Comments are pending, once counted. */
+  pending?: number;
   navigationOff?: boolean;
   /** File extensions, such as `.tofu`, that no installed language highlights, while offered. */
   unhighlighted?: string[];

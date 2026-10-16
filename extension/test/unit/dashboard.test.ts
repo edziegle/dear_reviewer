@@ -127,11 +127,54 @@ describe("The Dashboard's next step", () => {
     );
     assert.strictEqual(
       nextStep(
-        [inProgress({ name: "fix-retry", viewed: 12, finish: "brief" })],
+        [
+          inProgress({
+            name: "fix-retry",
+            viewed: 12,
+            finish: "brief",
+            pending: 2,
+          }),
+        ],
         [],
         now
       )?.label,
       "Write Brief for fix-retry…"
+    );
+  });
+
+  it("closes a local Change that is fully viewed with no Comments, since there is no Brief to write", () => {
+    assert.deepStrictEqual(
+      nextStep(
+        [inProgress({ name: "fix-retry", viewed: 12, finish: "brief" })],
+        [],
+        now
+      ),
+      { kind: "close", id: "api-7", label: "Close fix-retry" }
+    );
+  });
+
+  it("still writes a Brief once a local Change has a Comment", () => {
+    assert.strictEqual(
+      nextStep(
+        [
+          inProgress({
+            name: "fix-retry",
+            viewed: 12,
+            finish: "brief",
+            pending: 1,
+          }),
+        ],
+        [],
+        now
+      )?.label,
+      "Write Brief for fix-retry…"
+    );
+  });
+
+  it("never closes a pull request for having no Comments, which can still be approved", () => {
+    assert.strictEqual(
+      nextStep([inProgress({ viewed: 12, pending: 0 })], [], now)?.kind,
+      "finish"
     );
   });
 

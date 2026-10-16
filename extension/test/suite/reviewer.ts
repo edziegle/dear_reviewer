@@ -20,6 +20,12 @@ export function openChange(request: ChangeRequest): Thenable<unknown> {
 
 interface LinkApi {
   openLinksWith(open?: (url: string) => void): void;
+  answerErrorsWith(
+    answer?: (
+      message: string,
+      actions: string[]
+    ) => string | undefined | Promise<string | undefined>
+  ): void;
   answerNotificationsWith(
     answer?: (message: string, actions: string[]) => string | undefined
   ): void;
@@ -66,6 +72,33 @@ export async function catchNotifications(
     return pick && actions.includes(pick) ? pick : undefined;
   });
   return shown;
+}
+
+/**
+ * Catches the error messages Dear Reviewer shows, answering each with the
+ * button `pick` names, if it offers it, until `releaseErrors`. A `pick`
+ * function decides per message, and may first do something else, such as
+ * bring GitHub back.
+ */
+export async function catchErrors(
+  pick?:
+    | string
+    | ((
+        shown: Notification
+      ) => string | undefined | Promise<string | undefined>)
+): Promise<Notification[]> {
+  const shown: Notification[] = [];
+  (await linkApi()).answerErrorsWith(async (message, actions) => {
+    const notification = { message, actions };
+    shown.push(notification);
+    const choice = typeof pick === "function" ? await pick(notification) : pick;
+    return choice && actions.includes(choice) ? choice : undefined;
+  });
+  return shown;
+}
+
+export async function releaseErrors(): Promise<void> {
+  (await linkApi()).answerErrorsWith(undefined);
 }
 
 export async function releaseNotifications(): Promise<void> {

@@ -103,10 +103,15 @@ export function activate(context: vscode.ExtensionContext) {
     context.globalStorageUri.fsPath,
     () => githubReviews.viewer
   );
+  const showError = (message: string, ...actions: string[]) =>
+    vscode.window.showErrorMessage(message, ...actions);
+  let reportProblem = showError;
   const review = new ReviewComments(
     () => changes.list(),
     new PendingReviewsBySource(localReviews, githubReviews),
-    avatars
+    avatars,
+    () => changes.inFront(),
+    (message, ...actions) => reportProblem(message, ...actions)
   );
   // The Assistant reads the threads from a file, and learns where the Reviewer is reading.
   const threadsFiles = new ThreadsFiles(
@@ -199,7 +204,10 @@ export function activate(context: vscode.ExtensionContext) {
     },
     (change) => timelines.codeColumn(change)
   );
-  context.subscriptions.push(briefs, briefs.onDidChange(() => showStanding()));
+  context.subscriptions.push(
+    briefs,
+    briefs.onDidChange(() => showStanding())
+  );
   const reviewWindow = new ReviewWindow(context.globalStorageUri.fsPath);
   // The review window shows the Change in front, and the Reviewer's own
   // windows the Dashboard (ADR 0032); tests, which can't run in the review
@@ -988,7 +996,10 @@ export function activate(context: vscode.ExtensionContext) {
       for (const choice of choices) {
         if (choice.group !== group) {
           group = choice.group;
-          items.push({ label: group, kind: vscode.QuickPickItemKind.Separator });
+          items.push({
+            label: group,
+            kind: vscode.QuickPickItemKind.Separator,
+          });
         }
         items.push({
           label: choice.label,
@@ -1087,7 +1098,7 @@ export function activate(context: vscode.ExtensionContext) {
     threadsFiles,
     reviewInProgress,
     reading,
-    changes.onDidShowChange(() => void review.sync()),
+    changes.onDidShowChange((change) => void review.retry([change])),
     // Start Review is Add Comment, labelled by whether the Review is in progress.
     ...["addComment", "startReview"].map((command) =>
       vscode.commands.registerCommand(
@@ -1149,7 +1160,7 @@ export function activate(context: vscode.ExtensionContext) {
         }
         // Menus of a tree that selects many pass the selection after the node.
         const verdict = isVerdict(given) ? given : undefined;
-        await review.sync();
+        await review.ensureLoaded(change);
         // A verdict and summary given, as by a test, submit straight away;
         // otherwise the Review ends in its overview's Submit step (ADR 0033).
         if (!verdict || typeof givenSummary !== "string")
@@ -1186,7 +1197,7 @@ export function activate(context: vscode.ExtensionContext) {
       async (target?: ChangeTarget, confirmed?: unknown) => {
         const change = await changeFor(target, "Discard Pending Comments");
         if (!change) return;
-        await review.sync();
+        await review.ensureLoaded(change);
         const name = changeName(change);
         const count = review.pendingCount(change);
         if (count === 0) {
@@ -1542,7 +1553,7 @@ export function activate(context: vscode.ExtensionContext) {
     auth.onDidChange(() => {
       void showSignedIn();
       void lifecycle.tidy();
-      void review.sync();
+      void review.retry();
       void timelines.refreshAll();
       return inbox.refresh();
     }),
@@ -1554,7 +1565,7 @@ export function activate(context: vscode.ExtensionContext) {
         // Which remotes are on GitHub depends on the API's host.
         void repositories.scanWindow();
         void showSignedIn();
-        void review.sync();
+        void review.retry();
         void timelines.refreshAll();
       }
       if (
@@ -1651,6 +1662,17 @@ export function activate(context: vscode.ExtensionContext) {
       notify = answer
         ? async (message, ...actions) => answer(message, actions)
         : showInformation;
+    },
+    /** Hands error notifications to `answer`, which picks a button or none, or back to the Reviewer. */
+    answerErrorsWith: (
+      answer?: (
+        message: string,
+        actions: string[]
+      ) => string | undefined | Promise<string | undefined>
+    ) => {
+      reportProblem = answer
+        ? async (message, ...actions) => answer(message, actions)
+        : showError;
     },
     /** Hands the links the Reviewer opens, from any panel, to `open` instead, or back to the browser. */
     openLinksWith: (open?: (url: string) => void) => {

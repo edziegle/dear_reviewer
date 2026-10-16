@@ -26,7 +26,7 @@ import type { ThreadInChange } from "./assistant/threads";
 import type { Avatars } from "./inbox";
 import type { PendingReviewsBySource } from "./pendingReview";
 import { hasFolder } from "./reviewWindow";
-import { messageOf } from "./errors";
+import { messageOf, reviewThreadsProblem } from "./errors";
 import { firstLineOf, type Verdict } from "./reviewSubmission";
 
 export type { Verdict } from "./reviewSubmission";
@@ -126,6 +126,14 @@ export class ReviewComments implements vscode.Disposable {
   private readonly shown = new Map<string, Set<vscode.CommentThread>>();
   private readonly states = new WeakMap<vscode.CommentThread, ThreadState>();
   private readonly loaded = new Set<string>();
+  /** The Changes whose threads failed to load, which wait for a reason to try again. */
+  private readonly failed = new Set<string>();
+  /**
+   * The failed Changes the Reviewer has been told of. A failure that comes
+   * again, such as when the Change is shown, isn't told again until the
+   * Reviewer asks, signs in or loads it.
+   */
+  private readonly told = new Set<string>();
   private loading: Promise<void> = Promise.resolve();
   private readonly hunks = new Map<string, Promise<Hunks>>();
   private viewerIcon?: vscode.Uri;
@@ -136,7 +144,13 @@ export class ReviewComments implements vscode.Disposable {
   constructor(
     private readonly openChanges: () => Change[],
     private readonly pending: PendingReviewsBySource,
-    private readonly avatars: Avatars
+    private readonly avatars: Avatars,
+    private readonly inFront: () => Change | undefined,
+    /** Shows the Reviewer a problem with buttons; resolves to the one they pick. */
+    private readonly report: (
+      message: string,
+      ...actions: string[]
+    ) => Thenable<string | undefined>
   ) {
     this.controller = vscode.comments.createCommentController(
       "dearReviewer.review",
@@ -189,25 +203,72 @@ export class ReviewComments implements vscode.Disposable {
 
   /**
    * Shows the review threads of each Change open in this window that aren't
-   * shown yet. Those that can't be loaded, such as a pull request's before
-   * sign-in, are tried again on the next call.
+   * shown yet. One that can't be loaded waits for `retry`: the Reviewer hears
+   * of it only if it is the Change in front, and only once. One that needs a
+   * sign-in waits for it quietly.
    */
   sync(): Promise<void> {
+    return this.syncReporting(() => false);
+  }
+
+  /**
+   * Tries again the Changes whose threads failed to load, or just these,
+   * such as when one is shown or the sign-in changes.
+   */
+  retry(changes?: readonly Change[]): Promise<void> {
+    return this.syncReporting(() => false, changes ?? "all");
+  }
+
+  /**
+   * Loads the Change's threads if they aren't, and reports it if they can't
+   * be, as a Review's submitting or discarding needs them first.
+   */
+  ensureLoaded(change: Change): Promise<void> {
+    return this.syncReporting((c) => c.id === change.id, [change]);
+  }
+
+  /**
+   * Loads what isn't loaded, after forgetting that `retrying` failed. That
+   * happens in turn, so a sync queued earlier can't mark one failed again
+   * after the Reviewer asked for it to be tried.
+   */
+  private syncReporting(
+    reports: (change: Change) => boolean,
+    retrying: readonly Change[] | "all" = []
+  ): Promise<void> {
     this.loading = this.loading.then(async () => {
+      if (retrying === "all") {
+        this.failed.clear();
+        this.told.clear();
+      } else for (const change of retrying) this.failed.delete(change.id);
       for (const change of this.shownChanges()) {
-        if (this.loaded.has(change.id)) continue;
+        if (this.loaded.has(change.id) || this.failed.has(change.id)) continue;
         try {
           await this.load(change);
           this.loaded.add(change.id);
+          this.told.delete(change.id);
         } catch (err) {
           if (err instanceof NotSignedInError) continue;
-          void vscode.window.showErrorMessage(
-            `Couldn't load the review threads of ${changeName(change)}: ${messageOf(err)}`
-          );
+          this.failed.add(change.id);
+          const asked = reports(change);
+          const inFront = this.inFront()?.id === change.id;
+          if (asked || (inFront && !this.told.has(change.id))) {
+            this.told.add(change.id);
+            void this.reportFailure(change, err);
+          }
         }
       }
     });
     return this.loading;
+  }
+
+  private async reportFailure(change: Change, err: unknown): Promise<void> {
+    const retry = "Retry";
+    const picked = await this.report(
+      reviewThreadsProblem(changeName(change), err),
+      retry
+    );
+    if (picked === retry) await this.ensureLoaded(change);
   }
 
   /**
@@ -217,6 +278,8 @@ export class ReviewComments implements vscode.Disposable {
   forget(change: Change): void {
     this.clear(change.id);
     this.loaded.delete(change.id);
+    this.failed.delete(change.id);
+    this.told.delete(change.id);
     for (const key of [...this.hunks.keys()])
       if (key.startsWith(`${change.id}\0`)) this.hunks.delete(key);
   }
@@ -586,7 +649,7 @@ export class ReviewComments implements vscode.Disposable {
   async reload(change: Change): Promise<void> {
     this.clear(change.id);
     this.loaded.delete(change.id);
-    await this.sync();
+    await this.retry([change]);
   }
 
   private async load(change: Change): Promise<void> {

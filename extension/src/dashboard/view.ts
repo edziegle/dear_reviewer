@@ -283,6 +283,7 @@ function html(cspSource: string): string {
 </style>
 </head>
 <body>
+<h1 class="visually-hidden">Dear Reviewer Dashboard</h1>
 <div class="progress" id="progress" aria-hidden="true" hidden></div>
 <section class="overview" aria-label="Where you stand">
   <p class="facts" id="facts"></p>

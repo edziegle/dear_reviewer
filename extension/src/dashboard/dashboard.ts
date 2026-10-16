@@ -25,8 +25,10 @@ import {
   byLongestWait,
   dashboardFacts,
   nextStep,
+  setAside,
   waitedFor,
 } from "./dashboardState";
+import type { IgnoredPullRequests } from "./ignored";
 import {
   DashboardView,
   type DashboardAction,
@@ -84,6 +86,7 @@ export class Dashboard implements vscode.Disposable {
   constructor(
     private readonly inbox: InboxTree,
     private readonly avatars: Avatars,
+    private readonly ignored: IgnoredPullRequests,
     private readonly sources: DashboardSources
   ) {
     this.view = new DashboardView(
@@ -136,10 +139,39 @@ export class Dashboard implements vscode.Disposable {
     this.send(await this.build(this.lastContents, true), thisUpdate);
     try {
       this.lastContents = await contents;
+      this.forgetGone(this.lastContents);
     } catch {
       // The Inbox's problems are in its groups; the Dashboard keeps its last lists.
     }
     this.send(await this.build(this.lastContents, false), thisUpdate);
+  }
+
+  /**
+   * Forgets the ignored pull requests the Inbox no longer lists, such as the
+   * ones that merged or closed. A load that is missing something, such as
+   * while signed out or for a repository GitHub couldn't answer for, tells
+   * nothing about what left.
+   */
+  private forgetGone({
+    groups,
+    welcome,
+  }: {
+    groups: InboxNode[];
+    welcome: Welcome;
+  }): void {
+    const complete = groups.every(
+      (g) => g.kind === "group" && g.children.every((c) => c.kind !== "problem")
+    );
+    if (welcome !== "none" || !complete) return;
+    this.ignored.keepOnly(
+      groups.flatMap((g) =>
+        g.kind === "group"
+          ? g.children.flatMap((c) =>
+              c.kind === "pullRequest" ? [pullRequestId(c.pullRequest)] : []
+            )
+          : []
+      )
+    );
   }
 
   /** The Change's standing as last worked out, asking for it afresh. */
@@ -210,9 +242,19 @@ export class Dashboard implements vscode.Disposable {
     const waitingNodes = byLongestWait(
       (awaiting?.children ?? []).flatMap((node) =>
         node.kind === "pullRequest"
-          ? [{ node, since: waitingSince(node.pullRequest) }]
+          ? [
+              {
+                node,
+                since: waitingSince(node.pullRequest),
+                id: pullRequestId(node.pullRequest),
+              },
+            ]
           : []
       )
+    );
+    const { waiting: stillWaiting, ignored: setAsideNodes } = setAside(
+      waitingNodes,
+      this.ignored.ids()
     );
     /** How long the Change's pull request has waited on the Reviewer, if it does. */
     const waitOf = (change: Change) => {
@@ -256,15 +298,18 @@ export class Dashboard implements vscode.Disposable {
 
     // A pull request open as a Change is in progress, so it shows there
     // rather than here too; one still opening stays, marked so.
-    const waiting = awaiting
-      ? await Promise.all(
-          waitingNodes
-            .filter(({ node }) => !this.inbox.openState(node).includes("open"))
-            .map(({ node, since }) =>
-              this.pullRequest(targets, node, waitedFor(since, now))
-            )
-        )
-      : undefined;
+    // A pull request set aside keeps its wait, and one open as a Change
+    // shows in progress instead, until it closes.
+    const rowsOf = (list: typeof waitingNodes) =>
+      Promise.all(
+        list
+          .filter(({ node }) => !this.inbox.openState(node).includes("open"))
+          .map(({ node, since }) =>
+            this.pullRequest(targets, node, waitedFor(since, now))
+          )
+      );
+    const waiting = awaiting ? await rowsOf(stillWaiting) : undefined;
+    const ignoredRows = awaiting ? await rowsOf(setAsideNodes) : undefined;
     const authoredRows = authored
       ? await Promise.all(
           authored.children.flatMap((node) =>
@@ -316,7 +361,7 @@ export class Dashboard implements vscode.Disposable {
         total: standings[i].total,
         finish: change.pullRequest ? "submit" : "brief",
       })),
-      waitingNodes.map(({ node, since }) => ({
+      stillWaiting.map(({ node, since }) => ({
         id: pullRequestId(node.pullRequest),
         name: pullRequestName(node.pullRequest),
         since,
@@ -327,7 +372,7 @@ export class Dashboard implements vscode.Disposable {
     const state: DashboardState = {
       ...(waiting && {
         facts: dashboardFacts(
-          waitingNodes.map(({ since }) => ({ since })),
+          stillWaiting.map(({ since }) => ({ since })),
           now
         ),
       }),
@@ -338,6 +383,7 @@ export class Dashboard implements vscode.Disposable {
         .filter((_, i) => standings[i].total !== 0)
         .reverse(),
       ...(waiting && { waiting }),
+      ...(ignoredRows && { ignored: ignoredRows }),
       ...(authoredRows && { authored: authoredRows }),
       ...(reviewedRows && { reviewed: reviewedRows }),
       branches,
@@ -390,6 +436,21 @@ export class Dashboard implements vscode.Disposable {
     if (action.type === "next") {
       const next = this.state.next;
       if (next) this.act({ type: next.kind, id: next.id });
+      return;
+    }
+    if (action.type === "ignore" || action.type === "restore") {
+      // Only a row in Waiting on you can be set aside, and one in Ignored brought back.
+      const row = (
+        action.type === "ignore" ? this.state.waiting : this.state.ignored
+      )?.find((r) => r.id === action.id);
+      if (!row) return;
+      if (action.type === "ignore") this.ignored.ignore(action.id);
+      else this.ignored.restore(action.id);
+      // From the Inbox's last load: setting aside asks GitHub for nothing.
+      const thisUpdate = ++this.latest;
+      void this.build(this.lastContents, false).then((built) =>
+        this.send(built, thisUpdate)
+      );
       return;
     }
     if (action.type === "fix") {

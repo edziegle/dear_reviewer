@@ -57,6 +57,8 @@ export interface DashboardState {
   };
   inProgress: DashboardChange[];
   waiting?: DashboardPullRequest[];
+  /** The ones the Reviewer set aside, which the Dashboard lists collapsed under Waiting on you. */
+  ignored?: DashboardPullRequest[];
   authored?: DashboardPullRequest[];
   reviewed?: DashboardPullRequest[];
   branches: DashboardBranch[];
@@ -69,7 +71,11 @@ export interface DashboardState {
 export type DashboardClick =
   | { type: "next" }
   | { type: "openRange" }
-  | { type: "resume" | "finish" | "close" | "open" | "fix"; id: string };
+  | {
+      type:
+        "resume" | "finish" | "close" | "open" | "fix" | "ignore" | "restore";
+      id: string;
+    };
 
 interface DashboardView {
   visible: boolean;

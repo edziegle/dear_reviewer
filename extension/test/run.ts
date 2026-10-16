@@ -171,6 +171,7 @@ const review = sharedWorkspace("review");
 const lifecycle = sharedWorkspace("lifecycle");
 const localReview = sharedWorkspace("local-review");
 const readingOrder = sharedWorkspace("reading-order");
+const dashboard = sharedWorkspace("dashboard");
 
 /**
  * Every launch of a run, in order, with what it opens. A phase like
@@ -205,7 +206,8 @@ const phases: [phase: string, open: () => string][] = [
   ["findings", () => multiRootWorkspace("findings", "findings")],
   ["readingOrder", readingOrder],
   ["readingOrder/afterReload", readingOrder],
-  ["dashboard", () => multiRootWorkspace("dashboard", "dashboard")],
+  ["dashboard", dashboard],
+  ["dashboard/afterReload", dashboard],
   // Last, so the repositories it remembers can't reach other suites; it forgets them when done.
   ["openFolders", () => multiRootWorkspace("open-folders", "open-folders")],
   ["openFolders/elsewhere", () => multiRootWorkspace("elsewhere", "elsewhere")],

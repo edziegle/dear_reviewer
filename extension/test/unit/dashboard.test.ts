@@ -3,6 +3,7 @@ import {
   byLongestWait,
   dashboardFacts,
   nextStep,
+  setAside,
   waitedFor,
   type InProgress,
   type Waiting,
@@ -94,6 +95,54 @@ describe("The Dashboard's facts line", () => {
 
   it("is nothing while the Dashboard can't tell what's waiting", () => {
     assert.strictEqual(dashboardFacts(undefined, now), undefined);
+  });
+});
+
+describe("The pull requests the Reviewer set aside", () => {
+  const row = (id: string, minutes: number) => ({ id, since: ago(minutes) });
+  const a = row("a", 6 * day);
+  const b = row("b", 2 * hour);
+  const c = row("c", 3 * day);
+
+  it("leave the ones waiting, and are listed apart", () => {
+    assert.deepStrictEqual(setAside([a, b, c], new Set(["b"])), {
+      waiting: [a, c],
+      ignored: [b],
+    });
+  });
+
+  it("change nothing when none is set aside", () => {
+    assert.deepStrictEqual(setAside([a, b], new Set()), {
+      waiting: [a, b],
+      ignored: [],
+    });
+  });
+
+  it("ignore an id that isn't waiting", () => {
+    assert.deepStrictEqual(setAside([a], new Set(["gone"])), {
+      waiting: [a],
+      ignored: [],
+    });
+  });
+
+  it("keep their own wait, so restoring one gives back the wait it had", () => {
+    assert.deepStrictEqual(
+      setAside([a, b], new Set(["a"])).ignored[0].since,
+      a.since
+    );
+  });
+
+  it("no longer count, nor give the oldest wait, in the facts line", () => {
+    const { waiting } = setAside([a, b, c], new Set(["a"]));
+    assert.strictEqual(
+      dashboardFacts(waiting, now),
+      "2 waiting on you · oldest 3 days"
+    );
+  });
+
+  it("leave nothing waiting when all are set aside", () => {
+    const { waiting } = setAside([a, b], new Set(["a", "b"]));
+    assert.strictEqual(dashboardFacts(waiting, now), "Nothing waiting on you");
   });
 });
 

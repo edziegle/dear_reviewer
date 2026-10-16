@@ -56,6 +56,21 @@ export function byLongestWait<T extends { since: string }>(
 }
 
 /**
+ * The pull requests that still wait on the Reviewer, apart from the ones
+ * they set aside. A set-aside one keeps its own `since`, so restoring it
+ * gives back the wait it had.
+ */
+export function setAside<T extends { id: string }>(
+  waiting: readonly T[],
+  ignored: ReadonlySet<string>
+): { waiting: T[]; ignored: T[] } {
+  return {
+    waiting: waiting.filter((w) => !ignored.has(w.id)),
+    ignored: waiting.filter((w) => ignored.has(w.id)),
+  };
+}
+
+/**
  * The facts line: how many pull requests wait on the Reviewer and for how
  * long the oldest has, such as "5 waiting on you · oldest 6 days". In
  * progress, right below it, counts the Changes itself. `waiting` is
@@ -95,7 +110,8 @@ export function nextStep(
   if (change) {
     // The button names the Change, and its row below says where the Reviewer
     // stands on it, so neither is said a third time.
-    const viewedAll = change.viewed !== undefined && change.viewed >= change.total;
+    const viewedAll =
+      change.viewed !== undefined && change.viewed >= change.total;
     // A local Change with every file viewed and no Comments has no Brief to
     // write: nothing needs changing, so closing it is the next step.
     if (viewedAll && change.finish === "brief" && change.pending === 0)

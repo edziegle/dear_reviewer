@@ -79,6 +79,8 @@ export interface DashboardState {
   inProgress: DashboardChange[];
   /** Undefined until the Inbox has loaded, or while it can't. */
   waiting?: DashboardPullRequest[];
+  /** The ones the Reviewer set aside, listed collapsed under Waiting on you; they keep their wait. */
+  ignored?: DashboardPullRequest[];
   authored?: DashboardPullRequest[];
   reviewed?: DashboardPullRequest[];
   branches: DashboardBranch[];
@@ -101,6 +103,8 @@ export type FromDashboard =
   | { type: "finish"; id: string }
   | { type: "close"; id: string }
   | { type: "open"; id: string }
+  | { type: "ignore"; id: string }
+  | { type: "restore"; id: string }
   | { type: "fix"; id: string };
 
 /** What the Reviewer does in the Dashboard. */
@@ -192,6 +196,8 @@ export class DashboardView implements vscode.WebviewViewProvider {
         message.type === "finish" ||
         message.type === "close" ||
         message.type === "open" ||
+        message.type === "ignore" ||
+        message.type === "restore" ||
         message.type === "fix") &&
       typeof message.id === "string"
     )
@@ -279,6 +285,9 @@ function html(cspSource: string): string {
   .problem-line .link, .setup .muted .link { text-decoration: underline; text-underline-offset: 2px; }
   .setup .muted { margin-top: 8px; }
   .more { margin-top: 6px; }
+  .item .actions { flex: none; }
+  details.ignored { margin-top: 8px; }
+  details.ignored > summary { cursor: pointer; }
   footer { margin-top: 16px; }
 </style>
 </head>
@@ -295,6 +304,7 @@ function html(cspSource: string): string {
 <div id="problems"></div>
 <section id="inProgress" aria-labelledby="inProgressHeading" hidden><h2 id="inProgressHeading">In progress <span class="muted count" id="inProgressCount"></span></h2><div id="changes" role="list"></div></section>
 <section id="waitingSection" aria-labelledby="waitingHeading" hidden><h2 id="waitingHeading">Waiting on you <span class="muted count" id="waitingCount"></span></h2><div id="waiting" role="list"></div><button class="link more" id="waitingMore" type="button" aria-controls="waiting" aria-expanded="false" hidden></button></section>
+<section id="ignoredSection" aria-label="Ignored" hidden><details class="ignored"><summary id="ignoredLabel"></summary><div id="ignored" role="list"></div></details></section>
 <section id="authoredSection" aria-labelledby="authoredHeading" hidden><h2 id="authoredHeading">Your pull requests <span class="muted count" id="authoredCount"></span></h2><div id="authored" role="list"></div><button class="link more" id="authoredMore" type="button" aria-controls="authored" aria-expanded="false" hidden></button></section>
 <section id="reviewedSection" aria-labelledby="reviewedHeading" hidden><h2 id="reviewedHeading">Reviewed by you <span class="muted count" id="reviewedCount"></span></h2><div id="reviewed" role="list"></div><button class="link more" id="reviewedMore" type="button" aria-controls="reviewed" aria-expanded="false" hidden></button></section>
 <section id="branchesSection" aria-labelledby="branchesHeading" hidden><h2 id="branchesHeading">Local branches <span class="muted count" id="branchesCount"></span></h2><div id="branchProblems"></div><div id="branches" role="list"></div><button class="link more" id="branchesMore" type="button" aria-controls="branches" aria-expanded="false" hidden></button></section>
@@ -410,7 +420,8 @@ function html(cspSource: string): string {
 
   // The repository and number come first, so a long title never hides them,
   // and the wait before the author, so a long name is what's cut short.
-  function pullRequest(entry) {
+  // Waiting on you offers Ignore, and Ignored offers Restore; no other list does.
+  function pullRequest(entry, action) {
     const row = el("div", "item pull-request");
     row.setAttribute("role", "listitem");
     if (entry.waited !== undefined) row.append(avatar(entry));
@@ -424,8 +435,19 @@ function html(cspSource: string): string {
       ...notes(entry.notes)
     );
     row.append(content);
+    if (action) {
+      const label = action === "ignore" ? "Ignore" : "Restore";
+      const title = action === "ignore" ? "Set it aside, so it stops asking for your attention. GitHub isn't told." : "Put it back in Waiting on you";
+      const actions = el("div", "actions");
+      actions.append(button("link", label, { type: action, id: entry.id }, title, label + " " + entry.name));
+      row.append(actions);
+    }
     return row;
   }
+  // Built from a list's map, which also passes the index, so none is passed on as the action.
+  const plainRow = (entry) => pullRequest(entry);
+  const waitingRow = (entry) => pullRequest(entry, "ignore");
+  const ignoredRow = (entry) => pullRequest(entry, "restore");
 
   function branch(entry) {
     const row = el("div", "item branch-row");
@@ -483,11 +505,15 @@ function html(cspSource: string): string {
 
   function lists(state) {
     section("waitingSection", state.waiting || [], "waitingCount");
-    capped("waiting", state.waiting || [], pullRequest);
+    capped("waiting", state.waiting || [], waitingRow);
+    const ignored = state.ignored || [];
+    byId("ignoredSection").hidden = ignored.length === 0;
+    setText(byId("ignoredLabel"), "Ignored (" + ignored.length + ")");
+    list("ignored", ignored, ignoredRow);
     section("authoredSection", state.authored || [], "authoredCount");
-    capped("authored", state.authored || [], pullRequest);
+    capped("authored", state.authored || [], plainRow);
     section("reviewedSection", state.reviewed || [], "reviewedCount");
-    capped("reviewed", state.reviewed || [], pullRequest);
+    capped("reviewed", state.reviewed || [], plainRow);
     byId("branchesSection").hidden = state.branches.length === 0 && state.branchProblems.length === 0;
     setText(byId("branchesCount"), state.branches.length ? String(state.branches.length) : "");
     list("branchProblems", state.branchProblems, problem);

@@ -68,6 +68,7 @@ import {
 } from "./commitRange";
 import { git } from "./git";
 import { Dashboard } from "./dashboard/dashboard";
+import { IgnoredPullRequests } from "./dashboard/ignored";
 import type { FromDashboard } from "./dashboard/view";
 import { WindowRequests, type WindowAction } from "./windowRequests";
 
@@ -321,7 +322,10 @@ export function activate(context: vscode.ExtensionContext) {
     requestsWatcher.onDidChange(() => carryOutRequests())
   );
 
-  const dashboard = new Dashboard(inbox, avatars, {
+  const ignoredPullRequests = new IgnoredPullRequests(
+    path.join(context.globalStorageUri.fsPath, "ignored-pull-requests.json")
+  );
+  const dashboard = new Dashboard(inbox, avatars, ignoredPullRequests, {
     inProgress: () => changes.list(),
     standing: (change) => standingOf(change),
     fileCount: (change) => changeFiles.fileCount(change),

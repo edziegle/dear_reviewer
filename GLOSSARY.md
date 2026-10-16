@@ -40,6 +40,10 @@ _Avoid_: File order, review plan, story
 The list of Changes waiting for the Reviewer: open pull requests that await their review or that they authored or reviewed, across the repositories they have open in VSCodium, have opened before, or listed, plus local branches ahead of main. The Dashboard shows it.
 _Avoid_: Queue
 
+**Ignored**:
+A pull request awaiting the Reviewer's review that they have set aside, so it stops asking for their attention. It leaves Waiting on you and its count, and is kept in a collapsed list under it until they restore it. Only on their machine: GitHub isn't told, and the review request stays there.
+_Avoid_: Dismissed, hidden, snoozed
+
 **Team request**:
 A request on a pull request for a review from a team the Reviewer is on, rather than from the Reviewer personally. Any one member's review answers it for the whole team.
 _Avoid_: Group request, indirect request

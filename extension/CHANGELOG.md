@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.3.0](https://github.com/edziegle/dear_reviewer/compare/v0.2.1...v0.3.0) (2026-10-16)
+
+
+### Features
+
+* lay out In progress like Waiting on you ([cd8dbbe](https://github.com/edziegle/dear_reviewer/commit/cd8dbbe1550bab38994c7c180af5d26e18f159c2)), closes [#38](https://github.com/edziegle/dear_reviewer/issues/38)
+* lead In progress with the Change shown last, and keep its rows light ([ab43cb3](https://github.com/edziegle/dear_reviewer/commit/ab43cb383959642394abe12f5a4edefba5439011)), closes [#38](https://github.com/edziegle/dear_reviewer/issues/38)
+* make the Dashboard the side bar outside the review window ([a0f9dec](https://github.com/edziegle/dear_reviewer/commit/a0f9decd86e181b984d86d55bf5e0647a1bbf316)), closes [#38](https://github.com/edziegle/dear_reviewer/issues/38)
+* show each pull request once, in progress or waiting ([b1c065d](https://github.com/edziegle/dear_reviewer/commit/b1c065d1bdb47b68889faa43113ce7827bb65151)), closes [#38](https://github.com/edziegle/dear_reviewer/issues/38)
+* show loading with the editor's progress bar ([4d8c072](https://github.com/edziegle/dear_reviewer/commit/4d8c0726527b9075ac7fd1dc338e1b02998358af)), closes [#38](https://github.com/edziegle/dear_reviewer/issues/38)
+
+
+### Bug Fixes
+
+* keep the open-Changes list safe when several windows write it ([3ec50c4](https://github.com/edziegle/dear_reviewer/commit/3ec50c4c10d1616f44a5fe90e2816355ac6906e2)), closes [#55](https://github.com/edziegle/dear_reviewer/issues/55)
+
 ## [0.2.1](https://github.com/edziegle/dear_reviewer/compare/v0.2.0...v0.2.1) (2026-10-15)
 
 

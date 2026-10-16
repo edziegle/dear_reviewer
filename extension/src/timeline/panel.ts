@@ -489,7 +489,7 @@ ${catSymbol}
   </div>
 </header>
 <section class="submit" id="submitStep" aria-labelledby="submitHeading" hidden>
-  <h2 id="submitHeading">Submit Review</h2>
+  <h2 id="submitHeading">Your Review</h2>
   <fieldset id="verdicts"><legend class="visually-hidden">Verdict</legend></fieldset>
   <div class="muted" id="submitNote"></div>
   <label class="field" for="summary">Summary <span class="muted">for the author</span></label>
@@ -568,8 +568,12 @@ ${catSymbol}
     commented: "reviewed",
     dismissed: "reviewed (dismissed)",
   };
-  for (const type of ["refresh", "finish", "nextFile", "ask"])
+  for (const type of ["refresh", "nextFile", "ask"])
     byId(type).addEventListener("click", () => vscode.postMessage({ type }));
+  byId("finish").addEventListener("click", () => {
+    if (lastState && lastState.submit && !lastState.submit.submitting) vscode.postMessage({ type: "cancelSubmit" });
+    else vscode.postMessage({ type: "finish" });
+  });
   // Links and file references open through the extension, which checks them.
   document.body.addEventListener("click", (event) => {
     const a = event.target instanceof Element ? event.target.closest("a[data-href], a[data-path]") : null;
@@ -837,6 +841,18 @@ ${catSymbol}
     next.className = reading && first === next ? "primary" : "secondary";
     const finish = byId("finish");
     setText(finish, state.finish);
+    // While the Submit step is open, the button is its disclosure: pressing
+    // it again closes the step.
+    if (state.submit) {
+      finish.setAttribute("aria-expanded", "true");
+      finish.setAttribute("aria-controls", "submitStep");
+    } else if (state.finish.startsWith("Submit")) {
+      finish.setAttribute("aria-expanded", "false");
+      finish.setAttribute("aria-controls", "submitStep");
+    } else {
+      finish.removeAttribute("aria-expanded");
+      finish.removeAttribute("aria-controls");
+    }
     finish.title = (state.finish.startsWith("Submit") ? "Submit your Review to GitHub" : "Write a Brief of your Comments for an agent") + " (Ctrl+Alt+R S)";
     // While the Submit step is open, its own button is the one filled; once
     // a Review covers the head, there is nothing to finish.

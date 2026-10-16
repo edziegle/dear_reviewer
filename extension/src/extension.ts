@@ -530,15 +530,18 @@ export function activate(context: vscode.ExtensionContext) {
 
   /**
    * Shows which Changes are open: the one in front in Change Files and
-   * Findings, and to the review keybindings, which work while one is in
-   * front in this window; and every one in the Inbox.
+   * Findings, and to the review keybindings and the palette, which work
+   * while one is in front in this window; and every one in the Inbox.
    */
   function showOpenChanges(): void {
     changeFiles.refresh();
     findings.refresh();
     inbox.redraw();
     dashboard.refresh();
-    void setContext("dearReviewer.hasOpenChange", !!changes.inFront());
+    const front = changes.inFront();
+    void setContext("dearReviewer.hasOpenChange", !!front);
+    // The palette offers the one way to finish that fits the Change in front.
+    void setContext("dearReviewer.frontIsPullRequest", !!front?.pullRequest);
   }
 
   /**

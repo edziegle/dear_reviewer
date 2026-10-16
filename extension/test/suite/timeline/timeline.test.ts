@@ -709,8 +709,16 @@ describe("A pull request's timeline", () => {
         "dearReviewer.finishReview"
       ),
       [
-        ["dearReviewer.submitReview", "dearReviewer.hasOpenChange", undefined],
-        ["dearReviewer.writeBrief", "dearReviewer.hasOpenChange", undefined],
+        [
+          "dearReviewer.submitReview",
+          "dearReviewer.hasOpenChange && dearReviewer.frontIsPullRequest",
+          undefined,
+        ],
+        [
+          "dearReviewer.writeBrief",
+          "dearReviewer.hasOpenChange && !dearReviewer.frontIsPullRequest",
+          undefined,
+        ],
         ["dearReviewer.finishReview", "false", undefined],
       ]
     );

@@ -584,11 +584,11 @@
         },
         {
           "command": "dearReviewer.submitReview",
-          "when": "dearReviewer.hasOpenChange"
+          "when": "dearReviewer.hasOpenChange && dearReviewer.frontIsPullRequest"
         },
         {
           "command": "dearReviewer.writeBrief",
-          "when": "dearReviewer.hasOpenChange"
+          "when": "dearReviewer.hasOpenChange && !dearReviewer.frontIsPullRequest"
         },
         {
           "command": "dearReviewer.finishReview",

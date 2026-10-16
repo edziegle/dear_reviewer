@@ -151,7 +151,7 @@ export function submitReview(
   );
 }
 
-/** Runs Discard Pending Review on the Change, confirming it. */
+/** Runs Discard Pending Comments on the Change, confirming it. */
 export function discardReview(change: ChangeRequest): Thenable<unknown> {
   return vscode.commands.executeCommand(
     "dearReviewer.discardReview",

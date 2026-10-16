@@ -270,7 +270,7 @@
       },
       {
         "command": "dearReviewer.discardReview",
-        "title": "Discard Pending Review…",
+        "title": "Discard Pending Comments…",
         "category": "Dear Reviewer"
       },
       {
@@ -890,7 +890,7 @@
       },
       {
         "view": "dearReviewer.changeFiles",
-        "contents": "No Change is in front. Open a pull request or a local branch from the Dear Reviewer Dashboard in your own window, or [open a commit range](command:dearReviewer.openChange) as a Change."
+        "contents": "No Change is open in this window. Open a pull request or a local branch from the Dear Reviewer side bar in the window you work in, or [open a commit range](command:dearReviewer.openChange) as a Change."
       }
     ],
     "walkthroughs": [

@@ -1121,24 +1121,24 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand(
       "dearReviewer.discardReview",
       async (target?: ChangeTarget, confirmed?: unknown) => {
-        const change = await changeFor(target, "Discard Pending Review");
+        const change = await changeFor(target, "Discard Pending Comments");
         if (!change) return;
         await review.sync();
         const name = changeName(change);
         const count = review.pendingCount(change);
         if (count === 0) {
           void vscode.window.showInformationMessage(
-            `Your Review of ${name} has no pending Comments to discard.`
+            `You have no pending Comments on ${name} to discard.`
           );
           return;
         }
         const comments = countOf(count, "Comment");
-        const discard = "Discard Review";
+        const discard = "Discard Comments";
         if (confirmed !== true) {
           const picked = await vscode.window.showWarningMessage(
             change.pullRequest
-              ? `Discard your Review of ${name}? Its ${comments} will be deleted without being published. This can't be undone.`
-              : `Discard your Review of ${name}? Its ${comments} will be deleted, and no Brief written from them. This can't be undone.`,
+              ? `Discard the ${comments} you haven't submitted on ${name}? They will be deleted without being published. This can't be undone.`
+              : `Discard the ${comments} you haven't briefed on ${name}? They will be deleted, and no Brief written from them. This can't be undone.`,
             { modal: true },
             discard
           );
@@ -1147,7 +1147,7 @@ export function activate(context: vscode.ExtensionContext) {
         if (await review.discard(change)) {
           changeFiles.refresh();
           void vscode.window.showInformationMessage(
-            `Discarded your Review of ${name} and its ${comments}.`
+            `Discarded the ${comments} on ${name}.`
           );
         }
       }

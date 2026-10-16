@@ -88,30 +88,44 @@ describe("The verdicts a pull request takes", () => {
 describe("Why GitHub didn't take a Review, in plain words", () => {
   it("says a verdict on your own pull request can only be a comment", () => {
     assert.match(
-      refusalOf("Review Can not approve your own pull request"),
+      refusalOf("Review Can not approve your own pull request").text,
       /^GitHub takes only a comment on your own pull request/
     );
     assert.match(
-      refusalOf("Can not request changes on your own pull request"),
+      refusalOf("Can not request changes on your own pull request").text,
       /^GitHub takes only a comment/
     );
   });
 
   it("asks for a summary when GitHub wants one", () => {
-    assert.match(refusalOf("Review body is required"), /^Write a summary/);
+    assert.match(refusalOf("Review body is required").text, /^Write a summary/);
   });
 
   it("says the pending Review is gone when it was submitted or discarded elsewhere", () => {
     assert.match(
-      refusalOf("Could not resolve to a node with the global id of 'PRR_1'"),
+      refusalOf("Could not resolve to a node with the global id of 'PRR_1'")
+        .text,
       /submitted or discarded elsewhere/
     );
   });
 
-  it("passes anything else on, saying it is GitHub's", () => {
+  it("says what is known of any other refusal, never GitHub's own words", () => {
+    const { text } = refusalOf("Something odd: PRR_kwDO123");
     assert.strictEqual(
-      refusalOf("Something odd"),
-      "GitHub didn't take your Review: Something odd"
+      text,
+      "GitHub didn't take your Review. Your draft is kept. Submit again, or open the pull request on GitHub."
+    );
+    assert.ok(!text.includes("Something odd"));
+  });
+
+  it("keeps GitHub's own words as the detail, for a Reviewer who wants them", () => {
+    assert.strictEqual(
+      refusalOf("Something odd: PRR_kwDO123").detail,
+      "Something odd: PRR_kwDO123"
+    );
+    assert.strictEqual(
+      refusalOf("Review body is required").detail,
+      "Review body is required"
     );
   });
 });

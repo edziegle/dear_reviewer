@@ -43,16 +43,18 @@ export function verdictsFor(ownPullRequest: boolean): Verdict[] {
 
 /**
  * Why GitHub didn't take the Review, in plain words, from the message its
- * API gave, which the Reviewer sees only when it says nothing more useful.
+ * API gave. The text is never GitHub's own; the message comes back as the
+ * detail, which the Reviewer opens if they want it.
  */
-export function refusalOf(message: string): string {
-  if (/own pull request/i.test(message))
-    return "GitHub takes only a comment on your own pull request. Choose Comment, then submit again.";
-  if (/body .*(required|blank)|(required|blank) .*body/i.test(message))
-    return "Write a summary for this verdict, which GitHub needs, then submit again.";
-  if (/could not resolve to a node|pending review .*not found/i.test(message))
-    return "Your pending Review was submitted or discarded elsewhere, such as on github.com. Refresh the overview, then submit again.";
-  return `GitHub didn't take your Review: ${message}`;
+export function refusalOf(message: string): { text: string; detail: string } {
+  const text = /own pull request/i.test(message)
+    ? "GitHub takes only a comment on your own pull request. Choose Comment, then submit again."
+    : /body .*(required|blank)|(required|blank) .*body/i.test(message)
+      ? "Write a summary for this verdict, which GitHub needs, then submit again."
+      : /could not resolve to a node|pending review .*not found/i.test(message)
+        ? "Your pending Review was submitted or discarded elsewhere, such as on github.com. Refresh the overview, then submit again."
+        : "GitHub didn't take your Review. Your draft is kept. Submit again, or open the pull request on GitHub.";
+  return { text, detail: message };
 }
 
 export function isVerdict(value: unknown): value is Verdict {

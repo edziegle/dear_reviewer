@@ -28,7 +28,7 @@ Chosen option: a result block for both, because the Review then ends in one plac
 - **Writing.** While the Assistant writes the Brief, the overview shows its working line and progress bar, and a failure says why in the block, with Write Brief… to try again. The progress and result toasts are gone.
 - **What steps back.** While the result block shows, Start at, Next unviewed file and the highlighting prompt hide, and the header's finishing button hides, since there is nothing left to finish. The Assistant's take, Reading Order and checks stay as reference. New commits since the Review clear the block, and the Review begins again.
 - **After the last file.** Stepping past the last unviewed file no longer shows a toast. It brings the overview forward, with the focus on the filled Submit Review… or Write Brief… button, which is the next step.
-- **Discard.** The Submit step and the Brief's block each offer Discard Pending Review… as a text link, so it is reachable from the page that lists what it would delete.
+- **Discard.** The Submit step and the Brief's block each offer Discard pending Comments… as a text link, so it is reachable from the page that lists what it would delete.
 
 ### Consequences
 

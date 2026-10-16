@@ -95,6 +95,8 @@ export interface SubmitStep {
   problem?: string;
   /** The label of the button that helps with the problem, such as signing in. */
   problemAction?: string;
+  /** GitHub's own words about the problem, for the Reviewer who opens them. */
+  problemDetail?: string;
   /** Why some verdicts aren't offered, such as on the Reviewer's own pull request. */
   note?: string;
 }
@@ -496,6 +498,9 @@ function html(cspSource: string): string {
   #submitProblem:empty, #submitReason:empty, #submitNote:empty { display: none; }
   #submitProblem { margin-top: 8px; }
   #submitProblem .mark { color: var(--vscode-testing-iconFailed); margin-right: 4px; }
+  #submitProblem .detail { margin-top: 4px; font-size: 0.9em; color: var(--vscode-descriptionForeground); }
+  #submitProblem .detail summary { cursor: pointer; }
+  #submitProblem .detail code { display: block; margin-top: 2px; font-family: var(--vscode-editor-font-family); overflow-wrap: anywhere; white-space: pre-wrap; }
   #submitNote { margin: 2px 0 0; }
   #submitReason { margin-top: 4px; }
 </style>
@@ -518,7 +523,7 @@ ${catSymbol}
   <h2 id="submitHeading">Your Review</h2>
   <fieldset id="verdicts"><legend class="visually-hidden">Verdict</legend></fieldset>
   <div class="muted" id="submitNote"></div>
-  <label class="field" for="summary">Summary <span class="muted">for the author</span></label>
+  <label class="field" for="summary">Summary <span class="muted">shown with your Review</span></label>
   <textarea id="summary" rows="3" aria-describedby="submitReason"></textarea>
   <div class="muted" id="submitReason"></div>
   <div class="pending" id="pending"><h3 id="pendingHeading"></h3><ul id="pendingComments" aria-labelledby="pendingHeading"></ul></div>
@@ -1064,7 +1069,7 @@ ${catSymbol}
       }));
     }
     const problem = byId("submitProblem");
-    const said = JSON.stringify([step.problem, step.problemAction]);
+    const said = JSON.stringify([step.problem, step.problemAction, step.problemDetail]);
     if (problem.dataset.said !== said) {
       problem.dataset.said = said;
       problem.replaceChildren();
@@ -1075,6 +1080,13 @@ ${catSymbol}
         problem.append(mark);
         appendWithCode(problem, step.problem);
         if (step.problemAction) problem.append(" ", textButton(step.problemAction, () => vscode.postMessage({ type: "submitAction" })));
+        // A refusal GitHub gave offers the pull request, and its own words.
+        if (step.problemDetail) {
+          if (lastState && lastState.url) problem.append(" ", link("Open the pull request on GitHub", lastState.url));
+          const details = el("details", "detail");
+          details.append(el("summary", "", "Details"), el("code", "", step.problemDetail));
+          problem.append(details);
+        }
       }
     }
     if (step.submitting) setText(byId("announce"), "Submitting your Review…");

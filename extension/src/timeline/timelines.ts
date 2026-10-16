@@ -420,6 +420,7 @@ class ChangeTimeline {
         submitting: true,
         problem: undefined,
         problemAction: undefined,
+        problemDetail: undefined,
       },
     });
     try {
@@ -431,6 +432,8 @@ class ChangeTimeline {
       const now = this.state.submit;
       if (!now) return;
       const signedOut = err instanceof NotSignedInError;
+      const refusal =
+        signedOut || isUnreachable(err) ? undefined : refusalOf(messageOf(err));
       this.update({
         submit: {
           ...now,
@@ -439,8 +442,9 @@ class ChangeTimeline {
             ? "Sign in to GitHub to submit your Review; your draft stays here."
             : isUnreachable(err)
               ? "Couldn't reach GitHub to submit your Review. Check the connection, then submit again."
-              : refusalOf(messageOf(err)),
+              : refusal!.text,
           problemAction: signedOut ? signIn : undefined,
+          problemDetail: refusal?.detail,
         },
       });
     }

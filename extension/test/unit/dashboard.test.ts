@@ -112,8 +112,6 @@ describe("The Dashboard's next step", () => {
         kind: "resume",
         id: "api-7",
         label: "Resume acme/api #7",
-        place:
-          "You were last in acme/api #7 · 3 of 12 viewed · 2 pending Comments",
       }
     );
   });
@@ -125,7 +123,6 @@ describe("The Dashboard's next step", () => {
         kind: "finish",
         id: "api-7",
         label: "Submit Review of acme/api #7…",
-        place: "You've viewed every file of acme/api #7 · 1 pending Comment",
       }
     );
     assert.strictEqual(
@@ -160,7 +157,6 @@ describe("The Dashboard's next step", () => {
         kind: "resume",
         id: "api-7",
         label: "Resume acme/api #7",
-        place: "You were last in acme/api #7",
       }
     );
   });

@@ -497,11 +497,11 @@ function html(cspSource: string): string {
     setText(byId("facts"), state.facts || "");
     const next = state.next;
     document.querySelector(".overview").hidden = !state.facts && !next;
-    byId("place").hidden = !next;
+    byId("place").hidden = !next || !next.place;
     byId("next").hidden = !next;
     if (next) {
-      setText(byId("place"), next.place);
-      byId("place").title = next.place;
+      setText(byId("place"), next.place || "");
+      byId("place").title = next.place || "";
       setText(byId("next"), next.label);
       byId("next").title = next.kind === "open" ? "Open it as a Change in the review window" : next.kind === "resume" ? "Show its overview in the review window" : (next.label.startsWith("Write") ? "Write a Brief of your Comments for an agent, in the review window" : "Submit your Review from its overview, in the review window");
     }

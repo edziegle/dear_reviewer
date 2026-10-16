@@ -4,8 +4,6 @@
 // and the one next step the Dashboard offers (the Next Step Rule in
 // DESIGN.md).
 
-import { countOf } from "../reviewStanding";
-
 /** A Change open in the review window, as the Dashboard weighs it. */
 export interface InProgress {
   id: string;
@@ -32,8 +30,8 @@ export interface Waiting {
 }
 
 export type NextStep =
-  | { kind: "resume"; id: string; label: string; place: string }
-  | { kind: "finish"; id: string; label: string; place: string }
+  | { kind: "resume"; id: string; label: string }
+  | { kind: "finish"; id: string; label: string }
   | { kind: "open"; id: string; label: string; place: string };
 
 /**
@@ -75,7 +73,9 @@ export function dashboardFacts(
 }
 
 /**
- * What comes next, which the Dashboard fills the one button for: the Change in
+ * What comes next, which the Dashboard fills the one button for. Only a pull
+ * request not yet open says why it is next, in `place`, since nothing else
+ * on the Dashboard does: the Change in
  * progress shown last that still needs the Reviewer, to resume, or to
  * finish once every file is viewed; or else the pull request that has
  * waited longest and isn't open yet. A Change whose last Review covers its
@@ -92,9 +92,8 @@ export function nextStep(
     .filter((c) => c.total > 0 && !(c.reviewed && c.pending === 0))
     .at(-1);
   if (change) {
-    const pending = change.pending
-      ? [countOf(change.pending, "pending Comment")]
-      : [];
+    // The button names the Change, and its row below says where the Reviewer
+    // stands on it, so neither is said a third time.
     if (change.viewed !== undefined && change.viewed >= change.total)
       return {
         kind: "finish",
@@ -103,21 +102,11 @@ export function nextStep(
           change.finish === "submit"
             ? `Submit Review of ${change.name}…`
             : `Write Brief for ${change.name}…`,
-        place: [`You've viewed every file of ${change.name}`, ...pending].join(
-          " · "
-        ),
       };
     return {
       kind: "resume",
       id: change.id,
       label: `Resume ${change.name}`,
-      place: [
-        `You were last in ${change.name}`,
-        ...(change.viewed !== undefined
-          ? [`${change.viewed} of ${change.total} viewed`]
-          : []),
-        ...pending,
-      ].join(" · "),
     };
   }
   const longest = byLongestWait(waiting.filter((w) => !w.open))[0];

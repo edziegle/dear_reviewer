@@ -320,7 +320,8 @@ describe("Dashboard", () => {
           {
             kind: "resume",
             label: `Resume ${second.name}`,
-            place: `You were last in ${second.name} · 0 of 3 viewed`,
+            // The button names the Change and its row says where you stand.
+            place: undefined,
           }
         );
       });

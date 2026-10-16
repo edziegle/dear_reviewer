@@ -17,6 +17,6 @@ OWN-WORLD: The overview's world at side-bar density: theme variables only, the w
 
 STORY: The Reviewer clicks Dear Reviewer, sees how much is open and waiting and where they left off, and presses one button to resume in the review window or start the next review.
 
-FIRST VIEWPORT: Facts line, place line, the filled next step, a hairline, then In progress and Waiting on you.
+FIRST VIEWPORT: Facts line, the filled next step (with a place line only when it is a pull request not yet open), a hairline, then In progress and Waiting on you.
 
 FORM: The Home overview's form, moved into the side bar. Signature interaction: the next-step button follows the Review: Resume, then Submit Review… or Write Brief… once every file is viewed, then the longest-waiting pull request; signed out, it is Sign In to GitHub. Motion grammar: only the progress bar along the top while the Inbox loads; updates rebuild in place and keep the focus.

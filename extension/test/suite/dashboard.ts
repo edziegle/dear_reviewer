@@ -52,7 +52,8 @@ export interface DashboardState {
     kind: "resume" | "finish" | "open";
     id: string;
     label: string;
-    place: string;
+    /** Why a pull request not yet open is next; the others say it in their row. */
+    place?: string;
   };
   inProgress: DashboardChange[];
   waiting?: DashboardPullRequest[];

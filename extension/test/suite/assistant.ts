@@ -404,6 +404,26 @@ export function webviewTabs(): string[] {
     .map((tab) => tab.label);
 }
 
+/** A turn in which the Assistant replies to a request for Findings with one Finding on `util.py`'s `line`. */
+export function findingTurn(
+  line: number,
+  message = `Look at line ${line}.`
+): Record<string, unknown>[] {
+  return replyTurn(
+    JSON.stringify({
+      findings: [
+        {
+          path: "util.py",
+          side: "head",
+          startLine: line,
+          endLine: line,
+          message,
+        },
+      ],
+    })
+  );
+}
+
 /** A turn of stream-json events in which the Assistant replies with this text, streamed in two parts. */
 export function replyTurn(text: string): Record<string, unknown>[] {
   const session_id = "11111111-1111-4111-8111-111111111111";

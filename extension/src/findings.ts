@@ -255,6 +255,11 @@ export class Findings
     this.showHasFindings();
   }
 
+  /** The names of the Changes this window holds Findings for, for the tests. */
+  changeNames(): string[] {
+    return [...this.byChange.values()].map((entry) => changeName(entry.change));
+  }
+
   /** Forgets the Findings of a Change that was closed. */
   forget(change: Change): void {
     if (this.byChange.delete(change.id)) this.update();

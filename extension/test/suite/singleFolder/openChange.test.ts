@@ -2,6 +2,7 @@ import * as assert from "assert";
 import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
+import { findingTurn, replyTurn, scriptClaude } from "../assistant";
 import { buildFixtureRepo } from "../fixtures";
 import {
   closeChange,
@@ -13,7 +14,9 @@ import {
   worktreesOf,
 } from "../reviewer";
 import {
+  inReviewWindow,
   reviewWindowReportFile,
+  runInReviewWindow,
   type ReviewWindowReport,
 } from "../reviewWindowProbe";
 
@@ -90,18 +93,6 @@ describe("Open Change from a single-folder window", () => {
     for (const w of [base, head]) assert.ok(!fs.existsSync(w.path));
   });
 
-  /** Waits for the review window to show what `check` asks of its report. */
-  async function inReviewWindow(
-    check: (report: ReviewWindowReport) => void
-  ): Promise<void> {
-    await eventually(() => {
-      const report = JSON.parse(
-        fs.readFileSync(reviewWindowReportFile(), "utf8")
-      ) as ReviewWindowReport;
-      check(report);
-    }, 30_000);
-  }
-
   /**
    * The open Changes still waiting for the review window to show them, from
    * the list every window shares, next to the folder of Changes.
@@ -155,6 +146,46 @@ describe("Open Change from a single-folder window", () => {
 
     try {
       await inReviewWindow(inFront(titles[0]));
+    } finally {
+      await closeChange(first);
+    }
+  });
+
+  it("lets go of what the review window holds for a Change closed from this window, and keeps the others'", async () => {
+    const { first, second, titles } = twoChangesOf("letGoElsewhere");
+    await scriptClaude(first, {
+      turns: [replyTurn("First."), findingTurn(2)],
+    });
+    await scriptClaude(second, {
+      turns: [replyTurn("Second."), findingTurn(3)],
+    });
+    await openChange(first);
+    await openChange(second);
+    await inReviewWindow(inFront(titles[1]));
+    await runInReviewWindow("dearReviewer.findIssues", first);
+    await runInReviewWindow("dearReviewer.findIssues", second);
+    // Only the Change in front has an overview.
+    await inReviewWindow((report) => {
+      assert.deepStrictEqual(
+        [...report.held.findings].sort(),
+        [...titles].sort()
+      );
+      assert.deepStrictEqual(
+        [...report.held.assistants].sort(),
+        [...titles].sort()
+      );
+      assert.deepStrictEqual(report.held.timelines, [titles[1]]);
+    });
+
+    await closeChange(second);
+
+    try {
+      // The one behind comes to the front, and the closed one is let go of.
+      await inReviewWindow((report) => {
+        assert.deepStrictEqual(report.held.findings, [titles[0]]);
+        assert.deepStrictEqual(report.held.assistants, [titles[0]]);
+        assert.deepStrictEqual(report.held.timelines, [titles[0]]);
+      });
     } finally {
       await closeChange(first);
     }

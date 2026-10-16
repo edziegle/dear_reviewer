@@ -10,9 +10,11 @@ import { changeFiles, changeFilesTreeChanged } from "./changeFiles";
 import {
   activeTabLabel,
   eventually,
+  heldState,
   multiDiffFiles,
   shownChanges,
   workspaceFolders,
+  type HeldState,
 } from "./reviewer";
 
 export function isReviewWindow(): boolean {
@@ -22,6 +24,63 @@ export function isReviewWindow(): boolean {
 
 export function reviewWindowReportFile(): string {
   return path.join(process.env.DEAR_REVIEWER_FIXTURES!, "review-window.json");
+}
+
+function commandsFile(): string {
+  return path.join(
+    process.env.DEAR_REVIEWER_FIXTURES!,
+    "review-window-commands.json"
+  );
+}
+
+interface CommandForReviewWindow {
+  id: string;
+  command: string;
+  args: unknown[];
+}
+
+/** The commands asked of the review window so far, none if no file yet. */
+function askedCommands(): CommandForReviewWindow[] {
+  try {
+    return JSON.parse(fs.readFileSync(commandsFile(), "utf8"));
+  } catch {
+    return [];
+  }
+}
+
+/** Waits for the review window to show what `check` asks of its report. */
+export async function inReviewWindow(
+  check: (report: ReviewWindowReport) => void,
+  timeoutMs = 30_000
+): Promise<void> {
+  await eventually(() => {
+    check(
+      JSON.parse(
+        fs.readFileSync(reviewWindowReportFile(), "utf8")
+      ) as ReviewWindowReport
+    );
+  }, timeoutMs);
+}
+
+/**
+ * Has the review window run a command, as the Reviewer would there, such as
+ * Find Issues on a Change open in it. Resolves once the command has run.
+ */
+export async function runInReviewWindow(
+  command: string,
+  ...args: unknown[]
+): Promise<void> {
+  const id = `${process.pid}-${Date.now()}-${Math.random()}`;
+  const file = commandsFile();
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(
+    `${file}.tmp`,
+    JSON.stringify([...askedCommands(), { id, command, args }])
+  );
+  fs.renameSync(`${file}.tmp`, file);
+  await inReviewWindow((report) => {
+    if (!report.ran.includes(id)) throw new Error("not run yet");
+  }, 60_000);
 }
 
 export interface ReviewWindowReport {
@@ -34,6 +93,10 @@ export interface ReviewWindowReport {
   changeFiles: string[];
   /** Every Change shown the way a review starts, oldest first, by name. */
   shown: readonly string[];
+  /** What the window holds for Changes. */
+  held: HeldState;
+  /** The commands asked of it with `runInReviewWindow` that have run, by id. */
+  ran: string[];
 }
 
 /**
@@ -47,6 +110,20 @@ export async function observeReviewWindow(): Promise<never> {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   // One write at a time, so a slower, older report never lands last.
   let writing = Promise.resolve();
+  const ran: string[] = [];
+  const started = new Set<string>();
+  const runAsked = () => {
+    for (const { id, command, args } of askedCommands()) {
+      if (started.has(id)) continue;
+      started.add(id);
+      void Promise.resolve(vscode.commands.executeCommand(command, ...args))
+        .catch(() => undefined)
+        .then(() => {
+          ran.push(id);
+          write();
+        });
+    }
+  };
   const write = () => {
     writing = writing
       .then(async () => {
@@ -55,6 +132,7 @@ export async function observeReviewWindow(): Promise<never> {
           clearInterval(polling);
           return;
         }
+        runAsked();
         const listed = await changeFiles().catch(() => []);
         const report: ReviewWindowReport = {
           folders: workspaceFolders(),
@@ -65,6 +143,8 @@ export async function observeReviewWindow(): Promise<never> {
           files: multiDiffFiles(),
           changeFiles: listed.map((entry) => entry.label),
           shown: await shownChanges(),
+          held: await heldState(),
+          ran: [...ran],
         };
         // Renamed into place, so the test never reads a half-written report.
         fs.writeFileSync(`${file}.tmp`, JSON.stringify(report, null, 2));

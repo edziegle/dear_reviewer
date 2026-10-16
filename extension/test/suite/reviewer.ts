@@ -117,6 +117,26 @@ export async function shownChanges(): Promise<readonly string[]> {
   return (await extension.activate()).shownChanges();
 }
 
+/**
+ * What this window holds for Changes: the names of those with Findings, the
+ * titles of overviews and Assistants, and the count of review threads.
+ */
+export interface HeldState {
+  findings: string[];
+  timelines: string[];
+  assistants: string[];
+  threads: number;
+}
+
+/** What this window holds for Changes now. */
+export async function heldState(): Promise<HeldState> {
+  const extension = vscode.extensions.getExtension<{
+    held(): HeldState;
+  }>("edziegle.dear-reviewer");
+  if (!extension) throw new Error("Dear Reviewer is not installed");
+  return (await extension.activate()).held();
+}
+
 export function closeChange(request: ChangeRequest): Thenable<unknown> {
   return vscode.commands.executeCommand("dearReviewer.closeChange", request);
 }

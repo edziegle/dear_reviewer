@@ -13,6 +13,7 @@ import {
   showAllChanges,
 } from "./changeWorkspace";
 import { ChangeFilesNode, ChangeFilesView } from "./changeFiles";
+import { ClosedChanges } from "./closedChanges";
 import { Assistants } from "./assistant/assistant";
 import { Briefs } from "./briefs";
 import { Conversations } from "./assistant/conversations";
@@ -444,6 +445,9 @@ export function activate(context: vscode.ExtensionContext) {
     await viewedFiles.forget(change);
   }
 
+  /** The Changes the last sync saw open, to let go of those that left the list. */
+  const closedChanges = new ClosedChanges<Change>();
+
   const lifecycle = new Lifecycle(
     changes,
     github,
@@ -581,13 +585,16 @@ export function activate(context: vscode.ExtensionContext) {
 
   /**
    * Catches up with the open Changes, which any window may have changed:
-   * shows them, and, if the Change shown last closed, shows the one now in
-   * front the way a review starts; in the review window, also shows the
+   * lets go of those that closed, shows them, and, if the Change shown last
+   * closed, shows the one now in front the way a review starts; in the review window, also shows the
    * Changes sent here from another window. While this window is opening or
    * closing Changes, or a Change sent here still waits to show, the one in
    * front may be passing, so it waits to show it until they settle.
    */
   function syncOpenChanges(): Promise<void> {
+    // Another window may have closed Changes this one still holds state for.
+    for (const gone of closedChanges.leftSince(changes.list()))
+      void letGo(gone).catch(() => undefined);
     showOpenChanges();
     const front = changes.inFront();
     carryOutRequests();
@@ -1643,6 +1650,17 @@ export function activate(context: vscode.ExtensionContext) {
         carryOutRequests();
       },
     },
+    /**
+     * What this window holds for Changes, for the tests: the names of those
+     * with Findings, the titles of overviews and Assistants, and the count
+     * of review threads.
+     */
+    held: () => ({
+      findings: findings.changeNames(),
+      timelines: timelines.panels().map((panel) => panel.title),
+      assistants: assistants.overviews().map((overview) => overview.title),
+      threads: review.threads().length,
+    }),
     /** Every Change shown the way a review starts, oldest first, by name. */
     shownChanges: (): readonly string[] => [...shownChanges],
     /** A stand-in for the Extensions view's search. */

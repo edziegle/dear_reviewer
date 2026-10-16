@@ -4,7 +4,8 @@
 // (ADR 0020). It shows what the Change is, its size, where the Reviewer
 // stands on it, the Assistant's short take and its Reading Order (ADR 0022),
 // then its history: a pull request's timeline, loaded from GitHub, or a local
-// Change's commits, from git. Links in the panel open through the
+// Change's commits, from git. A pull request's Review ends in its Submit step
+// (ADR 0033). Links in the panel open through the
 // extension, and only the ones it sent; `path:line` references open only
 // the Change's own files.
 
@@ -37,6 +38,13 @@ import {
 } from "./panel";
 import { isUnreachable, messageOf } from "../errors";
 import type { ShownReadingOrder } from "../readingOrder";
+import type { PendingCommentLine } from "../reviewComments";
+import {
+  summaryNeeded,
+  verdictOrder,
+  verdicts,
+  type Verdict,
+} from "../reviewSubmission";
 
 const signIn = "Sign In to GitHub";
 
@@ -74,6 +82,19 @@ export interface OverviewSources {
   findExtension(extension: string): void;
   /** Never offers these file extensions again. */
   dismissUnhighlighted(extensions: string[]): void;
+  /** The Change's Comments in the Review under way. */
+  pendingComments(change: Change): PendingCommentLine[];
+  /** Shows one of them in the diff, by its place in that list. */
+  openPending(change: Change, index: number): void;
+  /**
+   * Submits the Change's Review. Gives what it published, in words, and its
+   * page on GitHub; throws if GitHub didn't take it.
+   */
+  submit(
+    change: Change,
+    verdict: Verdict,
+    summary: string
+  ): Promise<{ text: string; url?: string }>;
   /** Runs an action the overview offers for the Change. */
   act(
     change: Change,
@@ -129,6 +150,28 @@ export class Timelines implements vscode.Disposable {
       if (id !== change.id) timeline.panel?.dispose();
   }
 
+  /**
+   * Shows the pull request's overview with the Submit step open and the
+   * focus on its verdict, starting from this one if given.
+   */
+  async submit(change: Change, verdict?: Verdict): Promise<void> {
+    let timeline = this.byChange.get(change.id);
+    const opened = !timeline?.panel;
+    if (!timeline) {
+      timeline = new ChangeTimeline(
+        change,
+        this.github,
+        this.avatars,
+        this.openLink,
+        this.sources
+      );
+      this.byChange.set(change.id, timeline);
+    }
+    timeline.show(true);
+    timeline.openSubmit(verdict);
+    if (opened) await timeline.load();
+  }
+
   /** Reloads the Change's overview, if it has one. */
   async refresh(change: Change): Promise<void> {
     await this.byChange.get(change.id)?.load();
@@ -181,6 +224,8 @@ class ChangeTimeline {
   private state: TimelineState;
   panel?: TimelinePanel;
   private loads = 0;
+  /** How many times the Reviewer asked for the Submit step. */
+  private asked = 0;
   /** The Change's files, whose `path:line` references in the take open them. */
   private files = new Set<string>();
   /** The Change's files, with which are binary, once counted. */
@@ -266,11 +311,13 @@ class ChangeTimeline {
       this.sources.readingOrder(this.change).catch(() => undefined),
     ]);
     this.update({
+      ...(this.state.submit && { submit: this.pendingOf(this.state.submit) }),
       readingOrder,
       standing: found?.notes ?? [],
       review: found?.review,
       navigationOff: this.sources.navigationOff(),
       ...(found && { progress: { viewed: found.viewed, total: found.total } }),
+      finished: !!found?.reviewed && found.pending === 0,
     });
   }
 
@@ -287,6 +334,62 @@ class ChangeTimeline {
     if (extensions.length) this.state.unhighlighted = extensions;
     else delete this.state.unhighlighted;
     this.panel?.update(this.state);
+  }
+
+  /** Opens the Submit step, or brings the focus back to it, starting from the verdict given. */
+  openSubmit(verdict?: Verdict): void {
+    if (!this.change.pullRequest) return;
+    const step = this.state.submit;
+    this.update({
+      submit: this.pendingOf({
+        asked: ++this.asked,
+        verdicts: verdictOrder.map((v) => ({
+          verdict: v,
+          label: verdicts[v].label,
+          detail: verdicts[v].detail,
+        })),
+        needsSummary: {},
+        comments: [],
+        submitting: step?.submitting ?? false,
+        ...(verdict && { verdict }),
+      }),
+      submitted: undefined,
+    });
+  }
+
+  /** The step with the Comments pending now, and what they let it take without a summary. */
+  private pendingOf(
+    step: NonNullable<TimelineState["submit"]>
+  ): NonNullable<TimelineState["submit"]> {
+    const comments = this.sources.pendingComments(this.change);
+    return { ...step, comments, needsSummary: summaryNeeded(comments.length) };
+  }
+
+  /** Submits the Review from the step, which says why if GitHub doesn't take it. */
+  private async submitReview(verdict: Verdict, summary: string): Promise<void> {
+    const step = this.state.submit;
+    if (!step || step.submitting) return;
+    const refused = !summary.trim() && step.needsSummary[verdict];
+    if (refused) return this.update({ submit: { ...step, problem: refused } });
+    this.update({ submit: { ...step, submitting: true, problem: undefined } });
+    try {
+      const submitted = await this.sources.submit(this.change, verdict, summary);
+      await this.showStanding();
+      this.update({ submit: undefined, submitted });
+      void this.load();
+    } catch (err) {
+      const now = this.state.submit;
+      if (!now) return;
+      this.update({
+        submit: {
+          ...now,
+          submitting: false,
+          problem: isUnreachable(err)
+            ? "Couldn't reach GitHub to submit your Review. Check the connection, then submit again."
+            : `GitHub didn't take your Review: ${messageOf(err)}`,
+        },
+      });
+    }
   }
 
   showTake(): void {
@@ -335,6 +438,14 @@ class ChangeTimeline {
         return;
       case "refresh":
         return void this.load();
+      case "submit":
+        return void this.submitReview(action.verdict, action.summary);
+      case "cancelSubmit":
+        if (!this.state.submit?.submitting) this.update({ submit: undefined });
+        return;
+      case "openPending":
+        this.sources.openPending(this.change, action.index);
+        return;
       case "problemAction":
         if (this.state.problemAction === signIn)
           void vscode.commands.executeCommand("dearReviewer.signIn");
@@ -349,6 +460,7 @@ class ChangeTimeline {
   private async open(url: string): Promise<void> {
     const links = [
       this.state.url,
+      this.state.submitted?.url,
       ...(this.state.checks?.runs.map((run) => run.url) ?? []),
     ];
     const sent = links.includes(url) || this.panel?.hasLink(url);

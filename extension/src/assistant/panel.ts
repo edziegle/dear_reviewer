@@ -221,9 +221,7 @@ function html(): string {
   .problem button.secondary:hover { background: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-secondaryBackground)); }
   footer { position: sticky; bottom: 0; background: var(--vscode-editor-background); padding: 8px 0 12px; border-top: 1px solid var(--vscode-panel-border); }
   form { display: flex; gap: 6px; align-items: flex-end; }
-  textarea { flex: 1; resize: vertical; min-height: 2.6em; font: inherit; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); border-radius: 2px; padding: 4px 6px; }
-  textarea:focus { outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
-  textarea::placeholder { color: var(--vscode-input-placeholderForeground); opacity: 1; }
+  textarea { flex: 1; }
   button.send { font: inherit; color: var(--vscode-button-foreground); background: var(--vscode-button-background); border-radius: 2px; padding: 4px 12px; cursor: pointer; }
   button.send:hover { background: var(--vscode-button-hoverBackground); }
   button.send:disabled { opacity: 0.5; cursor: default; }

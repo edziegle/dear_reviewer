@@ -1,6 +1,7 @@
 import * as assert from "assert";
 import * as vscode from "vscode";
 import { changeFiles } from "../changeFiles";
+import { sentTimeline, submitInOverview } from "../timeline";
 import { buildFixtureRepo, buildPullRequestFixture } from "../fixtures";
 import {
   configure,
@@ -445,11 +446,13 @@ describe("Dashboard", () => {
         type: "finish",
         id: (await renderedDashboard()).inProgress[0].id,
       });
-      // Submit Review… asks for a verdict and a summary; the first choice and an empty one.
+      // Submit Review… opens the overview's Submit step, which approves.
+      const overview = `${pr.repository} #${pr.number}`;
+      await eventually(async () =>
+        assert.ok((await sentTimeline(overview)).submit, "the Submit step is open")
+      );
+      await submitInOverview(overview, "approve", "");
       await eventually(async () => {
-        await vscode.commands.executeCommand(
-          "workbench.action.acceptSelectedQuickOpenItem"
-        );
         const reviews = (await reviewsOnGitHub()).filter(
           (r) => r.author === "reviewer" && r.state !== "PENDING"
         );

@@ -9,13 +9,16 @@ import { renderMarkdown, type RenderOptions } from "./markdown";
 
 /**
  * The styles both webviews share: rendered Markdown, the problem banner and
- * its button, the Assistant's hand, the focus outline on every button, link
- * and summary, and the theme's button border, which only high-contrast
- * themes draw (DESIGN.md).
+ * its button, the Assistant's hand, the message box, the focus outline on
+ * every button, link and summary, and the theme's button border, which only
+ * high-contrast themes draw (DESIGN.md).
  */
 export const sharedStyles = `
   button:focus-visible, a:focus-visible, summary:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
   button.primary, button.secondary, button.send, .problem button { border: 1px solid var(--vscode-button-border, var(--vscode-contrastBorder, transparent)); }
+  textarea { resize: vertical; min-height: 2.6em; font: inherit; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); border-radius: 2px; padding: 4px 6px; }
+  textarea:focus { outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
+  textarea::placeholder { color: var(--vscode-input-placeholderForeground); opacity: 1; }
   .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .markdown > :first-child { margin-top: 0; }
   .markdown > :last-child { margin-bottom: 0; }

@@ -22,7 +22,7 @@ import {
   setToken,
   type FakePullRequest,
 } from "../github";
-import { submitReview } from "../review";
+import { comment, commentingLines, submitReview } from "../review";
 import {
   activeTabLabel,
   closeChange,
@@ -34,7 +34,9 @@ import {
 } from "../reviewer";
 import {
   avatarBytes,
+  cancelSubmit,
   catchLinks,
+  clickPendingComment,
   clickLink,
   clickOverview,
   clickProblemAction,
@@ -43,6 +45,7 @@ import {
   renderedTimeline,
   sentTimeline,
   showTimeline,
+  submitInOverview,
   type Timeline,
   type TimelineItem,
 } from "../timeline";
@@ -68,6 +71,7 @@ function withoutAvatars(
     review: _review,
     progress: _progress,
     navigationOff: _navigationOff,
+    finished: _finished,
     size: _size,
     ...rest
   } = timeline;
@@ -642,19 +646,23 @@ describe("A pull request's timeline", () => {
   }
 
   /**
-   * Answers Submit Review…'s questions with their first choice and an empty
-   * summary, until GitHub has one more Review of the pull request.
+   * Waits for the overview's Submit step to open in front, with the focus,
+   * then approves with an empty summary, until GitHub has one more Review of
+   * the pull request.
    */
-  async function acceptSubmitReview(reviewsBefore: number): Promise<void> {
+  async function approveInSubmitStep(reviewsBefore: number): Promise<void> {
     await eventually(async () => {
-      await vscode.commands.executeCommand(
-        "workbench.action.acceptSelectedQuickOpenItem"
-      );
+      assert.strictEqual(activeTabLabel(), title);
+      assert.ok((await sentTimeline(title)).submit, "the Submit step is open");
+    });
+    await submitInOverview(title, "approve", "");
+    await eventually(async () => {
       const reviews = (await reviewsOnGitHub()).filter(
         (r) => r.author === "reviewer" && r.state !== "PENDING"
       );
       assert.strictEqual(reviews.length, reviewsBefore + 1);
       assert.strictEqual(reviews.at(-1)?.pullRequestId, fakePullRequestId(pr));
+      assert.strictEqual((await sentTimeline(title)).submit, undefined);
     }, 20_000);
   }
 
@@ -664,7 +672,7 @@ describe("A pull request's timeline", () => {
     ).length;
   }
 
-  it("offers Show Overview and Finish Review… on a Change's files, the palette and Change Files", () => {
+  it("offers Show Overview on a Change's files and Change Files, and Finish Review… in the palette", () => {
     const menus = vscode.extensions.getExtension("edziegle.dear-reviewer")!
       .packageJSON.contributes.menus as Record<
       string,
@@ -682,11 +690,9 @@ describe("A pull request's timeline", () => {
         "dearReviewer.showTimeline",
         "dearReviewer.finishReview"
       ),
-      [
-        // Off the navigation group, in the editor's … menu.
-        ["dearReviewer.showTimeline", onChangeFile, "1_dearReviewer@1"],
-        ["dearReviewer.finishReview", onChangeFile, "1_dearReviewer@2"],
-      ]
+      // Off the navigation group, in the editor's … menu. Finishing is in
+      // the overview it brings back.
+      [["dearReviewer.showTimeline", onChangeFile, "1_dearReviewer@1"]]
     );
     assert.deepStrictEqual(
       entries("commandPalette", "dearReviewer.finishReview"),
@@ -700,10 +706,7 @@ describe("A pull request's timeline", () => {
         "dearReviewer.finishReview",
         "dearReviewer.showTimeline"
       ),
-      [
-        ["dearReviewer.finishReview", onChangeFiles, "navigation@1"],
-        ["dearReviewer.showTimeline", onChangeFiles, "navigation@2"],
-      ]
+      [["dearReviewer.showTimeline", onChangeFiles, "navigation@1"]]
     );
   });
 
@@ -745,13 +748,86 @@ describe("A pull request's timeline", () => {
     assert.strictEqual(timelineTab(other.title), undefined);
   });
 
-  it("finishes the Review of a file's Change from its title bar, not the Change in front", async () => {
+  it("ends the Review in the overview's Submit step, listing the Comments it publishes", async () => {
+    const file = pullRequestFile("util.py").fsPath;
+    const [[line]] = await commentingLines(file);
+    await comment(file, line, line, "Rename this.\n\nIt reads better.");
+    await inFrontOfOtherChange();
+    const before = await submittedReviews();
+
+    await vscode.commands.executeCommand("dearReviewer.submitReview", change);
+
+    await eventually(async () => {
+      assert.strictEqual(activeTabLabel(), title);
+      const step = (await sentTimeline(title)).submit;
+      assert.deepStrictEqual(
+        step?.verdicts.map((v) => v.label),
+        ["Comment", "Approve", "Request Changes"]
+      );
+      assert.deepStrictEqual(step?.comments, [
+        { path: "util.py", side: "RIGHT", line: line + 1, text: "Rename this." },
+      ]);
+      // A Comment is something to say, so every verdict can go without a summary.
+      assert.deepStrictEqual(step?.needsSummary, {});
+    });
+
+    await clickPendingComment(title, 0);
+    await eventually(() =>
+      assert.strictEqual(
+        vscode.window.activeTextEditor?.document.uri.fsPath,
+        file
+      )
+    );
+
+    await submitInOverview(title, "comment", "");
+    await eventually(async () => {
+      assert.strictEqual(await submittedReviews(), before + 1);
+      const timeline = await sentTimeline(title);
+      assert.strictEqual(timeline.submit, undefined);
+      assert.strictEqual(
+        timeline.submitted?.text,
+        "Commented on acme/api #21 and published 1 Comment."
+      );
+      assert.strictEqual(timeline.review?.verdict, "commented");
+    }, 20_000);
+  });
+
+  it("opens the Submit step for a file's Change from Finish Review…, and says why GitHub would refuse a verdict", async () => {
     await inFrontOfOtherChange();
     const before = await submittedReviews();
 
     void onTab("finishReview", pullRequestFile("util.py"));
 
-    await acceptSubmitReview(before);
+    await eventually(async () => {
+      assert.strictEqual(activeTabLabel(), title);
+      const step = (await sentTimeline(title)).submit;
+      assert.deepStrictEqual(step?.comments, []);
+      assert.deepStrictEqual(Object.keys(step?.needsSummary ?? {}).sort(), [
+        "comment",
+        "requestChanges",
+      ]);
+    });
+
+    await submitInOverview(title, "requestChanges", "  ");
+    await eventually(async () =>
+      assert.match(
+        (await sentTimeline(title)).submit?.problem ?? "",
+        /^Write a summary/
+      )
+    );
+    assert.strictEqual(await submittedReviews(), before);
+
+    await cancelSubmit(title);
+    await eventually(async () =>
+      assert.strictEqual((await sentTimeline(title)).submit, undefined)
+    );
+
+    void onTab("finishReview", pullRequestFile("util.py"));
+    await approveInSubmitStep(before);
+    assert.strictEqual(
+      (await sentTimeline(title)).submitted?.text,
+      "Approved acme/api #21."
+    );
   });
 
   it("offers to finish the Review once stepping finds every file viewed", async () => {
@@ -773,12 +849,9 @@ describe("A pull request's timeline", () => {
     // Finish Review… is the message's first button.
     await eventually(async () => {
       await vscode.commands.executeCommand("notification.acceptPrimaryAction");
-      await vscode.commands.executeCommand(
-        "workbench.action.acceptSelectedQuickOpenItem"
-      );
-      assert.ok((await submittedReviews()) > before, "no Review submitted");
+      assert.ok((await sentTimeline(title)).submit, "the Submit step is open");
     }, 20_000);
-    await acceptSubmitReview(before);
+    await approveInSubmitStep(before);
   });
 
   it("closes with the Change", async () => {

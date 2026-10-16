@@ -438,14 +438,9 @@
           "group": "setup@1"
         },
         {
-          "command": "dearReviewer.finishReview",
-          "when": "view == dearReviewer.changeFiles && dearReviewer.hasOpenChange",
-          "group": "navigation@1"
-        },
-        {
           "command": "dearReviewer.showTimeline",
           "when": "view == dearReviewer.changeFiles && dearReviewer.hasOpenChange",
-          "group": "navigation@2"
+          "group": "navigation@1"
         },
         {
           "command": "dearReviewer.refreshChangeFiles",
@@ -645,11 +640,6 @@
           "command": "dearReviewer.showTimeline",
           "when": "resourcePath =~ /edziegle\\.dear-reviewer\\/changes\\// || resourceScheme == dear-reviewer-commit",
           "group": "1_dearReviewer@1"
-        },
-        {
-          "command": "dearReviewer.finishReview",
-          "when": "resourcePath =~ /edziegle\\.dear-reviewer\\/changes\\// || resourceScheme == dear-reviewer-commit",
-          "group": "1_dearReviewer@2"
         }
       ],
       "editor/title/context": [
@@ -708,19 +698,9 @@
           "group": "finding@2"
         },
         {
-          "command": "dearReviewer.submitReview",
-          "when": "view == dearReviewer.changeFiles && viewItem =~ /^change\\.pullRequest/",
-          "group": "inline@1"
-        },
-        {
-          "command": "dearReviewer.writeBrief",
-          "when": "view == dearReviewer.changeFiles && viewItem =~ /^change\\.local/",
-          "group": "inline@1"
-        },
-        {
           "command": "dearReviewer.showTimeline",
           "when": "view == dearReviewer.changeFiles && viewItem =~ /^change\\./",
-          "group": "inline@2"
+          "group": "inline@1"
         },
         {
           "command": "dearReviewer.showAssistant",

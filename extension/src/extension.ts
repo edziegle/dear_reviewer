@@ -33,7 +33,8 @@ import { LocalPendingReviews } from "./localReviews";
 import { LocalClone, Repositories } from "./repositories";
 import { ReviewWindow } from "./reviewWindow";
 import { GitHubPendingReviews, PendingReviewsBySource } from "./pendingReview";
-import { ReviewComments, Verdict } from "./reviewComments";
+import { ReviewComments } from "./reviewComments";
+import { isVerdict, verdicts, type Verdict } from "./reviewSubmission";
 import { ReviewInProgressFiles } from "./reviewInProgress";
 import {
   CommitFiles,
@@ -220,6 +221,13 @@ export function activate(context: vscode.ExtensionContext) {
     findExtension: (extension) => languageOffer.find(extension),
     dismissUnhighlighted: (extensions) =>
       void languageOffer.dismiss(extensions),
+    pendingComments: (change) => review.pendingComments(change),
+    openPending: (change, index) =>
+      void review.revealPending(change, index, (file) =>
+        changeFiles.openPath(change, file)
+      ),
+    submit: (change, verdict, summary) =>
+      submitReviewOf(change, verdict, summary),
     act: (change, action) => {
       if (action === "ask") void assistants.open(change, true);
       else if (action === "suggestReadingOrder")
@@ -314,6 +322,36 @@ export function activate(context: vscode.ExtensionContext) {
     trusted: () => vscode.workspace.isTrusted,
   });
   context.subscriptions.push(dashboard);
+
+  /**
+   * Submits the pull request's Review, which ends it, and lets the rest of
+   * Dear Reviewer know. Gives what it published, in words, and its page on
+   * GitHub; throws if GitHub didn't take it.
+   */
+  async function submitReviewOf(
+    change: Change,
+    verdict: Verdict,
+    summary: string
+  ): Promise<{ text: string; url?: string }> {
+    const comments = countOf(review.pendingCount(change), "Comment");
+    const submitted = await review.submit(change, verdict, summary);
+    changeFiles.reviewEnded(change);
+    // GitHub's search lists it as awaiting review for a while yet.
+    if (change.pullRequest) inbox.reviewed(change.pullRequest);
+    // The Inbox shows which pull requests changed since a Review.
+    void inbox.refresh();
+    const name = changeName(change);
+    const done = verdicts[verdict].done;
+    const text =
+      comments === "no Comments"
+        ? `${done} ${name}.`
+        : `${done} ${name} and published ${comments}.`;
+    const url =
+      submitted.url && /^https?:\/\//i.test(submitted.url)
+        ? submitted.url
+        : undefined;
+    return { text, ...(url && { url }) };
+  }
 
   /** Where the Reviewer stands on the Change, for its overview. */
   async function standingOf(change: Change): Promise<Standing> {
@@ -1039,48 +1077,37 @@ export function activate(context: vscode.ExtensionContext) {
           return;
         }
         // Menus of a tree that selects many pass the selection after the node.
-        let verdict = isVerdict(given) ? given : undefined;
-        let summary =
-          typeof givenSummary === "string" ? givenSummary : undefined;
+        const verdict = isVerdict(given) ? given : undefined;
         await review.sync();
+        // A verdict and summary given, as by a test, submit straight away;
+        // otherwise the Review ends in its overview's Submit step (ADR 0033).
+        if (!verdict || typeof givenSummary !== "string")
+          return timelines.submit(change, verdict);
         const name = changeName(change);
-        const comments = countOf(review.pendingCount(change), "Comment");
-        verdict ??= await pickVerdict(name, comments);
-        if (!verdict) return;
-        const chosen = verdict;
-        summary ??= await vscode.window.showInputBox({
-          title: `Submit Review: ${name} · ${verdicts[chosen].label}`,
-          prompt: `The summary GitHub shows with your verdict, published with ${comments}.`,
-          placeHolder: "Summary for the author",
-          ignoreFocusOut: true,
-        });
-        if (summary === undefined) return;
-        const text = summary;
-        const submitted = await vscode.window.withProgress(
-          {
-            location: vscode.ProgressLocation.Notification,
-            title: `Submitting your Review of ${name}…`,
-          },
-          () => review.submit(change, chosen, text)
-        );
+        const submitted = await vscode.window
+          .withProgress(
+            {
+              location: vscode.ProgressLocation.Notification,
+              title: `Submitting your Review of ${name}…`,
+            },
+            () => submitReviewOf(change, verdict, givenSummary)
+          )
+          .then(undefined, (err: unknown) => {
+            void vscode.window.showErrorMessage(
+              `Couldn't submit your Review of ${name}: ${messageOf(err)}`
+            );
+            return undefined;
+          });
         if (!submitted) return;
         void timelines.refresh(change);
-        changeFiles.reviewEnded(change);
-        // GitHub's search lists it as awaiting review for a while yet.
-        inbox.reviewed(change.pullRequest);
-        // The Inbox shows which pull requests changed since a Review.
-        void inbox.refresh();
         const viewOnGitHub = "View on GitHub";
-        const url = submitted.url && vscode.Uri.parse(submitted.url);
-        const web = url && (url.scheme === "https" || url.scheme === "http");
-        void notify(
-          comments === "no Comments"
-            ? `${verdicts[chosen].done} ${name}.`
-            : `${verdicts[chosen].done} ${name} and published ${comments}.`,
-          ...(web ? [viewOnGitHub] : [])
-        ).then((picked) => {
-          if (picked === viewOnGitHub && url) return openLink(url);
-        });
+        const url = submitted.url;
+        void notify(submitted.text, ...(url ? [viewOnGitHub] : [])).then(
+          (picked) => {
+            if (picked === viewOnGitHub && url)
+              return openLink(vscode.Uri.parse(url));
+          }
+        );
       }
     ),
     vscode.commands.registerCommand(
@@ -1706,53 +1733,6 @@ function requestOf(change: Change): ChangeRequest {
     head: change.headSha,
     pullRequest: change.pullRequest,
   };
-}
-
-const verdicts: Record<
-  Verdict,
-  { label: string; detail: string; done: string }
-> = {
-  comment: {
-    label: "Feedback Only",
-    detail:
-      "Publish your summary and Comments without approving or requesting changes.",
-    done: "Sent feedback on",
-  },
-  approve: {
-    label: "Approve",
-    detail:
-      "Publish your summary and Comments, and approve merging these changes.",
-    done: "Approved",
-  },
-  requestChanges: {
-    label: "Request Changes",
-    detail:
-      "Publish your summary and Comments as changes to make before merging.",
-    done: "Requested changes on",
-  },
-};
-
-function isVerdict(value: unknown): value is Verdict {
-  return typeof value === "string" && value in verdicts;
-}
-
-async function pickVerdict(
-  name: string,
-  comments: string
-): Promise<Verdict | undefined> {
-  const picked = await vscode.window.showQuickPick(
-    (Object.keys(verdicts) as Verdict[]).map((verdict) => ({
-      label: verdicts[verdict].label,
-      detail: verdicts[verdict].detail,
-      verdict,
-    })),
-    {
-      title: `Submit Review: ${name}`,
-      placeHolder: `Your verdict, published to GitHub with a summary and ${comments}`,
-      ignoreFocusOut: true,
-    }
-  );
-  return picked?.verdict;
 }
 
 /**

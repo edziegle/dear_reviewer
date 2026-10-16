@@ -5,6 +5,7 @@
 
 import * as fs from "fs";
 import * as vscode from "vscode";
+import type { Verdict } from "./review";
 import type { ChangeRequest } from "./reviewer";
 
 export { catchLinks, releaseLinks } from "./reviewer";
@@ -86,12 +87,27 @@ export interface Timeline {
   };
   standing: string[];
   progress?: { viewed: number; total: number };
+  /** Whether the last Review covers the head, with no Comments pending. */
+  finished?: boolean;
   navigationOff?: boolean;
   /** File extensions, such as `.tofu`, that no installed language highlights, while offered. */
   unhighlighted?: string[];
   take: Take;
   readingOrder?: ShownReadingOrder;
   finish: string;
+  /** The Submit step that ends a pull request's Review, while it is open. */
+  submit?: {
+    asked: number;
+    verdicts: { verdict: Verdict; label: string; detail: string }[];
+    verdict?: Verdict;
+    /** Why GitHub would refuse each verdict that needs a summary, while there is none. */
+    needsSummary: Partial<Record<Verdict, string>>;
+    comments: { path: string; side: "LEFT" | "RIGHT"; line: number; text: string }[];
+    submitting: boolean;
+    problem?: string;
+  };
+  /** The Review just submitted from the step. */
+  submitted?: { text: string; url?: string };
   history: string;
   loading: boolean;
   items: TimelineItem[];
@@ -171,6 +187,28 @@ export async function clickOverview(
     | "suggestReadingOrder"
 ): Promise<void> {
   (await panel(title)).receive({ type: button });
+}
+
+/** Picks the verdict, writes the summary and clicks Submit Review in the overview's Submit step. */
+export async function submitInOverview(
+  title: string,
+  verdict: Verdict,
+  summary: string
+): Promise<void> {
+  (await panel(title)).receive({ type: "submit", verdict, summary });
+}
+
+/** Clicks Cancel in the overview's Submit step. */
+export async function cancelSubmit(title: string): Promise<void> {
+  (await panel(title)).receive({ type: "cancelSubmit" });
+}
+
+/** Clicks a pending Comment in the overview's Submit step, by its place in the list. */
+export async function clickPendingComment(
+  title: string,
+  index: number
+): Promise<void> {
+  (await panel(title)).receive({ type: "openPending", index });
 }
 
 /** Clicks Find an Extension for a file extension in the overview. */

@@ -5,6 +5,8 @@ date: 2026-10-14
 
 # Finish a Review from its Change, end a local Review when its Brief is copied, and let a pending Review be discarded
 
+Amended by [ADR 0033](0033-end-a-review-in-its-overview.md): a pull request's Review ends in its overview's Submit step, which lists the Comments it publishes, and Change Files no longer carries a finishing button.
+
 ## Context and Problem Statement
 
 A design critique of the review flow (2026-10-14) found that finishing a Review was the hardest part to find. Submit Review, Write Brief, Close Change, Show Timeline and Show Assistant could only be run from the command palette, and each one first asked which Change to act on, even when only one was open or the Reviewer was looking at its diff. Submit Review published without saying how many Comments it would publish, and a pending Review couldn't be dropped. Writing a Brief ended a local Change's Review straight away, before the Reviewer had read the Brief: if the Brief was poor, its Comments were already out of the gutter. Where does a Reviewer finish a Review, which Change do commands act on, and when does a local Review end?

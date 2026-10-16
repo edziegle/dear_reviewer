@@ -3,7 +3,8 @@
 // opens in the column beside it once the Reviewer starts reading. It shows
 // what the Change is, how big it is, where the Reviewer stands on it, the
 // Assistant's short take and its Reading Order (ADR 0022), then its history:
-// a pull request's timeline from GitHub, or a local Change's commits. The
+// a pull request's timeline from GitHub, or a local Change's commits. A pull
+// request's Review ends here too, in the Submit step (ADR 0033). The
 // extension sends it the whole state; the webview renders it, says which
 // state it rendered, and asks the extension for everything else.
 
@@ -11,6 +12,7 @@ import * as crypto from "crypto";
 import * as vscode from "vscode";
 import { catMark, catSymbol } from "../assistantMark";
 import { findReferences, type FileReference } from "../markdown";
+import { isVerdict, type Verdict } from "../reviewSubmission";
 import {
   Handshake,
   MarkdownPanel,
@@ -19,6 +21,7 @@ import {
   sharedStyles,
 } from "../markdownPanel";
 import type { ShownReadingOrder } from "../readingOrder";
+import type { PendingCommentLine } from "../reviewComments";
 import type {
   CheckRunStatus,
   CheckStatus,
@@ -73,6 +76,24 @@ export interface OverviewTake {
   canRetry?: boolean;
 }
 
+/** The Submit step that ends a pull request's Review, while it is open (ADR 0033). */
+export interface SubmitStep {
+  /** Goes up each time the Reviewer asks for the step, which then takes the focus. */
+  asked: number;
+  /** The verdicts offered, in order. */
+  verdicts: { verdict: Verdict; label: string; detail: string }[];
+  /** The verdict to start from, when one was asked for. */
+  verdict?: Verdict;
+  /** Why GitHub would refuse each verdict that needs a summary, while there is none. */
+  needsSummary: Partial<Record<Verdict, string>>;
+  /** The Comments that publish with the Review. */
+  comments: PendingCommentLine[];
+  /** Whether GitHub is taking the Review. */
+  submitting: boolean;
+  /** Why GitHub didn't take it, in words for the Reviewer. */
+  problem?: string;
+}
+
 export interface TimelineState {
   /** The pull request's title, or the branch or commits of a local Change. */
   title: string;
@@ -88,6 +109,8 @@ export interface TimelineState {
   standing: string[];
   /** How many of the Change's files the Reviewer has viewed, once counted. */
   progress?: { viewed: number; total: number };
+  /** Whether the Reviewer's last Review covers the head, with no Comments pending, so there is nothing to finish. */
+  finished?: boolean;
   /** Whether the review window is untrusted, so code navigation is off. */
   navigationOff?: boolean;
   /** File extensions, such as `.tofu`, of changed files no installed language highlights, while any are offered. */
@@ -97,6 +120,10 @@ export interface TimelineState {
   readingOrder?: ShownReadingOrder;
   /** The button that finishes the Review: "Submit Review…" or "Write Brief…". */
   finish: string;
+  /** The Submit step, while it is open. */
+  submit?: SubmitStep;
+  /** The Review just submitted from the step: what it published, and its page on GitHub. */
+  submitted?: { text: string; url?: string };
   /** "Timeline" for a pull request, "Commits" for a local Change. */
   history: string;
   /** Whether a reload is under way. */
@@ -142,6 +169,9 @@ export type FromWebview =
   | { type: "suggestReadingOrder" }
   | { type: "refresh" }
   | { type: "finish" }
+  | { type: "submit"; verdict: Verdict; summary: string }
+  | { type: "cancelSubmit" }
+  | { type: "openPending"; index: number }
   | { type: "nextFile" }
   | { type: "ask" }
   | { type: "takeAction" }
@@ -227,6 +257,13 @@ export class TimelinePanel {
     } else if (message.type === "openFile") {
       if (typeof message.path === "string")
         this.onAction({ type: "openFile", path: message.path });
+    } else if (message.type === "submit") {
+      const { verdict, summary } = message;
+      if (isVerdict(verdict) && typeof summary === "string")
+        this.onAction({ type: "submit", verdict, summary });
+    } else if (message.type === "openPending") {
+      if (Number.isInteger(message.index))
+        this.onAction({ type: "openPending", index: message.index });
     } else if (message.type === "findExtension") {
       if (typeof message.extension === "string")
         this.onAction({ type: "findExtension", extension: message.extension });
@@ -235,6 +272,7 @@ export class TimelinePanel {
         "refresh",
         "suggestReadingOrder",
         "finish",
+        "cancelSubmit",
         "nextFile",
         "ask",
         "takeAction",
@@ -398,6 +436,28 @@ function html(cspSource: string): string {
   .item .body.markdown { white-space: normal; }
   .item.commit .sha { font-family: var(--vscode-editor-font-family); }
   #historyProblem { margin: 0 0 8px; }
+  .submit { padding: 12px 0 14px; border-bottom: 1px solid var(--vscode-panel-border); }
+  .submit h2 { margin-top: 0; }
+  .submit fieldset { border: none; margin: 0; padding: 0; }
+  .submit .choice { display: flex; gap: 6px; align-items: baseline; padding: 2px 0; cursor: pointer; }
+  .submit .choice input { margin: 0; flex: none; accent-color: var(--vscode-button-background); }
+  .submit .choice input:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
+  body.vscode-dark, body.vscode-high-contrast { color-scheme: dark; }
+  body.vscode-light, body.vscode-high-contrast-light { color-scheme: light; }
+  .submit .choice .label { flex: none; }
+  .submit .choice .muted { min-width: 0; }
+  .submit .field { display: block; margin: 12px 0 4px; }
+  .submit textarea { display: block; box-sizing: border-box; width: 100%; max-width: 40em; }
+  .submit .pending h3 { font-size: 1em; font-weight: 400; margin: 12px 0 4px; }
+  .submit .pending li { display: flex; flex-wrap: wrap; gap: 0 8px; align-items: baseline; padding: 1px 0; }
+  .submit .pending .file { font-family: var(--vscode-editor-font-family); overflow-wrap: anywhere; }
+  .submit .pending .muted { min-width: 0; overflow-wrap: anywhere; }
+  .submit .actions { margin-top: 12px; align-items: baseline; }
+  .submit .actions button.primary { padding: 4px 12px; }
+  .submit button:disabled { opacity: 0.5; cursor: default; }
+  #submitProblem:empty, #submitReason:empty { display: none; }
+  #submitProblem { margin-top: 8px; }
+  #submitReason { margin-top: 4px; }
 </style>
 </head>
 <body>
@@ -409,6 +469,20 @@ ${catSymbol}
     <button class="secondary" id="finish"></button>
   </div>
 </header>
+<section class="submit" id="submitStep" aria-labelledby="submitHeading" hidden>
+  <h2 id="submitHeading">Submit Review</h2>
+  <fieldset id="verdicts"><legend class="visually-hidden">Verdict</legend></fieldset>
+  <label class="field" for="summary">Summary <span class="muted">for the author</span></label>
+  <textarea id="summary" rows="3" aria-describedby="submitReason"></textarea>
+  <div class="muted" id="submitReason"></div>
+  <div class="pending" id="pending"><h3 id="pendingHeading"></h3><ul id="pendingComments" aria-labelledby="pendingHeading"></ul></div>
+  <div class="problem-line" id="submitProblem" role="alert"></div>
+  <div class="actions">
+    <button class="primary" id="submitReview" type="button" aria-describedby="submitReason" title="Publish your Review to GitHub (Ctrl+Enter in the summary)">Submit Review</button>
+    <button class="secondary" id="cancelSubmit" type="button">Cancel</button>
+  </div>
+</section>
+<div class="visually-hidden" id="announce" role="status"></div>
 <section class="overview" aria-label="Overview">
   <p class="facts" id="facts" hidden></p>
   <p class="muted" id="standing" hidden></p>
@@ -559,6 +633,9 @@ ${catSymbol}
     const node = byId("standing");
     const notes = state.standing;
     node.hidden = notes.length === 0 && !state.review && !state.navigationOff;
+    const said = JSON.stringify([notes, state.review, state.navigationOff, state.submitted]);
+    if (node.dataset.said === said) return;
+    node.dataset.said = said;
     node.replaceChildren();
     if (state.review) {
       const review = el("span", "review " + state.review.verdict);
@@ -568,6 +645,11 @@ ${catSymbol}
       node.append(review, ...(notes.length ? [" · "] : []));
     }
     node.append(notes.join(" · "));
+    if (state.review && state.submitted && state.submitted.url) {
+      const view = link("View on GitHub", state.submitted.url);
+      view.id = "viewSubmitted";
+      node.append(" · ", view);
+    }
     if (state.navigationOff) {
       node.append(notes.length || state.review ? " · " : "", "Navigation off: ", textButton("Trust the review window…", () => vscode.postMessage({ type: "trust" })));
       node.lastChild.title = "The review window is in Restricted Mode, so go to definition and other code navigation are off";
@@ -710,7 +792,126 @@ ${catSymbol}
     const finish = byId("finish");
     setText(finish, state.finish);
     finish.title = (state.finish.startsWith("Submit") ? "Submit your Review to GitHub" : "Write a Brief of your Comments for an agent") + " (Ctrl+Alt+R S)";
-    finish.className = reading ? "secondary" : "primary";
+    // While the Submit step is open, its own button is the one filled; once
+    // a Review covers the head, there is nothing to finish.
+    finish.className = reading || state.submit || state.finished ? "secondary" : "primary";
+  }
+
+  // The Submit step (ADR 0033). The verdict and summary are a draft the
+  // webview keeps, so they outlive the panel being hidden or reloaded.
+  const draft = Object.assign({ verdict: undefined, summary: "" }, vscode.getState() || {});
+  const saveDraft = () => vscode.setState({ verdict: draft.verdict, summary: draft.summary });
+  let asked = 0;
+  let lastStep;
+  const summary = byId("summary");
+  summary.addEventListener("input", () => {
+    draft.summary = summary.value;
+    saveDraft();
+    if (lastStep) submitButtons(lastStep);
+  });
+  summary.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault();
+      byId("submitReview").click();
+    }
+  });
+  byId("submitStep").addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && lastStep && !lastStep.submitting) {
+      event.preventDefault();
+      byId("cancelSubmit").click();
+    }
+  });
+  byId("submitReview").addEventListener("click", () => {
+    if (!lastStep || lastStep.submitting || reasonOf(lastStep)) return;
+    vscode.postMessage({ type: "submit", verdict: draft.verdict, summary: draft.summary });
+  });
+  byId("cancelSubmit").addEventListener("click", () => {
+    byId("finish").focus();
+    vscode.postMessage({ type: "cancelSubmit" });
+  });
+  const reasonOf = (step) => (draft.summary.trim() ? "" : step.needsSummary[draft.verdict] || "");
+  function submitButtons(step) {
+    const reason = reasonOf(step);
+    setText(byId("submitReason"), step.problem ? "" : reason);
+    const submit = byId("submitReview");
+    submit.disabled = step.submitting || !!reason;
+    setText(submit, step.submitting ? "Submitting…" : "Submit Review");
+    byId("cancelSubmit").disabled = step.submitting;
+  }
+  function submitStep(state) {
+    const step = state.submit;
+    const node = byId("submitStep");
+    const had = node.contains(document.activeElement);
+    lastStep = step;
+    node.hidden = !step;
+    if (!step) {
+      if (had) (byId("viewSubmitted") || byId("finish")).focus();
+      return;
+    }
+    const choices = byId("verdicts");
+    const offered = JSON.stringify(step.verdicts);
+    if (choices.dataset.said !== offered) {
+      choices.dataset.said = offered;
+      choices.replaceChildren(choices.firstElementChild, ...step.verdicts.map((v) => {
+        const label = el("label", "choice");
+        const input = el("input");
+        input.type = "radio";
+        input.name = "verdict";
+        input.value = v.verdict;
+        input.addEventListener("change", () => {
+          draft.verdict = v.verdict;
+          saveDraft();
+          submitButtons(lastStep);
+        });
+        label.append(input, el("span", "label", v.label), el("span", "muted", v.detail));
+        return label;
+      }));
+    }
+    const fresh = step.asked !== asked;
+    if (fresh && step.verdict) draft.verdict = step.verdict;
+    if (!step.verdicts.some((v) => v.verdict === draft.verdict)) draft.verdict = step.verdicts[0].verdict;
+    for (const input of choices.querySelectorAll("input")) input.checked = input.value === draft.verdict;
+    if (summary.value !== draft.summary) summary.value = draft.summary;
+    const comments = step.comments;
+    setText(byId("pendingHeading"), comments.length === 0
+      ? "No pending Comments: only your summary and verdict publish."
+      : (comments.length === 1 ? "1 Comment publishes with it:" : comments.length + " Comments publish with it:"));
+    const list = byId("pendingComments");
+    const listed = JSON.stringify(comments);
+    if (list.dataset.said !== listed) {
+      list.dataset.said = listed;
+      list.replaceChildren(...comments.map((comment, index) => {
+        const li = el("li");
+        const where = comment.path + ":" + comment.line;
+        const open = textButton(where, () => vscode.postMessage({ type: "openPending", index }));
+        open.classList.add("file");
+        open.title = "Show this Comment in the diff";
+        li.append(open);
+        const about = [comment.side === "LEFT" ? "before the change" : "", comment.text].filter(Boolean).join(" · ");
+        if (about) li.append(el("span", "muted", about));
+        return li;
+      }));
+    }
+    setText(byId("submitProblem"), step.problem || "");
+    submitButtons(step);
+    if (fresh) {
+      asked = step.asked;
+      node.scrollIntoView({ block: "start" });
+      const checked = choices.querySelector("input:checked");
+      if (checked) checked.focus({ preventScroll: true });
+    }
+  }
+  let announced;
+  function submitted(state) {
+    const done = state.submitted;
+    const said = done ? done.text : undefined;
+    if (said === announced) return;
+    announced = said;
+    if (!done) return;
+    draft.verdict = undefined;
+    draft.summary = "";
+    saveDraft();
+    setText(byId("announce"), done.text);
   }
 
   function render(message) {
@@ -728,9 +929,11 @@ ${catSymbol}
     take(state);
     readingOrder(state);
     ways(state);
+    submitted(state);
+    submitStep(state);
     setText(byId("history"), state.history);
     setText(byId("loading"), state.loading ? "Loading…" : "");
-    byId("progress").hidden = !state.loading;
+    byId("progress").hidden = !state.loading && !(state.submit && state.submit.submitting);
     const problem = byId("historyProblem");
     problem.hidden = !state.problem;
     const said = JSON.stringify([state.problem, state.problemAction]);

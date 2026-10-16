@@ -22,6 +22,7 @@ import {
 } from "../markdownPanel";
 import type { ShownReadingOrder } from "../readingOrder";
 import type { PendingCommentLine } from "../reviewComments";
+import type { BriefState } from "../briefs";
 import type {
   CheckRunStatus,
   CheckStatus,
@@ -55,8 +56,8 @@ export type TimelineItem =
 
 /** The Reviewer's last Review, as the overview's standing line opens with it. */
 export interface ReviewStanding {
-  verdict: "approved" | "changesRequested" | "commented";
-  /** Such as "You approved at 14:32 · 3 Comments published". */
+  verdict: "approved" | "changesRequested" | "commented" | "briefed";
+  /** Such as "You approved at 14:32 · 3 Comments published", or "You copied a Brief at 14:32 · 3 Comments". */
   text: string;
 }
 
@@ -126,6 +127,10 @@ export interface TimelineState {
   finish: string;
   /** The Submit step, while it is open. */
   submit?: SubmitStep;
+  /** Where a local Change's Brief stands, while it is being written, waits to be copied, couldn't be written or was copied. */
+  brief?: BriefState;
+  /** Goes up each time the Reviewer is brought here to finish, which gives the finishing button the focus. */
+  finishAsked?: number;
   /** The Review just submitted from the step: what it published, and its page on GitHub. */
   submitted?: { text: string; url?: string };
   /** "Timeline" for a pull request, "Commits" for a local Change. */
@@ -188,6 +193,9 @@ export type FromWebview =
   | { type: "takeRetry" }
   | { type: "trust" }
   | { type: "closeChange" }
+  | { type: "copyBrief" }
+  | { type: "showBrief" }
+  | { type: "discard" }
   | { type: "problemAction" };
 
 /** What the Reviewer does in the panel. */
@@ -291,6 +299,9 @@ export class TimelinePanel {
         "takeRetry",
         "trust",
         "closeChange",
+        "copyBrief",
+        "showBrief",
+        "discard",
         "problemAction",
         "dismissUnhighlighted",
       ].includes(message.type)
@@ -415,7 +426,8 @@ export const pageStyles = `
   .review { color: var(--vscode-foreground); }
   .review.approved .mark { color: var(--vscode-testing-iconPassed); }
   .review.changesRequested .mark { color: var(--vscode-testing-iconFailed); }
-  .review.commented .mark { color: var(--vscode-descriptionForeground); }`;
+  .review.commented .mark { color: var(--vscode-descriptionForeground); }
+  .review.briefed .mark { color: var(--vscode-testing-iconPassed); }`;
 
 function html(cspSource: string): string {
   const nonce = crypto.randomBytes(16).toString("base64");
@@ -472,6 +484,15 @@ function html(cspSource: string): string {
   .submit .actions { margin-top: 12px; align-items: baseline; }
   .submit .actions button.primary { padding: 4px 12px; }
   .submit button[aria-disabled="true"] { opacity: 0.5; cursor: default; }
+  .result { padding: 12px 0 14px; border-bottom: 1px solid var(--vscode-panel-border); }
+  .result p { margin: 0 0 8px; line-height: 1.5; }
+  .result .verdict .mark { margin-right: 4px; }
+  .result .actions { align-items: baseline; }
+  .result button.primary { padding: 4px 12px; }
+  .result .reading { font-style: italic; color: var(--vscode-descriptionForeground); }
+  #resultProblem:empty { display: none; }
+  #resultProblem { margin: 0 0 8px; }
+  #resultProblem .mark { color: var(--vscode-testing-iconFailed); margin-right: 4px; }
   #submitProblem:empty, #submitReason:empty, #submitNote:empty { display: none; }
   #submitProblem { margin-top: 8px; }
   #submitProblem .mark { color: var(--vscode-testing-iconFailed); margin-right: 4px; }
@@ -488,6 +509,11 @@ ${catSymbol}
     <button class="secondary" id="finish"></button>
   </div>
 </header>
+<section class="result" id="result" aria-label="Review result" hidden>
+  <p class="verdict" id="resultText" role="status"></p>
+  <div class="problem-line" id="resultProblem" role="alert"></div>
+  <div class="actions" id="resultActions"></div>
+</section>
 <section class="submit" id="submitStep" aria-labelledby="submitHeading" hidden>
   <h2 id="submitHeading">Your Review</h2>
   <fieldset id="verdicts"><legend class="visually-hidden">Verdict</legend></fieldset>
@@ -500,6 +526,7 @@ ${catSymbol}
   <div class="actions">
     <button class="primary" id="submitReview" type="button" aria-describedby="submitReason" title="Publish your Review to GitHub (Ctrl+Enter)">Submit Review</button>
     <button class="secondary" id="cancelSubmit" type="button">Cancel</button>
+    <button class="link" id="discardPending" type="button" title="Delete your pending Comments without publishing them" hidden>Discard pending Comments…</button>
   </div>
 </section>
 <div class="visually-hidden" id="announce" role="status"></div>
@@ -654,37 +681,24 @@ ${catSymbol}
     parts.forEach((part, i) => node.append(...(i ? [" · ", part] : [part])));
   }
 
-  const reviewMarks = { approved: "✓", changesRequested: "✗", commented: "•" };
+  const reviewMarks = { approved: "✓", changesRequested: "✗", commented: "•", briefed: "✓" };
   function standing(state) {
     const node = byId("standing");
     const notes = state.standing;
-    const done = state.submitted;
-    node.hidden = notes.length === 0 && !state.review && !done && !state.navigationOff;
-    const said = JSON.stringify([notes, state.review, state.navigationOff, done]);
+    // While the result block says how the Review ended, it isn't said twice.
+    const review = state.review && !showing(state) ? state.review : undefined;
+    node.hidden = notes.length === 0 && !review && !state.navigationOff;
+    const said = JSON.stringify([notes, review, state.navigationOff]);
     if (node.dataset.said === said) return;
     node.dataset.said = said;
     node.replaceChildren();
-    // The Review just submitted leads: its verdict, its page, then the way
-    // out of the Change; where the Reviewer stands follows.
     const parts = [];
-    if (state.review) {
-      const review = el("span", "review " + state.review.verdict);
-      const mark = el("span", "mark", reviewMarks[state.review.verdict]);
+    if (review) {
+      const span = el("span", "review " + review.verdict);
+      const mark = el("span", "mark", reviewMarks[review.verdict]);
       mark.setAttribute("aria-hidden", "true");
-      review.append(mark, " ", state.review.text);
-      parts.push(review);
-    } else if (done) {
-      parts.push(el("span", "review", done.text.replace(/\.$/, "")));
-    }
-    if (done && done.url) {
-      const view = link("View on GitHub", done.url);
-      view.id = "viewSubmitted";
-      parts.push(view);
-    }
-    if (done) {
-      const close = textButton("Close Change", () => vscode.postMessage({ type: "closeChange" }));
-      close.title = "Close this Change and its worktrees, and go back to the Dashboard";
-      parts.push(close);
+      span.append(mark, " ", review.text);
+      parts.push(span);
     }
     parts.push(...notes);
     if (state.navigationOff) {
@@ -702,7 +716,7 @@ ${catSymbol}
   function highlighting(state) {
     const node = byId("highlighting");
     const extensions = state.unhighlighted || [];
-    node.hidden = extensions.length === 0;
+    node.hidden = extensions.length === 0 || stepsBack(state);
     const said = JSON.stringify(extensions);
     if (node.dataset.said === said) return;
     node.dataset.said = said;
@@ -821,9 +835,10 @@ ${catSymbol}
     const progress = state.progress;
     // Once the Review is submitted, or covers the head with nothing pending,
     // the way in steps back with the finishing button.
-    const reading = (!progress || progress.viewed < progress.total) && !state.submitted && !state.finished;
+    const back = stepsBack(state);
+    const reading = (!progress || progress.viewed < progress.total) && !back && !state.finished;
     const start = byId("start");
-    start.hidden = !t.start;
+    start.hidden = !t.start || back;
     if (t.start) {
       const lines = t.start.startLine + (t.start.endLine > t.start.startLine ? "-" + t.start.endLine : "");
       const where = t.start.path + ":" + lines;
@@ -834,12 +849,14 @@ ${catSymbol}
       }
     }
     const next = byId("nextFile");
-    next.hidden = !progress || progress.viewed >= progress.total;
+    next.hidden = !progress || progress.viewed >= progress.total || back;
     next.title = "Open the diff of the next file you haven't viewed (Ctrl+Alt+R N)";
     const first = t.start ? start : next;
     start.className = reading && first === start ? "primary" : "secondary";
     next.className = reading && first === next ? "primary" : "secondary";
     const finish = byId("finish");
+    // There is nothing to finish while the result block says how it ended.
+    finish.hidden = back;
     setText(finish, state.finish);
     // While the Submit step is open, the button is its disclosure: pressing
     // it again closes the step.
@@ -857,7 +874,85 @@ ${catSymbol}
     // While the Submit step is open, its own button is the one filled; once
     // a Review covers the head, there is nothing to finish.
     const allViewed = !!progress && progress.viewed >= progress.total;
-    finish.className = allViewed && !state.submit && !state.submitted && !state.finished ? "primary" : "secondary";
+    finish.className = allViewed && !state.submit && !back && !state.finished ? "primary" : "secondary";
+  }
+
+  // How the Review ended or stands, for the result block: a Brief being
+  // written or waiting to be copied, a Review submitted or covering the head,
+  // or a Brief that couldn't be written. Nothing while the Submit step is open.
+  function resultOf(state) {
+    if (state.submit) return;
+    const brief = state.brief;
+    if (brief && brief.phase === "writing") return "writing";
+    if (brief && brief.phase === "written") return "written";
+    if (state.submitted || state.finished) return "ended";
+    if (brief && brief.phase === "problem") return "problem";
+  }
+  // Whether the result block shows what the Reviewer has done, so the way
+  // in and the finishing button step back.
+  const showing = (state) => resultOf(state) !== undefined;
+  const stepsBack = (state) => ["writing", "written", "ended"].includes(resultOf(state));
+  const countOfComments = (n) => n === 1 ? "1 Comment" : n + " Comments";
+
+  // Once the Reviewer is brought here to finish, the focus goes to the
+  // filled button for the next step: finishing, or what follows it.
+  let finishAsked = 0;
+  function finishFocus(state) {
+    if (state.finishAsked === undefined || state.finishAsked === finishAsked) return;
+    finishAsked = state.finishAsked;
+    const finish = byId("finish");
+    const target = !finish.hidden ? finish : document.querySelector("#result button.primary");
+    if (target) target.focus();
+  }
+
+  function result(state) {
+    const kind = resultOf(state);
+    const node = byId("result");
+    node.hidden = !kind;
+    if (!kind) return;
+    const said = JSON.stringify([kind, state.submitted, state.review, state.brief]);
+    if (node.dataset.said === said) return;
+    node.dataset.said = said;
+    const text = byId("resultText");
+    const problem = byId("resultProblem");
+    const actions = byId("resultActions");
+    text.className = "verdict";
+    text.replaceChildren();
+    problem.replaceChildren();
+    actions.replaceChildren();
+    const brief = state.brief;
+    const button = (className, label, message, title, id) => {
+      const b = el("button", className, label);
+      b.type = "button";
+      if (id) b.id = id;
+      if (title) b.title = title;
+      b.addEventListener("click", () => vscode.postMessage(message));
+      return b;
+    };
+    if (kind === "writing") {
+      text.className = "reading";
+      text.append("The Assistant is writing a Brief of " + countOfComments(brief.comments) + "…");
+    } else if (kind === "written") {
+      text.append("A Brief of " + countOfComments(brief.comments) + " is open in the editor. Read and edit it, then copy it for your agent.");
+      actions.append(button("primary", "Copy Brief", { type: "copyBrief" }, "Copy the Brief, with your edits, which ends this Review"));
+      if (brief.canShow) actions.append(button("secondary", "Show Brief", { type: "showBrief" }, "Open the Brief in the editor"));
+      actions.append(textButton("Discard Comments…", () => vscode.postMessage({ type: "discard" })));
+    } else if (kind === "ended") {
+      const review = state.review;
+      const done = state.submitted;
+      const verdict = review ? review.verdict : "approved";
+      text.className = "verdict review " + verdict;
+      const mark = el("span", "mark", reviewMarks[verdict] || "✓");
+      mark.setAttribute("aria-hidden", "true");
+      text.append(mark, done ? done.text.replace(/\.$/, "") : review ? review.text : "Your Review is submitted");
+      actions.append(button("primary", "Close Change", { type: "closeChange" }, "Close this Change and its worktrees, and go back to the Dashboard", "closeChange"));
+      if (done && done.url) actions.append(button("secondary", "View on GitHub", { type: "openLink", url: done.url }, "Open your Review on GitHub", "viewSubmitted"));
+      if (brief && brief.canShow) actions.append(button("secondary", "Show Brief", { type: "showBrief" }, "Open the Brief in the editor"));
+    } else if (kind === "problem") {
+      const mark = el("span", "mark", "✗");
+      mark.setAttribute("aria-hidden", "true");
+      problem.append(mark, brief.problem);
+    }
   }
 
   // The Submit step (ADR 0033). The verdict and summary are a draft the
@@ -888,6 +983,7 @@ ${catSymbol}
     if (!lastStep || lastStep.submitting || reasonOf(lastStep)) return;
     vscode.postMessage({ type: "submit", verdict: draft.verdict, summary: draft.summary });
   });
+  byId("discardPending").addEventListener("click", () => vscode.postMessage({ type: "discard" }));
   byId("cancelSubmit").addEventListener("click", () => {
     if (lastStep && lastStep.submitting) return;
     byId("finish").focus();
@@ -903,6 +999,7 @@ ${catSymbol}
     submit.setAttribute("aria-disabled", String(step.submitting || !!reason));
     setText(submit, step.submitting ? "Submitting…" : "Submit Review");
     byId("cancelSubmit").setAttribute("aria-disabled", String(step.submitting));
+    byId("discardPending").hidden = step.submitting || step.comments.length === 0;
   }
   function submitStep(state) {
     const step = state.submit;
@@ -911,7 +1008,7 @@ ${catSymbol}
     lastStep = step;
     node.hidden = !step;
     if (!step) {
-      if (had) (byId("viewSubmitted") || byId("finish")).focus();
+      if (had) (byId("viewSubmitted") || byId("closeChange") || byId("finish")).focus();
       return;
     }
     const choices = byId("verdicts");
@@ -1046,7 +1143,9 @@ ${catSymbol}
     readingOrder(state);
     ways(state);
     submitted(state);
+    result(state);
     submitStep(state);
+    finishFocus(state);
     setText(byId("history"), state.history);
     setText(byId("loading"), state.loading ? (state.items.length ? "Refreshing…" : "Loading…") : "");
     byId("progress").hidden = !state.loading && !(state.submit && state.submit.submitting);

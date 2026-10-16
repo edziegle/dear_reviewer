@@ -82,7 +82,7 @@ export interface Timeline {
   size?: { files: number; additions: number; deletions: number };
   /** The Reviewer's last Review, while no new commits came since. */
   review?: {
-    verdict: "approved" | "changesRequested" | "commented";
+    verdict: "approved" | "changesRequested" | "commented" | "briefed";
     text: string;
   };
   standing: string[];
@@ -111,6 +111,15 @@ export interface Timeline {
   };
   /** The Review just submitted from the step. */
   submitted?: { text: string; url?: string };
+  /** Where a local Change's Brief stands. */
+  brief?: {
+    phase: "writing" | "written" | "problem" | "ended";
+    comments: number;
+    problem?: string;
+    canShow: boolean;
+  };
+  /** Goes up each time the Reviewer is brought here to finish. */
+  finishAsked?: number;
   history: string;
   loading: boolean;
   items: TimelineItem[];
@@ -193,6 +202,9 @@ export async function clickOverview(
     | "trust"
     | "suggestReadingOrder"
     | "closeChange"
+    | "copyBrief"
+    | "showBrief"
+    | "discard"
 ): Promise<void> {
   (await panel(title)).receive({ type: button });
 }

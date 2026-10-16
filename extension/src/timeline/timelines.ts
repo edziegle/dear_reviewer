@@ -39,6 +39,7 @@ import {
 import { isUnreachable, messageOf } from "../errors";
 import type { ShownReadingOrder } from "../readingOrder";
 import type { PendingCommentLine } from "../reviewComments";
+import type { BriefState } from "../briefs";
 import { checksInOrder } from "../checkRuns";
 import {
   refusalOf,
@@ -86,6 +87,8 @@ export interface OverviewSources {
   dismissUnhighlighted(extensions: string[]): void;
   /** The Change's Comments in the Review under way. */
   pendingComments(change: Change): PendingCommentLine[];
+  /** Where a local Change's Brief stands. */
+  brief(change: Change): BriefState | undefined;
   /** Shows one of them in the diff, by its place in that list. */
   openPending(change: Change, index: number): void;
   /**
@@ -108,6 +111,9 @@ export interface OverviewSources {
       | "takeRetry"
       | "trust"
       | "closeChange"
+      | "copyBrief"
+      | "showBrief"
+      | "discard"
       | "suggestReadingOrder"
   ): void;
 }
@@ -175,6 +181,15 @@ export class Timelines implements vscode.Disposable {
     if (opened) await timeline.load();
   }
 
+  /**
+   * Brings the Change's overview forward, with the focus on its finishing
+   * button, the next step once every file is viewed.
+   */
+  async finish(change: Change): Promise<void> {
+    await this.open(change, true);
+    this.byChange.get(change.id)?.askFinish();
+  }
+
   /** Reloads the Change's overview, if it has one. */
   async refresh(change: Change): Promise<void> {
     await this.byChange.get(change.id)?.load();
@@ -229,6 +244,8 @@ class ChangeTimeline {
   private loads = 0;
   /** How many times the Reviewer asked for the Submit step. */
   private asked = 0;
+  /** How many times the Reviewer was brought here to finish. */
+  private finishAsked = 0;
   /** Whether the Reviewer wrote the pull request, once its timeline says. */
   private ownPullRequest = false;
   /** The Change's files, whose `path:line` references in the take open them. */
@@ -317,6 +334,9 @@ class ChangeTimeline {
     ]);
     this.update({
       ...(this.state.submit && { submit: this.pendingOf(this.state.submit) }),
+      // New commits begin the Review again, so its result no longer holds.
+      ...(found && !found.reviewed && { submitted: undefined }),
+      brief: this.sources.brief(this.change),
       readingOrder,
       standing: found?.notes ?? [],
       review: found?.review,
@@ -339,6 +359,11 @@ class ChangeTimeline {
     if (extensions.length) this.state.unhighlighted = extensions;
     else delete this.state.unhighlighted;
     this.panel?.update(this.state);
+  }
+
+  /** Asks the overview to put the focus on its finishing button. */
+  askFinish(): void {
+    this.update({ finishAsked: ++this.finishAsked });
   }
 
   /** Opens the Submit step, or brings the focus back to it, starting from the verdict given. */

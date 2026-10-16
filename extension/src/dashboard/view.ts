@@ -363,7 +363,7 @@ function html(cspSource: string): string {
     target.focus();
   });
 
-  const reviewMarks = { approved: "✓", changesRequested: "✗", commented: "•" };
+  const reviewMarks = { approved: "✓", changesRequested: "✗", commented: "•", briefed: "✓" };
   function change(entry) {
     const row = el("div", "item change");
     row.setAttribute("role", "listitem");

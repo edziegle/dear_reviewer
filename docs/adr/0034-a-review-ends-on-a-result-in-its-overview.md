@@ -5,7 +5,7 @@ date: 2026-10-16
 
 # End every Review on a result in its overview, with Close Change as the next step
 
-Amends [ADR 0033](0033-end-a-review-in-its-overview.md), [ADR 0018](0018-finish-a-review-from-the-change.md) and [ADR 0016](0016-local-change-comments-and-briefs.md).
+Amends [ADR 0033](0033-end-a-review-in-its-overview.md), [ADR 0018](0018-finish-a-review-from-the-change.md) and [ADR 0016](0016-local-comments-and-briefs.md).
 
 ## Context and Problem Statement
 

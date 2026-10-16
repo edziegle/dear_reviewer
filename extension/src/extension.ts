@@ -195,8 +195,10 @@ export function activate(context: vscode.ExtensionContext) {
       }
       // The Inbox shows which branches changed since a Brief.
       void inbox.refresh();
-    }
+    },
+    (change) => timelines.codeColumn(change)
   );
+  context.subscriptions.push(briefs, briefs.onDidChange(() => showStanding()));
   const reviewWindow = new ReviewWindow(context.globalStorageUri.fsPath);
   // The review window shows the Change in front, and the Reviewer's own
   // windows the Dashboard (ADR 0032); tests, which can't run in the review
@@ -222,6 +224,7 @@ export function activate(context: vscode.ExtensionContext) {
     dismissUnhighlighted: (extensions) =>
       void languageOffer.dismiss(extensions),
     pendingComments: (change) => review.pendingComments(change),
+    brief: (change) => briefs.stateOf(change),
     openPending: (change, index) =>
       void review.revealPending(change, index, (file) =>
         changeFiles.openPath(change, file)
@@ -235,6 +238,13 @@ export function activate(context: vscode.ExtensionContext) {
       else if (action === "takeAction") assistants.helpWithProblem(change);
       else if (action === "takeRetry") void assistants.retry(change);
       else if (action === "trust") void trust.trust();
+      else if (action === "copyBrief") void briefs.copyWritten(change);
+      else if (action === "showBrief") void briefs.show(change);
+      else if (action === "discard")
+        void vscode.commands.executeCommand(
+          "dearReviewer.discardReview",
+          requestOf(change)
+        );
       else if (action === "closeChange")
         void vscode.commands.executeCommand(
           "dearReviewer.closeChange",
@@ -764,22 +774,12 @@ export function activate(context: vscode.ExtensionContext) {
     else void offerToFinish(change);
   }
 
-  /** Says every file of the Change is viewed, with the way to finish its Review. */
+  /**
+   * Once every file of the Change is viewed, brings its overview forward
+   * with the focus on its filled finishing button, the next step.
+   */
   async function offerToFinish(change: Change): Promise<void> {
-    const finish = change.pullRequest ? "Submit Review…" : "Write Brief…";
-    const overview = "Show Overview";
-    const picked = await vscode.window.showInformationMessage(
-      `Every file of ${changeName(change)} is viewed.`,
-      finish,
-      overview
-    );
-    if (!picked) return;
-    await vscode.commands.executeCommand(
-      picked === finish
-        ? "dearReviewer.finishReview"
-        : "dearReviewer.showTimeline",
-      requestOf(change)
-    );
+    await timelines.finish(change);
   }
 
   /**
@@ -1168,6 +1168,8 @@ export function activate(context: vscode.ExtensionContext) {
           );
           return;
         }
+        // The overview shows the Brief being written, and then waiting to be copied.
+        await timelines.open(change, true);
         await briefs.write(change);
       }
     ),

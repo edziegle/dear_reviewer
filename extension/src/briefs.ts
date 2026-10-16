@@ -2,6 +2,8 @@
 // turns the Reviewer's Comments into instructions an agent can act on, which
 // open as a Markdown file in the editor, where the Reviewer reads and edits
 // them. Copying the Brief to the clipboard ends the Review (see ADR 0018).
+// The overview shows each step of it, writing, written and copied, instead
+// of notifications (see ADR 0034).
 
 import * as crypto from "crypto";
 import * as fs from "fs";
@@ -11,8 +13,27 @@ import { Change, changeName } from "./changeWorkspace";
 import type { LocalPendingReviews, LocalThread } from "./localReviews";
 import { messageOf } from "./errors";
 
+/** Where a local Change's Brief stands, for its overview. */
+export interface BriefState {
+  /** The Assistant is writing it, it is written and waits to be copied, it couldn't be written, or it was copied. */
+  phase: "writing" | "written" | "problem" | "ended";
+  /** How many Comments it covers. */
+  comments: number;
+  /** Why it couldn't be written, in words for the Reviewer. */
+  problem?: string;
+  /** Whether its file is there to show. */
+  canShow: boolean;
+}
+
 export class Briefs {
   private readonly dir: string;
+  private readonly writing = new Map<string, number>();
+  private readonly problems = new Map<string, string>();
+  /** The Changes whose Brief had no Comments to be written from. */
+  private readonly empty = new Set<string>();
+  private readonly changed = new vscode.EventEmitter<void>();
+  /** Fires when a Brief starts or stops being written, or fails. */
+  readonly onDidChange = this.changed.event;
 
   /**
    * `write` has the Assistant write a Brief from the threads, and `ended`
@@ -26,7 +47,9 @@ export class Briefs {
       change: Change,
       threads: LocalThread[]
     ) => Promise<string>,
-    private readonly ended: (conversation: string) => Promise<void>
+    private readonly ended: (conversation: string) => Promise<void>,
+    /** The column the Brief's file opens in: the Change's code column. */
+    private readonly column: (change: Change) => vscode.ViewColumn
   ) {
     this.dir = path.join(storageDir, "briefs");
   }
@@ -40,27 +63,32 @@ export class Briefs {
   async write(change: Change): Promise<vscode.Uri | undefined> {
     const name = changeName(change);
     const threads = this.local.pendingThreads(change);
+    const conversation = change.conversation;
+    this.problems.delete(conversation);
+    this.empty.delete(conversation);
     if (threads.length === 0) {
-      void vscode.window.showInformationMessage(
-        `There are no Comments on ${name} to write a Brief from. Comment in the gutter of its diff first.`
+      this.empty.add(conversation);
+      this.problems.set(
+        conversation,
+        "There are no Comments to write a Brief from. Comment in the diff first."
       );
+      this.changed.fire();
       return;
     }
     let text: string;
+    this.writing.set(conversation, threads.length);
+    this.changed.fire();
     try {
-      text = await vscode.window.withProgress(
-        {
-          location: vscode.ProgressLocation.Notification,
-          title: `The Assistant is writing a Brief for ${name}…`,
-        },
-        () => this.assistant(change, threads)
-      );
+      text = await this.assistant(change, threads);
     } catch (err) {
-      const message = messageOf(err);
-      void vscode.window.showErrorMessage(
-        `Couldn't write a Brief for ${name}: ${message}`
+      this.problems.set(
+        conversation,
+        `Couldn't write a Brief for ${name}: ${messageOf(err)}`
       );
       return;
+    } finally {
+      this.writing.delete(conversation);
+      this.changed.fire();
     }
     const file = path.join(
       this.dirOf(change.conversation),
@@ -69,20 +97,64 @@ export class Briefs {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, text);
     this.local.wroteBrief(change, file, threads);
+    this.changed.fire();
+    return this.show(change, file);
+  }
+
+  /** Opens the Brief's file, the one written for the Review under way or else the last one copied, in the Change's code column. */
+  async show(
+    change: Change,
+    file = this.local.writtenBrief(change.conversation)?.file ??
+      this.local.lastBrief(change.conversation)?.file
+  ): Promise<vscode.Uri | undefined> {
+    if (!file || !fs.existsSync(file)) return;
     const document = await vscode.workspace.openTextDocument(
       vscode.Uri.file(file)
     );
-    await vscode.window.showTextDocument(document, { preview: false });
-    const copy = "Copy Brief";
-    void vscode.window
-      .showInformationMessage(
-        `Read and edit the Brief for ${name}, then copy it for the agent. Copying it ends this Review; until then your Comments stay in the gutter.`,
-        copy
-      )
-      .then((picked) => {
-        if (picked === copy) return this.copy(document.uri);
-      });
+    await vscode.window.showTextDocument(document, {
+      preview: false,
+      viewColumn: this.column(change),
+    });
     return document.uri;
+  }
+
+  /** Copies the Brief written for the Change's Review under way, which ends it. */
+  async copyWritten(change: Change): Promise<void> {
+    const written = this.local.writtenBrief(change.conversation);
+    if (written) await this.copy(vscode.Uri.file(written.file));
+  }
+
+  /** Where the Change's Brief stands, if it is a local Change with one under way or copied. */
+  stateOf(change: Change): BriefState | undefined {
+    if (change.pullRequest) return;
+    const conversation = change.conversation;
+    const writing = this.writing.get(conversation);
+    if (writing !== undefined)
+      return { phase: "writing", comments: writing, canShow: false };
+    const problem = this.problems.get(conversation);
+    // The reason there were no Comments no longer holds once there are some.
+    if (
+      problem &&
+      !(
+        this.empty.has(conversation) &&
+        this.local.pendingThreads(change).length > 0
+      )
+    )
+      return { phase: "problem", comments: 0, problem, canShow: false };
+    const written = this.local.writtenBrief(conversation);
+    if (written)
+      return {
+        phase: "written",
+        comments: written.comments,
+        canShow: fs.existsSync(written.file),
+      };
+    const last = this.local.lastBrief(conversation);
+    if (last && last.commit === change.headSha)
+      return {
+        phase: "ended",
+        comments: last.comments ?? 0,
+        canShow: !!last.file && fs.existsSync(last.file),
+      };
   }
 
   /**
@@ -106,11 +178,16 @@ export class Briefs {
     await vscode.env.clipboard.writeText(text);
     const ended = this.local.endWithBrief(target.fsPath);
     if (ended !== undefined) await this.ended(ended);
-    void vscode.window.showInformationMessage(
-      ended !== undefined
-        ? "Copied the Brief, which ends this Review. Paste it into the agent session that should act on it."
-        : "Copied the Brief. Paste it into the agent session that should act on it."
-    );
+    // Copying the Brief of a Review under way shows in its overview; an
+    // older Brief has no Review to show it, so a notification says so.
+    if (ended === undefined)
+      void vscode.window.showInformationMessage(
+        "Copied the Brief. Paste it into the agent session that should act on it."
+      );
+  }
+
+  dispose(): void {
+    this.changed.dispose();
   }
 
   /** Deletes the Briefs of a Change that is over. */

@@ -72,6 +72,8 @@ function withoutAvatars(
     progress: _progress,
     navigationOff: _navigationOff,
     finished: _finished,
+    brief: _brief,
+    finishAsked: _finishAsked,
     size: _size,
     ...rest
   } = timeline;
@@ -901,11 +903,12 @@ describe("A pull request's timeline", () => {
       "dearReviewer.nextUnviewedFile",
       change
     );
-    // Submit Review… is the message's first button.
+    // The overview comes forward, with the focus on its filled Submit Review….
     await eventually(async () => {
-      await vscode.commands.executeCommand("notification.acceptPrimaryAction");
-      assert.ok((await sentTimeline(title)).submit, "the Submit step is open");
-    }, 20_000);
+      assert.strictEqual(activeTabLabel(), title);
+      assert.ok((await sentTimeline(title)).finishAsked, "asked to focus it");
+    });
+    await clickOverview(title, "finish");
     await approveInSubmitStep(before);
   });
 

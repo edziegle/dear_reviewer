@@ -67,6 +67,8 @@ export interface LastReview {
   url?: string;
   /** How many Comments on the diff it published. */
   comments?: number;
+  /** Whether it ended with a copied Brief, for a local Change, not a verdict. */
+  brief?: boolean;
 }
 
 export interface InboxPullRequests {

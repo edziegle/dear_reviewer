@@ -40,9 +40,14 @@ export class Reviews {
   async lastReview(change: Change): Promise<LastReview | undefined> {
     const pullRequest = change.pullRequest;
     if (!pullRequest) {
-      const commit = this.local.lastBriefed(change.conversation);
-      if (commit && (await hasCommit(change.repository, commit)))
-        return { commit };
+      const brief = this.local.lastBrief(change.conversation);
+      if (brief && (await hasCommit(change.repository, brief.commit)))
+        return {
+          commit: brief.commit,
+          brief: true,
+          submittedAt: brief.at,
+          ...(brief.comments !== undefined && { comments: brief.comments }),
+        };
       return;
     }
     const review = await this.github.lastReview(

@@ -10,6 +10,16 @@ export function reviewStanding(
   review: LastReview,
   now = new Date()
 ): ReviewStanding | undefined {
+  if (review.brief) {
+    const time = review.submittedAt && timeOf(review.submittedAt, now);
+    const held = review.comments
+      ? ` · ${countOf(review.comments, "Comment")}`
+      : "";
+    return {
+      verdict: "briefed",
+      text: `You copied a Brief${time ? ` ${time}` : ""}${held}`,
+    };
+  }
   const { verdict } = review;
   if (
     verdict !== "approved" &&

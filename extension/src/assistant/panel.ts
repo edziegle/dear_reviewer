@@ -223,6 +223,7 @@ function html(): string {
   footer { position: sticky; bottom: 0; background: var(--vscode-editor-background); padding: 8px 0 12px; border-top: 1px solid var(--vscode-panel-border); }
   form { display: flex; gap: 6px; align-items: flex-end; }
   textarea { flex: 1; }
+  .hint { margin-top: 4px; }
   button.send { font: inherit; color: var(--vscode-button-foreground); background: var(--vscode-button-background); border-radius: 2px; padding: 4px 12px; cursor: pointer; }
   button.send:hover { background: var(--vscode-button-hoverBackground); }
   button.send:disabled { opacity: 0.5; cursor: default; }
@@ -240,9 +241,10 @@ ${catSymbol}
 <footer>
   <div class="context" id="context"></div>
   <form id="ask">
-    <textarea id="text" rows="2" aria-label="Ask the Assistant about this Change" data-focus-default></textarea>
+    <textarea id="text" rows="2" aria-label="Ask the Assistant about this Change" aria-describedby="hint" data-focus-default></textarea>
     <button class="send" id="send" type="submit">Send</button>
   </form>
+  <div class="muted hint" id="hint">Enter sends · Shift+Enter starts a new line</div>
 </footer>
 <script nonce="${nonce}">${sharedScript}
   const vscode = acquireVsCodeApi();
@@ -408,7 +410,7 @@ ${catSymbol}
     byId("send").disabled = busy || unavailable;
     text.placeholder = unavailable
       ? "The Assistant can't reply until Claude Code runs; see above."
-      : "Ask about this Change. Enter sends; Shift+Enter starts a new line.";
+      : "Ask about this Change.";
     byId("busy").hidden = !state.busy;
     const problem = byId("problem");
     problem.hidden = !state.problem;

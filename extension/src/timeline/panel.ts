@@ -430,10 +430,12 @@ export const pageStyles = `
   .overview p { margin: 0 0 4px; }
   .overview .actions { margin-top: 12px; }
   .review { color: var(--vscode-foreground); }
-  .review.approved .mark { color: var(--vscode-testing-iconPassed); }
+  .review.approved .mark { color: color-mix(in srgb, var(--vscode-testing-iconPassed) 70%, var(--vscode-foreground)); }
   .review.changesRequested .mark { color: var(--vscode-testing-iconFailed); }
   .review.commented .mark { color: var(--vscode-descriptionForeground); }
-  .review.briefed .mark { color: var(--vscode-testing-iconPassed); }`;
+  .review.briefed .mark { color: color-mix(in srgb, var(--vscode-testing-iconPassed) 70%, var(--vscode-foreground)); }
+  /* A link standing alone is a target of its own: give it height to hit. */
+  .link.more, .link.file, #showTake { padding-block: 4px; }`;
 
 function html(cspSource: string): string {
   const nonce = crypto.randomBytes(16).toString("base64");

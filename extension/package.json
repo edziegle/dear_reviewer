@@ -983,7 +983,7 @@
           {
             "id": "trust",
             "title": "Trust the review window",
-            "description": "Changes open in the review window, which the editor doesn't trust yet, so it is in Restricted Mode: no language servers and no code navigation. Trusting it turns them on for every Change, and lets the reviewed code's workspace settings and tasks apply there, including for pull requests from people you don't know. The editor asks once; you can choose here later. The button shows Workspace Trust in the review window; choose Trust there.\n[Trust the Review Window…](command:dearReviewer.trustReviewWindow)",
+            "description": "The review window is in Restricted Mode until you trust it: no language servers and no code navigation. Trusting it turns them on for every Change, and lets the reviewed code's workspace settings and tasks run there, even for pull requests from people you don't know. The editor asks once; you can choose here later.\n[Trust the Review Window…](command:dearReviewer.trustReviewWindow)",
             "media": {
               "image": {
                 "dark": "media/walkthrough/trust-dark.png",
@@ -1030,7 +1030,8 @@
               "altText": "A Change's overview, with Start at, Next unviewed file and Ask the Assistant, each showing its key"
             },
             "completionEvents": [
-              "onCommand:dearReviewer.nextUnviewedFile"
+              "onCommand:dearReviewer.nextUnviewedFile",
+              "onCommand:dearReviewer.markViewed"
             ]
           },
           {

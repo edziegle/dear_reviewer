@@ -19,4 +19,4 @@ STORY: The Reviewer clicks Dear Reviewer, sees how much is open and waiting and 
 
 FIRST VIEWPORT: Facts line, place line, the filled next step, a hairline, then In progress and Waiting on you.
 
-FORM: The Home overview's form, moved into the side bar. Signature interaction: the next-step button follows the Review: Resume, then Submit Review… or Write Brief… once every file is viewed, then the longest-waiting pull request; signed out, it is Sign In to GitHub. Motion grammar: none; updates rebuild in place and keep the focus.
+FORM: The Home overview's form, moved into the side bar. Signature interaction: the next-step button follows the Review: Resume, then Submit Review… or Write Brief… once every file is viewed, then the longest-waiting pull request; signed out, it is Sign In to GitHub. Motion grammar: only the progress bar along the top while the Inbox loads; updates rebuild in place and keep the focus.

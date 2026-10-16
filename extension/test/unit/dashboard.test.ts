@@ -153,6 +153,18 @@ describe("The Dashboard's next step", () => {
     );
   });
 
+  it("leaves out how many files are viewed while that's unknown", () => {
+    assert.deepStrictEqual(
+      nextStep([inProgress({ viewed: undefined, total: 2 })], [], now),
+      {
+        kind: "resume",
+        id: "api-7",
+        label: "Resume acme/api #7",
+        place: "You were last in acme/api #7",
+      }
+    );
+  });
+
   it("passes over a Change with no files to review", () => {
     assert.strictEqual(
       nextStep(

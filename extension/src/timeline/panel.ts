@@ -436,6 +436,7 @@ ${catSymbol}
   </div>
 </section>
 <section id="checks" hidden><h2 id="checksHeading"></h2><ul class="checks" id="checkRuns"></ul></section>
+<div class="progress" id="progress" aria-hidden="true" hidden></div>
 <section aria-labelledby="history"><h2 id="history"></h2><div class="muted" id="loading" role="status"></div><div class="muted problem-line" id="historyProblem" role="status" hidden></div><div id="items" role="list"></div></section>
 <script nonce="${nonce}">${sharedScript}
   const vscode = acquireVsCodeApi();
@@ -729,6 +730,7 @@ ${catSymbol}
     ways(state);
     setText(byId("history"), state.history);
     setText(byId("loading"), state.loading ? "Loading…" : "");
+    byId("progress").hidden = !state.loading;
     const problem = byId("historyProblem");
     problem.hidden = !state.problem;
     const said = JSON.stringify([state.problem, state.problemAction]);

@@ -280,6 +280,7 @@ function html(cspSource: string): string {
 </style>
 </head>
 <body>
+<div class="progress" id="progress" aria-hidden="true" hidden></div>
 <section class="overview" aria-label="Where you stand">
   <p class="facts" id="facts"></p>
   <p class="muted" id="place" hidden></p>
@@ -471,6 +472,7 @@ function html(cspSource: string): string {
     section("inProgress", state.inProgress, "inProgressCount");
     list("changes", state.inProgress, change);
     setText(byId("loading"), state.loading && !state.waiting && !state.setup ? "Loading pull requests…" : "");
+    byId("progress").hidden = !state.loading;
     const setup = byId("setup");
     setup.hidden = !state.setup;
     const setupText = JSON.stringify(state.setup || null);

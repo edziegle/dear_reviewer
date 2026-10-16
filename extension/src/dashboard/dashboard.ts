@@ -19,6 +19,7 @@ import {
   type InboxTree,
   type Welcome,
 } from "../inbox";
+import { countOf } from "../reviewStanding";
 import type { Standing } from "../timeline/timelines";
 import {
   byLongestWait,
@@ -44,8 +45,8 @@ export interface DashboardSources {
   inProgress(): Change[];
   /** Where the Reviewer stands on the Change. */
   standing(change: Change): Promise<Standing>;
-  /** How many of the Change's files are viewed, of how many, from git alone. */
-  viewedCount(change: Change): Promise<{ viewed: number; total: number }>;
+  /** How many files the Change has, from git alone. */
+  fileCount(change: Change): Promise<number>;
   /** Brings the Change to the front in the review window, with its overview. */
   resume(change: Change): void;
   /** Starts finishing the Change's Review there: Submit Review… or Write Brief…. */
@@ -72,9 +73,9 @@ export class Dashboard implements vscode.Disposable {
   private latest = 0;
   /**
    * Each open Change's standing, as last worked out. Its last Review and
-   * pending Comments can come from GitHub, so In progress never waits for
-   * them: it shows the last standing, or what git alone tells, and again
-   * once a newer standing is in.
+   * pending Comments can come from GitHub, as can a pull request's viewed
+   * files, so In progress never waits for them: it shows the last standing,
+   * or else how many files git counts, and again once a newer standing is in.
    */
   private readonly standings = new Map<string, Standing>();
   private readonly asking = new Set<string>();
@@ -157,12 +158,10 @@ export class Dashboard implements vscode.Disposable {
     }
     const last = this.standings.get(change.id);
     if (last) return last;
-    const { viewed, total } = await this.sources
-      .viewedCount(change)
-      .catch(() => ({ viewed: 0, total: -1 }));
+    const total = await this.sources.fileCount(change).catch(() => -1);
     return {
-      notes: total < 0 ? [] : [`${viewed} of ${total} viewed`],
-      viewed,
+      notes: total < 0 ? [] : [countOf(total, "file")],
+      viewed: -1,
       total,
       reviewed: false,
       pending: 0,
@@ -298,7 +297,7 @@ export class Dashboard implements vscode.Disposable {
         name: changeName(change),
         reviewed: standings[i].reviewed,
         pending: standings[i].pending,
-        viewed: standings[i].viewed,
+        ...(standings[i].viewed >= 0 && { viewed: standings[i].viewed }),
         total: standings[i].total,
         finish: inProgress[i].end.label,
       })),

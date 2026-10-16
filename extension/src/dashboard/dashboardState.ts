@@ -14,7 +14,8 @@ export interface InProgress {
   /** Whether the Reviewer's last Review covers its head, so nothing is new since. */
   reviewed: boolean;
   pending: number;
-  viewed: number;
+  /** Undefined while unknown, such as while GitHub hasn't said. */
+  viewed?: number;
   total: number;
   /** "Submit Review…" or "Write Brief…". */
   finish: string;
@@ -94,7 +95,7 @@ export function nextStep(
     const pending = change.pending
       ? [countOf(change.pending, "pending Comment")]
       : [];
-    if (change.viewed >= change.total)
+    if (change.viewed !== undefined && change.viewed >= change.total)
       return {
         kind: "finish",
         id: change.id,
@@ -109,7 +110,9 @@ export function nextStep(
       label: `Resume ${change.name}`,
       place: [
         `You were last in ${change.name}`,
-        `${change.viewed} of ${change.total} viewed`,
+        ...(change.viewed !== undefined
+          ? [`${change.viewed} of ${change.total} viewed`]
+          : []),
         ...pending,
       ].join(" · "),
     };

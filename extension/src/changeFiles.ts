@@ -311,6 +311,11 @@ export class ChangeFilesView
     };
   }
 
+  /** How many files the Change has, from git alone. */
+  async fileCount(change: Change): Promise<number> {
+    return (await this.filesOf(change)).length;
+  }
+
   /** Opens one of the Change's files, as `openDiff` does. */
   openFile(change: Change, file: ChangedFile): Promise<void> {
     return this.openDiff({ kind: "file", change, file, viewed: false });

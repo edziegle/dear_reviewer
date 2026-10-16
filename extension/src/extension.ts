@@ -290,7 +290,7 @@ export function activate(context: vscode.ExtensionContext) {
   const dashboard = new Dashboard(inbox, avatars, {
     inProgress: () => changes.list(),
     standing: (change) => standingOf(change),
-    viewedCount: (change) => changeFiles.viewedCount(change),
+    fileCount: (change) => changeFiles.fileCount(change),
     resume: (change) =>
       showsHere(change)
         ? void changes.bringToFront(change)

@@ -22,7 +22,7 @@ function inProgress(fields: Partial<InProgress> = {}): InProgress {
     pending: 0,
     viewed: 3,
     total: 12,
-    finish: "Submit Review…",
+    finish: "submit",
     ...fields,
   };
 }
@@ -112,29 +112,69 @@ describe("The Dashboard's next step", () => {
         kind: "resume",
         id: "api-7",
         label: "Resume acme/api #7",
-        place:
-          "You were last in acme/api #7 · 3 of 12 viewed · 2 pending Comments",
       }
     );
   });
 
-  it("finishes the Review once every file is viewed", () => {
+  it("finishes the Review once every file is viewed, naming the Change", () => {
     assert.deepStrictEqual(
       nextStep([inProgress({ viewed: 12, pending: 1 })], [], now),
       {
         kind: "finish",
         id: "api-7",
-        label: "Submit Review…",
-        place: "You've viewed every file of acme/api #7 · 1 pending Comment",
+        label: "Submit Review of acme/api #7…",
       }
     );
     assert.strictEqual(
       nextStep(
-        [inProgress({ name: "fix-retry", viewed: 12, finish: "Write Brief…" })],
+        [
+          inProgress({
+            name: "fix-retry",
+            viewed: 12,
+            finish: "brief",
+            pending: 2,
+          }),
+        ],
         [],
         now
       )?.label,
-      "Write Brief…"
+      "Write Brief for fix-retry…"
+    );
+  });
+
+  it("closes a local Change that is fully viewed with no Comments, since there is no Brief to write", () => {
+    assert.deepStrictEqual(
+      nextStep(
+        [inProgress({ name: "fix-retry", viewed: 12, finish: "brief" })],
+        [],
+        now
+      ),
+      { kind: "close", id: "api-7", label: "Close fix-retry" }
+    );
+  });
+
+  it("still writes a Brief once a local Change has a Comment", () => {
+    assert.strictEqual(
+      nextStep(
+        [
+          inProgress({
+            name: "fix-retry",
+            viewed: 12,
+            finish: "brief",
+            pending: 1,
+          }),
+        ],
+        [],
+        now
+      )?.label,
+      "Write Brief for fix-retry…"
+    );
+  });
+
+  it("never closes a pull request for having no Comments, which can still be approved", () => {
+    assert.strictEqual(
+      nextStep([inProgress({ viewed: 12, pending: 0 })], [], now)?.kind,
+      "finish"
     );
   });
 
@@ -160,7 +200,6 @@ describe("The Dashboard's next step", () => {
         kind: "resume",
         id: "api-7",
         label: "Resume acme/api #7",
-        place: "You were last in acme/api #7",
       }
     );
   });

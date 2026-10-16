@@ -22,7 +22,7 @@ import {
   setToken,
   type FakePullRequest,
 } from "../github";
-import { submitReview } from "../review";
+import { comment, commentingLines, submitReview } from "../review";
 import {
   activeTabLabel,
   closeChange,
@@ -34,7 +34,9 @@ import {
 } from "../reviewer";
 import {
   avatarBytes,
+  cancelSubmit,
   catchLinks,
+  clickPendingComment,
   clickLink,
   clickOverview,
   clickProblemAction,
@@ -43,6 +45,7 @@ import {
   renderedTimeline,
   sentTimeline,
   showTimeline,
+  submitInOverview,
   type Timeline,
   type TimelineItem,
 } from "../timeline";
@@ -64,10 +67,15 @@ function withoutAvatars(
   if (!timeline) return timeline;
   const {
     take: _take,
+    readingOrder: _readingOrder,
     standing: _standing,
     review: _review,
     progress: _progress,
     navigationOff: _navigationOff,
+    finished: _finished,
+    pending: _pending,
+    brief: _brief,
+    finishAsked: _finishAsked,
     size: _size,
     ...rest
   } = timeline;
@@ -256,12 +264,8 @@ describe("A pull request's timeline", () => {
     checks: {
       commit: short(pr.head),
       status: "failed",
+      // What needs the Reviewer leads.
       runs: [
-        {
-          name: "test",
-          status: "passed",
-          url: "https://ci.example.com/runs/1",
-        },
         {
           name: "lint",
           status: "failed",
@@ -269,16 +273,23 @@ describe("A pull request's timeline", () => {
         },
         { name: "deploy preview", status: "running" },
         {
-          name: "docs",
-          status: "skipped",
-          url: "https://ci.example.com/runs/4",
+          name: "test",
+          status: "passed",
+          url: "https://ci.example.com/runs/1",
         },
         {
           name: "ci/legacy",
           status: "passed",
           url: "https://legacy-ci.example.com/build/9",
         },
+        {
+          name: "docs",
+          status: "skipped",
+          url: "https://ci.example.com/runs/4",
+        },
       ],
+      attention: 2,
+      summary: "1 failed · 1 running · 2 passed · 1 skipped",
     },
   };
   const found = new Map<string, unknown>();
@@ -414,7 +425,8 @@ describe("A pull request's timeline", () => {
       const items = (await renderedTimeline(title))!.items;
       const description = htmlOf(items[0]);
       for (const expected of [
-        "<h2>Why</h2>",
+        // Two levels below the overview's own headings.
+        "<h4>Why</h4>",
         "<strong>Bold</strong>",
         "<code>code</code>",
         '<a data-href="https://docs.example.com/guide">the docs</a>',
@@ -527,6 +539,8 @@ describe("A pull request's timeline", () => {
               url: "https://ci.example.com/runs/5",
             },
           ],
+          attention: 0,
+          summary: "1 passed",
         },
       })
     );
@@ -642,19 +656,23 @@ describe("A pull request's timeline", () => {
   }
 
   /**
-   * Answers Submit Review…'s questions with their first choice and an empty
-   * summary, until GitHub has one more Review of the pull request.
+   * Waits for the overview's Submit step to open in front, with the focus,
+   * then approves with an empty summary, until GitHub has one more Review of
+   * the pull request.
    */
-  async function acceptSubmitReview(reviewsBefore: number): Promise<void> {
+  async function approveInSubmitStep(reviewsBefore: number): Promise<void> {
     await eventually(async () => {
-      await vscode.commands.executeCommand(
-        "workbench.action.acceptSelectedQuickOpenItem"
-      );
+      assert.strictEqual(activeTabLabel(), title);
+      assert.ok((await sentTimeline(title)).submit, "the Submit step is open");
+    });
+    await submitInOverview(title, "approve", "");
+    await eventually(async () => {
       const reviews = (await reviewsOnGitHub()).filter(
         (r) => r.author === "reviewer" && r.state !== "PENDING"
       );
       assert.strictEqual(reviews.length, reviewsBefore + 1);
       assert.strictEqual(reviews.at(-1)?.pullRequestId, fakePullRequestId(pr));
+      assert.strictEqual((await sentTimeline(title)).submit, undefined);
     }, 20_000);
   }
 
@@ -664,7 +682,7 @@ describe("A pull request's timeline", () => {
     ).length;
   }
 
-  it("offers Show Overview and Finish Review… on a Change's files, the palette and Change Files", () => {
+  it("offers Show Overview on a Change's files and Change Files, and Submit Review… and Write Brief… in the palette", () => {
     const menus = vscode.extensions.getExtension("edziegle.dear-reviewer")!
       .packageJSON.contributes.menus as Record<
       string,
@@ -682,15 +700,31 @@ describe("A pull request's timeline", () => {
         "dearReviewer.showTimeline",
         "dearReviewer.finishReview"
       ),
-      [
-        // Off the navigation group, in the editor's … menu.
-        ["dearReviewer.showTimeline", onChangeFile, "1_dearReviewer@1"],
-        ["dearReviewer.finishReview", onChangeFile, "1_dearReviewer@2"],
-      ]
+      // Off the navigation group, in the editor's … menu. Finishing is in
+      // the overview it brings back.
+      [["dearReviewer.showTimeline", onChangeFile, "1_dearReviewer@1"]]
     );
+    // One name for each way to finish; the key runs whichever fits.
     assert.deepStrictEqual(
-      entries("commandPalette", "dearReviewer.finishReview"),
-      [["dearReviewer.finishReview", "dearReviewer.hasOpenChange", undefined]]
+      entries(
+        "commandPalette",
+        "dearReviewer.submitReview",
+        "dearReviewer.writeBrief",
+        "dearReviewer.finishReview"
+      ),
+      [
+        [
+          "dearReviewer.submitReview",
+          "dearReviewer.hasOpenChange && dearReviewer.frontIsPullRequest",
+          undefined,
+        ],
+        [
+          "dearReviewer.writeBrief",
+          "dearReviewer.hasOpenChange && !dearReviewer.frontIsPullRequest && dearReviewer.frontHasComments",
+          undefined,
+        ],
+        ["dearReviewer.finishReview", "false", undefined],
+      ]
     );
     const onChangeFiles =
       "view == dearReviewer.changeFiles && dearReviewer.hasOpenChange";
@@ -700,10 +734,7 @@ describe("A pull request's timeline", () => {
         "dearReviewer.finishReview",
         "dearReviewer.showTimeline"
       ),
-      [
-        ["dearReviewer.finishReview", onChangeFiles, "navigation@1"],
-        ["dearReviewer.showTimeline", onChangeFiles, "navigation@2"],
-      ]
+      [["dearReviewer.showTimeline", onChangeFiles, "navigation@1"]]
     );
   });
 
@@ -745,13 +776,117 @@ describe("A pull request's timeline", () => {
     assert.strictEqual(timelineTab(other.title), undefined);
   });
 
-  it("finishes the Review of a file's Change from its title bar, not the Change in front", async () => {
+  it("ends the Review in the overview's Submit step, listing the Comments it publishes", async () => {
+    const file = pullRequestFile("util.py").fsPath;
+    const [[line]] = await commentingLines(file);
+    await comment(file, line, line, "Rename this.\n\nIt reads better.");
+    await inFrontOfOtherChange();
+    const before = await submittedReviews();
+
+    await vscode.commands.executeCommand("dearReviewer.submitReview", change);
+
+    await eventually(async () => {
+      assert.strictEqual(activeTabLabel(), title);
+      const step = (await sentTimeline(title)).submit;
+      assert.deepStrictEqual(
+        step?.verdicts.map((v) => v.label),
+        ["Comment", "Approve", "Request Changes"]
+      );
+      assert.deepStrictEqual(step?.comments, [
+        { path: "util.py", side: "RIGHT", line: line + 1, text: "Rename this." },
+      ]);
+      // A Comment is something to say, so every verdict can go without a summary.
+      assert.deepStrictEqual(step?.needsSummary, {});
+    });
+
+    await clickPendingComment(title, 0);
+    await eventually(() =>
+      assert.strictEqual(
+        vscode.window.activeTextEditor?.document.uri.fsPath,
+        file
+      )
+    );
+
+    await submitInOverview(title, "comment", "");
+    await eventually(async () => {
+      assert.strictEqual(await submittedReviews(), before + 1);
+      const timeline = await sentTimeline(title);
+      assert.strictEqual(timeline.submit, undefined);
+      assert.strictEqual(
+        timeline.submitted?.text,
+        "Commented on acme/api #21 and published 1 Comment."
+      );
+      assert.strictEqual(timeline.review?.verdict, "commented");
+    }, 20_000);
+  });
+
+  it("opens the Submit step for a file's Change from its finishing key, and says why GitHub would refuse a verdict", async () => {
     await inFrontOfOtherChange();
     const before = await submittedReviews();
 
     void onTab("finishReview", pullRequestFile("util.py"));
 
-    await acceptSubmitReview(before);
+    await eventually(async () => {
+      assert.strictEqual(activeTabLabel(), title);
+      const step = (await sentTimeline(title)).submit;
+      assert.deepStrictEqual(step?.comments, []);
+      assert.deepStrictEqual(Object.keys(step?.needsSummary ?? {}).sort(), [
+        "comment",
+        "requestChanges",
+      ]);
+    });
+
+    await submitInOverview(title, "requestChanges", "  ");
+    await eventually(async () =>
+      assert.match(
+        (await sentTimeline(title)).submit?.problem ?? "",
+        /^Write a summary/
+      )
+    );
+    assert.strictEqual(await submittedReviews(), before);
+
+    await cancelSubmit(title);
+    await eventually(async () =>
+      assert.strictEqual((await sentTimeline(title)).submit, undefined)
+    );
+
+    void onTab("finishReview", pullRequestFile("util.py"));
+    await approveInSubmitStep(before);
+    assert.strictEqual(
+      (await sentTimeline(title)).submitted?.text,
+      "Approved acme/api #21."
+    );
+  });
+
+  it("offers only Comment on the Reviewer's own pull request, which GitHub takes no other verdict on", async () => {
+    await serveGitHub({
+      viewer,
+      pullRequests: [{ ...structuredClone(fakePullRequest), author: "reviewer" }],
+    });
+    try {
+      await clickRefresh(title);
+      await eventually(async () =>
+        assert.match((await sentTimeline(title)).byline, /reviewer → /)
+      );
+
+      await vscode.commands.executeCommand("dearReviewer.submitReview", change);
+
+      await eventually(async () => {
+        const step = (await sentTimeline(title)).submit;
+        assert.deepStrictEqual(
+          step?.verdicts.map((v) => v.label),
+          ["Comment"]
+        );
+        assert.match(step?.note ?? "", /own pull request/);
+      });
+      await cancelSubmit(title);
+    } finally {
+      await serveGitHub({
+        viewer,
+        pullRequests: [structuredClone(fakePullRequest)],
+      });
+      await clickRefresh(title);
+    }
   });
 
   it("offers to finish the Review once stepping finds every file viewed", async () => {
@@ -770,21 +905,32 @@ describe("A pull request's timeline", () => {
       "dearReviewer.nextUnviewedFile",
       change
     );
-    // Finish Review… is the message's first button.
+    // The overview comes forward, with the focus on its filled Submit Review….
     await eventually(async () => {
-      await vscode.commands.executeCommand("notification.acceptPrimaryAction");
-      await vscode.commands.executeCommand(
-        "workbench.action.acceptSelectedQuickOpenItem"
-      );
-      assert.ok((await submittedReviews()) > before, "no Review submitted");
-    }, 20_000);
-    await acceptSubmitReview(before);
+      assert.strictEqual(activeTabLabel(), title);
+      assert.ok((await sentTimeline(title)).finishAsked, "asked to focus it");
+    });
+    await clickOverview(title, "finish");
+    await approveInSubmitStep(before);
   });
 
-  it("closes with the Change", async () => {
-    await closeChange(change);
+  it("closes with the Change, from the Close Change that ends its Review", async () => {
+    await clickOverview(title, "closeChange");
 
     await eventually(() => assert.strictEqual(timelineTab(title), undefined));
+  });
+
+  it("counts a local Change's pending Comments for its overview, none before its first", async () => {
+    const local = { repository: pr.clone, base: pr.base, head: pr.head };
+    const localTitle = `${path.basename(pr.clone)} ${short(pr.base)}..${short(pr.head)}`;
+    await openChange(local);
+    try {
+      await eventually(async () =>
+        assert.strictEqual((await sentTimeline(localTitle)).pending, 0)
+      );
+    } finally {
+      await closeChange(local);
+    }
   });
 
   it("has no timeline for a local Change", async () => {

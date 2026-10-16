@@ -27,6 +27,8 @@ export interface ReadingOrder {
 /** A Change's Reading Order, if it has one, and whether the Assistant is writing one. */
 export interface ReadingOrderState {
   writing: boolean;
+  /** Whether the last try to write one failed or gave nothing usable. */
+  problem?: boolean;
   order?: ReadingOrder;
 }
 
@@ -36,6 +38,8 @@ export interface ShownReadingOrder {
   writing: boolean;
   /** Whether the Change has new commits since it was written. */
   outOfDate: boolean;
+  /** Whether the Assistant's last try to write one gave nothing the Reviewer can use. */
+  problem?: boolean;
   steps: {
     label: string;
     files: { path: string; why?: string; viewed: boolean }[];

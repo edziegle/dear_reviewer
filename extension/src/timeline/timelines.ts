@@ -4,7 +4,8 @@
 // (ADR 0020). It shows what the Change is, its size, where the Reviewer
 // stands on it, the Assistant's short take and its Reading Order (ADR 0022),
 // then its history: a pull request's timeline, loaded from GitHub, or a local
-// Change's commits, from git. Links in the panel open through the
+// Change's commits, from git. A pull request's Review ends in its Submit step
+// (ADR 0033). Links in the panel open through the
 // extension, and only the ones it sent; `path:line` references open only
 // the Change's own files.
 
@@ -37,6 +38,16 @@ import {
 } from "./panel";
 import { isUnreachable, messageOf } from "../errors";
 import type { ShownReadingOrder } from "../readingOrder";
+import type { PendingCommentLine } from "../reviewComments";
+import type { BriefState } from "../briefs";
+import { checksInOrder } from "../checkRuns";
+import {
+  refusalOf,
+  summaryNeeded,
+  verdicts,
+  verdictsFor,
+  type Verdict,
+} from "../reviewSubmission";
 
 const signIn = "Sign In to GitHub";
 
@@ -74,6 +85,21 @@ export interface OverviewSources {
   findExtension(extension: string): void;
   /** Never offers these file extensions again. */
   dismissUnhighlighted(extensions: string[]): void;
+  /** The Change's Comments in the Review under way. */
+  pendingComments(change: Change): PendingCommentLine[];
+  /** Where a local Change's Brief stands. */
+  brief(change: Change): BriefState | undefined;
+  /** Shows one of them in the diff, by its place in that list. */
+  openPending(change: Change, index: number): void;
+  /**
+   * Submits the Change's Review. Gives what it published, in words, and its
+   * page on GitHub; throws if GitHub didn't take it.
+   */
+  submit(
+    change: Change,
+    verdict: Verdict,
+    summary: string
+  ): Promise<{ text: string; url?: string }>;
   /** Runs an action the overview offers for the Change. */
   act(
     change: Change,
@@ -84,6 +110,10 @@ export interface OverviewSources {
       | "takeAction"
       | "takeRetry"
       | "trust"
+      | "closeChange"
+      | "copyBrief"
+      | "showBrief"
+      | "discard"
       | "suggestReadingOrder"
   ): void;
 }
@@ -127,6 +157,37 @@ export class Timelines implements vscode.Disposable {
   closeOthers(change: Change): void {
     for (const [id, timeline] of this.byChange)
       if (id !== change.id) timeline.panel?.dispose();
+  }
+
+  /**
+   * Shows the pull request's overview with the Submit step open and the
+   * focus on its verdict, starting from this one if given.
+   */
+  async submit(change: Change, verdict?: Verdict): Promise<void> {
+    let timeline = this.byChange.get(change.id);
+    const opened = !timeline?.panel;
+    if (!timeline) {
+      timeline = new ChangeTimeline(
+        change,
+        this.github,
+        this.avatars,
+        this.openLink,
+        this.sources
+      );
+      this.byChange.set(change.id, timeline);
+    }
+    timeline.show(true);
+    timeline.openSubmit(verdict);
+    if (opened) await timeline.load();
+  }
+
+  /**
+   * Brings the Change's overview forward, with the focus on its finishing
+   * button, the next step once every file is viewed.
+   */
+  async finish(change: Change): Promise<void> {
+    await this.open(change, true);
+    this.byChange.get(change.id)?.askFinish();
   }
 
   /** Reloads the Change's overview, if it has one. */
@@ -181,6 +242,12 @@ class ChangeTimeline {
   private state: TimelineState;
   panel?: TimelinePanel;
   private loads = 0;
+  /** How many times the Reviewer asked for the Submit step. */
+  private asked = 0;
+  /** How many times the Reviewer was brought here to finish. */
+  private finishAsked = 0;
+  /** Whether the Reviewer wrote the pull request, once its timeline says. */
+  private ownPullRequest = false;
   /** The Change's files, whose `path:line` references in the take open them. */
   private files = new Set<string>();
   /** The Change's files, with which are binary, once counted. */
@@ -266,11 +333,17 @@ class ChangeTimeline {
       this.sources.readingOrder(this.change).catch(() => undefined),
     ]);
     this.update({
+      ...(this.state.submit && { submit: this.pendingOf(this.state.submit) }),
+      // New commits begin the Review again, so its result no longer holds.
+      ...(found && !found.reviewed && { submitted: undefined }),
+      brief: this.sources.brief(this.change),
       readingOrder,
       standing: found?.notes ?? [],
       review: found?.review,
       navigationOff: this.sources.navigationOff(),
       ...(found && { progress: { viewed: found.viewed, total: found.total } }),
+      pending: found?.pending,
+      finished: !!found?.reviewed && found.pending === 0,
     });
   }
 
@@ -287,6 +360,95 @@ class ChangeTimeline {
     if (extensions.length) this.state.unhighlighted = extensions;
     else delete this.state.unhighlighted;
     this.panel?.update(this.state);
+  }
+
+  /** Asks the overview to put the focus on its finishing button. */
+  askFinish(): void {
+    this.update({ finishAsked: ++this.finishAsked });
+  }
+
+  /** Opens the Submit step, or brings the focus back to it, starting from the verdict given. */
+  openSubmit(verdict?: Verdict): void {
+    if (!this.change.pullRequest) return;
+    const step = this.state.submit;
+    this.update({
+      submit: this.pendingOf({
+        asked: ++this.asked,
+        verdicts: [],
+        needsSummary: {},
+        comments: [],
+        submitting: step?.submitting ?? false,
+        ...(verdict && { verdict }),
+      }),
+      submitted: undefined,
+    });
+  }
+
+  /**
+   * The step with the verdicts GitHub takes on this pull request, the
+   * Comments pending now, and what they let it take without a summary.
+   */
+  private pendingOf(
+    step: NonNullable<TimelineState["submit"]>
+  ): NonNullable<TimelineState["submit"]> {
+    const comments = this.sources.pendingComments(this.change);
+    const offered = verdictsFor(this.ownPullRequest);
+    return {
+      ...step,
+      verdicts: offered.map((v) => ({
+        verdict: v,
+        label: verdicts[v].label,
+        detail: verdicts[v].detail,
+      })),
+      note: this.ownPullRequest
+        ? "On your own pull request, GitHub takes only a comment."
+        : undefined,
+      comments,
+      needsSummary: summaryNeeded(comments.length),
+    };
+  }
+
+  /** Submits the Review from the step, which says why if GitHub doesn't take it. */
+  private async submitReview(verdict: Verdict, summary: string): Promise<void> {
+    const step = this.state.submit;
+    if (!step || step.submitting) return;
+    if (!step.verdicts.some((v) => v.verdict === verdict)) return;
+    const refused = !summary.trim() && step.needsSummary[verdict];
+    if (refused) return this.update({ submit: { ...step, problem: refused } });
+    this.update({
+      submit: {
+        ...step,
+        submitting: true,
+        problem: undefined,
+        problemAction: undefined,
+        problemDetail: undefined,
+      },
+    });
+    try {
+      const submitted = await this.sources.submit(this.change, verdict, summary);
+      await this.showStanding();
+      this.update({ submit: undefined, submitted });
+      void this.load();
+    } catch (err) {
+      const now = this.state.submit;
+      if (!now) return;
+      const signedOut = err instanceof NotSignedInError;
+      const refusal =
+        signedOut || isUnreachable(err) ? undefined : refusalOf(messageOf(err));
+      this.update({
+        submit: {
+          ...now,
+          submitting: false,
+          problem: signedOut
+            ? "Sign in to GitHub to submit your Review; your draft stays here."
+            : isUnreachable(err)
+              ? "Couldn't reach GitHub to submit your Review. Check the connection, then submit again."
+              : refusal!.text,
+          problemAction: signedOut ? signIn : undefined,
+          problemDetail: refusal?.detail,
+        },
+      });
+    }
   }
 
   showTake(): void {
@@ -335,6 +497,18 @@ class ChangeTimeline {
         return;
       case "refresh":
         return void this.load();
+      case "submit":
+        return void this.submitReview(action.verdict, action.summary);
+      case "submitAction":
+        if (this.state.submit?.problemAction === signIn)
+          void vscode.commands.executeCommand("dearReviewer.signIn");
+        return;
+      case "cancelSubmit":
+        if (!this.state.submit?.submitting) this.update({ submit: undefined });
+        return;
+      case "openPending":
+        this.sources.openPending(this.change, action.index);
+        return;
       case "problemAction":
         if (this.state.problemAction === signIn)
           void vscode.commands.executeCommand("dearReviewer.signIn");
@@ -349,6 +523,7 @@ class ChangeTimeline {
   private async open(url: string): Promise<void> {
     const links = [
       this.state.url,
+      this.state.submitted?.url,
       ...(this.state.checks?.runs.map((run) => run.url) ?? []),
     ];
     const sent = links.includes(url) || this.panel?.hasLink(url);
@@ -391,7 +566,18 @@ class ChangeTimeline {
 
   private async pullRequestState(panel: TimelinePanel): Promise<TimelineState> {
     const { repository, number } = this.change.pullRequest!;
-    const timeline = await this.github.timeline(repository, number);
+    const [timeline, viewer] = await Promise.all([
+      this.github.timeline(repository, number),
+      this.github.viewer().catch(() => undefined),
+    ]);
+    const opener = timeline.events.find((e) => e.kind === "description")
+      ?.author.login;
+    const own = !!viewer && opener === viewer;
+    if (own !== this.ownPullRequest) {
+      this.ownPullRequest = own;
+      if (this.state.submit)
+        this.state = { ...this.state, submit: this.pendingOf(this.state.submit) };
+    }
     const avatars = new Map<string, string | undefined>();
     const author = async (user: GitHubUser) => {
       if (!avatars.has(user.avatarUrl)) {
@@ -411,7 +597,10 @@ class ChangeTimeline {
       url: timeline.url,
       loading: false,
       items,
-      checks: timeline.checks,
+      checks: timeline.checks && {
+        ...timeline.checks,
+        ...checksInOrder(timeline.checks.runs),
+      },
     };
   }
 

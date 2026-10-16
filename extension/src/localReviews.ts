@@ -23,8 +23,8 @@ export interface LocalThread extends ThreadPlace {
 interface LocalReview {
   /** The threads of the Review under way. */
   threads: LocalThread[];
-  /** The Brief that ended the last Review. */
-  briefed?: { commit: string; at: string };
+  /** The Brief that ended the last Review: its file, and how many Comments went into it. */
+  briefed?: { commit: string; at: string; file?: string; comments?: number };
   /**
    * The Brief written for the Review under way, which ends it once copied,
    * with the ids of the Comments it covered. Those kept before follow-up
@@ -182,6 +182,8 @@ export class LocalPendingReviews implements PendingReviews {
     review.briefed = {
       commit: written.commit,
       at: new Date().toISOString(),
+      file: written.file,
+      comments: (written.comments ?? written.threads ?? []).length,
     };
     delete review.written;
     this.write(all);
@@ -202,6 +204,25 @@ export class LocalPendingReviews implements PendingReviews {
   /** The head commit the last Brief for the conversation covered, if one was written. */
   lastBriefed(conversation: string): string | undefined {
     return this.all()[conversation]?.briefed?.commit;
+  }
+
+  /** The last Brief copied for the conversation: when, how many Comments it held, and its file. */
+  lastBrief(
+    conversation: string
+  ): { commit: string; at: string; comments?: number; file?: string } | undefined {
+    return this.all()[conversation]?.briefed;
+  }
+
+  /** The Brief written for the Review under way, which copying it ends, and how many Comments it covers. */
+  writtenBrief(
+    conversation: string
+  ): { file: string; comments: number } | undefined {
+    const written = this.all()[conversation]?.written;
+    if (!written) return;
+    return {
+      file: written.file,
+      comments: (written.comments ?? written.threads ?? []).length,
+    };
   }
 
   /** The conversation names of the local Reviews kept. */

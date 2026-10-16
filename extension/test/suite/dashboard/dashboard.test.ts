@@ -1,6 +1,7 @@
 import * as assert from "assert";
 import * as vscode from "vscode";
 import { changeFiles } from "../changeFiles";
+import { sentTimeline, submitInOverview } from "../timeline";
 import { buildFixtureRepo, buildPullRequestFixture } from "../fixtures";
 import {
   configure,
@@ -201,6 +202,32 @@ describe("Dashboard", () => {
         assert.match(entry.when ?? "", /dearReviewer\.hasOpenChange/, command);
   });
 
+  it("opens a pull request or branch from the palette, by name, as well as from the Dashboard", async () => {
+    const { contributes } = vscode.extensions.getExtension(
+      "edziegle.dear-reviewer"
+    )!.packageJSON;
+    assert.ok(
+      contributes.commands.some(
+        (c: { command: string; title: string }) =>
+          c.command === "dearReviewer.openFromList" &&
+          c.title === "Open Pull Request or Branch…"
+      )
+    );
+    const hidden = contributes.menus.commandPalette.filter(
+      (m: { when?: string }) => m.when === "false"
+    );
+    assert.ok(
+      !hidden.some(
+        (m: { command: string }) => m.command === "dearReviewer.openFromList"
+      )
+    );
+    assert.ok(
+      (await vscode.commands.getCommands(true)).includes(
+        "dearReviewer.openFromList"
+      )
+    );
+  });
+
   it("comes into sight with Show Dashboard", async () => {
     await vscode.commands.executeCommand("workbench.action.closeSidebar");
     await eventually(async () =>
@@ -319,7 +346,8 @@ describe("Dashboard", () => {
           {
             kind: "resume",
             label: `Resume ${second.name}`,
-            place: `You were last in ${second.name} · 0 of 3 viewed`,
+            // The button names the Change and its row says where you stand.
+            place: undefined,
           }
         );
       });
@@ -445,11 +473,13 @@ describe("Dashboard", () => {
         type: "finish",
         id: (await renderedDashboard()).inProgress[0].id,
       });
-      // Submit Review… asks for a verdict and a summary; the first choice and an empty one.
+      // Submit Review… opens the overview's Submit step, which approves.
+      const overview = `${pr.repository} #${pr.number}`;
+      await eventually(async () =>
+        assert.ok((await sentTimeline(overview)).submit, "the Submit step is open")
+      );
+      await submitInOverview(overview, "approve", "");
       await eventually(async () => {
-        await vscode.commands.executeCommand(
-          "workbench.action.acceptSelectedQuickOpenItem"
-        );
         const reviews = (await reviewsOnGitHub()).filter(
           (r) => r.author === "reviewer" && r.state !== "PENDING"
         );

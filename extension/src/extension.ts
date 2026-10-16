@@ -28,12 +28,14 @@ import { GitHubAuth } from "./github/auth";
 import { GitHubClient, PullRequestSummary } from "./github/client";
 import { setContext } from "./context";
 import { Avatars, InboxNode, InboxTree } from "./inbox";
+import { openChoices } from "./openChoices";
 import { Lifecycle } from "./lifecycle";
 import { LocalPendingReviews } from "./localReviews";
 import { LocalClone, Repositories } from "./repositories";
 import { ReviewWindow } from "./reviewWindow";
 import { GitHubPendingReviews, PendingReviewsBySource } from "./pendingReview";
-import { ReviewComments, Verdict } from "./reviewComments";
+import { ReviewComments } from "./reviewComments";
+import { isVerdict, verdicts, type Verdict } from "./reviewSubmission";
 import { ReviewInProgressFiles } from "./reviewInProgress";
 import {
   CommitFiles,
@@ -194,8 +196,10 @@ export function activate(context: vscode.ExtensionContext) {
       }
       // The Inbox shows which branches changed since a Brief.
       void inbox.refresh();
-    }
+    },
+    (change) => timelines.codeColumn(change)
   );
+  context.subscriptions.push(briefs, briefs.onDidChange(() => showStanding()));
   const reviewWindow = new ReviewWindow(context.globalStorageUri.fsPath);
   // The review window shows the Change in front, and the Reviewer's own
   // windows the Dashboard (ADR 0032); tests, which can't run in the review
@@ -220,6 +224,14 @@ export function activate(context: vscode.ExtensionContext) {
     findExtension: (extension) => languageOffer.find(extension),
     dismissUnhighlighted: (extensions) =>
       void languageOffer.dismiss(extensions),
+    pendingComments: (change) => review.pendingComments(change),
+    brief: (change) => briefs.stateOf(change),
+    openPending: (change, index) =>
+      void review.revealPending(change, index, (file) =>
+        changeFiles.openPath(change, file)
+      ),
+    submit: (change, verdict, summary) =>
+      submitReviewOf(change, verdict, summary),
     act: (change, action) => {
       if (action === "ask") void assistants.open(change, true);
       else if (action === "suggestReadingOrder")
@@ -227,6 +239,18 @@ export function activate(context: vscode.ExtensionContext) {
       else if (action === "takeAction") assistants.helpWithProblem(change);
       else if (action === "takeRetry") void assistants.retry(change);
       else if (action === "trust") void trust.trust();
+      else if (action === "copyBrief") void briefs.copyWritten(change);
+      else if (action === "showBrief") void briefs.show(change);
+      else if (action === "discard")
+        void vscode.commands.executeCommand(
+          "dearReviewer.discardReview",
+          requestOf(change)
+        );
+      else if (action === "closeChange")
+        void vscode.commands.executeCommand(
+          "dearReviewer.closeChange",
+          requestOf(change)
+        );
       else
         void vscode.commands.executeCommand(
           action === "finish"
@@ -302,6 +326,11 @@ export function activate(context: vscode.ExtensionContext) {
             requestOf(change)
           )
         : askReviewWindow(change, "finish"),
+    close: (change) =>
+      void vscode.commands.executeCommand(
+        "dearReviewer.closeChange",
+        requestOf(change)
+      ),
     open: (node) =>
       void vscode.commands.executeCommand(
         node.kind === "localBranch"
@@ -314,6 +343,36 @@ export function activate(context: vscode.ExtensionContext) {
     trusted: () => vscode.workspace.isTrusted,
   });
   context.subscriptions.push(dashboard);
+
+  /**
+   * Submits the pull request's Review, which ends it, and lets the rest of
+   * Dear Reviewer know. Gives what it published, in words, and its page on
+   * GitHub; throws if GitHub didn't take it.
+   */
+  async function submitReviewOf(
+    change: Change,
+    verdict: Verdict,
+    summary: string
+  ): Promise<{ text: string; url?: string }> {
+    const comments = countOf(review.pendingCount(change), "Comment");
+    const submitted = await review.submit(change, verdict, summary);
+    changeFiles.reviewEnded(change);
+    // GitHub's search lists it as awaiting review for a while yet.
+    if (change.pullRequest) inbox.reviewed(change.pullRequest);
+    // The Inbox shows which pull requests changed since a Review.
+    void inbox.refresh();
+    const name = changeName(change);
+    const done = verdicts[verdict].done;
+    const text =
+      comments === "no Comments"
+        ? `${done} ${name}.`
+        : `${done} ${name} and published ${comments}.`;
+    const url =
+      submitted.url && /^https?:\/\//i.test(submitted.url)
+        ? submitted.url
+        : undefined;
+    return { text, ...(url && { url }) };
+  }
 
   /** Where the Reviewer stands on the Change, for its overview. */
   async function standingOf(change: Change): Promise<Standing> {
@@ -487,15 +546,28 @@ export function activate(context: vscode.ExtensionContext) {
 
   /**
    * Shows which Changes are open: the one in front in Change Files and
-   * Findings, and to the review keybindings, which work while one is in
-   * front in this window; and every one in the Inbox.
+   * Findings, and to the review keybindings and the palette, which work
+   * while one is in front in this window; and every one in the Inbox.
    */
   function showOpenChanges(): void {
     changeFiles.refresh();
     findings.refresh();
     inbox.redraw();
     dashboard.refresh();
-    void setContext("dearReviewer.hasOpenChange", !!changes.inFront());
+    const front = changes.inFront();
+    void setContext("dearReviewer.hasOpenChange", !!front);
+    // The palette offers the one way to finish that fits the Change in front.
+    void setContext("dearReviewer.frontIsPullRequest", !!front?.pullRequest);
+    showFrontComments();
+  }
+
+  /** Whether the Change in front has Comments pending, for Write Brief…, which has nothing to write from without one. */
+  function showFrontComments(): void {
+    const front = changes.inFront();
+    void setContext(
+      "dearReviewer.frontHasComments",
+      !!front && review.pendingCount(front) > 0
+    );
   }
 
   /**
@@ -718,22 +790,12 @@ export function activate(context: vscode.ExtensionContext) {
     else void offerToFinish(change);
   }
 
-  /** Says every file of the Change is viewed, with ways to finish its Review. */
+  /**
+   * Once every file of the Change is viewed, brings its overview forward
+   * with the focus on its filled finishing button, the next step.
+   */
   async function offerToFinish(change: Change): Promise<void> {
-    const finish = "Finish Review…";
-    const overview = "Show Overview";
-    const picked = await vscode.window.showInformationMessage(
-      `Every file of ${changeName(change)} is viewed.`,
-      finish,
-      overview
-    );
-    if (!picked) return;
-    await vscode.commands.executeCommand(
-      picked === finish
-        ? "dearReviewer.finishReview"
-        : "dearReviewer.showTimeline",
-      requestOf(change)
-    );
+    await timelines.finish(change);
   }
 
   /**
@@ -777,7 +839,7 @@ export function activate(context: vscode.ExtensionContext) {
     const result = await repositories.rememberFolder(chosen);
     if ("repository" in result) {
       void vscode.window.showInformationMessage(
-        `Added ${result.repository} to the Inbox, with its clone at ${chosen}.`
+        `Added ${result.repository} to the Dashboard, with its clone at ${chosen}.`
       );
       return result.repository;
     }
@@ -810,7 +872,7 @@ export function activate(context: vscode.ExtensionContext) {
         title: "Add Repository: a clone of a GitHub repository",
         canSelectFolders: true,
         canSelectFiles: false,
-        openLabel: "Add to Inbox",
+        openLabel: "Add to Dashboard",
       })
     )?.[0]?.fsPath;
   }
@@ -859,9 +921,10 @@ export function activate(context: vscode.ExtensionContext) {
             () => changes.open(request)
           );
         } catch (err) {
-          const message = messageOf(err);
+          // Git's own words run to several lines; the first says what failed.
+          const message = messageOf(err).split(/\r?\n/, 1)[0].trim();
           void vscode.window.showErrorMessage(
-            `Couldn't open the Change: ${message}`
+            `Couldn't open the Change. ${message}`
           );
         }
         showOpenChanges();
@@ -905,6 +968,49 @@ export function activate(context: vscode.ExtensionContext) {
         });
       }
     ),
+    vscode.commands.registerCommand("dearReviewer.openFromList", async () => {
+      // The same pull requests and branches the Dashboard lists, for a
+      // Reviewer who keeps their hands on the keys.
+      const { groups } = await inbox.contents();
+      const choices = openChoices(groups);
+      if (choices.length === 0) {
+        const dashboardAction = "Show Dashboard";
+        const picked = await vscode.window.showInformationMessage(
+          "No pull requests or branches are waiting. The Dashboard says why, and has Refresh.",
+          dashboardAction
+        );
+        if (picked === dashboardAction) await dashboard.show();
+        return;
+      }
+      const items: (vscode.QuickPickItem & { choice?: (typeof choices)[0] })[] =
+        [];
+      let group: string | undefined;
+      for (const choice of choices) {
+        if (choice.group !== group) {
+          group = choice.group;
+          items.push({ label: group, kind: vscode.QuickPickItemKind.Separator });
+        }
+        items.push({
+          label: choice.label,
+          description: choice.description,
+          detail: choice.detail,
+          choice,
+        });
+      }
+      const picked = await vscode.window.showQuickPick(items, {
+        title: "Open Pull Request or Branch",
+        placeHolder: "Choose a pull request or branch to open as a Change",
+        matchOnDescription: true,
+        matchOnDetail: true,
+      });
+      if (!picked?.choice) return;
+      await vscode.commands.executeCommand(
+        picked.choice.node.kind === "localBranch"
+          ? "dearReviewer.openLocalBranch"
+          : "dearReviewer.openPullRequest",
+        picked.choice.node
+      );
+    }),
     vscode.commands.registerCommand("dearReviewer.showDashboard", () =>
       dashboard.show()
     ),
@@ -973,7 +1079,10 @@ export function activate(context: vscode.ExtensionContext) {
     // Change Files lists the Reading Order, and the overview follows it.
     assistants.onDidChangeReadingOrder(() => changeFiles.refresh()),
     changeFiles.onDidChangeTreeData(() => showStanding()),
-    review.onDidChange(() => showStanding()),
+    review.onDidChange(() => {
+      showStanding();
+      showFrontComments();
+    }),
     review,
     threadsFiles,
     reviewInProgress,
@@ -1039,69 +1148,60 @@ export function activate(context: vscode.ExtensionContext) {
           return;
         }
         // Menus of a tree that selects many pass the selection after the node.
-        let verdict = isVerdict(given) ? given : undefined;
-        let summary =
-          typeof givenSummary === "string" ? givenSummary : undefined;
+        const verdict = isVerdict(given) ? given : undefined;
         await review.sync();
+        // A verdict and summary given, as by a test, submit straight away;
+        // otherwise the Review ends in its overview's Submit step (ADR 0033).
+        if (!verdict || typeof givenSummary !== "string")
+          return timelines.submit(change, verdict);
         const name = changeName(change);
-        const comments = countOf(review.pendingCount(change), "Comment");
-        verdict ??= await pickVerdict(name, comments);
-        if (!verdict) return;
-        const chosen = verdict;
-        summary ??= await vscode.window.showInputBox({
-          title: `Submit Review: ${name} · ${verdicts[chosen].label}`,
-          prompt: `The summary GitHub shows with your verdict, published with ${comments}.`,
-          placeHolder: "Summary for the author",
-          ignoreFocusOut: true,
-        });
-        if (summary === undefined) return;
-        const text = summary;
-        const submitted = await vscode.window.withProgress(
-          {
-            location: vscode.ProgressLocation.Notification,
-            title: `Submitting your Review of ${name}…`,
-          },
-          () => review.submit(change, chosen, text)
-        );
+        const submitted = await vscode.window
+          .withProgress(
+            {
+              location: vscode.ProgressLocation.Notification,
+              title: `Submitting your Review of ${name}…`,
+            },
+            () => submitReviewOf(change, verdict, givenSummary)
+          )
+          .then(undefined, (err: unknown) => {
+            void vscode.window.showErrorMessage(
+              `Couldn't submit your Review of ${name}: ${messageOf(err)}`
+            );
+            return undefined;
+          });
         if (!submitted) return;
         void timelines.refresh(change);
-        changeFiles.reviewEnded(change);
-        // GitHub's search lists it as awaiting review for a while yet.
-        inbox.reviewed(change.pullRequest);
-        // The Inbox shows which pull requests changed since a Review.
-        void inbox.refresh();
         const viewOnGitHub = "View on GitHub";
-        const url = submitted.url && vscode.Uri.parse(submitted.url);
-        const web = url && (url.scheme === "https" || url.scheme === "http");
-        void notify(
-          comments === "no Comments"
-            ? `${verdicts[chosen].done} ${name}.`
-            : `${verdicts[chosen].done} ${name} and published ${comments}.`,
-          ...(web ? [viewOnGitHub] : [])
-        ).then((picked) => {
-          if (picked === viewOnGitHub && url) return openLink(url);
-        });
+        const url = submitted.url;
+        void notify(submitted.text, ...(url ? [viewOnGitHub] : [])).then(
+          (picked) => {
+            if (picked === viewOnGitHub && url)
+              return openLink(vscode.Uri.parse(url));
+          }
+        );
       }
     ),
     vscode.commands.registerCommand(
       "dearReviewer.discardReview",
       async (target?: ChangeTarget, confirmed?: unknown) => {
-        const change = await changeFor(target, "Discard Pending Review");
+        const change = await changeFor(target, "Discard Pending Comments");
         if (!change) return;
         await review.sync();
         const name = changeName(change);
         const count = review.pendingCount(change);
         if (count === 0) {
           void vscode.window.showInformationMessage(
-            `Your Review of ${name} has no pending Comments to discard.`
+            `You have no pending Comments on ${name} to discard.`
           );
           return;
         }
         const comments = countOf(count, "Comment");
-        const discard = "Discard Review";
+        const discard = "Discard Comments";
         if (confirmed !== true) {
           const picked = await vscode.window.showWarningMessage(
-            `Discard your Review of ${name}? Its ${comments} will be deleted without being published. This can't be undone.`,
+            change.pullRequest
+              ? `Discard the ${comments} you haven't submitted on ${name}? They will be deleted without being published. This can't be undone.`
+              : `Discard the ${comments} you haven't briefed on ${name}? They will be deleted, and no Brief written from them. This can't be undone.`,
             { modal: true },
             discard
           );
@@ -1110,7 +1210,7 @@ export function activate(context: vscode.ExtensionContext) {
         if (await review.discard(change)) {
           changeFiles.refresh();
           void vscode.window.showInformationMessage(
-            `Discarded your Review of ${name} and its ${comments}.`
+            `Discarded the ${comments} on ${name}.`
           );
         }
       }
@@ -1131,13 +1231,24 @@ export function activate(context: vscode.ExtensionContext) {
           );
           return;
         }
+        // A Change fully viewed with no Comments has nothing to brief: its
+        // overview says so, with Close Change as the next step.
+        if (review.pendingCount(change) === 0) {
+          const { viewed, total } = await changeFiles.viewedCount(change);
+          if (total > 0 && viewed >= total) {
+            await timelines.finish(change);
+            return;
+          }
+        }
+        // The overview shows the Brief being written, and then waiting to be copied.
+        await timelines.open(change, true);
         await briefs.write(change);
       }
     ),
     vscode.commands.registerCommand(
       "dearReviewer.finishReview",
       async (target?: ChangeTarget | vscode.Uri) => {
-        const change = await changeFor(target, "Finish Review");
+        const change = await changeFor(target, "Submit Review or Write Brief");
         if (!change) return;
         await vscode.commands.executeCommand(
           change.pullRequest
@@ -1146,6 +1257,13 @@ export function activate(context: vscode.ExtensionContext) {
           requestOf(change)
         );
       }
+    ),
+    // The review keys can be rebound, as any keybinding, in Keyboard Shortcuts.
+    vscode.commands.registerCommand("dearReviewer.showReviewKeys", () =>
+      vscode.commands.executeCommand(
+        "workbench.action.openGlobalKeybindings",
+        "@ext:edziegle.dear-reviewer"
+      )
     ),
     vscode.commands.registerCommand(
       "dearReviewer.copyBrief",
@@ -1211,7 +1329,7 @@ export function activate(context: vscode.ExtensionContext) {
       async (target?: ChangeTarget) => {
         const change = await changeFor(
           target,
-          "Show Changes Since My Last Review"
+          "Show Changes Since Your Last Review"
         );
         if (!change) return;
         const name = changeName(change);
@@ -1262,7 +1380,7 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand(
       "dearReviewer.openAllChanges",
       async (target?: ChangeTarget) => {
-        const change = await changeFor(target, "Open All Changes");
+        const change = await changeFor(target, "Open All Diffs");
         if (!change) return;
         await focusCodeColumn(change);
         await showAllChanges(change);
@@ -1429,6 +1547,9 @@ export function activate(context: vscode.ExtensionContext) {
       return inbox.refresh();
     }),
     vscode.workspace.onDidChangeConfiguration((e) => {
+      // Change Files compacts folders as the Explorer does.
+      if (e.affectsConfiguration("explorer.compactFolders"))
+        changeFiles.refresh();
       if (e.affectsConfiguration("dearReviewer.githubApiUrl")) {
         // Which remotes are on GitHub depends on the API's host.
         void repositories.scanWindow();
@@ -1706,53 +1827,6 @@ function requestOf(change: Change): ChangeRequest {
     head: change.headSha,
     pullRequest: change.pullRequest,
   };
-}
-
-const verdicts: Record<
-  Verdict,
-  { label: string; detail: string; done: string }
-> = {
-  comment: {
-    label: "Feedback Only",
-    detail:
-      "Publish your summary and Comments without approving or requesting changes.",
-    done: "Sent feedback on",
-  },
-  approve: {
-    label: "Approve",
-    detail:
-      "Publish your summary and Comments, and approve merging these changes.",
-    done: "Approved",
-  },
-  requestChanges: {
-    label: "Request Changes",
-    detail:
-      "Publish your summary and Comments as changes to make before merging.",
-    done: "Requested changes on",
-  },
-};
-
-function isVerdict(value: unknown): value is Verdict {
-  return typeof value === "string" && value in verdicts;
-}
-
-async function pickVerdict(
-  name: string,
-  comments: string
-): Promise<Verdict | undefined> {
-  const picked = await vscode.window.showQuickPick(
-    (Object.keys(verdicts) as Verdict[]).map((verdict) => ({
-      label: verdicts[verdict].label,
-      detail: verdicts[verdict].detail,
-      verdict,
-    })),
-    {
-      title: `Submit Review: ${name}`,
-      placeHolder: `Your verdict, published to GitHub with a summary and ${comments}`,
-      ignoreFocusOut: true,
-    }
-  );
-  return picked?.verdict;
 }
 
 /**

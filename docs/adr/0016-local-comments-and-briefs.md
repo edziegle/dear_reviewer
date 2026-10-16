@@ -9,6 +9,8 @@ Amended by [ADR 0024](0024-reply-to-your-own-pending-threads.md): the Reviewer c
 
 Amended by [ADR 0018](0018-finish-a-review-from-the-change.md): writing a Brief no longer ends the Review. Copying it does, so the Reviewer reads and edits the Brief while its Comments are still in the editor's gutter. A local Change's kept Comments can also be discarded.
 
+Amended by [ADR 0034](0034-a-review-ends-on-a-result-in-its-overview.md): the overview shows the Brief being written, waiting to be copied and copied, and the Brief's file is kept so it can be shown again.
+
 ## Context and Problem Statement
 
 The Reviewer comments on a local Change, such as an agent's branch, as on a pull request (spec #33), but no pull request holds the Comments, and nobody on GitHub reads them. The Review ends when the Assistant turns the Comments into a Brief, which the Reviewer reads, edits and copies to the clipboard for an agent (#35–#37). The next Review then shows what changed since (#38). ADR 0015 left local Changes without a last Review to compare with until Briefs exist. Where are a local Change's Comments kept, what is the Brief, and how does it record the commit it covered?

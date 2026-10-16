@@ -40,9 +40,14 @@ export class Reviews {
   async lastReview(change: Change): Promise<LastReview | undefined> {
     const pullRequest = change.pullRequest;
     if (!pullRequest) {
-      const commit = this.local.lastBriefed(change.conversation);
-      if (commit && (await hasCommit(change.repository, commit)))
-        return { commit };
+      const brief = this.local.lastBrief(change.conversation);
+      if (brief && (await hasCommit(change.repository, brief.commit)))
+        return {
+          commit: brief.commit,
+          brief: true,
+          submittedAt: brief.at,
+          ...(brief.comments !== undefined && { comments: brief.comments }),
+        };
       return;
     }
     const review = await this.github.lastReview(
@@ -76,7 +81,7 @@ function hasCommit(repository: string, commit: string): Promise<boolean> {
 /** The title of the diff of what changed in the Change since this commit. */
 export function sinceTitle(change: Change, from: string): string {
   const repo = path.basename(change.repository);
-  return `${repo} ${from.slice(0, 7)}..${change.headSha.slice(0, 7)} since my last Review`;
+  return `${repo} ${from.slice(0, 7)}..${change.headSha.slice(0, 7)} since your last Review`;
 }
 
 /**

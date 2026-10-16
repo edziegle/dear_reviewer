@@ -151,7 +151,7 @@ export function submitReview(
   );
 }
 
-/** Runs Discard Pending Review on the Change, confirming it. */
+/** Runs Discard Pending Comments on the Change, confirming it. */
 export function discardReview(change: ChangeRequest): Thenable<unknown> {
   return vscode.commands.executeCommand(
     "dearReviewer.discardReview",
@@ -160,7 +160,7 @@ export function discardReview(change: ChangeRequest): Thenable<unknown> {
   );
 }
 
-/** Runs Show Changes Since My Last Review on the Change. */
+/** Runs Show Changes Since Your Last Review on the Change. */
 export function showChangesSinceLastReview(
   change: ChangeRequest
 ): Thenable<unknown> {

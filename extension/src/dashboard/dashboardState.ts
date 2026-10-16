@@ -4,8 +4,6 @@
 // and the one next step the Dashboard offers (the Next Step Rule in
 // DESIGN.md).
 
-import { countOf } from "../reviewStanding";
-
 /** A Change open in the review window, as the Dashboard weighs it. */
 export interface InProgress {
   id: string;
@@ -17,8 +15,8 @@ export interface InProgress {
   /** Undefined while unknown, such as while GitHub hasn't said. */
   viewed?: number;
   total: number;
-  /** "Submit Review…" or "Write Brief…". */
-  finish: string;
+  /** How its Review ends: a pull request's is submitted, a local Change's ends with a Brief. */
+  finish: "submit" | "brief";
 }
 
 /** A pull request waiting on the Reviewer, as the Dashboard weighs it. */
@@ -32,8 +30,9 @@ export interface Waiting {
 }
 
 export type NextStep =
-  | { kind: "resume"; id: string; label: string; place: string }
-  | { kind: "finish"; id: string; label: string; place: string }
+  | { kind: "resume"; id: string; label: string }
+  | { kind: "finish"; id: string; label: string }
+  | { kind: "close"; id: string; label: string }
   | { kind: "open"; id: string; label: string; place: string };
 
 /**
@@ -75,7 +74,9 @@ export function dashboardFacts(
 }
 
 /**
- * What comes next, which the Dashboard fills the one button for: the Change in
+ * What comes next, which the Dashboard fills the one button for. Only a pull
+ * request not yet open says why it is next, in `place`, since nothing else
+ * on the Dashboard does: the Change in
  * progress shown last that still needs the Reviewer, to resume, or to
  * finish once every file is viewed; or else the pull request that has
  * waited longest and isn't open yet. A Change whose last Review covers its
@@ -92,29 +93,26 @@ export function nextStep(
     .filter((c) => c.total > 0 && !(c.reviewed && c.pending === 0))
     .at(-1);
   if (change) {
-    const pending = change.pending
-      ? [countOf(change.pending, "pending Comment")]
-      : [];
-    if (change.viewed !== undefined && change.viewed >= change.total)
+    // The button names the Change, and its row below says where the Reviewer
+    // stands on it, so neither is said a third time.
+    const viewedAll = change.viewed !== undefined && change.viewed >= change.total;
+    // A local Change with every file viewed and no Comments has no Brief to
+    // write: nothing needs changing, so closing it is the next step.
+    if (viewedAll && change.finish === "brief" && change.pending === 0)
+      return { kind: "close", id: change.id, label: `Close ${change.name}` };
+    if (viewedAll)
       return {
         kind: "finish",
         id: change.id,
-        label: change.finish,
-        place: [`You've viewed every file of ${change.name}`, ...pending].join(
-          " · "
-        ),
+        label:
+          change.finish === "submit"
+            ? `Submit Review of ${change.name}…`
+            : `Write Brief for ${change.name}…`,
       };
     return {
       kind: "resume",
       id: change.id,
       label: `Resume ${change.name}`,
-      place: [
-        `You were last in ${change.name}`,
-        ...(change.viewed !== undefined
-          ? [`${change.viewed} of ${change.total} viewed`]
-          : []),
-        ...pending,
-      ].join(" · "),
     };
   }
   const longest = byLongestWait(waiting.filter((w) => !w.open))[0];

@@ -67,6 +67,8 @@ export interface LastReview {
   url?: string;
   /** How many Comments on the diff it published. */
   comments?: number;
+  /** Whether it ended with a copied Brief, for a local Change, not a verdict. */
+  brief?: boolean;
 }
 
 export interface InboxPullRequests {
@@ -648,6 +650,11 @@ ${paths
     const res = await fetch(url, { headers });
     if (!res.ok) throw new GitHubError(`${url}: ${res.status}`);
     return new Uint8Array(await res.arrayBuffer());
+  }
+
+  /** The signed-in user's login. */
+  viewer(): Promise<string> {
+    return this.viewerLogin();
   }
 
   /** The signed-in user's login, asked once for each API URL and token. */

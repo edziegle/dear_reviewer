@@ -49,10 +49,11 @@ export interface DashboardProblem {
 export interface DashboardState {
   facts?: string;
   next?: {
-    kind: "resume" | "finish" | "open";
+    kind: "resume" | "finish" | "close" | "open";
     id: string;
     label: string;
-    place: string;
+    /** Why a pull request not yet open is next; the others say it in their row. */
+    place?: string;
   };
   inProgress: DashboardChange[];
   waiting?: DashboardPullRequest[];
@@ -68,7 +69,7 @@ export interface DashboardState {
 export type DashboardClick =
   | { type: "next" }
   | { type: "openRange" }
-  | { type: "resume" | "finish" | "open" | "fix"; id: string };
+  | { type: "resume" | "finish" | "close" | "open" | "fix"; id: string };
 
 interface DashboardView {
   visible: boolean;

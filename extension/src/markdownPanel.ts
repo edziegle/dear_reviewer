@@ -9,19 +9,22 @@ import { renderMarkdown, type RenderOptions } from "./markdown";
 
 /**
  * The styles both webviews share: rendered Markdown, the problem banner and
- * its button, the Assistant's hand, the focus outline on every button, link
- * and summary, and the theme's button border, which only high-contrast
- * themes draw (DESIGN.md).
+ * its button, the Assistant's hand, the message box, the focus outline on
+ * every button, link and summary, and the theme's button border, which only
+ * high-contrast themes draw (DESIGN.md).
  */
 export const sharedStyles = `
   button:focus-visible, a:focus-visible, summary:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
   button.primary, button.secondary, button.send, .problem button { border: 1px solid var(--vscode-button-border, var(--vscode-contrastBorder, transparent)); }
+  textarea { resize: vertical; min-height: 2.6em; font: inherit; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); border-radius: 2px; padding: 4px 6px; }
+  textarea:focus { outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
+  textarea::placeholder { color: var(--vscode-input-placeholderForeground); opacity: 1; }
   .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .markdown > :first-child { margin-top: 0; }
   .markdown > :last-child { margin-bottom: 0; }
-  .markdown h1, .markdown h2, .markdown h3, .markdown h4 { font-size: 1.05em; margin: 1em 0 0.4em; }
-  .markdown h1 { font-size: 1.2em; }
-  .markdown h2 { font-size: 1.1em; }
+  .markdown h3, .markdown h4, .markdown h5, .markdown h6 { font-size: 1.05em; margin: 1em 0 0.4em; }
+  .markdown h3 { font-size: 1.2em; }
+  .markdown h4 { font-size: 1.1em; }
   .markdown p, .markdown ul, .markdown ol, .markdown pre, .markdown blockquote, .markdown table { margin: 0.5em 0; }
   .markdown ul, .markdown ol { padding-left: 1.6em; list-style: revert; }
   .markdown code { font-family: var(--vscode-editor-font-family); font-size: var(--vscode-editor-font-size); background: var(--vscode-textCodeBlock-background); padding: 0 3px; border-radius: 3px; overflow-wrap: anywhere; }
@@ -34,7 +37,7 @@ export const sharedStyles = `
   .markdown a[data-href]:hover, .markdown a[data-path]:hover { color: var(--vscode-textLink-activeForeground, var(--vscode-textLink-foreground)); }
   .problem { margin: 12px 0; padding: 8px; border: 1px solid var(--vscode-inputValidation-errorBorder); background: var(--vscode-inputValidation-errorBackground); white-space: pre-wrap; }
   .problem code { font-family: var(--vscode-editor-font-family); }
-  .problem button { display: block; margin-top: 8px; padding: 4px 10px; border-radius: 2px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); cursor: pointer; font: inherit; }
+  .problem button { display: block; margin-top: 8px; padding: 4px 12px; border-radius: 2px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); cursor: pointer; font: inherit; }
   .problem button:hover { background: var(--vscode-button-hoverBackground); }
   .hand { border-left: 2px solid var(--vscode-dearReviewer-assistantForeground); padding-left: 12px; }
   .speaker { display: flex; flex-wrap: wrap; align-items: center; gap: 0 6px; font-size: 0.9em; font-weight: 600; margin: 0 0 4px; }
@@ -43,26 +46,37 @@ export const sharedStyles = `
   .progress::before { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 2%; background: var(--vscode-progressBar-background); animation: progress 4s linear infinite; }
   @keyframes progress-appear { from { opacity: 0; } to { opacity: 1; } }
   @keyframes progress { from { transform: translateX(0) scaleX(1); } 50% { transform: translateX(2500%) scaleX(3); } to { transform: translateX(4900%) scaleX(1); } }
-  @keyframes progress-breathe { from { opacity: 0.25; } to { opacity: 0.8; } }
-  @media (prefers-reduced-motion: reduce) { .progress::before { width: 100%; animation: progress-breathe 1.2s ease-in-out infinite alternate; } }`;
+  @media (prefers-reduced-motion: reduce) { .progress::before { width: 100%; opacity: 0.6; animation: none; } }`;
 
 /**
- * The script both webviews share: `keepFocus` runs a render and puts the
- * focus back on the element at the same place if the render replaced the
- * focused one; `setText` changes a node's text only when it differs, so a
- * live region speaks only of a change; `appendWithCode` shows the
- * backticked parts of plain text, such as a problem, as code.
+ * The script both webviews share: `keepFocus` runs a render and, if the
+ * render replaced, hid or disabled the focused element, puts the focus on the
+ * element at the same place, else the panel's `data-focus-default`, else
+ * the nearest one before it; `setText` changes a node's text only when it
+ * differs, so a live region speaks only of a change; `appendWithCode` shows
+ * the backticked parts of plain text, such as a problem, as code.
  */
 export const sharedScript = `
-  const focusables = (root) => [...root.querySelectorAll("a[role=link], button, summary, textarea")];
+  const canFocus = (node) => node.isConnected && !node.disabled && !node.closest("[hidden]");
+  const focusables = (root) => [...root.querySelectorAll("a[role=link], button, summary, textarea, input")].filter(canFocus);
   const keepFocus = (render) => {
     const active = document.activeElement;
-    const scope = active && active !== document.body && active.parentElement ? active.parentElement.closest("[id]") : null;
+    if (!active || active === document.body) return render();
+    const scope = active.parentElement ? active.parentElement.closest("[id]") : null;
+    const scopeId = scope && scope.id;
     const index = scope ? focusables(scope).indexOf(active) : -1;
+    const all = focusables(document.body);
+    const earlier = all.slice(0, all.indexOf(active)).reverse();
     render();
-    if (index < 0 || active.isConnected) return;
-    const now = document.getElementById(scope.id);
-    const target = now && focusables(now)[index];
+    const now = document.activeElement;
+    // The render kept the focus, or gave it somewhere on purpose.
+    if (now === active ? canFocus(active) : now && now !== document.body) return;
+    const rebuilt = scopeId && document.getElementById(scopeId);
+    const fallback = document.querySelector("[data-focus-default]");
+    const target = (rebuilt && index >= 0 && focusables(rebuilt)[index])
+      || (fallback && canFocus(fallback) && fallback)
+      || earlier.find(canFocus)
+      || focusables(document.body)[0];
     if (target) target.focus({ preventScroll: true });
   };
   const setText = (node, text) => {

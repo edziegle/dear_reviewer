@@ -38,6 +38,7 @@ import {
   short,
   workspaceFolders,
 } from "../../reviewer";
+import { sentTimeline } from "../../timeline";
 import { pickUpAfterReload } from "../handoff";
 
 const settingKeys = ["githubApiUrl", "repositories", "localClones"];
@@ -132,6 +133,12 @@ describe("Ending a local Review with a Brief", () => {
       !activeTabLabel()?.startsWith("Brief "),
       `no Brief opened: ${activeTabLabel()}`
     );
+    // The overview says so, not a notification.
+    await eventually(async () => {
+      const brief = (await sentTimeline("agent/docs")).brief;
+      assert.strictEqual(brief?.phase, "problem");
+      assert.match(brief?.problem ?? "", /^Couldn't write a Brief for .*overloaded server/);
+    });
   });
 
   it("asks the Assistant for a Brief built from the Comments, with file and line references", async () => {
@@ -196,6 +203,18 @@ describe("Ending a local Review with a Brief", () => {
     assert.strictEqual((await commentThreads()).length, 2);
   });
 
+  it("shows the Brief waiting to be copied in the overview, with its Comments counted", async () => {
+    await eventually(async () => {
+      const timeline = await sentTimeline("agent/docs");
+      assert.deepStrictEqual(timeline.brief, {
+        phase: "written",
+        comments: 3,
+        canShow: true,
+      });
+      assert.strictEqual(timeline.finished, false);
+    });
+  });
+
   it("copies the Brief, with the Reviewer's edits, to the clipboard", async () => {
     const editor = vscode.window.activeTextEditor!;
     const end = editor.document.lineAt(editor.document.lineCount - 1).range.end;
@@ -230,6 +249,18 @@ describe("Ending a local Review with a Brief", () => {
 
   it("ends the Review: its Comments leave the gutter, and nothing is new since", async () => {
     assert.deepStrictEqual(await commentThreads(), []);
+    // The overview says how it ended, and that the Brief can be shown again.
+    await eventually(async () => {
+      const timeline = await sentTimeline("agent/docs");
+      assert.strictEqual(timeline.finished, true);
+      assert.strictEqual(timeline.review?.verdict, "briefed");
+      assert.match(timeline.review?.text ?? "", /^You copied a Brief .+ · 3 Comments$/);
+      assert.deepStrictEqual(timeline.brief, {
+        phase: "ended",
+        comments: 3,
+        canShow: true,
+      });
+    });
     await eventually(async () =>
       assert.deepStrictEqual(
         await reviewInProgressFiles(),
@@ -242,7 +273,7 @@ describe("Ending a local Review with a Brief", () => {
     await showChangesSinceLastReview(change);
 
     assert.ok(
-      !activeTabLabel()?.includes("since my last Review"),
+      !activeTabLabel()?.includes("since your last Review"),
       `no diff since the last Review opened: ${activeTabLabel()}`
     );
   });
@@ -270,7 +301,7 @@ describe("Ending a local Review with a Brief", () => {
     const entry = inboxEntry(await inbox(), "agent/docs");
     assert.strictEqual(
       entry.description,
-      "acme/local · 3 commits ahead · new commits since my Review · open"
+      "acme/local · 3 commits ahead · new commits since your Review · open"
     );
   });
 
@@ -308,7 +339,7 @@ describe("Ending a local Review with a Brief", () => {
     await eventually(() => {
       assert.strictEqual(
         activeTabLabel(),
-        `${repo} ${short(change.head)}..${short(newHead)} since my last Review (2 files)`
+        `${repo} ${short(change.head)}..${short(newHead)} since your last Review (2 files)`
       );
       // VSCodium can still list a closed diff's editors as visible, so this
       // looks for the new diff's own files among them.

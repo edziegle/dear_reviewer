@@ -159,7 +159,7 @@ describe("The Reading Order", () => {
     await closeChange(request);
   });
 
-  it("leaves a Change in tree order when the reply holds no usable order, with no error", async () => {
+  it("leaves a Change in tree order when the reply holds no usable order, and says so in the overview, not as an error in the take", async () => {
     const other = { ...request, head: repo.commits.renamed };
     await scriptClaude(other, {
       turns: [replyTurn("Renames the helper. Start with util.py:1.")],
@@ -182,7 +182,12 @@ describe("The Reading Order", () => {
         "  util.py [M]",
       ])
     );
-    await overviewShows(otherTitle, undefined);
+    await overviewShows(otherTitle, {
+      writing: false,
+      outOfDate: false,
+      problem: true,
+      steps: [],
+    });
     assert.strictEqual((await overviewTake(otherTitle))?.problem, undefined);
 
     await closeChange(other);

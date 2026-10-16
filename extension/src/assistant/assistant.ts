@@ -412,6 +412,8 @@ class ChangeAssistant {
   private readingOrder?: ReadingOrder;
   /** Whether a Reading Order is being written. */
   private writingOrder = false;
+  /** Whether the last Reading Order asked for failed, or came back unusable. */
+  private orderProblem = false;
   private overviewState: AssistantOverview;
 
   constructor(
@@ -471,6 +473,7 @@ class ChangeAssistant {
   get readingOrderState(): ReadingOrderState {
     return {
       writing: this.writingOrder,
+      ...(this.orderProblem && { problem: true }),
       ...(this.readingOrder && { order: this.readingOrder }),
     };
   }
@@ -784,8 +787,8 @@ class ChangeAssistant {
   /**
    * Asks for a Reading Order in a turn the panel doesn't show, starting at
    * the summary's start, and keeps it if the reply holds a usable one. If
-   * the turn fails, the Change stays in tree order, with no problem shown:
-   * the next turn meets the problem, if it lasts.
+   * the turn fails, or the reply holds no usable order, the Change stays in
+   * tree order and the overview says so, with a way to try again.
    */
   private async writeReadingOrder(): Promise<void> {
     const change = this.change;
@@ -797,18 +800,27 @@ class ChangeAssistant {
     )?.path;
     const prompt = readingOrderPrompt(files, start, this.note);
     this.note = undefined;
+    this.orderProblem = false;
     this.setWritingOrder(true);
     let reply: string | undefined;
     try {
       reply = await this.turn(prompt, "hidden");
     } catch {
+      this.orderProblem = true;
       this.update({ busy: false, stoppable: undefined, steps: undefined });
     } finally {
       this.setWritingOrder(false);
     }
-    if (reply === undefined || this.disposed) return;
-    const steps = parseReadingOrder(reply, files, start);
-    if (!steps) return;
+    if (this.disposed) return;
+    const steps = reply === undefined ? undefined : parseReadingOrder(reply, files, start);
+    if (!steps) {
+      // A reply stopped on purpose, with nothing back, isn't a problem.
+      if (reply !== undefined && !this.orderProblem) {
+        this.orderProblem = true;
+        this.readingOrderChanged();
+      }
+      return;
+    }
     this.readingOrder = { headSha: change.headSha, steps };
     this.save();
     this.readingOrderChanged();

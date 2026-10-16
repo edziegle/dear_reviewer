@@ -32,6 +32,11 @@
         "category": "Dear Reviewer"
       },
       {
+        "command": "dearReviewer.openFromList",
+        "title": "Open Pull Request or Branch…",
+        "category": "Dear Reviewer"
+      },
+      {
         "command": "dearReviewer.openPullRequest",
         "title": "Open Pull Request",
         "category": "Dear Reviewer",
@@ -187,8 +192,13 @@
         "icon": "$(dashboard)"
       },
       {
+        "command": "dearReviewer.showReviewKeys",
+        "title": "Show Review Keys",
+        "category": "Dear Reviewer"
+      },
+      {
         "command": "dearReviewer.openAllChanges",
-        "title": "Open All Changes",
+        "title": "Open All Diffs",
         "category": "Dear Reviewer",
         "icon": "$(diff-multiple)"
       },
@@ -270,18 +280,18 @@
       },
       {
         "command": "dearReviewer.discardReview",
-        "title": "Discard Pending Review…",
+        "title": "Discard Pending Comments…",
         "category": "Dear Reviewer"
       },
       {
         "command": "dearReviewer.writeBrief",
-        "title": "Write Brief",
+        "title": "Write Brief…",
         "category": "Dear Reviewer",
         "icon": "$(note)"
       },
       {
         "command": "dearReviewer.finishReview",
-        "title": "Finish Review…",
+        "title": "Submit Review… or Write Brief…",
         "category": "Dear Reviewer",
         "icon": "$(check-all)"
       },
@@ -293,7 +303,7 @@
       },
       {
         "command": "dearReviewer.showChangesSinceLastReview",
-        "title": "Show Changes Since My Last Review",
+        "title": "Show Changes Since Your Last Review",
         "category": "Dear Reviewer"
       },
       {
@@ -438,14 +448,9 @@
           "group": "setup@1"
         },
         {
-          "command": "dearReviewer.finishReview",
-          "when": "view == dearReviewer.changeFiles && dearReviewer.hasOpenChange",
-          "group": "navigation@1"
-        },
-        {
           "command": "dearReviewer.showTimeline",
           "when": "view == dearReviewer.changeFiles && dearReviewer.hasOpenChange",
-          "group": "navigation@2"
+          "group": "navigation@1"
         },
         {
           "command": "dearReviewer.refreshChangeFiles",
@@ -588,8 +593,16 @@
           "when": "false"
         },
         {
+          "command": "dearReviewer.submitReview",
+          "when": "dearReviewer.hasOpenChange && dearReviewer.frontIsPullRequest"
+        },
+        {
+          "command": "dearReviewer.writeBrief",
+          "when": "dearReviewer.hasOpenChange && !dearReviewer.frontIsPullRequest && dearReviewer.frontHasComments"
+        },
+        {
           "command": "dearReviewer.finishReview",
-          "when": "dearReviewer.hasOpenChange"
+          "when": "false"
         },
         {
           "command": "dearReviewer.nextUnviewedFile",
@@ -618,6 +631,26 @@
         {
           "command": "dearReviewer.showDashboard",
           "when": "!dearReviewer.inReviewWindow"
+        },
+        {
+          "command": "dearReviewer.showAssistant",
+          "when": "dearReviewer.hasOpenChange"
+        },
+        {
+          "command": "dearReviewer.showTimeline",
+          "when": "dearReviewer.hasOpenChange"
+        },
+        {
+          "command": "dearReviewer.findIssues",
+          "when": "dearReviewer.hasOpenChange"
+        },
+        {
+          "command": "dearReviewer.discardReview",
+          "when": "dearReviewer.hasOpenChange"
+        },
+        {
+          "command": "dearReviewer.showChangesSinceLastReview",
+          "when": "dearReviewer.hasOpenChange"
         }
       ],
       "editor/title": [
@@ -645,11 +678,6 @@
           "command": "dearReviewer.showTimeline",
           "when": "resourcePath =~ /edziegle\\.dear-reviewer\\/changes\\// || resourceScheme == dear-reviewer-commit",
           "group": "1_dearReviewer@1"
-        },
-        {
-          "command": "dearReviewer.finishReview",
-          "when": "resourcePath =~ /edziegle\\.dear-reviewer\\/changes\\// || resourceScheme == dear-reviewer-commit",
-          "group": "1_dearReviewer@2"
         }
       ],
       "editor/title/context": [
@@ -708,19 +736,9 @@
           "group": "finding@2"
         },
         {
-          "command": "dearReviewer.submitReview",
-          "when": "view == dearReviewer.changeFiles && viewItem =~ /^change\\.pullRequest/",
-          "group": "inline@1"
-        },
-        {
-          "command": "dearReviewer.writeBrief",
-          "when": "view == dearReviewer.changeFiles && viewItem =~ /^change\\.local/",
-          "group": "inline@1"
-        },
-        {
           "command": "dearReviewer.showTimeline",
           "when": "view == dearReviewer.changeFiles && viewItem =~ /^change\\./",
-          "group": "inline@2"
+          "group": "inline@1"
         },
         {
           "command": "dearReviewer.showAssistant",
@@ -902,7 +920,7 @@
       },
       {
         "view": "dearReviewer.changeFiles",
-        "contents": "No Change is in front. Open a pull request or a local branch from the Dear Reviewer Dashboard in your own window, or [open a commit range](command:dearReviewer.openChange) as a Change."
+        "contents": "No Change is open in this window. Open a pull request or a local branch from the Dear Reviewer side bar in the window you work in, or [open a commit range](command:dearReviewer.openChange) as a Change."
       }
     ],
     "walkthroughs": [
@@ -916,8 +934,13 @@
             "title": "Sign in to GitHub",
             "description": "Dear Reviewer uses VS Code's GitHub sign-in to list your pull requests, comment and submit Reviews.\n[Sign In to GitHub](command:dearReviewer.signIn)\nWhere that sign-in isn't available, [use a personal access token](command:dearReviewer.setToken) instead; it is kept in the OS keychain.",
             "media": {
-              "image": "media/dear-reviewer.svg",
-              "altText": "The Dear Reviewer icon"
+              "image": {
+                "dark": "media/walkthrough/signin-dark.png",
+                "light": "media/walkthrough/signin-light.png",
+                "hc": "media/walkthrough/signin-dark.png",
+                "hcLight": "media/walkthrough/signin-light.png"
+              },
+              "altText": "The Dashboard before sign-in, with Sign In to GitHub as its one filled button"
             },
             "completionEvents": [
               "onContext:dearReviewer.signedIn"
@@ -928,8 +951,13 @@
             "title": "Open your repositories",
             "description": "Every folder you have open that is a clone of a GitHub repository adds that repository to the Dashboard, with the folder as its clone, and Dear Reviewer remembers it. Add a clone you don't have open, or forget one, from the Dashboard's toolbar.\n[Add Repository](command:dearReviewer.addRepository)",
             "media": {
-              "image": "media/dear-reviewer.svg",
-              "altText": "The Dear Reviewer icon"
+              "image": {
+                "dark": "media/walkthrough/repos-dark.png",
+                "light": "media/walkthrough/repos-light.png",
+                "hc": "media/walkthrough/repos-dark.png",
+                "hcLight": "media/walkthrough/repos-light.png"
+              },
+              "altText": "The Dashboard with no repository yet, offering Add Repository…, Open Folder… and the Repositories setting"
             },
             "completionEvents": [
               "onContext:dearReviewer.hasRepositories"
@@ -940,8 +968,13 @@
             "title": "Check the Assistant's Claude login",
             "description": "The Assistant runs the claude CLI you already have, with its own login: install Claude Code and sign in by running claude in a terminal. Point the Claude Path setting at it if it isn't on the PATH.\n[Check Claude Login](command:dearReviewer.checkClaudeLogin)",
             "media": {
-              "image": "media/dear-reviewer.svg",
-              "altText": "The Dear Reviewer icon"
+              "image": {
+                "dark": "media/walkthrough/claude-dark.png",
+                "light": "media/walkthrough/claude-light.png",
+                "hc": "media/walkthrough/claude-dark.png",
+                "hcLight": "media/walkthrough/claude-light.png"
+              },
+              "altText": "The Assistant's panel, showing the Claude login in its header and the Assistant's reply beside its rule"
             },
             "completionEvents": [
               "onContext:dearReviewer.claudeSignedIn"
@@ -950,26 +983,73 @@
           {
             "id": "trust",
             "title": "Trust the review window",
-            "description": "Changes open in the review window, from a folder in Dear Reviewer's storage that the editor doesn't trust yet. Until you trust it, the review window is in Restricted Mode, with language servers and code navigation off. Trusting it turns them on, for every Change you open later too, and also lets the reviewed code's workspace settings and tasks apply in that window, including for pull requests from people you don't know. It's your choice: the editor asks once, when the review window first opens, and you can choose here later. The button shows Workspace Trust in the review window; choose Trust there.\n[Trust the Review Window…](command:dearReviewer.trustReviewWindow)",
+            "description": "The review window is in Restricted Mode until you trust it: no language servers and no code navigation. Trusting it turns them on for every Change, and lets the reviewed code's workspace settings and tasks run there, even for pull requests from people you don't know. The editor asks once; you can choose here later.\n[Trust the Review Window…](command:dearReviewer.trustReviewWindow)",
             "media": {
-              "image": "media/dear-reviewer.svg",
-              "altText": "The Dear Reviewer icon"
+              "image": {
+                "dark": "media/walkthrough/trust-dark.png",
+                "light": "media/walkthrough/trust-light.png",
+                "hc": "media/walkthrough/trust-dark.png",
+                "hcLight": "media/walkthrough/trust-light.png"
+              },
+              "altText": "A Change's overview in a review window that isn't trusted yet, with a Trust the review window… link in its standing line"
             },
             "completionEvents": [
               "onContext:dearReviewer.reviewWindowTrusted"
             ]
           },
           {
-            "id": "review",
-            "title": "Review a pull request",
-            "description": "Click a pull request in the Dashboard to open it as a Change, in the review window. It opens with its overview alone: what the Change is, where you stand on it, and the Assistant's short take, with where to start reading. The diff opens when you start, beside the overview. Until you trust the review window, it is in Restricted Mode, without language servers and navigation. Comment in the diff's gutter, then submit your Review from the overview or from the Change in Change Files. Ctrl+Alt+R then N opens the next unviewed file, and Ctrl+Alt+R then S finishes the Review.\n[Show the Dashboard](command:dearReviewer.showDashboard)",
+            "id": "open",
+            "title": "Open a Change from the Dashboard",
+            "description": "Click a pull request in the Dashboard, or choose Open Pull Request or Branch… in the palette. It opens as a Change in the review window, with its overview alone: what the Change is, where you stand on it, and the Assistant's short take, with where to start reading.\n[Show the Dashboard](command:dearReviewer.showDashboard)",
             "media": {
-              "image": "media/dear-reviewer.svg",
-              "altText": "The Dear Reviewer icon"
+              "image": {
+                "dark": "media/walkthrough/open-dark.png",
+                "light": "media/walkthrough/open-light.png",
+                "hc": "media/walkthrough/open-dark.png",
+                "hcLight": "media/walkthrough/open-light.png"
+              },
+              "altText": "The Dashboard with two pull requests waiting, and Review acme/infra #1203 as its filled button"
             },
             "completionEvents": [
               "onCommand:dearReviewer.openPullRequest",
+              "onCommand:dearReviewer.openLocalBranch",
               "onCommand:dearReviewer.openChange"
+            ]
+          },
+          {
+            "id": "read",
+            "title": "Read the diff and comment",
+            "description": "Start where the take says, then step through the files with Next unviewed file (Ctrl+Alt+R N, or ⌃⌥R N on a Mac). Comment in the gutter of the diff. Go to definition and find usages work on both sides of the diff once you trust the review window.",
+            "media": {
+              "image": {
+                "dark": "media/walkthrough/read-dark.png",
+                "light": "media/walkthrough/read-light.png",
+                "hc": "media/walkthrough/read-dark.png",
+                "hcLight": "media/walkthrough/read-light.png"
+              },
+              "altText": "A Change's overview, with Start at, Next unviewed file and Ask the Assistant, each showing its key"
+            },
+            "completionEvents": [
+              "onCommand:dearReviewer.nextUnviewedFile",
+              "onCommand:dearReviewer.markViewed"
+            ]
+          },
+          {
+            "id": "finish",
+            "title": "Finish your Review",
+            "description": "When every file is viewed, the overview offers Submit Review…: your verdict, a summary, and every Comment that publishes with it. A local Change ends with Write Brief… instead, and a Brief you copy for your agent. Ctrl+Alt+R S does either.\nEvery key is in Keyboard Shortcuts, where you can rebind it; the hints beside the overview's buttons show the defaults.\n[Show the Review Keys](command:dearReviewer.showReviewKeys)",
+            "media": {
+              "image": {
+                "dark": "media/walkthrough/finish-dark.png",
+                "light": "media/walkthrough/finish-light.png",
+                "hc": "media/walkthrough/finish-dark.png",
+                "hcLight": "media/walkthrough/finish-light.png"
+              },
+              "altText": "The Submit step in a Change's overview: a verdict, a summary and the Comments that publish"
+            },
+            "completionEvents": [
+              "onCommand:dearReviewer.submitReview",
+              "onCommand:dearReviewer.writeBrief"
             ]
           }
         ]

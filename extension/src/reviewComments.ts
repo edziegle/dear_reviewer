@@ -27,8 +27,20 @@ import type { Avatars } from "./inbox";
 import type { PendingReviewsBySource } from "./pendingReview";
 import { hasFolder } from "./reviewWindow";
 import { messageOf } from "./errors";
+import { firstLineOf, type Verdict } from "./reviewSubmission";
 
-export type Verdict = "approve" | "requestChanges" | "comment";
+export type { Verdict } from "./reviewSubmission";
+
+/** A Comment in the Review under way, as the overview lists it before it is submitted. */
+export interface PendingCommentLine {
+  /** Relative to the repository root, with forward slashes. */
+  path: string;
+  side: DiffSide;
+  /** The thread's last line, counted from 1. */
+  line: number;
+  /** The Comment's first line with words, as plain text. */
+  text: string;
+}
 
 const events: Record<Verdict, ReviewEvent> = {
   approve: "APPROVE",
@@ -445,26 +457,84 @@ export class ReviewComments implements vscode.Disposable {
    * Submits the pending review with the verdict and summary. That ends the
    * Review: its Comments are published, and stay in the gutter as such, and
    * GitHub records the head commit it covered (see ADR 0015). Gives the
-   * submitted review's page on GitHub, or undefined if it wasn't submitted.
+   * submitted review's page on GitHub; throws if GitHub didn't take it.
    */
   async submit(
     change: Change,
     verdict: Verdict,
     summary: string
-  ): Promise<{ url?: string } | undefined> {
-    const pullRequest = change.pullRequest;
-    if (!pullRequest) return;
-    let submitted: { url?: string };
-    try {
-      submitted = await this.pending.submit(change, events[verdict], summary);
-    } catch (err) {
-      void vscode.window.showErrorMessage(
-        `Couldn't submit your Review of ${pullRequest.repository} #${pullRequest.number}: ${messageOf(err)}`
-      );
-      return;
-    }
+  ): Promise<{ url?: string }> {
+    if (!change.pullRequest) throw new Error("Not a pull request's Change");
+    const submitted = await this.pending.submit(
+      change,
+      events[verdict],
+      summary
+    );
     await this.reload(change);
     return submitted;
+  }
+
+  /**
+   * The Change's Comments in the Review under way, as last loaded, in the
+   * order of their files and lines.
+   */
+  pendingComments(change: Change): PendingCommentLine[] {
+    return this.pendingThreads(change).map(({ place, comment }) => ({
+      ...place,
+      text: firstLineOf(comment.savedBody),
+    }));
+  }
+
+  /**
+   * Opens the diff of a pending Comment's file, as `openDiff` does, at its
+   * thread, which it expands. Gives whether there was such a Comment.
+   */
+  async revealPending(
+    change: Change,
+    index: number,
+    openDiff: (path: string) => Promise<void>
+  ): Promise<boolean> {
+    const found = this.pendingThreads(change)[index];
+    if (!found) return false;
+    await openDiff(found.place.path);
+    const { thread } = found;
+    thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
+    const editor = vscode.window.visibleTextEditors.find(
+      (e) => e.document.uri.toString() === thread.uri.toString()
+    );
+    if (editor && thread.range) {
+      editor.selection = new vscode.Selection(
+        thread.range.start,
+        thread.range.start
+      );
+      editor.revealRange(
+        thread.range,
+        vscode.TextEditorRevealType.InCenterIfOutsideViewport
+      );
+    }
+    return true;
+  }
+
+  /** Each pending Comment with its thread and place, in the order of their files and lines. */
+  private pendingThreads(change: Change): {
+    thread: vscode.CommentThread;
+    comment: PendingComment;
+    place: { path: string; side: DiffSide; line: number };
+  }[] {
+    const found = [...(this.shown.get(change.id) ?? [])].flatMap((thread) => {
+      const state = this.states.get(thread);
+      if (!state) return [];
+      const place = { path: state.path, side: state.side, line: state.line };
+      return thread.comments
+        .filter((c): c is PendingComment => c instanceof PendingComment)
+        .map((comment) => ({ thread, comment, place }));
+    });
+    return found.sort(
+      (a, b) =>
+        a.place.path.localeCompare(b.place.path) ||
+        a.place.line - b.place.line ||
+        a.place.side.localeCompare(b.place.side)
+    );
   }
 
   /** How many of the Change's Comments are in the Review under way, as last loaded. */

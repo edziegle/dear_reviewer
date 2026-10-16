@@ -50,7 +50,7 @@ const settingKeys = ["githubApiUrl", "repositories", "localClones"];
 
 // The Reviewer submits a Review, the author pushes new commits, and the
 // Reviewer comes back to see only what changed since.
-describe("What changed since my last Review", () => {
+describe("What changed since your last Review", () => {
   const pr = buildPullRequestFixture("since", "acme/since", 41);
   const elsewhere = buildPullRequestFixture("elsewhere", "acme/elsewhere", 42);
   const docstring = 'def new_helper():\n    """Three."""\n    return 3\n';
@@ -162,7 +162,7 @@ describe("What changed since my last Review", () => {
   it("marks an Inbox entry whose pull request has commits after the Reviewer's last Review on GitHub", async () => {
     assert.strictEqual(
       (await entry("Reviewed on github.com")).description,
-      "acme/elsewhere #42 · new commits since my Review"
+      "acme/elsewhere #42 · new commits since your Review"
     );
     assert.strictEqual(
       (await entry("Restructure pkg")).description,
@@ -293,7 +293,7 @@ describe("What changed since my last Review", () => {
     await showChangesSinceLastReview(requestAt(pr.head));
 
     assert.ok(
-      !activeTabLabel()?.includes("since my last Review"),
+      !activeTabLabel()?.includes("since your last Review"),
       `no diff since the last Review opened: ${activeTabLabel()}`
     );
   });
@@ -322,7 +322,7 @@ describe("What changed since my last Review", () => {
 
     assert.strictEqual(
       (await entry("Restructure pkg")).description,
-      "acme/since #41 · new commits since my Review · open"
+      "acme/since #41 · new commits since your Review · open"
     );
   });
 
@@ -385,11 +385,11 @@ describe("What changed since my last Review", () => {
       const change = await changeRow(newHead);
       assert.match(
         change.description ?? "",
-        / \d+\/\d+ · new commits since my Review$/
+        / \d+\/\d+ · new commits since your Review$/
       );
       assert.match(
         change.accessibilityLabel ?? "",
-        /, \d+ of \d+ files viewed, new commits since my Review$/
+        /, \d+ of \d+ files viewed, new commits since your Review$/
       );
       const overview = await sentTimeline("acme/since #41");
       assert.strictEqual(overview.review, undefined);
@@ -412,7 +412,7 @@ describe("What changed since my last Review", () => {
     await eventually(() => {
       assert.strictEqual(
         activeTabLabel(),
-        `${path.basename(pr.clone)} ${short(pr.head)}..${short(newHead)} since my last Review (2 files)`
+        `${path.basename(pr.clone)} ${short(pr.head)}..${short(newHead)} since your last Review (2 files)`
       );
       // The old side is the reviewed commit's file; an added file has none.
       assert.deepStrictEqual(

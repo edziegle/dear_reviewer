@@ -197,12 +197,13 @@ function html(): string {
   header { position: sticky; top: 0; background: var(--vscode-editor-background); padding: 12px 0 8px; border-bottom: 1px solid var(--vscode-panel-border); }
   h1 { font-size: 1.1em; margin: 0 0 4px; }
   .muted { color: var(--vscode-descriptionForeground); font-size: 0.9em; }
-  main { flex: 1; }
+  /* The working line and any problem follow the conversation, and the footer keeps to the bottom. */
+  .conversation { flex: 1; }
   .message { white-space: pre-wrap; line-height: 1.5; margin: 12px 0; }
   .message.reviewer { padding: 8px; border-radius: 4px; background: var(--vscode-editor-inactiveSelectionBackground); outline: 1px solid var(--vscode-contrastBorder, transparent); outline-offset: -1px; }
   .message.note { color: var(--vscode-descriptionForeground); font-style: italic; }
   .context { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
-  .chip { display: inline-flex; align-items: center; font-family: var(--vscode-editor-font-family); font-size: 0.85em; padding: 1px 6px; border-radius: 3px; background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); max-width: 100%; overflow-wrap: anywhere; }
+  .chip { display: inline-flex; align-items: center; font-family: var(--vscode-editor-font-family); font-size: 0.85em; padding: 1px 6px; border-radius: 3px; background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); outline: 1px solid var(--vscode-contrastBorder, transparent); outline-offset: -1px; max-width: 100%; overflow-wrap: anywhere; }
   .chip button { display: inline-flex; align-items: center; justify-content: center; flex: none; min-width: 20px; min-height: 20px; margin: -2px -5px -2px 2px; padding: 0; background: none; border: none; border-radius: 2px; color: inherit; cursor: pointer; }
   .chip button:hover { background: var(--vscode-toolbar-hoverBackground); }
   .chip button svg { width: 12px; height: 12px; }
@@ -214,16 +215,15 @@ function html(): string {
   .busy ol { margin: 4px 0; padding-left: 20px; }
   button.stop { background: none; border: none; padding: 0; margin-top: 2px; color: var(--vscode-textLink-foreground); cursor: pointer; font: inherit; font-size: 0.9em; }
   button.stop:hover { text-decoration: underline; }
-  .message.assistant { white-space: normal; }
+  .message.assistant { white-space: normal; max-width: 80ch; }
   .problem .buttons { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
   .problem .buttons button { margin-top: 0; }
   .problem button.secondary { color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); }
   .problem button.secondary:hover { background: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-secondaryBackground)); }
   footer { position: sticky; bottom: 0; background: var(--vscode-editor-background); padding: 8px 0 12px; border-top: 1px solid var(--vscode-panel-border); }
   form { display: flex; gap: 6px; align-items: flex-end; }
-  textarea { flex: 1; resize: vertical; min-height: 2.6em; font: inherit; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, transparent); border-radius: 2px; padding: 4px 6px; }
-  textarea:focus { outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
-  textarea::placeholder { color: var(--vscode-input-placeholderForeground); opacity: 1; }
+  textarea { flex: 1; }
+  .hint { margin-top: 4px; }
   button.send { font: inherit; color: var(--vscode-button-foreground); background: var(--vscode-button-background); border-radius: 2px; padding: 4px 12px; cursor: pointer; }
   button.send:hover { background: var(--vscode-button-hoverBackground); }
   button.send:disabled { opacity: 0.5; cursor: default; }
@@ -232,16 +232,19 @@ function html(): string {
 <body>
 <header><h1 id="title"></h1><div class="muted" id="range"></div><div class="muted" id="login"></div></header>
 ${catSymbol}
+<div class="conversation">
 <main id="messages"></main>
 <div class="busy hand" id="busy" hidden><div class="now" id="now"></div><details id="steps" hidden><summary id="stepCount"></summary><ol id="stepList"></ol></details><button class="stop" id="stop" type="button" title="Stop this reply; the conversation goes on with your next message" hidden>Stop</button></div>
 <div class="problem" id="problem" role="alert" hidden></div>
+</div>
 <div class="visually-hidden" id="announce" role="status"></div>
 <footer>
   <div class="context" id="context"></div>
   <form id="ask">
-    <textarea id="text" rows="2" aria-label="Ask the Assistant about this Change"></textarea>
+    <textarea id="text" rows="2" aria-label="Ask the Assistant about this Change" aria-describedby="hint" data-focus-default></textarea>
     <button class="send" id="send" type="submit">Send</button>
   </form>
+  <div class="muted hint" id="hint">Enter sends · Shift+Enter starts a new line</div>
 </footer>
 <script nonce="${nonce}">${sharedScript}
   const vscode = acquireVsCodeApi();
@@ -280,7 +283,9 @@ ${catSymbol}
   const messageNode = (m) => {
     const div = document.createElement("div");
     div.className = "message " + m.from;
-    const speaker = document.createElement("div");
+    // The Assistant's name is a heading, so a reply's own headings, which sit
+    // below it, don't jump a level.
+    const speaker = document.createElement(m.from === "assistant" ? "h2" : "div");
     if (m.from === "assistant") {
       div.classList.add("hand");
       speaker.className = "speaker";
@@ -405,7 +410,7 @@ ${catSymbol}
     byId("send").disabled = busy || unavailable;
     text.placeholder = unavailable
       ? "The Assistant can't reply until Claude Code runs; see above."
-      : "Ask about this Change. Enter sends; Shift+Enter starts a new line.";
+      : "Ask about this Change.";
     byId("busy").hidden = !state.busy;
     const problem = byId("problem");
     problem.hidden = !state.problem;

@@ -5,6 +5,7 @@
 
 import * as fs from "fs";
 import * as vscode from "vscode";
+import type { Verdict } from "./review";
 import type { ChangeRequest } from "./reviewer";
 
 export { catchLinks, releaseLinks } from "./reviewer";
@@ -67,6 +68,8 @@ export interface ShownReadingOrder {
   writing: boolean;
   /** Whether the Change has new commits since it was written. */
   outOfDate: boolean;
+  /** Whether the Assistant's last try to write it gave nothing usable. */
+  problem?: boolean;
   steps: {
     label: string;
     files: { path: string; why?: string; viewed: boolean }[];
@@ -81,17 +84,46 @@ export interface Timeline {
   size?: { files: number; additions: number; deletions: number };
   /** The Reviewer's last Review, while no new commits came since. */
   review?: {
-    verdict: "approved" | "changesRequested" | "commented";
+    verdict: "approved" | "changesRequested" | "commented" | "briefed";
     text: string;
   };
   standing: string[];
   progress?: { viewed: number; total: number };
+  /** Whether the last Review covers the head, with no Comments pending. */
+  finished?: boolean;
+  /** How many Comments are pending, once counted. */
+  pending?: number;
   navigationOff?: boolean;
   /** File extensions, such as `.tofu`, that no installed language highlights, while offered. */
   unhighlighted?: string[];
   take: Take;
   readingOrder?: ShownReadingOrder;
   finish: string;
+  /** The Submit step that ends a pull request's Review, while it is open. */
+  submit?: {
+    asked: number;
+    verdicts: { verdict: Verdict; label: string; detail: string }[];
+    verdict?: Verdict;
+    /** Why GitHub would refuse each verdict that needs a summary, while there is none. */
+    needsSummary: Partial<Record<Verdict, string>>;
+    comments: { path: string; side: "LEFT" | "RIGHT"; line: number; text: string }[];
+    submitting: boolean;
+    problem?: string;
+    problemAction?: string;
+    /** Why some verdicts aren't offered. */
+    note?: string;
+  };
+  /** The Review just submitted from the step. */
+  submitted?: { text: string; url?: string };
+  /** Where a local Change's Brief stands. */
+  brief?: {
+    phase: "writing" | "written" | "problem" | "ended";
+    comments: number;
+    problem?: string;
+    canShow: boolean;
+  };
+  /** Goes up each time the Reviewer is brought here to finish. */
+  finishAsked?: number;
   history: string;
   loading: boolean;
   items: TimelineItem[];
@@ -103,6 +135,10 @@ export interface Timeline {
       status: "passed" | "failed" | "running" | "skipped" | "neutral";
       url?: string;
     }[];
+    /** How many lead the list because they failed or are still running. */
+    attention: number;
+    /** Such as "1 failed · 2 running · 38 passed". */
+    summary: string;
   };
   problem?: string;
   /** The button that goes with the problem, by its label. */
@@ -169,8 +205,34 @@ export async function clickOverview(
     | "takeRetry"
     | "trust"
     | "suggestReadingOrder"
+    | "closeChange"
+    | "copyBrief"
+    | "showBrief"
+    | "discard"
 ): Promise<void> {
   (await panel(title)).receive({ type: button });
+}
+
+/** Picks the verdict, writes the summary and clicks Submit Review in the overview's Submit step. */
+export async function submitInOverview(
+  title: string,
+  verdict: Verdict,
+  summary: string
+): Promise<void> {
+  (await panel(title)).receive({ type: "submit", verdict, summary });
+}
+
+/** Clicks Cancel in the overview's Submit step. */
+export async function cancelSubmit(title: string): Promise<void> {
+  (await panel(title)).receive({ type: "cancelSubmit" });
+}
+
+/** Clicks a pending Comment in the overview's Submit step, by its place in the list. */
+export async function clickPendingComment(
+  title: string,
+  index: number
+): Promise<void> {
+  (await panel(title)).receive({ type: "openPending", index });
 }
 
 /** Clicks Find an Extension for a file extension in the overview. */

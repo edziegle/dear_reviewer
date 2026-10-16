@@ -73,4 +73,17 @@ describe("How the overview's standing line opens with the last Review", () => {
       ]
     );
   });
+
+  it("says a Brief was copied, with how many Comments it held", () => {
+    const standing = reviewStanding(
+      { ...review, brief: true, submittedAt: today, comments: 3 },
+      now
+    );
+    assert.strictEqual(standing?.verdict, "briefed");
+    assert.match(standing?.text ?? "", /^You copied a Brief at .+ · 3 Comments$/);
+    assert.strictEqual(
+      reviewStanding({ ...review, brief: true }, now)?.text,
+      "You copied a Brief"
+    );
+  });
 });

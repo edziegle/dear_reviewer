@@ -11,9 +11,12 @@ export interface DashboardChange {
   id: string;
   title: string;
   byline: string;
+  size?: { files: number; additions: number; deletions: number };
+  checks?: string;
   review?: { verdict: string; text: string };
   standing: string[];
-  end: { type: "finish" | "close"; label: string };
+  /** The cached avatar of a pull request's author, as a webview resource URI. */
+  avatar?: string;
 }
 
 export interface DashboardPullRequest {
@@ -65,7 +68,7 @@ export interface DashboardState {
 export type DashboardClick =
   | { type: "next" }
   | { type: "openRange" }
-  | { type: "resume" | "finish" | "close" | "open" | "fix"; id: string };
+  | { type: "resume" | "finish" | "open" | "fix"; id: string };
 
 interface DashboardView {
   visible: boolean;

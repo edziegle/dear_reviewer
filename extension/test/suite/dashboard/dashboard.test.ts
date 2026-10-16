@@ -301,13 +301,11 @@ describe("Dashboard", () => {
               title: second.name,
               byline: second.name.split(" ")[0],
               standing: ["0 of 3 viewed"],
-              end: { type: "finish", label: "Write Brief…" },
             },
             {
               title: first.name,
               byline: first.name.split(" ")[0],
               standing: ["0 of 1 viewed"],
-              end: { type: "finish", label: "Write Brief…" },
             },
           ]
         );
@@ -351,7 +349,7 @@ describe("Dashboard", () => {
     }
   });
 
-  it("offers to close a Change with no files to review, rather than finish it", async () => {
+  it("leaves out a Change with no files to review", async () => {
     // A commit that changes nothing, such as one undone by the next.
     const documented = local.commits.documented;
     const unchanged = gitIn(
@@ -364,32 +362,29 @@ describe("Dashboard", () => {
       "Change nothing"
     );
     const empty = range(documented, unchanged);
+    const other = range(local.commits.renamed, documented);
     await openChange(empty.request);
+    await openChange(other.request);
     try {
+      await eventually(async () =>
+        assert.deepStrictEqual((await shownChanges()).slice(-2), [
+          empty.name,
+          other.name,
+        ])
+      );
       await showDashboard();
-      let id: string | undefined;
       await eventually(async () => {
         const dashboard = await renderedDashboard();
-        const row = dashboard.inProgress.find((c) => c.title === empty.name);
         assert.deepStrictEqual(
-          row && { standing: row.standing, end: row.end },
-          {
-            standing: ["Nothing to review"],
-            end: { type: "close", label: "Close Change" },
-          }
+          dashboard.inProgress.map((c) => c.title),
+          [other.name],
+          "only the Change with files to review is in progress"
         );
-        assert.notStrictEqual(dashboard.next?.id, row?.id, "not the next step");
-        id = row?.id;
+        assert.strictEqual(dashboard.next?.label, `Resume ${other.name}`);
       });
-      await clickDashboard({ type: "close", id: id! });
-      await eventually(async () =>
-        assert.deepStrictEqual(
-          (await renderedDashboard()).inProgress.map((c) => c.title),
-          []
-        )
-      );
     } finally {
       await closeChange(empty.request);
+      await closeChange(other.request);
     }
   });
 
@@ -414,13 +409,20 @@ describe("Dashboard", () => {
       await eventually(async () => {
         const dashboard = await renderedDashboard();
         assert.deepStrictEqual(
-          dashboard.inProgress.map(({ id: _id, ...row }) => row),
+          dashboard.inProgress.map(({ id: _id, avatar, ...row }) => {
+            assert.ok(
+              avatar?.startsWith("https://"),
+              `an avatar for ${row.title}: ${avatar}`
+            );
+            return row;
+          }),
           [
             {
               title: "Retry failed webhooks",
-              byline: "acme/api #32 · waiting 2 hours · alice → main",
+              byline: "acme/api #32 · waiting 2 hours · alice",
+              size: { files: 4, additions: 40, deletions: 8 },
+              checks: "failed",
               standing: ["0 of 4 viewed"],
-              end: { type: "finish", label: "Submit Review…" },
             },
           ]
         );

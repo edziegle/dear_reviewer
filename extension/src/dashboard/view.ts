@@ -19,17 +19,17 @@ export interface DashboardChange {
   id: string;
   /** The pull request's title, or the Change's name. */
   title: string;
-  /** Such as `acme/api #7 · waiting 2 days · alice → main`, or `local branch in api`. */
+  /** Such as `acme/api #7 · waiting 2 days · alice`, or `local branch in api`. */
   byline: string;
+  /** A pull request's size and checks, once the Inbox has listed it. */
+  size?: { files: number; additions: number; deletions: number };
+  checks?: string;
   /** The Reviewer's last Review, while no new commits came since. */
   review?: ReviewStanding;
   /** New commits since their Review, pending Comments, files viewed. */
   standing: string[];
-  /**
-   * What ends it: Submit Review… or Write Brief…, or Close Change when it
-   * has no files to review.
-   */
-  end: { type: "finish" | "close"; label: string };
+  /** A pull request author's cached avatar, as a webview resource URI. */
+  avatar?: string;
 }
 
 /** A pull request the Inbox lists. */
@@ -99,7 +99,6 @@ export type FromDashboard =
   | { type: "openRange" }
   | { type: "resume"; id: string }
   | { type: "finish"; id: string }
-  | { type: "close"; id: string }
   | { type: "open"; id: string }
   | { type: "fix"; id: string };
 
@@ -190,7 +189,6 @@ export class DashboardView implements vscode.WebviewViewProvider {
     else if (
       (message.type === "resume" ||
         message.type === "finish" ||
-        message.type === "close" ||
         message.type === "open" ||
         message.type === "fix") &&
       typeof message.id === "string"
@@ -271,7 +269,6 @@ function html(cspSource: string): string {
   .item .link.title { color: var(--vscode-textLink-foreground); }
   .item .branch { font-family: var(--vscode-editor-font-family); font-weight: 400; }
   .item .muted, #place { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 1px 0; }
-  .item .actions { margin-top: 2px; }
   .problem-line { margin: 6px 0 0; }
   .problem-line .link { text-decoration: underline; }
   .setup .muted { margin-top: 8px; }
@@ -347,10 +344,12 @@ function html(cspSource: string): string {
   function change(entry) {
     const row = el("div", "item change");
     row.setAttribute("role", "listitem");
+    row.append(avatar(entry));
     const content = el("div", "content");
     const title = el("div");
     title.append(button("link title", entry.title, { type: "resume", id: entry.id }, "Resume it: show its overview in the review window", "Resume " + entry.title));
-    content.append(title, line("muted", [entry.byline]));
+    content.append(line("muted", [entry.byline]), title);
+    if (entry.size) content.append(line("muted", [size(entry), entry.checks && el("span", "status " + entry.checks, "checks " + entry.checks)]));
     let review;
     if (entry.review) {
       review = el("span", "review " + entry.review.verdict);
@@ -359,13 +358,17 @@ function html(cspSource: string): string {
       review.append(mark, " ", entry.review.text);
     }
     content.append(line("muted", [review, ...entry.standing]));
-    const end = entry.end;
-    const hint = end.type === "close" ? "Close it, since it has no files to review" : end.label.startsWith("Submit") ? "Submit your Review to GitHub" : "Write a Brief of your Comments for an agent";
-    const actions = el("div", "actions");
-    actions.append(button("link", end.label, { type: end.type, id: entry.id }, hint, end.label.replace("…", "") + " of " + entry.title + (end.label.endsWith("…") ? "…" : "")));
-    content.append(actions);
     row.append(content);
     return row;
+  }
+
+  // An author's avatar, or an empty circle in its place, so rows line up.
+  function avatar(entry) {
+    if (!entry.avatar) return el("div", "no-avatar");
+    const img = el("img");
+    img.src = entry.avatar;
+    img.alt = "";
+    return img;
   }
 
   function size(entry) {
@@ -381,14 +384,7 @@ function html(cspSource: string): string {
   function pullRequest(entry) {
     const row = el("div", "item pull-request");
     row.setAttribute("role", "listitem");
-    if (entry.waited !== undefined) {
-      if (entry.avatar) {
-        const img = el("img");
-        img.src = entry.avatar;
-        img.alt = "";
-        row.append(img);
-      } else row.append(el("div", "no-avatar"));
-    }
+    if (entry.waited !== undefined) row.append(avatar(entry));
     const content = el("div", "content");
     const title = el("div");
     title.append(button("link title", entry.title, { type: "open", id: entry.id }, "Open " + entry.name + " as a Change", entry.title + ", " + entry.name));

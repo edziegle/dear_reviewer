@@ -51,8 +51,6 @@ export interface DashboardSources {
   resume(change: Change): void;
   /** Starts finishing the Change's Review there: Submit Review… or Write Brief…. */
   finish(change: Change): void;
-  /** Closes the Change, in whichever window shows it. */
-  close(change: Change): void;
   /** Opens the Inbox's pull request or branch as a Change. */
   open(node: InboxNode): void;
   /** Asks for any commit range of a repository to open as a Change. */
@@ -234,27 +232,25 @@ export class Dashboard implements vscode.Disposable {
       if (!changes.some((change) => change.id === id))
         this.standings.delete(id);
     for (const change of changes) targets.changes.set(change.id, change);
-    const inProgress: DashboardChange[] = changes.map((change, i) => {
-      const standing = standings[i];
-      const summary = summaryOf(change);
-      return {
-        id: change.id,
-        title: summary?.title ?? changeName(change),
-        byline: bylineOf(change, summary, waitOf(change)),
-        ...(standing.review && { review: standing.review }),
-        standing:
-          standing.total === 0
-            ? [...standing.notes.slice(0, -1), "Nothing to review"]
-            : standing.notes,
-        end:
-          standing.total === 0
-            ? { type: "close", label: "Close Change" }
-            : {
-                type: "finish",
-                label: change.pullRequest ? "Submit Review…" : "Write Brief…",
-              },
-      };
-    });
+    const inProgress: DashboardChange[] = await Promise.all(
+      changes.map(async (change, i) => {
+        const standing = standings[i];
+        const summary = summaryOf(change);
+        const avatarFile =
+          summary && (await this.avatars.file(summary.author.avatarUrl));
+        const avatar = avatarFile && this.view.webviewUri(avatarFile);
+        return {
+          id: change.id,
+          title: summary?.title ?? changeName(change),
+          byline: bylineOf(change, summary, waitOf(change)),
+          ...(avatar && { avatar }),
+          ...(summary && { size: summary.size }),
+          ...(summary?.checks && { checks: summary.checks }),
+          ...(standing.review && { review: standing.review }),
+          standing: standing.notes,
+        };
+      })
+    );
 
     // A pull request open as a Change is in progress, so it shows there
     // rather than here too; one still opening stays, marked so.
@@ -316,7 +312,7 @@ export class Dashboard implements vscode.Disposable {
         pending: standings[i].pending,
         ...(standings[i].viewed >= 0 && { viewed: standings[i].viewed }),
         total: standings[i].total,
-        finish: inProgress[i].end.label,
+        finish: change.pullRequest ? "Submit Review…" : "Write Brief…",
       })),
       waitingNodes.map(({ node, since }) => ({
         id: pullRequestId(node.pullRequest),
@@ -334,8 +330,11 @@ export class Dashboard implements vscode.Disposable {
         ),
       }),
       ...(next && { next }),
-      // The Change shown last first, as the next step resumes it.
-      inProgress: [...inProgress].reverse(),
+      // The Change shown last first, as the next step resumes it. One with
+      // no files to review isn't a review in progress, so it's left out.
+      inProgress: inProgress
+        .filter((_, i) => standings[i].total !== 0)
+        .reverse(),
       ...(waiting && { waiting }),
       ...(authoredRows && { authored: authoredRows }),
       ...(reviewedRows && { reviewed: reviewedRows }),
@@ -403,7 +402,6 @@ export class Dashboard implements vscode.Disposable {
     const change = this.targets.changes.get(action.id);
     if (action.type === "resume" && change) this.sources.resume(change);
     else if (action.type === "finish" && change) this.sources.finish(change);
-    else if (action.type === "close" && change) this.sources.close(change);
     else if (action.type === "open") {
       const node = this.targets.nodes.get(action.id);
       if (node) this.sources.open(node);
@@ -545,8 +543,9 @@ function pullRequestId(pr: { repository: string; number: number }): string {
 }
 
 /**
- * `acme/api #7 · waiting 2 days · alice → main`, the wait while it waits on
- * the Reviewer, or a local Change's branch or commits and repository.
+ * `acme/api #7 · waiting 2 days · alice`, as Waiting on you names a pull
+ * request, the wait while it waits on the Reviewer; or a local Change's
+ * branch or commits and repository.
  */
 function bylineOf(
   change: Change,
@@ -557,7 +556,7 @@ function bylineOf(
     return [
       pullRequestName(change.pullRequest),
       waited && `waiting ${waited}`,
-      summary && `${summary.author.login} → ${summary.baseRefName}`,
+      summary?.author.login,
     ]
       .filter(Boolean)
       .join(" · ");

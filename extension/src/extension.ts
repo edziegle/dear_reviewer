@@ -302,11 +302,6 @@ export function activate(context: vscode.ExtensionContext) {
             requestOf(change)
           )
         : askReviewWindow(change, "finish"),
-    close: (change) =>
-      void vscode.commands.executeCommand(
-        "dearReviewer.closeChange",
-        requestOf(change)
-      ),
     open: (node) =>
       void vscode.commands.executeCommand(
         node.kind === "localBranch"

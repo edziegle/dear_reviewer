@@ -32,6 +32,11 @@
         "category": "Dear Reviewer"
       },
       {
+        "command": "dearReviewer.openFromList",
+        "title": "Open Pull Request or Branch…",
+        "category": "Dear Reviewer"
+      },
+      {
         "command": "dearReviewer.openPullRequest",
         "title": "Open Pull Request",
         "category": "Dear Reviewer",
@@ -995,7 +1000,7 @@
           {
             "id": "open",
             "title": "Open a Change from the Dashboard",
-            "description": "Click a pull request in the Dashboard. It opens as a Change in the review window, with its overview alone: what the Change is, where you stand on it, and the Assistant's short take, with where to start reading.\n[Show the Dashboard](command:dearReviewer.showDashboard)",
+            "description": "Click a pull request in the Dashboard, or choose Open Pull Request or Branch… in the palette. It opens as a Change in the review window, with its overview alone: what the Change is, where you stand on it, and the Assistant's short take, with where to start reading.\n[Show the Dashboard](command:dearReviewer.showDashboard)",
             "media": {
               "image": {
                 "dark": "media/walkthrough/open-dark.png",
@@ -1007,6 +1012,7 @@
             },
             "completionEvents": [
               "onCommand:dearReviewer.openPullRequest",
+              "onCommand:dearReviewer.openLocalBranch",
               "onCommand:dearReviewer.openChange"
             ]
           },

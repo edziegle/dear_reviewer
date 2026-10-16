@@ -202,6 +202,32 @@ describe("Dashboard", () => {
         assert.match(entry.when ?? "", /dearReviewer\.hasOpenChange/, command);
   });
 
+  it("opens a pull request or branch from the palette, by name, as well as from the Dashboard", async () => {
+    const { contributes } = vscode.extensions.getExtension(
+      "edziegle.dear-reviewer"
+    )!.packageJSON;
+    assert.ok(
+      contributes.commands.some(
+        (c: { command: string; title: string }) =>
+          c.command === "dearReviewer.openFromList" &&
+          c.title === "Open Pull Request or Branch…"
+      )
+    );
+    const hidden = contributes.menus.commandPalette.filter(
+      (m: { when?: string }) => m.when === "false"
+    );
+    assert.ok(
+      !hidden.some(
+        (m: { command: string }) => m.command === "dearReviewer.openFromList"
+      )
+    );
+    assert.ok(
+      (await vscode.commands.getCommands(true)).includes(
+        "dearReviewer.openFromList"
+      )
+    );
+  });
+
   it("comes into sight with Show Dashboard", async () => {
     await vscode.commands.executeCommand("workbench.action.closeSidebar");
     await eventually(async () =>

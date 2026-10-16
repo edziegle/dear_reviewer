@@ -28,6 +28,7 @@ import { GitHubAuth } from "./github/auth";
 import { GitHubClient, PullRequestSummary } from "./github/client";
 import { setContext } from "./context";
 import { Avatars, InboxNode, InboxTree } from "./inbox";
+import { openChoices } from "./openChoices";
 import { Lifecycle } from "./lifecycle";
 import { LocalPendingReviews } from "./localReviews";
 import { LocalClone, Repositories } from "./repositories";
@@ -967,6 +968,49 @@ export function activate(context: vscode.ExtensionContext) {
         });
       }
     ),
+    vscode.commands.registerCommand("dearReviewer.openFromList", async () => {
+      // The same pull requests and branches the Dashboard lists, for a
+      // Reviewer who keeps their hands on the keys.
+      const { groups } = await inbox.contents();
+      const choices = openChoices(groups);
+      if (choices.length === 0) {
+        const dashboardAction = "Show Dashboard";
+        const picked = await vscode.window.showInformationMessage(
+          "No pull requests or branches are waiting. The Dashboard says why, and has Refresh.",
+          dashboardAction
+        );
+        if (picked === dashboardAction) await dashboard.show();
+        return;
+      }
+      const items: (vscode.QuickPickItem & { choice?: (typeof choices)[0] })[] =
+        [];
+      let group: string | undefined;
+      for (const choice of choices) {
+        if (choice.group !== group) {
+          group = choice.group;
+          items.push({ label: group, kind: vscode.QuickPickItemKind.Separator });
+        }
+        items.push({
+          label: choice.label,
+          description: choice.description,
+          detail: choice.detail,
+          choice,
+        });
+      }
+      const picked = await vscode.window.showQuickPick(items, {
+        title: "Open Pull Request or Branch",
+        placeHolder: "Choose a pull request or branch to open as a Change",
+        matchOnDescription: true,
+        matchOnDetail: true,
+      });
+      if (!picked?.choice) return;
+      await vscode.commands.executeCommand(
+        picked.choice.node.kind === "localBranch"
+          ? "dearReviewer.openLocalBranch"
+          : "dearReviewer.openPullRequest",
+        picked.choice.node
+      );
+    }),
     vscode.commands.registerCommand("dearReviewer.showDashboard", () =>
       dashboard.show()
     ),

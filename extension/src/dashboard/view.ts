@@ -249,7 +249,7 @@ function html(cspSource: string): string {
   .facts { font-variant-numeric: tabular-nums; }
   .facts .added { color: var(--vscode-gitDecoration-addedResourceForeground); color: color-mix(in srgb, var(--vscode-gitDecoration-addedResourceForeground) 60%, var(--vscode-foreground)); }
   .facts .deleted { color: var(--vscode-gitDecoration-deletedResourceForeground); color: color-mix(in srgb, var(--vscode-gitDecoration-deletedResourceForeground) 60%, var(--vscode-foreground)); }
-  .status { padding: 0 6px; border-radius: 8px; border: 1px solid var(--vscode-descriptionForeground); color: var(--vscode-foreground); }
+  .status { font-size: 0.85em; padding: 0 6px; border-radius: 8px; border: 1px solid var(--vscode-descriptionForeground); color: var(--vscode-foreground); }
   .status.passed { border-color: var(--vscode-testing-iconPassed); }
   .status.failed { border-color: var(--vscode-testing-iconFailed); }
   .status.running { border-color: var(--vscode-testing-iconQueued); }
@@ -260,7 +260,7 @@ function html(cspSource: string): string {
   .review.commented .mark { color: var(--vscode-descriptionForeground); }
   .overview { padding: 12px 0; border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border, var(--vscode-panel-border)); }
   .overview p { margin: 0 0 2px; }
-  #next, .setup button.primary { display: block; width: 100%; max-width: 300px; margin-top: 10px; padding: 4px 12px; text-align: center; overflow-wrap: anywhere; }
+  #next, .setup button.primary, .setup button.secondary { display: block; width: 100%; max-width: 300px; margin-top: 10px; padding: 4px 12px; text-align: center; overflow-wrap: anywhere; }
   .item { display: flex; gap: 8px; align-items: flex-start; padding: 6px 0; border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border, var(--vscode-panel-border)); }
   .item img, .item .no-avatar { width: 16px; height: 16px; margin-top: 2px; border-radius: 50%; flex: none; background: var(--vscode-editor-inactiveSelectionBackground); outline: 1px solid var(--vscode-contrastBorder, transparent); outline-offset: -1px; }
   .item .content { flex: 1; min-width: 0; }
@@ -286,7 +286,8 @@ function html(cspSource: string): string {
   <p class="muted" id="place" hidden></p>
   <button class="primary" id="next" type="button" hidden></button>
 </section>
-<div role="status"><div class="muted problem-line" id="loading"></div><div id="setup" hidden></div></div>
+<div role="status"><div class="muted problem-line" id="loading"></div></div>
+<div id="setup" hidden></div>
 <div id="problems"></div>
 <section id="inProgress" aria-labelledby="inProgressHeading" hidden><h2 id="inProgressHeading">In progress <span class="muted count" id="inProgressCount"></span></h2><div id="changes" role="list"></div></section>
 <section id="waitingSection" aria-labelledby="waitingHeading" hidden><h2 id="waitingHeading">Waiting on you <span class="muted count" id="waitingCount"></span></h2><div id="waiting" role="list"></div><button class="link more" id="waitingMore" type="button" aria-controls="waiting" aria-expanded="false" hidden></button></section>
@@ -440,14 +441,15 @@ function html(cspSource: string): string {
     return node;
   }
 
-  // The first way to set up is the next step, so it's the filled button.
-  function setupLine(setup) {
+  // The first way to set up is the next step, so it's the filled button,
+  // unless a Change's next step is already the one filled button.
+  function setupLine(setup, hasNext) {
     const node = el("div", "setup problem-line");
     const text = el("div");
     appendWithCode(text, setup.text);
     node.append(text);
     const [first, ...rest] = setup.actions;
-    if (first) node.append(button("primary", first.label, { type: "fix", id: first.id }));
+    if (first) node.append(button(hasNext ? "secondary" : "primary", first.label, { type: "fix", id: first.id }));
     if (rest.length) node.append(line("muted", rest.map((action) => button("link", action.label, { type: "fix", id: action.id }))));
     return node;
   }
@@ -470,7 +472,7 @@ function html(cspSource: string): string {
     const all = !!showsAll[id];
     const more = byId(id + "More");
     more.hidden = entries.length <= shownAtFirst;
-    setText(more, all ? "Show fewer" : "Show all " + entries.length);
+    setText(more, all ? "Show less" : "Show all " + entries.length);
     more.setAttribute("aria-expanded", String(all));
     list(id, all ? entries : entries.slice(0, shownAtFirst), build);
   }
@@ -509,10 +511,10 @@ function html(cspSource: string): string {
     byId("progress").hidden = !state.loading;
     const setup = byId("setup");
     setup.hidden = !state.setup;
-    const setupText = JSON.stringify(state.setup || null);
+    const setupText = JSON.stringify([state.setup || null, !!state.next]);
     if (setup.dataset.said !== setupText) {
       setup.dataset.said = setupText;
-      setup.replaceChildren(...(state.setup ? [setupLine(state.setup)] : []));
+      setup.replaceChildren(...(state.setup ? [setupLine(state.setup, !!state.next)] : []));
     }
     list("problems", state.problems, problem);
     lists(state);

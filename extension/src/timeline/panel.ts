@@ -1026,7 +1026,7 @@ ${catSymbol}
     }));
     const more = byId("moreChecks");
     more.hidden = whole || state.attention === state.runs.length;
-    setText(more, allChecks ? "Show fewer" : "Show all " + state.runs.length);
+    setText(more, allChecks ? "Show less" : "Show all " + state.runs.length);
     more.setAttribute("aria-expanded", String(allChecks));
   }
 

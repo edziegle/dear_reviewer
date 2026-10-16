@@ -215,7 +215,7 @@ function html(): string {
   .busy ol { margin: 4px 0; padding-left: 20px; }
   button.stop { background: none; border: none; padding: 0; margin-top: 2px; color: var(--vscode-textLink-foreground); cursor: pointer; font: inherit; font-size: 0.9em; }
   button.stop:hover { text-decoration: underline; }
-  .message.assistant { white-space: normal; }
+  .message.assistant { white-space: normal; max-width: 80ch; }
   .problem .buttons { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
   .problem .buttons button { margin-top: 0; }
   .problem button.secondary { color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); }
@@ -281,7 +281,9 @@ ${catSymbol}
   const messageNode = (m) => {
     const div = document.createElement("div");
     div.className = "message " + m.from;
-    const speaker = document.createElement("div");
+    // The Assistant's name is a heading, so a reply's own headings, which sit
+    // below it, don't jump a level.
+    const speaker = document.createElement(m.from === "assistant" ? "h2" : "div");
     if (m.from === "assistant") {
       div.classList.add("hand");
       speaker.className = "speaker";

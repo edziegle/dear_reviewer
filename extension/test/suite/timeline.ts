@@ -68,6 +68,8 @@ export interface ShownReadingOrder {
   writing: boolean;
   /** Whether the Change has new commits since it was written. */
   outOfDate: boolean;
+  /** Whether the Assistant's last try to write it gave nothing usable. */
+  problem?: boolean;
   steps: {
     label: string;
     files: { path: string; why?: string; viewed: boolean }[];

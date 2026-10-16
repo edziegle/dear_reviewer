@@ -195,8 +195,8 @@ export class ChangeFilesView
   async readingOrder(change: Change): Promise<ShownReadingOrder | undefined> {
     const state = this.readingOrderOf(change);
     if (!state?.order)
-      return state?.writing
-        ? { ...state, outOfDate: false, steps: [] }
+      return state?.writing || state?.problem
+        ? { ...state, writing: state.writing, outOfDate: false, steps: [] }
         : undefined;
     const [{ steps, outOfDate }, viewed] = await Promise.all([
       stepsAt(
@@ -208,6 +208,7 @@ export class ChangeFilesView
     ]);
     return {
       writing: state.writing,
+      ...(state.problem && { problem: true }),
       outOfDate,
       steps: steps.map((step) => ({
         label: step.label,

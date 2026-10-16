@@ -67,6 +67,7 @@ function withoutAvatars(
   if (!timeline) return timeline;
   const {
     take: _take,
+    readingOrder: _readingOrder,
     standing: _standing,
     review: _review,
     progress: _progress,

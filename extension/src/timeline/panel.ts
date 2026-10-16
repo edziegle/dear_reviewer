@@ -511,6 +511,8 @@ function html(cspSource: string): string {
   #submitProblem .detail summary { cursor: pointer; color: var(--vscode-textLink-foreground); text-decoration: underline; text-underline-offset: 2px; }
   #submitProblem .detail code { display: block; margin-top: 2px; font-family: var(--vscode-editor-font-family); overflow-wrap: anywhere; white-space: pre-wrap; }
   #submitNote { margin: 2px 0 0; }
+  #submitNote.warning { color: var(--vscode-foreground); margin-top: 6px; }
+  #submitNote .mark { color: var(--vscode-testing-iconFailed); margin-right: 4px; }
   #submitReason { margin-top: 4px; }
 </style>
 </head>
@@ -531,7 +533,7 @@ ${catSymbol}
 <section class="submit" id="submitStep" aria-labelledby="submitHeading" hidden>
   <h2 id="submitHeading">Your Review</h2>
   <fieldset id="verdicts"><legend class="visually-hidden">Verdict</legend></fieldset>
-  <div class="muted" id="submitNote"></div>
+  <div class="muted" id="submitNote" role="status"></div>
   <label class="field" for="summary">Summary <span class="muted">shown with your Review</span></label>
   <textarea id="summary" rows="3" aria-describedby="submitReason"></textarea>
   <div class="muted" id="submitReason" role="status"></div>
@@ -827,12 +829,13 @@ ${catSymbol}
     node.dataset.said = said;
     // The note is a live region, so it changes only when its words do.
     const note = byId("orderNote");
-    const noted = JSON.stringify([order.writing, order.outOfDate]);
+    const noted = JSON.stringify([order.writing, order.outOfDate, order.problem]);
     if (note.dataset.said !== noted) {
       note.dataset.said = noted;
       note.replaceChildren();
       note.className = order.writing ? "muted reading" : "muted";
       if (order.writing) note.append("Choosing an order to read the files in…");
+      else if (order.problem) note.append("The Assistant couldn't order the files, so they stay as they are in the Change. ", textButton("Try again", () => vscode.postMessage({ type: "suggestReadingOrder" })));
       else if (order.outOfDate) note.append("Suggested before the latest commits, which are in the last step. ", textButton("Suggest again", () => vscode.postMessage({ type: "suggestReadingOrder" })));
     }
     byId("orderSteps").replaceChildren(...order.steps.map((step) => {
@@ -1093,14 +1096,27 @@ ${catSymbol}
     const first = !draft.verdict ? byId("verdicts").querySelector("input") : undefined;
     (first || summary).focus();
   }
-  // Checks that failed are worth knowing before approving, though they don't block it.
+  // Checks that failed are worth knowing before approving, though they don't
+  // block it: the Reviewer may know why, and says so by approving anyway.
   const checksNote = () => draft.verdict === "approve" && lastState && lastState.checks && lastState.checks.status === "failed"
-    ? "Checks failed on " + lastState.checks.commit + "."
+    ? "Checks failed on " + lastState.checks.commit + ". Approve only if that is expected."
     : "";
   function submitButtons(step) {
     const reason = reasonOf(step);
     setText(byId("submitReason"), step.problem ? "" : reason);
-    setText(byId("submitNote"), step.note || checksNote());
+    const note = byId("submitNote");
+    const failed = step.note ? "" : checksNote();
+    // The note is a live region, so it changes only when its words do.
+    if (failed) {
+      if (note.dataset.said !== failed) {
+        note.dataset.said = failed;
+        note.replaceChildren(el("span", "mark", "✗"), failed);
+      }
+    } else {
+      delete note.dataset.said;
+      setText(note, step.note || "");
+    }
+    note.className = failed ? "warning" : "muted";
     const submit = byId("submitReview");
     submit.setAttribute("aria-disabled", String(step.submitting || !!reason));
     submit.title = "Publish your Review to GitHub (" + (mac ? "⌘↩" : "Ctrl+Enter") + ")";

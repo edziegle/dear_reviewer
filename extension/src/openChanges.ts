@@ -36,12 +36,25 @@ export interface OpenChange extends Change {
   diffPending?: boolean;
 }
 
+export interface OpenChangesTiming {
+  /** How long a change waits for another window's lock before it fails. */
+  waitMs?: number;
+  /** How old a lock gets before it is taken over even if its window lives. */
+  staleMs?: number;
+}
+
 export class OpenChanges {
   /** The file every window reads and writes the open Changes in. */
   readonly file: string;
+  private readonly lockFile: string;
+  private readonly waitMs: number;
+  private readonly staleMs: number;
 
-  constructor(storageDir: string) {
+  constructor(storageDir: string, timing: OpenChangesTiming = {}) {
     this.file = path.join(storageDir, "open-changes.json");
+    this.lockFile = `${this.file}.lock`;
+    this.waitMs = timing.waitMs ?? 10_000;
+    this.staleMs = timing.staleMs ?? 5_000;
   }
 
   all(): OpenChange[] {
@@ -58,7 +71,10 @@ export class OpenChanges {
 
   /** Adds the Change, or updates it, as the one shown last. */
   put(change: OpenChange): void {
-    this.write([...this.all().filter((c) => c.id !== change.id), change]);
+    this.update((changes) => [
+      ...changes.filter((c) => c.id !== change.id),
+      change,
+    ]);
   }
 
   remove(id: string): void {
@@ -68,7 +84,7 @@ export class OpenChanges {
   /** Removes these Changes in one write, so other windows see them go at once. */
   removeAll(ids: Iterable<string>): void {
     const gone = new Set(ids);
-    this.write(this.all().filter((c) => !gone.has(c.id)));
+    this.update((changes) => changes.filter((c) => !gone.has(c.id)));
   }
 
   /**
@@ -77,16 +93,143 @@ export class OpenChanges {
    */
   markShown(ids: Iterable<string>): void {
     const shown = new Set(ids);
-    this.write(
-      this.all().map((c) =>
-        shown.has(c.id) ? { ...c, diffPending: false } : c
-      )
+    this.update((changes) =>
+      changes.map((c) => (shown.has(c.id) ? { ...c, diffPending: false } : c))
     );
   }
 
-  private write(changes: OpenChange[]): void {
+  /**
+   * Reads the list, changes it and writes it back while holding the lock, so
+   * no other window's change lands in between. Fails rather than writes over
+   * a list it can't read.
+   */
+  private update(edit: (changes: OpenChange[]) => OpenChange[]): void {
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
-    fs.writeFileSync(this.file, JSON.stringify(changes, null, 2));
+    this.locked(() => {
+      let current: OpenChange[] = [];
+      try {
+        current = JSON.parse(
+          fs.readFileSync(this.file, "utf8")
+        ) as OpenChange[];
+        if (!Array.isArray(current)) throw new Error("not a list");
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+          throw new Error(
+            `The open Changes in ${this.file} can't be read, so they were not changed: ${error}`
+          );
+        }
+      }
+      this.replaceFile(edit(current));
+    });
+  }
+
+  /** Writes beside the file and renames over it, so a read never sees half a list. */
+  private replaceFile(changes: OpenChange[]): void {
+    const temporary = `${this.file}.${process.pid}.tmp`;
+    try {
+      const handle = fs.openSync(temporary, "w");
+      try {
+        fs.writeSync(handle, JSON.stringify(changes, null, 2));
+        fs.fsyncSync(handle);
+      } finally {
+        fs.closeSync(handle);
+      }
+      fs.renameSync(temporary, this.file);
+    } finally {
+      fs.rmSync(temporary, { force: true });
+    }
+  }
+
+  private locked(work: () => void): void {
+    const deadline = Date.now() + this.waitMs;
+    const token = `${process.pid}:${Math.random().toString(36).slice(2)}`;
+    while (!this.tryLock(token)) {
+      if (Date.now() >= deadline) {
+        throw new Error(
+          `Another window holds the lock on the open Changes (${this.lockFile}); gave up waiting`
+        );
+      }
+      sleep(10);
+    }
+    try {
+      work();
+    } finally {
+      // Only our own lock: if we were slow and it was taken over, the lock
+      // now belongs to another window.
+      if (this.readLock() === token) fs.rmSync(this.lockFile, { force: true });
+    }
+  }
+
+  private readLock(): string | undefined {
+    try {
+      return fs.readFileSync(this.lockFile, "utf8");
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** Takes the lock if it's free, or if the window holding it is gone or stuck. */
+  private tryLock(token: string): boolean {
+    // Linking a finished file into place makes the lock appear complete or
+    // not at all, so no window reads it half-written and takes it for stale.
+    const pending = `${this.lockFile}.${token.replace(":", ".")}.pending`;
+    fs.writeFileSync(pending, token);
+    try {
+      fs.linkSync(pending, this.lockFile);
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    } finally {
+      fs.rmSync(pending, { force: true });
+    }
+    this.takeOverIfStale();
+    return false;
+  }
+
+  private takeOverIfStale(): void {
+    let holder: string;
+    let ageMs: number;
+    try {
+      holder = fs.readFileSync(this.lockFile, "utf8");
+      ageMs = Date.now() - fs.statSync(this.lockFile).mtimeMs;
+    } catch {
+      return;
+    }
+    if (ageMs < this.staleMs && processIsAlive(Number(holder.split(":")[0])))
+      return;
+    // Renaming is atomic, so of several windows taking over one lock only one
+    // gets it; the rest find it gone.
+    const taken = `${this.lockFile}.${process.pid}.stale`;
+    try {
+      fs.renameSync(this.lockFile, taken);
+    } catch {
+      return;
+    }
+    // A lock that changed hands since it was read isn't stale: put it back, if
+    // no other window has taken the free lock in the meantime.
+    if (fs.readFileSync(taken, "utf8") !== holder) {
+      try {
+        fs.linkSync(taken, this.lockFile);
+      } catch {
+        // someone else has already taken a new lock
+      }
+    }
+    fs.rmSync(taken, { force: true });
+  }
+}
+
+/** Blocks the thread, since the store's interface is synchronous. */
+function sleep(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function processIsAlive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
   }
 }
 

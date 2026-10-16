@@ -1,4 +1,5 @@
 import * as assert from "assert";
+import { spawn, spawnSync } from "child_process";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
@@ -212,5 +213,171 @@ describe("The diffs that arrive in the review window", () => {
       ),
       [["def", true]]
     );
+  });
+});
+
+describe("The open Changes shared by several windows", () => {
+  const modulePath = path.join(__dirname, "../../src/openChanges.js");
+  let dir: string;
+  let open: OpenChanges;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "open-changes-"));
+    open = new OpenChanges(dir);
+  });
+
+  afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  /** Runs `body` in its own Node process, as another window's extension host would. */
+  function inOtherWindow(body: string): Promise<void> {
+    const script = `
+      const { OpenChanges } = require(${JSON.stringify(modulePath)});
+      const open = new OpenChanges(${JSON.stringify(dir)});
+      const change = (id) => (${changeNamed.toString()})(id);
+      ${body}`;
+    return new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, ["-e", script], {
+        stdio: ["ignore", "inherit", "inherit"],
+      });
+      child.on("exit", (code) =>
+        code === 0 ? resolve() : reject(new Error(`window exited ${code}`))
+      );
+    });
+  }
+
+  it("loses no write when several windows put Changes at once", async () => {
+    const windows = Array.from({ length: 6 }, (_, w) =>
+      inOtherWindow(
+        `for (let i = 0; i < 15; i++) open.put(change("w${w}-" + i));`
+      )
+    );
+    await Promise.all(windows);
+    assert.strictEqual(open.all().length, 6 * 15);
+  });
+
+  it("loses no write when a window removes Changes while others put theirs", async () => {
+    for (let i = 0; i < 20; i++) open.put(changeNamed(`old-${i}`));
+    await Promise.all([
+      inOtherWindow(
+        `for (let i = 0; i < 20; i++) open.removeAll(["old-" + i]);`
+      ),
+      inOtherWindow(`for (let i = 0; i < 20; i++) open.put(change("a-" + i));`),
+      inOtherWindow(`for (let i = 0; i < 20; i++) open.put(change("b-" + i));`),
+    ]);
+    const kept = ids(open.all());
+    assert.strictEqual(kept.length, 40);
+    assert.ok(kept.every((id) => !id.startsWith("old-")));
+  });
+
+  it("never lets a reader see a partial list while windows write", async function () {
+    this.timeout(30_000);
+    for (let i = 0; i < 300; i++) open.put(changeNamed(`seed-${i}`));
+    let writing = true;
+    const writers = Promise.all([
+      inOtherWindow(`for (let i = 0; i < 40; i++) open.put(change("a-" + i));`),
+      inOtherWindow(`for (let i = 0; i < 40; i++) open.put(change("b-" + i));`),
+    ]).finally(() => (writing = false));
+    let smallest = Infinity;
+    while (writing) {
+      smallest = Math.min(smallest, open.all().length);
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    await writers;
+    assert.ok(smallest >= 300, `a read saw only ${smallest} Changes`);
+  });
+
+  describe("the lock", () => {
+    const lockFile = () => `${open.file}.lock`;
+
+    /** A process that stays alive until the returned function kills it. */
+    function liveProcess(): { pid: number; stop: () => void } {
+      const child = spawn(process.execPath, ["-e", "setTimeout(()=>{},60000)"]);
+      return { pid: child.pid!, stop: () => child.kill() };
+    }
+
+    function goneProcessId(): number {
+      const result = spawnSync(process.execPath, ["-e", ""]);
+      return result.pid;
+    }
+
+    it("is taken over when the window that held it is gone", () => {
+      fs.writeFileSync(lockFile(), `${goneProcessId()}:token`);
+      open.put(changeNamed("abc"));
+      assert.deepStrictEqual(ids(open.all()), ["abc"]);
+      assert.ok(!fs.existsSync(lockFile()));
+    });
+
+    it("is taken over once it is older than the time a write takes", () => {
+      const holder = liveProcess();
+      try {
+        fs.writeFileSync(lockFile(), `${holder.pid}:token`);
+        const old = new Date(Date.now() - 60_000);
+        fs.utimesSync(lockFile(), old, old);
+        new OpenChanges(dir, { staleMs: 1000 }).put(changeNamed("abc"));
+        assert.deepStrictEqual(ids(open.all()), ["abc"]);
+      } finally {
+        holder.stop();
+      }
+    });
+
+    it("is not stolen from a window that is still alive", () => {
+      const holder = liveProcess();
+      try {
+        fs.writeFileSync(lockFile(), `${holder.pid}:token`);
+        const impatient = new OpenChanges(dir, { waitMs: 200 });
+        assert.throws(() => impatient.put(changeNamed("abc")), /lock/i);
+        assert.strictEqual(
+          fs.readFileSync(lockFile(), "utf8"),
+          `${holder.pid}:token`
+        );
+        assert.deepStrictEqual(open.all(), []);
+      } finally {
+        holder.stop();
+      }
+    });
+
+    it("is waited on until the other window lets go", async () => {
+      const holder = liveProcess();
+      try {
+        fs.writeFileSync(lockFile(), `${holder.pid}:token`);
+        await Promise.all([
+          inOtherWindow(
+            `setTimeout(() => require("fs").unlinkSync(${JSON.stringify(lockFile())}), 300)`
+          ),
+          inOtherWindow(`open.put(change("abc"))`),
+        ]);
+        assert.deepStrictEqual(ids(open.all()), ["abc"]);
+      } finally {
+        holder.stop();
+      }
+    });
+  });
+
+  it("leaves another window's lock alone when its own was taken over", () => {
+    const lockFile = `${open.file}.lock`;
+    // Reading the id happens mid-write: another window takes the lock then.
+    const slow = changeNamed("abc");
+    Object.defineProperty(slow, "id", {
+      get() {
+        fs.writeFileSync(lockFile, "other-window:token");
+        return "abc";
+      },
+    });
+    open.put(slow);
+    assert.strictEqual(fs.readFileSync(lockFile, "utf8"), "other-window:token");
+  });
+
+  it("does not replace a list that isn't a list with one Change", () => {
+    fs.writeFileSync(open.file, "null");
+    assert.throws(() => open.put(changeNamed("xyz")), /can't be read/);
+    assert.strictEqual(fs.readFileSync(open.file, "utf8"), "null");
+  });
+
+  it("does not replace a list it can't parse with one Change", () => {
+    fs.writeFileSync(open.file, '[{"id": "abc"');
+    assert.deepStrictEqual(open.all(), []);
+    assert.throws(() => open.put(changeNamed("xyz")));
+    assert.strictEqual(fs.readFileSync(open.file, "utf8"), '[{"id": "abc"');
+    assert.ok(!fs.existsSync(`${open.file}.lock`));
   });
 });

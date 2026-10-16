@@ -13,7 +13,7 @@ export interface DashboardChange {
   byline: string;
   review?: { verdict: string; text: string };
   standing: string[];
-  finish: string;
+  end: { type: "finish" | "close"; label: string };
 }
 
 export interface DashboardPullRequest {
@@ -44,7 +44,7 @@ export interface DashboardProblem {
 }
 
 export interface DashboardState {
-  facts: string;
+  facts?: string;
   next?: {
     kind: "resume" | "finish" | "open";
     id: string;
@@ -65,7 +65,7 @@ export interface DashboardState {
 export type DashboardClick =
   | { type: "next" }
   | { type: "openRange" }
-  | { type: "resume" | "finish" | "open" | "fix"; id: string };
+  | { type: "resume" | "finish" | "close" | "open" | "fix"; id: string };
 
 interface DashboardView {
   visible: boolean;

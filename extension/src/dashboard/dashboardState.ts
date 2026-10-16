@@ -56,29 +56,21 @@ export function byLongestWait<T extends { since: string }>(
 }
 
 /**
- * The facts line: how many Changes are in progress, how many pull requests
- * wait on the Reviewer and for how long the oldest has, such as
- * "2 in progress · 5 waiting on you · oldest 6 days". `waiting` is
- * undefined while the Dashboard can't tell, such as before GitHub sign-in.
+ * The facts line: how many pull requests wait on the Reviewer and for how
+ * long the oldest has, such as "5 waiting on you · oldest 6 days". In
+ * progress, right below it, counts the Changes itself. `waiting` is
+ * undefined while the Dashboard can't tell, such as before GitHub sign-in,
+ * and so is the line.
  */
 export function dashboardFacts(
-  inProgress: number,
   waiting: readonly { since: string }[] | undefined,
   now: number
-): string {
-  const parts = [
-    inProgress ? `${inProgress} in progress` : "nothing in progress",
-  ];
-  if (waiting) {
-    const oldest = byLongestWait(waiting)[0];
-    parts.push(
-      oldest
-        ? `${waiting.length} waiting on you · oldest ${waitedFor(oldest.since, now)}`
-        : "nothing waiting on you"
-    );
-  }
-  const line = parts.join(" · ");
-  return line[0].toUpperCase() + line.slice(1);
+): string | undefined {
+  if (!waiting) return undefined;
+  const oldest = byLongestWait(waiting)[0];
+  return oldest
+    ? `${waiting.length} waiting on you · oldest ${waitedFor(oldest.since, now)}`
+    : "Nothing waiting on you";
 }
 
 /**
@@ -86,7 +78,8 @@ export function dashboardFacts(
  * progress shown last that still needs the Reviewer, to resume, or to
  * finish once every file is viewed; or else the pull request that has
  * waited longest and isn't open yet. A Change whose last Review covers its
- * head, with no Comments pending, needs nothing more. `inProgress` is in
+ * head, with no Comments pending, needs nothing more, nor does one with no
+ * files to review. `inProgress` is in
  * the order the Changes were shown, the one shown last last.
  */
 export function nextStep(
@@ -95,13 +88,13 @@ export function nextStep(
   now: number
 ): NextStep | undefined {
   const change = inProgress
-    .filter((c) => !(c.reviewed && c.pending === 0))
+    .filter((c) => c.total > 0 && !(c.reviewed && c.pending === 0))
     .at(-1);
   if (change) {
     const pending = change.pending
       ? [countOf(change.pending, "pending Comment")]
       : [];
-    if (change.total > 0 && change.viewed >= change.total)
+    if (change.viewed >= change.total)
       return {
         kind: "finish",
         id: change.id,

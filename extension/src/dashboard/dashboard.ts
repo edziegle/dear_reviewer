@@ -44,10 +44,14 @@ export interface DashboardSources {
   inProgress(): Change[];
   /** Where the Reviewer stands on the Change. */
   standing(change: Change): Promise<Standing>;
+  /** How many of the Change's files are viewed, of how many, from git alone. */
+  viewedCount(change: Change): Promise<{ viewed: number; total: number }>;
   /** Brings the Change to the front in the review window, with its overview. */
   resume(change: Change): void;
   /** Starts finishing the Change's Review there: Submit Review… or Write Brief…. */
   finish(change: Change): void;
+  /** Closes the Change, in whichever window shows it. */
+  close(change: Change): void;
   /** Opens the Inbox's pull request or branch as a Change. */
   open(node: InboxNode): void;
   /** Asks for any commit range of a repository to open as a Change. */
@@ -66,6 +70,14 @@ export class Dashboard implements vscode.Disposable {
   private lastContents?: { groups: InboxNode[]; welcome: Welcome };
   /** The number of the update started last; earlier ones don't show. */
   private latest = 0;
+  /**
+   * Each open Change's standing, as last worked out. Its last Review and
+   * pending Comments can come from GitHub, so In progress never waits for
+   * them: it shows the last standing, or what git alone tells, and again
+   * once a newer standing is in.
+   */
+  private readonly standings = new Map<string, Standing>();
+  private readonly asking = new Set<string>();
   private readonly subscriptions: vscode.Disposable[];
 
   constructor(
@@ -129,6 +141,34 @@ export class Dashboard implements vscode.Disposable {
     this.send(await this.build(this.lastContents, false), thisUpdate);
   }
 
+  /** The Change's standing as last worked out, asking for it afresh. */
+  private async standingOf(change: Change): Promise<Standing> {
+    if (!this.asking.has(change.id)) {
+      this.asking.add(change.id);
+      this.sources.standing(change).then(
+        (standing) => {
+          this.asking.delete(change.id);
+          const last = this.standings.get(change.id);
+          this.standings.set(change.id, standing);
+          if (JSON.stringify(last) !== JSON.stringify(standing)) this.refresh();
+        },
+        () => this.asking.delete(change.id)
+      );
+    }
+    const last = this.standings.get(change.id);
+    if (last) return last;
+    const { viewed, total } = await this.sources
+      .viewedCount(change)
+      .catch(() => ({ viewed: 0, total: -1 }));
+    return {
+      notes: total < 0 ? [] : [`${viewed} of ${total} viewed`],
+      viewed,
+      total,
+      reviewed: false,
+      pending: 0,
+    };
+  }
+
   private send(
     { state, targets }: { state: DashboardState; targets: Targets },
     thisUpdate: number
@@ -160,8 +200,11 @@ export class Dashboard implements vscode.Disposable {
           n.pullRequest.number === change.pullRequest!.number
       )?.pullRequest;
     const standings = await Promise.all(
-      changes.map((change) => this.sources.standing(change))
+      changes.map((change) => this.standingOf(change))
     );
+    for (const id of this.standings.keys())
+      if (!changes.some((change) => change.id === id))
+        this.standings.delete(id);
     for (const change of changes) targets.changes.set(change.id, change);
     const inProgress: DashboardChange[] = changes.map((change, i) => {
       const standing = standings[i];
@@ -171,8 +214,17 @@ export class Dashboard implements vscode.Disposable {
         title: summary?.title ?? changeName(change),
         byline: bylineOf(change, summary),
         ...(standing.review && { review: standing.review }),
-        standing: standing.notes,
-        finish: change.pullRequest ? "Submit Review…" : "Write Brief…",
+        standing:
+          standing.total === 0
+            ? [...standing.notes.slice(0, -1), "Nothing to review"]
+            : standing.notes,
+        end:
+          standing.total === 0
+            ? { type: "close", label: "Close Change" }
+            : {
+                type: "finish",
+                label: change.pullRequest ? "Submit Review…" : "Write Brief…",
+              },
       };
     });
 
@@ -248,7 +300,7 @@ export class Dashboard implements vscode.Disposable {
         pending: standings[i].pending,
         viewed: standings[i].viewed,
         total: standings[i].total,
-        finish: inProgress[i].finish,
+        finish: inProgress[i].end.label,
       })),
       waitingNodes.map(({ node, since }) => ({
         id: pullRequestId(node.pullRequest),
@@ -259,13 +311,15 @@ export class Dashboard implements vscode.Disposable {
       now
     );
     const state: DashboardState = {
-      facts: dashboardFacts(
-        changes.length,
-        waiting && waitingNodes.map(({ since }) => ({ since })),
-        now
-      ),
+      ...(waiting && {
+        facts: dashboardFacts(
+          waitingNodes.map(({ since }) => ({ since })),
+          now
+        ),
+      }),
       ...(next && { next }),
-      inProgress,
+      // The Change shown last first, as the next step resumes it.
+      inProgress: [...inProgress].reverse(),
       ...(waiting && { waiting }),
       ...(authoredRows && { authored: authoredRows }),
       ...(reviewedRows && { reviewed: reviewedRows }),
@@ -333,6 +387,7 @@ export class Dashboard implements vscode.Disposable {
     const change = this.targets.changes.get(action.id);
     if (action.type === "resume" && change) this.sources.resume(change);
     else if (action.type === "finish" && change) this.sources.finish(change);
+    else if (action.type === "close" && change) this.sources.close(change);
     else if (action.type === "open") {
       const node = this.targets.nodes.get(action.id);
       if (node) this.sources.open(node);
@@ -489,7 +544,6 @@ function bylineOf(change: Change, summary?: PullRequestSummary): string {
 
 function emptyState(): DashboardState {
   return {
-    facts: "",
     inProgress: [],
     branches: [],
     loading: true,

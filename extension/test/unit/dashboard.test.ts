@@ -81,22 +81,19 @@ describe("The order pull requests wait on the Reviewer in", () => {
 });
 
 describe("The Dashboard's facts line", () => {
-  it("counts the Changes in progress and the pull requests waiting, with the oldest's wait", () => {
+  it("counts the pull requests waiting, with the oldest's wait", () => {
     assert.strictEqual(
-      dashboardFacts(2, [{ since: ago(hour) }, { since: ago(6 * day) }], now),
-      "2 in progress · 2 waiting on you · oldest 6 days"
+      dashboardFacts([{ since: ago(hour) }, { since: ago(6 * day) }], now),
+      "2 waiting on you · oldest 6 days"
     );
   });
 
-  it("says when nothing is in progress or waiting", () => {
-    assert.strictEqual(
-      dashboardFacts(0, [], now),
-      "Nothing in progress · nothing waiting on you"
-    );
+  it("says when nothing is waiting", () => {
+    assert.strictEqual(dashboardFacts([], now), "Nothing waiting on you");
   });
 
-  it("leaves out what's waiting while the Dashboard can't tell", () => {
-    assert.strictEqual(dashboardFacts(1, undefined, now), "1 in progress");
+  it("is nothing while the Dashboard can't tell what's waiting", () => {
+    assert.strictEqual(dashboardFacts(undefined, now), undefined);
   });
 });
 
@@ -153,6 +150,24 @@ describe("The Dashboard's next step", () => {
     assert.strictEqual(
       nextStep([inProgress({ reviewed: true, pending: 1 })], [], now)?.kind,
       "resume"
+    );
+  });
+
+  it("passes over a Change with no files to review", () => {
+    assert.strictEqual(
+      nextStep(
+        [
+          inProgress({ id: "earlier" }),
+          inProgress({ id: "main", viewed: 0, total: 0 }),
+        ],
+        [],
+        now
+      )?.id,
+      "earlier"
+    );
+    assert.strictEqual(
+      nextStep([inProgress({ viewed: 0, total: 0 })], [], now),
+      undefined
     );
   });
 

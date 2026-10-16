@@ -290,6 +290,7 @@ export function activate(context: vscode.ExtensionContext) {
   const dashboard = new Dashboard(inbox, avatars, {
     inProgress: () => changes.list(),
     standing: (change) => standingOf(change),
+    viewedCount: (change) => changeFiles.viewedCount(change),
     resume: (change) =>
       showsHere(change)
         ? void changes.bringToFront(change)
@@ -301,6 +302,11 @@ export function activate(context: vscode.ExtensionContext) {
             requestOf(change)
           )
         : askReviewWindow(change, "finish"),
+    close: (change) =>
+      void vscode.commands.executeCommand(
+        "dearReviewer.closeChange",
+        requestOf(change)
+      ),
     open: (node) =>
       void vscode.commands.executeCommand(
         node.kind === "localBranch"

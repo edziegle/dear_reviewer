@@ -25,8 +25,11 @@ export interface DashboardChange {
   review?: ReviewStanding;
   /** New commits since their Review, pending Comments, files viewed. */
   standing: string[];
-  /** "Submit Review…" or "Write Brief…". */
-  finish: string;
+  /**
+   * What ends it: Submit Review… or Write Brief…, or Close Change when it
+   * has no files to review.
+   */
+  end: { type: "finish" | "close"; label: string };
 }
 
 /** A pull request the Inbox lists. */
@@ -70,8 +73,8 @@ export interface DashboardSetup {
 }
 
 export interface DashboardState {
-  /** Such as "2 in progress · 5 waiting on you · oldest 6 days". */
-  facts: string;
+  /** Such as "5 waiting on you · oldest 6 days"; undefined while that's unknown. */
+  facts?: string;
   next?: NextStep;
   inProgress: DashboardChange[];
   /** Undefined until the Inbox has loaded, or while it can't. */
@@ -96,6 +99,7 @@ export type FromDashboard =
   | { type: "openRange" }
   | { type: "resume"; id: string }
   | { type: "finish"; id: string }
+  | { type: "close"; id: string }
   | { type: "open"; id: string }
   | { type: "fix"; id: string };
 
@@ -186,6 +190,7 @@ export class DashboardView implements vscode.WebviewViewProvider {
     else if (
       (message.type === "resume" ||
         message.type === "finish" ||
+        message.type === "close" ||
         message.type === "open" ||
         message.type === "fix") &&
       typeof message.id === "string"
@@ -265,8 +270,8 @@ function html(cspSource: string): string {
   .item .title { font-weight: 600; overflow-wrap: anywhere; }
   .item .link.title { color: var(--vscode-textLink-foreground); }
   .item .branch { font-family: var(--vscode-editor-font-family); font-weight: 400; }
-  .item .muted span { display: inline-block; max-width: 100%; overflow-wrap: anywhere; }
-  .item .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .item .muted, #place { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 1px 0; }
+  .item .actions { margin-top: 2px; }
   .problem-line { margin: 6px 0 0; }
   .problem-line .link { text-decoration: underline; }
   .setup .muted { margin-top: 8px; }
@@ -308,10 +313,12 @@ function html(cspSource: string): string {
     node.addEventListener("click", () => vscode.postMessage(message));
     return node;
   };
-  // Parts of a muted line wrap between each other before inside one.
+  // A muted line keeps to one line, cut short with an ellipsis, and shows
+  // the whole of it on hover.
   const line = (className, parts) => {
     const node = el("div", className);
     parts.filter(Boolean).forEach((part, i) => node.append(...(i ? [" · "] : []), typeof part === "string" ? el("span", "", part) : part));
+    node.title = node.textContent;
     return node;
   };
   byId("next").addEventListener("click", () => vscode.postMessage({ type: "next" }));
@@ -340,7 +347,9 @@ function html(cspSource: string): string {
     const row = el("div", "item change");
     row.setAttribute("role", "listitem");
     const content = el("div", "content");
-    content.append(el("div", "title", entry.title), line("muted", [entry.byline]));
+    const title = el("div");
+    title.append(button("link title", entry.title, { type: "resume", id: entry.id }, "Resume it: show its overview in the review window", "Resume " + entry.title));
+    content.append(title, line("muted", [entry.byline]));
     let review;
     if (entry.review) {
       review = el("span", "review " + entry.review.verdict);
@@ -349,11 +358,10 @@ function html(cspSource: string): string {
       review.append(mark, " ", entry.review.text);
     }
     content.append(line("muted", [review, ...entry.standing]));
+    const end = entry.end;
+    const hint = end.type === "close" ? "Close it, since it has no files to review" : end.label.startsWith("Submit") ? "Submit your Review to GitHub" : "Write a Brief of your Comments for an agent";
     const actions = el("div", "actions");
-    actions.append(
-      button("secondary", "Resume", { type: "resume", id: entry.id }, "Show its overview in the review window", "Resume " + entry.title),
-      button("secondary", entry.finish, { type: "finish", id: entry.id }, entry.finish.startsWith("Submit") ? "Submit your Review to GitHub" : "Write a Brief of your Comments for an agent", entry.finish.replace("…", "") + " of " + entry.title + "…")
-    );
+    actions.append(button("link", end.label, { type: end.type, id: entry.id }, hint, end.label.replace("…", "") + " of " + entry.title + (end.label.endsWith("…") ? "…" : "")));
     content.append(actions);
     row.append(content);
     return row;
@@ -367,7 +375,8 @@ function html(cspSource: string): string {
     return node;
   }
 
-  // The repository and number come first, so a long title never hides them.
+  // The repository and number come first, so a long title never hides them,
+  // and the wait before the author, so a long name is what's cut short.
   function pullRequest(entry) {
     const row = el("div", "item pull-request");
     row.setAttribute("role", "listitem");
@@ -383,7 +392,7 @@ function html(cspSource: string): string {
     const title = el("div");
     title.append(button("link title", entry.title, { type: "open", id: entry.id }, "Open " + entry.name + " as a Change", entry.title + ", " + entry.name));
     content.append(
-      line("muted", [entry.name, entry.waited !== undefined && entry.author, entry.waited !== undefined && "waiting " + entry.waited]),
+      line("muted", [entry.name, entry.waited !== undefined && "waiting " + entry.waited, entry.waited !== undefined && entry.author]),
       title,
       line("muted", [size(entry), entry.checks && el("span", "status " + entry.checks, "checks " + entry.checks), ...entry.notes])
     );
@@ -447,12 +456,15 @@ function html(cspSource: string): string {
   let lastState;
   function render(state) {
     lastState = state;
-    setText(byId("facts"), state.facts);
+    byId("facts").hidden = !state.facts;
+    setText(byId("facts"), state.facts || "");
     const next = state.next;
+    document.querySelector(".overview").hidden = !state.facts && !next;
     byId("place").hidden = !next;
     byId("next").hidden = !next;
     if (next) {
       setText(byId("place"), next.place);
+      byId("place").title = next.place;
       setText(byId("next"), next.label);
       byId("next").title = next.kind === "open" ? "Open it as a Change in the review window" : next.kind === "resume" ? "Show its overview in the review window" : "Finish the Review in the review window";
     }

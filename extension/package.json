@@ -626,6 +626,26 @@
         {
           "command": "dearReviewer.showDashboard",
           "when": "!dearReviewer.inReviewWindow"
+        },
+        {
+          "command": "dearReviewer.showAssistant",
+          "when": "dearReviewer.hasOpenChange"
+        },
+        {
+          "command": "dearReviewer.showTimeline",
+          "when": "dearReviewer.hasOpenChange"
+        },
+        {
+          "command": "dearReviewer.findIssues",
+          "when": "dearReviewer.hasOpenChange"
+        },
+        {
+          "command": "dearReviewer.discardReview",
+          "when": "dearReviewer.hasOpenChange"
+        },
+        {
+          "command": "dearReviewer.showChangesSinceLastReview",
+          "when": "dearReviewer.hasOpenChange"
         }
       ],
       "editor/title": [

@@ -405,7 +405,9 @@ export const pageStyles = `
   header .actions { flex: none; align-items: center; }
   button.secondary { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); padding: 2px 8px; border-radius: 2px; cursor: pointer; font: inherit; }
   button.secondary:hover { background: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-secondaryBackground)); }
-  button.primary { background: var(--vscode-button-background); color: var(--vscode-button-foreground); padding: 2px 8px; border-radius: 2px; cursor: pointer; font: inherit; }
+  button.primary { background: var(--vscode-button-background); color: var(--vscode-button-foreground); padding: 4px 12px; border-radius: 2px; cursor: pointer; font: inherit; }
+  /* The header's button keeps the secondary's padding when it fills, so the header doesn't change height. */
+  header button.primary { padding: 2px 8px; }
   button.primary:hover { background: var(--vscode-button-hoverBackground); }
   .facts { font-variant-numeric: tabular-nums; }
   .facts .added { color: var(--vscode-gitDecoration-addedResourceForeground); color: color-mix(in srgb, var(--vscode-gitDecoration-addedResourceForeground) 60%, var(--vscode-foreground)); }
@@ -421,7 +423,6 @@ export const pageStyles = `
   .item .content { flex: 1; min-width: 0; }
   .item .author { font-weight: 600; }
   #byline span { display: inline-block; max-width: 100%; overflow-wrap: anywhere; }
-  .overview .actions button.primary { padding: 4px 12px; }
   .overview .actions button { max-width: 100%; overflow-wrap: anywhere; text-align: start; }
   .overview { padding: 12px 0 14px; border-bottom: 1px solid var(--vscode-panel-border); }
   .overview p { margin: 0 0 4px; }
@@ -487,13 +488,11 @@ function html(cspSource: string): string {
   .submit .pending .file { font-family: var(--vscode-editor-font-family); overflow-wrap: anywhere; }
   .submit .pending .muted { min-width: 0; overflow-wrap: anywhere; }
   .submit .actions { margin-top: 12px; align-items: baseline; }
-  .submit .actions button.primary { padding: 4px 12px; }
   .submit button[aria-disabled="true"], header button[aria-disabled="true"] { opacity: 0.5; cursor: default; }
   .result { padding: 12px 0 14px; border-bottom: 1px solid var(--vscode-panel-border); }
   .result p { margin: 0 0 8px; line-height: 1.5; }
   .result .verdict .mark { margin-right: 4px; }
   .result .actions { align-items: baseline; }
-  .result button.primary { padding: 4px 12px; }
   .result .reading { font-style: italic; color: var(--vscode-descriptionForeground); }
   #resultProblem:empty { display: none; }
   #resultProblem { margin: 0 0 8px; }
@@ -1047,6 +1046,7 @@ ${catSymbol}
     setText(byId("submitNote"), step.note || checksNote());
     const submit = byId("submitReview");
     submit.setAttribute("aria-disabled", String(step.submitting || !!reason));
+    submit.title = "Publish your Review to GitHub (" + (mac ? "⌘↩" : "Ctrl+Enter") + ")";
     submit.setAttribute("aria-label", step.submitting ? "Submitting your Review to GitHub" : "Submit Review to GitHub");
     setText(submit, step.submitting ? "Submitting…" : "Submit Review");
     byId("cancelSubmit").setAttribute("aria-disabled", String(step.submitting));

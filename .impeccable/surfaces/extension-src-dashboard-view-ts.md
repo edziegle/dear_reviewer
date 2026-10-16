@@ -7,7 +7,7 @@ related_targets: ["extension/src/dashboard/dashboard.ts", "extension/package.jso
 
 # Dashboard
 
-Scope: the Dear Reviewer side bar in the Reviewer's own windows (issue #38, ADR 0032), replacing the Inbox, Change Files and Findings views there. Mode: Operate. Audience: the Reviewer outside a review, seeing where they stand and starting the next one. Constraints: In progress (Changes open in any window, with Resume and Finish acting in the review window), Waiting on you (longest wait on you first), Your pull requests, Reviewed by me, Local branches (first five, then Show all), Open a commit range…; the Inbox's and the overview's data, never its own.
+Scope: the Dear Reviewer side bar in the Reviewer's own windows (issue #38, ADR 0032), replacing the Inbox, Change Files and Findings views there. Mode: Operate. Audience: the Reviewer outside a review, seeing where they stand and starting the next one. Constraints: In progress (Changes open in any window; a row resumes it in the review window, and finishing is the next step, never a row's button), Waiting on you (longest wait on you first), Your pull requests, Reviewed by you (these three show five rows, then Show all), Local branches (first five, then Show all), Open a commit range…; the Inbox's and the overview's data, never its own.
 
 ## Direction contract
 

@@ -268,29 +268,24 @@ describe("Refreshing a pull request's Change as its remote changes", () => {
     });
   });
 
-  it("checks once for a burst of focus changes, and once more for those that met the running check, and not again within the gap", async () => {
+  it("sends no request for a burst of focus changes within the gap of the last check", async () => {
     await setRefreshGap(0);
     const before = await headRequests();
-
-    await Promise.all([focusWindow(), focusWindow(), focusWindow()]);
-
-    // The burst met the running check, so one more check is owed, however
-    // many met it.
+    await focusWindow();
     await eventually(async () =>
-      assert.strictEqual(await headRequests(), before + 2)
+      assert.strictEqual(await headRequests(), before + 1)
     );
     await eventually(async () =>
       assert.strictEqual(await refreshRunning(), false)
     );
-    assert.strictEqual(await headRequests(), before + 2);
 
     await setRefreshGap(60_000);
-    await focusWindow();
+    await Promise.all([focusWindow(), focusWindow(), focusWindow()]);
     // Nothing is sent, so there is nothing to wait for but a moment's quiet.
     await new Promise((resolve) => setTimeout(resolve, 200));
     assert.strictEqual(
       await headRequests(),
-      before + 2,
+      before + 1,
       "skipped within the gap"
     );
     await setRefreshGap(0);

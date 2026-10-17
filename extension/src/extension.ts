@@ -444,7 +444,14 @@ export function activate(context: vscode.ExtensionContext) {
     } catch (err) {
       if (!automatic) throw err;
     } finally {
-      end();
+      // A focus event turned away while this ran is owed a check, of the
+      // Change now shown: a swap replaced this one.
+      if (end()) {
+        const current = changes
+          .shownHere()
+          .find((shown) => shown.conversation === change.conversation);
+        if (current) void fetchUpdates(current, true);
+      }
     }
   }
 
@@ -1825,6 +1832,8 @@ export function activate(context: vscode.ExtensionContext) {
     refreshGapMs: (ms: number = minimumGapMs) => {
       refreshGate.gapMs = ms;
     },
+    /** Whether a check of any pull request Change is running, which a test waits out. */
+    refreshRunning: () => refreshGate.anyRunning(),
     /** Stands in for the window regaining focus, which a test can't give it. */
     windowFocused: () => fetchUpdatesOfShown(),
     /** Every Change shown the way a review starts, oldest first, by name. */

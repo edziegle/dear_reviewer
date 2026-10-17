@@ -22,6 +22,7 @@ import {
   focusWindow,
   heldState,
   releaseErrors,
+  refreshRunning,
   releaseNotifications,
   setRefreshGap,
   short,
@@ -198,13 +199,14 @@ describe("Refreshing a pull request's Change as its remote changes", () => {
       ),
       "the older head is gone"
     );
+    const newFolder = workspaceFolders().find(
+      (f) => f.name === `${path.basename(pr.clone)} head ${short(newHead)}`
+    )!;
     await eventually(() =>
       assert.strictEqual(
-        activeDiff().modified.fsPath.endsWith(
-          path.join("head", "pkg", "core.py")
-        ),
-        true,
-        "the file the Reviewer was on is open again"
+        activeDiff().modified.fsPath,
+        path.join(newFolder.path, "pkg", "core.py"),
+        "the file the Reviewer was on is open again, under the new head's folder"
       )
     );
     await eventually(async () => {
@@ -220,6 +222,11 @@ describe("Refreshing a pull request's Change as its remote changes", () => {
         before + 2,
         "the new thread and the pending Comment are shown on the new head"
       )
+    );
+    // The check holds the refresh gate until it ends, and a focus event
+    // meanwhile would be remembered, not run now.
+    await eventually(async () =>
+      assert.strictEqual(await refreshRunning(), false, "the check has ended")
     );
   });
 
@@ -247,11 +254,11 @@ describe("Refreshing a pull request's Change as its remote changes", () => {
       ],
     });
 
-    await focusWindow();
-
-    await eventually(async () =>
-      assert.strictEqual((await heldState()).threads, before + 1)
-    );
+    // A repeat focus is safe: one that arrives while a check runs is remembered.
+    await eventually(async () => {
+      await focusWindow();
+      assert.strictEqual((await heldState()).threads, before + 1);
+    });
     await eventually(async () => {
       const overview = await sentTimeline(overviewTitle);
       assert.ok(
@@ -261,15 +268,21 @@ describe("Refreshing a pull request's Change as its remote changes", () => {
     });
   });
 
-  it("checks once for a burst of focus changes, and not again within the gap", async () => {
+  it("checks once for a burst of focus changes, and once more for those that met the running check, and not again within the gap", async () => {
     await setRefreshGap(0);
     const before = await headRequests();
 
     await Promise.all([focusWindow(), focusWindow(), focusWindow()]);
 
+    // The burst met the running check, so one more check is owed, however
+    // many met it.
     await eventually(async () =>
-      assert.strictEqual(await headRequests(), before + 1)
+      assert.strictEqual(await headRequests(), before + 2)
     );
+    await eventually(async () =>
+      assert.strictEqual(await refreshRunning(), false)
+    );
+    assert.strictEqual(await headRequests(), before + 2);
 
     await setRefreshGap(60_000);
     await focusWindow();
@@ -277,7 +290,7 @@ describe("Refreshing a pull request's Change as its remote changes", () => {
     await new Promise((resolve) => setTimeout(resolve, 200));
     assert.strictEqual(
       await headRequests(),
-      before + 1,
+      before + 2,
       "skipped within the gap"
     );
     await setRefreshGap(0);

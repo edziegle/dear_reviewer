@@ -42,6 +42,66 @@ describe("RefreshGate", () => {
     assert.ok(g.begin("a", true));
   });
 
+  it("runs a dropped automatic check once when the running one ends", () => {
+    const g = gate();
+    const end = g.begin("a", true)!;
+    assert.strictEqual(g.begin("a", true), undefined);
+    assert.strictEqual(g.begin("a", true), undefined);
+    now += minimumGapMs;
+    assert.strictEqual(end(), true, "one more check is owed");
+    assert.ok(g.begin("a", true), "and it may begin");
+  });
+
+  it("owes nothing when no automatic check was dropped, or only the Reviewer's was", () => {
+    const g = gate();
+    assert.strictEqual(g.begin("a", true)!(), false);
+    now += minimumGapMs;
+    const end = g.begin("a", true)!;
+    assert.strictEqual(g.begin("a", false), undefined);
+    assert.strictEqual(end(), false);
+  });
+
+  it("owes a check only once for a burst, which the gap then holds to one request", () => {
+    const g = gate();
+    const end = g.begin("a", true)!;
+    for (let i = 0; i < 3; i++)
+      assert.strictEqual(g.begin("a", true), undefined);
+    assert.strictEqual(end(), true);
+    assert.ok(
+      g.begin("a", true) === undefined,
+      "too soon after the last start"
+    );
+    now += minimumGapMs;
+    assert.ok(g.begin("a", true));
+  });
+
+  it("does not owe a check dropped only for the gap", () => {
+    const g = gate();
+    g.begin("a", true)!();
+    assert.strictEqual(g.begin("a", true), undefined);
+    now += minimumGapMs;
+    const end = g.begin("a", true)!;
+    assert.strictEqual(end(), false);
+  });
+
+  it("says whether any check runs", () => {
+    const g = gate();
+    assert.strictEqual(g.isRunning("a"), false);
+    const end = g.begin("a", true)!;
+    assert.strictEqual(g.isRunning("a"), true);
+    end();
+    assert.strictEqual(g.isRunning("a"), false);
+  });
+
+  it("forgets what a closed Change owed", () => {
+    const g = gate();
+    g.begin("a", true);
+    g.begin("a", true);
+    g.forget("a");
+    now += minimumGapMs;
+    assert.strictEqual(g.begin("a", true)!(), false);
+  });
+
   it("keeps Changes apart", () => {
     const g = gate();
     assert.ok(g.begin("a", true));

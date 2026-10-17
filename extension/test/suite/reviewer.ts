@@ -126,6 +126,15 @@ export async function setRefreshGap(ms?: number): Promise<void> {
   (await extension.activate()).refreshGapMs(ms);
 }
 
+/** Whether a check of a pull request Change against GitHub is running. */
+export async function refreshRunning(): Promise<boolean> {
+  const extension = vscode.extensions.getExtension<{
+    refreshRunning(): boolean;
+  }>("edziegle.dear-reviewer");
+  if (!extension) throw new Error("Dear Reviewer is not installed");
+  return (await extension.activate()).refreshRunning();
+}
+
 /** Does what Dear Reviewer does when the window regains focus. */
 export async function focusWindow(): Promise<void> {
   const extension = vscode.extensions.getExtension<{

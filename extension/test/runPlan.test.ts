@@ -9,6 +9,7 @@ import {
   outcomes,
   planLaunches,
   testWindowPids,
+  unlaunchedPhases,
 } from "./runPlan";
 
 const phases = [
@@ -203,6 +204,28 @@ describe("Which suites share a launch", () => {
   });
 });
 
+describe("Whether every suite is launched", () => {
+  it("names the phases with test files that no group holds", () => {
+    assert.deepStrictEqual(
+      unlaunchedPhases(
+        ["inbox", "review", "review/afterReload", "fresh"],
+        [
+          { name: "a", phases: ["inbox", "review"] },
+          { name: "b", phases: ["review/afterReload"] },
+        ]
+      ),
+      ["fresh"]
+    );
+  });
+
+  it("names nothing when every phase is held", () => {
+    assert.deepStrictEqual(
+      unlaunchedPhases(["inbox"], [{ name: "a", phases: ["inbox"] }]),
+      []
+    );
+  });
+});
+
 describe("What happened to each suite of a launch", () => {
   const expected = ["a", "b", "c", "d"];
 
@@ -241,6 +264,13 @@ describe("What happened to each suite of a launch", () => {
     assert.deepStrictEqual(
       outcomes(["a", "b"], undefined).map((o) => o.status),
       ["not run", "not run"]
+    );
+  });
+
+  it("lists a launch that failed outside its phases", () => {
+    assert.deepStrictEqual(
+      failureLines([{ launch: "inbox", status: "failed", failed: ["boom"] }]),
+      ["launch inbox:", "  boom"]
     );
   });
 

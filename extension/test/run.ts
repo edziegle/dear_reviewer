@@ -17,12 +17,14 @@ import {
   codiumInstall,
   failureLines,
   groupLaunches,
+  GroupPlan,
   LaunchGroup,
   Outcome,
   outcomes,
   planLaunches,
   Progress,
   testWindowPids,
+  unlaunchedPhases,
 } from "./runPlan";
 
 const root = path.resolve(__dirname, "..", "..");
@@ -194,23 +196,8 @@ function reloadWorkspace(): string {
   return (reloadWorkspaceFile ??= multiRootWorkspace("reload", "reload"));
 }
 
-/**
- * Every launch of a run, in order: the phases it runs one after another, and
- * what it opens. A launch is one VSCodium start (ADR 0039). A phase like
- * `name/phase` is a later phase of suite `name`, sharing its fixtures folder;
- * an `afterReload` phase reopens the workspace, like a window reload.
- *
- * Only the Change in front keeps its tabs across a reload (ADR 0020), so the
- * reload suites that read them back each need a launch of their own after
- * their first phase. Each such launch also runs the first phase of the next
- * suite, which leaves its Change in front for the launch after: a chain, one
- * launch longer than the suites in it, not twice as long.
- */
-const launchGroups: {
-  name: string;
-  phases: string[];
-  open: () => string;
-}[] = [
+/** Every launch of a run, in order, and what it opens (ADR 0039). */
+const launchGroups: (GroupPlan & { open: () => string })[] = [
   {
     name: "single folder",
     phases: ["singleFolder"],
@@ -290,8 +277,27 @@ const listed = (value: string | undefined) =>
     .map((item) => item.trim())
     .filter(Boolean);
 
+/** The phases that have test files: the folders under test/suite, as `name` or `name/phase`. */
+function phasesWithTests(folder = path.join(__dirname, "suite")): string[] {
+  const phases: string[] = [];
+  for (const entry of fs.readdirSync(folder, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const dir = path.join(folder, entry.name);
+    const nested = phasesWithTests(dir).map((p) => `${entry.name}/${p}`);
+    const hasTests = fs.readdirSync(dir).some((f) => f.endsWith(".test.js"));
+    if (hasTests) phases.push(entry.name);
+    phases.push(...nested);
+  }
+  return phases;
+}
+
 /** The launches DEAR_REVIEWER_SUITES and DEAR_REVIEWER_FILES pick. */
-function plannedLaunches(): LaunchGroup[] {
+function plannedLaunches(): LaunchGroup<(typeof launchGroups)[number]>[] {
+  const unlaunched = unlaunchedPhases(phasesWithTests(), launchGroups);
+  if (unlaunched.length > 0)
+    throw new Error(
+      `No launch group holds ${unlaunched.join(", ")}: add it to launchGroups`
+    );
   const groups = launchGroups.filter(
     (g) => screenshotsRequested || g.name !== "screenshots"
   );
@@ -373,7 +379,7 @@ async function launch({
   name,
   phases,
   open,
-}: LaunchGroup & { open: () => string }) {
+}: LaunchGroup<(typeof launchGroups)[number]>): Promise<Outcome[]> {
   const openPath = open();
   console.log(
     `\n=== ${name}: ${phases.map((p) => p.phase).join(", ")}, opening ${path.basename(openPath)} ===`
@@ -420,12 +426,12 @@ async function launch({
   } finally {
     await killTestWindows();
   }
-  const results = outcomes(
+  const results: Outcome[] = outcomes(
     phases.map((p) => p.phase),
     readProgress()
   );
   if (crash && results.every((o) => o.status === "passed"))
-    results.push({ phase: name, status: "failed", failed: [crash] });
+    results.push({ launch: name, status: "failed", failed: [crash] });
   return results;
 }
 
@@ -475,8 +481,7 @@ async function main() {
     for (const planned of launches) {
       if (interrupted) break;
       launched++;
-      const open = launchGroups.find((g) => g.name === planned.name)!.open;
-      failures.push(...(await launch({ ...planned, open })));
+      failures.push(...(await launch(planned)));
     }
   } finally {
     await closeFakeGitHub();

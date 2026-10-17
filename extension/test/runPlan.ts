@@ -54,30 +54,44 @@ export function planLaunches(phases: string[], selection: Selection): Launch[] {
   return launches;
 }
 
-export interface LaunchGroup {
+/** What a group is called and the phases it runs, as a launch plan lists them. */
+export interface GroupPlan {
   name: string;
+  phases: string[];
+}
+
+export type LaunchGroup<G extends GroupPlan = GroupPlan> = Omit<G, "phases"> & {
   /** The phases this launch runs one after another, in order. */
   phases: Launch[];
-}
+};
 
 /**
  * Packs the planned phases into the launches that run them: each group is one
  * VSCodium start, and a group nothing selected makes no launch. Groups keep
  * their order, and a group's phases keep the plan's.
  */
-export function groupLaunches(
+export function groupLaunches<G extends GroupPlan>(
   planned: Launch[],
-  groups: { name: string; phases: string[] }[]
-): LaunchGroup[] {
+  groups: G[]
+): LaunchGroup<G>[] {
   for (const { phase } of planned)
     if (!groups.some((g) => g.phases.includes(phase)))
       throw new Error(`No launch group holds the ${phase} phase`);
   return groups
-    .map(({ name, phases }) => ({
-      name,
-      phases: planned.filter((p) => phases.includes(p.phase)),
+    .map((group) => ({
+      ...group,
+      phases: planned.filter((p) => group.phases.includes(p.phase)),
     }))
     .filter((g) => g.phases.length > 0);
+}
+
+/** The phases that have test files, which no group launches, so a new suite can't be skipped unnoticed. */
+export function unlaunchedPhases(
+  withTests: string[],
+  groups: GroupPlan[]
+): string[] {
+  const launched = new Set(groups.flatMap((g) => g.phases));
+  return withTests.filter((phase) => !launched.has(phase));
 }
 
 /** What a launch has done so far, which it writes after each phase. */
@@ -87,11 +101,20 @@ export interface Progress {
   running?: string;
 }
 
-export interface Outcome {
+export interface PhaseOutcome {
   phase: string;
   status: "passed" | "failed" | "crashed" | "not run";
   failed: string[];
 }
+
+/** A launch that failed outside its phases, such as VSCodium failing to start. */
+export interface LaunchFailure {
+  launch: string;
+  status: "failed";
+  failed: string[];
+}
+
+export type Outcome = PhaseOutcome | LaunchFailure;
 
 /**
  * How each phase of a launch ended. A phase that never finished fails: the
@@ -100,7 +123,7 @@ export interface Outcome {
 export function outcomes(
   expected: string[],
   progress: Progress | undefined
-): Outcome[] {
+): PhaseOutcome[] {
   return expected.map((phase) => {
     const done = progress?.done.find((d) => d.phase === phase);
     if (done)
@@ -120,6 +143,8 @@ export function outcomes(
 /** The lines that report the phases that failed, grouped by phase. */
 export function failureLines(all: Outcome[]): string[] {
   return all.flatMap((o) => {
+    if ("launch" in o)
+      return [`launch ${o.launch}:`, ...o.failed.map((t) => `  ${t}`)];
     if (o.status === "passed") return [];
     if (o.status === "crashed")
       return [`${o.phase}: crashed the extension host`];

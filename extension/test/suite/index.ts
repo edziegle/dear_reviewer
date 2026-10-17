@@ -9,6 +9,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import Mocha from "mocha";
+import type { Progress } from "../runPlan";
 import { isReviewWindow, observeReviewWindow } from "./reviewWindowProbe";
 
 interface PlannedPhase {
@@ -47,10 +48,7 @@ function runPhase({ phase, files }: PlannedPhase): Promise<string[]> {
 export async function run(): Promise<void> {
   if (isReviewWindow()) return observeReviewWindow();
   const plan: PlannedPhase[] = JSON.parse(process.env.DEAR_REVIEWER_PLAN!);
-  const progress: {
-    done: { phase: string; failed: string[] }[];
-    running?: string;
-  } = { done: [] };
+  const progress: Progress = { done: [] };
   const record = () =>
     fs.writeFileSync(
       process.env.DEAR_REVIEWER_PROGRESS!,

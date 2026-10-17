@@ -46,7 +46,10 @@ function runPhase({ phase, files }: PlannedPhase): Promise<string[]> {
 }
 
 export async function run(): Promise<void> {
-  if (isReviewWindow()) return observeReviewWindow();
+  // A review window Dear Reviewer opened only reports what it shows, unless
+  // the launch opened it to run its tests there.
+  if (isReviewWindow() && !process.env.DEAR_REVIEWER_TESTS_IN_REVIEW_WINDOW)
+    return observeReviewWindow();
   const plan: PlannedPhase[] = JSON.parse(process.env.DEAR_REVIEWER_PLAN!);
   const progress: Progress = { done: [] };
   const record = () =>

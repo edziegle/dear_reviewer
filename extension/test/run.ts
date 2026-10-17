@@ -190,6 +190,43 @@ function folder(name: string): string {
   return folder;
 }
 
+/**
+ * The review window's workspace, holding only its home folder, as Dear
+ * Reviewer writes it in its storage (src/reviewWindow.ts) before any Change
+ * opens there.
+ */
+function reviewWindowWorkspace(): string {
+  const storage = path.join(
+    userDataDir,
+    "User",
+    "globalStorage",
+    "edziegle.dear-reviewer"
+  );
+  const home = path.join(storage, "changes");
+  fs.mkdirSync(path.join(home, ".vscode"), { recursive: true });
+  fs.writeFileSync(
+    path.join(home, ".vscode", "settings.json"),
+    JSON.stringify({ "files.exclude": { "*": true, ".*": true } })
+  );
+  const file = path.join(
+    storage,
+    "review-window",
+    "Dear Reviewer.code-workspace"
+  );
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(
+    file,
+    JSON.stringify({
+      folders: [{ path: home, name: "Dear Reviewer" }],
+      settings: {
+        "terminal.integrated.enablePersistentSessions": false,
+        "terminal.integrated.hideOnStartup": "always",
+      },
+    })
+  );
+  return file;
+}
+
 /** The workspace the reload suites share, in the launch before the reload and the one after. */
 let reloadWorkspaceFile: string | undefined;
 function reloadWorkspace(): string {
@@ -197,7 +234,11 @@ function reloadWorkspace(): string {
 }
 
 /** Every launch of a run, in order, and what it opens (ADR 0039). */
-const launchGroups: (GroupPlan & { open: () => string })[] = [
+const launchGroups: (GroupPlan & {
+  open: () => string;
+  /** Whether it opens the review window, and runs its phases there. */
+  inReviewWindow?: true;
+})[] = [
   {
     name: "single folder",
     phases: ["singleFolder"],
@@ -263,11 +304,18 @@ const launchGroups: (GroupPlan & { open: () => string })[] = [
     phases: ["openFolders/elsewhere"],
     open: () => multiRootWorkspace("elsewhere", "elsewhere"),
   },
-  // Opt-in, after the rest: see screenshotsRequested.
+  // Opt-in, after the rest: see screenshotsRequested. The Dashboard shows
+  // only in the Reviewer's own window, and a review only in the review window.
   {
     name: "screenshots",
     phases: ["screenshots"],
-    open: () => multiRootWorkspace("screenshots", "screenshots"),
+    open: () => folder("screenshots"),
+  },
+  {
+    name: "screenshots, in the review window",
+    phases: ["screenshots/reviewWindow"],
+    open: reviewWindowWorkspace,
+    inReviewWindow: true,
   },
 ];
 
@@ -299,7 +347,9 @@ function plannedLaunches(): LaunchGroup<(typeof launchGroups)[number]>[] {
       `No launch group holds ${unlaunched.join(", ")}: add it to launchGroups`
     );
   const groups = launchGroups.filter(
-    (g) => screenshotsRequested || g.name !== "screenshots"
+    (g) =>
+      screenshotsRequested ||
+      !g.phases.some((p) => p.split("/")[0] === "screenshots")
   );
   const launches = groupLaunches(
     planLaunches(
@@ -379,6 +429,7 @@ async function launch({
   name,
   phases,
   open,
+  inReviewWindow,
 }: LaunchGroup<(typeof launchGroups)[number]>): Promise<Outcome[]> {
   const openPath = open();
   console.log(
@@ -402,6 +453,7 @@ async function launch({
         DEAR_REVIEWER_RESULT: suiteResult,
         DEAR_REVIEWER_PROGRESS: suiteProgress,
         DEAR_REVIEWER_USER_DATA: userDataDir,
+        DEAR_REVIEWER_TESTS_IN_REVIEW_WINDOW: inReviewWindow ? "1" : undefined,
         DEAR_REVIEWER_SCREENSHOTS: screenshotsRequested
           ? screenshotsDir
           : undefined,

@@ -2,7 +2,14 @@
 // mise run test-unit runPlan
 
 import * as assert from "assert";
-import { codiumInstall, planLaunches, testWindowPids } from "./runPlan";
+import {
+  codiumInstall,
+  failureLines,
+  groupLaunches,
+  outcomes,
+  planLaunches,
+  testWindowPids,
+} from "./runPlan";
 
 const phases = [
   "inbox",
@@ -138,5 +145,117 @@ describe("Where the test run finds VSCodium", () => {
 
   it("refuses other platforms", () => {
     assert.throws(() => codiumInstall("win32"), /win32/);
+  });
+});
+
+describe("Which suites share a launch", () => {
+  const groups = [
+    { name: "multi-root", phases: ["multiRoot", "pullRequest", "timeline"] },
+    { name: "inbox", phases: ["inbox"] },
+    { name: "reload", phases: ["review", "lifecycle"] },
+    {
+      name: "after reload",
+      phases: ["review/afterReload", "lifecycle/afterReload"],
+    },
+  ];
+  const all = groups.flatMap((g) => g.phases);
+
+  it("packs the phases of a full run into one launch for each group", () => {
+    const launches = groupLaunches(planLaunches(all, {}), groups);
+    assert.deepStrictEqual(
+      launches.map((l) => [l.name, l.phases.map((p) => p.phase)]),
+      [
+        ["multi-root", ["multiRoot", "pullRequest", "timeline"]],
+        ["inbox", ["inbox"]],
+        ["reload", ["review", "lifecycle"]],
+        ["after reload", ["review/afterReload", "lifecycle/afterReload"]],
+      ]
+    );
+  });
+
+  it("leaves out the groups nothing selected", () => {
+    const launches = groupLaunches(
+      planLaunches(all, { suites: ["timeline", "review"] }),
+      groups
+    );
+    assert.deepStrictEqual(
+      launches.map((l) => [l.name, l.phases.map((p) => p.phase)]),
+      [
+        ["multi-root", ["timeline"]],
+        ["reload", ["review"]],
+        ["after reload", ["review/afterReload"]],
+      ]
+    );
+  });
+
+  it("keeps the files a phase was narrowed to", () => {
+    const [launch] = groupLaunches(
+      planLaunches(all, { files: ["pullRequest/autoRefresh"] }),
+      groups
+    );
+    assert.deepStrictEqual(launch.phases, [
+      { phase: "pullRequest", files: ["autoRefresh"] },
+    ]);
+  });
+
+  it("refuses a phase no group holds", () => {
+    assert.throws(() => groupLaunches([{ phase: "lost" }], groups), /lost/);
+  });
+});
+
+describe("What happened to each suite of a launch", () => {
+  const expected = ["a", "b", "c", "d"];
+
+  it("passes and fails each suite by its own tests", () => {
+    assert.deepStrictEqual(
+      outcomes(expected, {
+        done: [
+          { phase: "a", failed: [] },
+          { phase: "b", failed: ["b one", "b two"] },
+          { phase: "c", failed: [] },
+          { phase: "d", failed: [] },
+        ],
+      }),
+      [
+        { phase: "a", status: "passed", failed: [] },
+        { phase: "b", status: "failed", failed: ["b one", "b two"] },
+        { phase: "c", status: "passed", failed: [] },
+        { phase: "d", status: "passed", failed: [] },
+      ]
+    );
+  });
+
+  it("fails the suite that crashed the host and the ones never reached", () => {
+    assert.deepStrictEqual(
+      outcomes(expected, { done: [{ phase: "a", failed: [] }], running: "b" }),
+      [
+        { phase: "a", status: "passed", failed: [] },
+        { phase: "b", status: "crashed", failed: [] },
+        { phase: "c", status: "not run", failed: [] },
+        { phase: "d", status: "not run", failed: [] },
+      ]
+    );
+  });
+
+  it("marks every suite not run when the launch left no progress", () => {
+    assert.deepStrictEqual(
+      outcomes(["a", "b"], undefined).map((o) => o.status),
+      ["not run", "not run"]
+    );
+  });
+
+  it("lists the failures of a run grouped by suite", () => {
+    assert.deepStrictEqual(
+      failureLines(
+        outcomes(expected, {
+          done: [
+            { phase: "a", failed: [] },
+            { phase: "b", failed: ["b one"] },
+          ],
+          running: "c",
+        })
+      ),
+      ["b:", "  b one", "c: crashed the extension host", "d: not run"]
+    );
   });
 });

@@ -25,3 +25,4 @@ Chosen option: "One run at a time, behind a lock file", because overlapping runs
 
 - Good, because a failure is the code's, not another worktree's load.
 - Bad, because agents wait for each other's runs; narrowing a run to the suites, files or tests at hand keeps the wait short.
+- Note (ADR 0039): a run now makes about half the launches, so the wait for the lock is shorter than when this was decided.

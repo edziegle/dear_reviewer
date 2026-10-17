@@ -1,44 +1,75 @@
-// Entry point VSCodium calls inside the extension host. Runs the Mocha files
-// for the suite named in DEAR_REVIEWER_SUITE: only those named in
-// DEAR_REVIEWER_TEST_FILES when it's set, and only the tests matching
-// DEAR_REVIEWER_GREP when that is.
+// Entry point VSCodium calls inside the extension host. Runs the phases that
+// DEAR_REVIEWER_PLAN lists, one after another, each as a Mocha run of its own
+// folder's files: only those the plan names for it when it names any, and
+// only the tests matching DEAR_REVIEWER_GREP when that is set. A phase that
+// fails doesn't stop the ones after it. After each phase the progress goes to
+// DEAR_REVIEWER_PROGRESS, so test/run.ts can tell which phase crashed the
+// extension host and which never ran.
 
 import * as fs from "fs";
 import * as path from "path";
 import Mocha from "mocha";
 import { isReviewWindow, observeReviewWindow } from "./reviewWindowProbe";
 
-export function run(): Promise<void> {
-  if (isReviewWindow()) return observeReviewWindow();
-  const suite = process.env.DEAR_REVIEWER_SUITE ?? "multiRoot";
-  const only = process.env.DEAR_REVIEWER_TEST_FILES?.split(",");
+interface PlannedPhase {
+  phase: string;
+  files?: string[];
+}
+
+/** Runs one phase's files, and gives the full titles of the tests that failed. */
+function runPhase({ phase, files }: PlannedPhase): Promise<string[]> {
+  // Each suite keeps its fixtures, and what it hands to its later phases, in
+  // a folder of its own, set before the files load, since they build repositories as they load.
+  process.env.DEAR_REVIEWER_FIXTURES = path.join(
+    process.env.DEAR_REVIEWER_FIXTURES_ROOT!,
+    phase.split("/")[0]
+  );
   const mocha = new Mocha({
     ui: "bdd",
     timeout: 120_000,
     color: true,
     grep: process.env.DEAR_REVIEWER_GREP,
   });
-  const folder = path.join(__dirname, suite);
+  const folder = path.join(__dirname, phase);
   for (const file of fs.readdirSync(folder).sort()) {
     if (!file.endsWith(".test.js")) continue;
-    if (only && !only.includes(file.slice(0, -".test.js".length))) continue;
+    if (files && !files.includes(file.slice(0, -".test.js".length))) continue;
     mocha.addFile(path.join(folder, file));
   }
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const failed: string[] = [];
     mocha
-      .run((failures) => {
-        // test/backgroundCodium.ts can't see VSCodium's exit code, and
-        // test/run.ts lists the failed tests from here.
-        const result = process.env.DEAR_REVIEWER_RESULT;
-        if (result)
-          fs.writeFileSync(
-            result,
-            failures ? ["failed", ...failed].join("\n") : "passed"
-          );
-        if (failures) reject(new Error(`${failures} tests failed`));
-        else resolve();
-      })
+      .run(() => resolve(failed))
       .on("fail", (test) => failed.push(test.fullTitle()));
   });
+}
+
+export async function run(): Promise<void> {
+  if (isReviewWindow()) return observeReviewWindow();
+  const plan: PlannedPhase[] = JSON.parse(process.env.DEAR_REVIEWER_PLAN!);
+  const progress: {
+    done: { phase: string; failed: string[] }[];
+    running?: string;
+  } = { done: [] };
+  const record = () =>
+    fs.writeFileSync(
+      process.env.DEAR_REVIEWER_PROGRESS!,
+      JSON.stringify(progress)
+    );
+  for (const planned of plan) {
+    progress.running = planned.phase;
+    record();
+    progress.done.push({
+      phase: planned.phase,
+      failed: await runPhase(planned),
+    });
+    delete progress.running;
+    record();
+  }
+  const failures = progress.done.flatMap((d) => d.failed);
+  // test/backgroundCodium.ts can't see VSCodium's exit code, so it reads this.
+  const result = process.env.DEAR_REVIEWER_RESULT;
+  if (result)
+    fs.writeFileSync(result, failures.length > 0 ? "failed" : "passed");
+  if (failures.length > 0) throw new Error(`${failures.length} tests failed`);
 }

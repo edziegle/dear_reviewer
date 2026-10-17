@@ -1,7 +1,7 @@
 import * as assert from "assert";
 import { assistantRuns, replyTurn, scriptClaude } from "../../assistant";
 import { changeFiles, render } from "../../changeFiles";
-import { eventually } from "../../reviewer";
+import { closeChange, eventually } from "../../reviewer";
 import { sentTimeline, showTimeline } from "../../timeline";
 import { pickUpAfterReload } from "../handoff";
 
@@ -15,6 +15,11 @@ describe("The Reading Order after a reload", () => {
       readingOrder: replyTurn('{"steps": []}'),
     })
   );
+
+  // The suites after it share its window.
+  after(async () => {
+    for (const change of handoff.open) await closeChange(change);
+  });
 
   it("comes back in Change Files and the overview without another Claude turn", async () => {
     await eventually(async () =>

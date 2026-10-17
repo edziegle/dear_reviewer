@@ -401,6 +401,12 @@ describe("The Reading Order", () => {
     leaveForReload({
       branch,
       overview,
+      open: [
+        request,
+        branch,
+        { ...branch, head: repo.commits.documented },
+        { ...branch, head: later },
+      ],
       readingOrder: (await sentTimeline(overview)).readingOrder!,
       changeFiles: render(await changeFiles()),
     });

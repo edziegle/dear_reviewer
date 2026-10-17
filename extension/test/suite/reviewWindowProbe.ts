@@ -22,15 +22,21 @@ export function isReviewWindow(): boolean {
   return path.basename(path.dirname(file)) === "review-window";
 }
 
+/**
+ * Where the window under test and the review window it opens meet. The review
+ * window gets the launch's environment, not the phase's, so this is a folder
+ * of the launch's fixtures root, which only the singleFolder suite uses.
+ */
+function meetingFolder(): string {
+  return path.join(process.env.DEAR_REVIEWER_FIXTURES_ROOT!, "singleFolder");
+}
+
 export function reviewWindowReportFile(): string {
-  return path.join(process.env.DEAR_REVIEWER_FIXTURES!, "review-window.json");
+  return path.join(meetingFolder(), "review-window.json");
 }
 
 function commandsFile(): string {
-  return path.join(
-    process.env.DEAR_REVIEWER_FIXTURES!,
-    "review-window-commands.json"
-  );
+  return path.join(meetingFolder(), "review-window-commands.json");
 }
 
 interface CommandForReviewWindow {

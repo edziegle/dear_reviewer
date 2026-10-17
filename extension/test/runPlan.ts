@@ -54,6 +54,80 @@ export function planLaunches(phases: string[], selection: Selection): Launch[] {
   return launches;
 }
 
+export interface LaunchGroup {
+  name: string;
+  /** The phases this launch runs one after another, in order. */
+  phases: Launch[];
+}
+
+/**
+ * Packs the planned phases into the launches that run them: each group is one
+ * VSCodium start, and a group nothing selected makes no launch. Groups keep
+ * their order, and a group's phases keep the plan's.
+ */
+export function groupLaunches(
+  planned: Launch[],
+  groups: { name: string; phases: string[] }[]
+): LaunchGroup[] {
+  for (const { phase } of planned)
+    if (!groups.some((g) => g.phases.includes(phase)))
+      throw new Error(`No launch group holds the ${phase} phase`);
+  return groups
+    .map(({ name, phases }) => ({
+      name,
+      phases: planned.filter((p) => phases.includes(p.phase)),
+    }))
+    .filter((g) => g.phases.length > 0);
+}
+
+/** What a launch has done so far, which it writes after each phase. */
+export interface Progress {
+  done: { phase: string; failed: string[] }[];
+  /** The phase in progress, which a crash leaves behind. */
+  running?: string;
+}
+
+export interface Outcome {
+  phase: string;
+  status: "passed" | "failed" | "crashed" | "not run";
+  failed: string[];
+}
+
+/**
+ * How each phase of a launch ended. A phase that never finished fails: the
+ * one running when the extension host died crashed it, and the rest never ran.
+ */
+export function outcomes(
+  expected: string[],
+  progress: Progress | undefined
+): Outcome[] {
+  return expected.map((phase) => {
+    const done = progress?.done.find((d) => d.phase === phase);
+    if (done)
+      return {
+        phase,
+        status: done.failed.length > 0 ? "failed" : "passed",
+        failed: done.failed,
+      };
+    return {
+      phase,
+      status: progress?.running === phase ? "crashed" : "not run",
+      failed: [],
+    };
+  });
+}
+
+/** The lines that report the phases that failed, grouped by phase. */
+export function failureLines(all: Outcome[]): string[] {
+  return all.flatMap((o) => {
+    if (o.status === "passed") return [];
+    if (o.status === "crashed")
+      return [`${o.phase}: crashed the extension host`];
+    if (o.status === "not run") return [`${o.phase}: not run`];
+    return [`${o.phase}:`, ...o.failed.map((t) => `  ${t}`)];
+  });
+}
+
 /**
  * The processes in `ps -axo pid=,args=` output that run with `userDataDir` as
  * their user data, which only a test window of this checkout does.

@@ -10,6 +10,8 @@ export interface Handoff {
   /** The branch's Change, and its overview's title. */
   branch: ChangeRequest;
   overview: string;
+  /** Every Change the first launch left open, for the second to close when it is done. */
+  open: ChangeRequest[];
   readingOrder: ShownReadingOrder;
   /** Change Files, rendered, before the reload. */
   changeFiles: string[];

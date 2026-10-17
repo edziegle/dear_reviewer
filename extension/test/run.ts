@@ -15,9 +15,13 @@ import { startFakeGitHub } from "./fakeGitHub";
 import { acquireRunLock } from "./runLock";
 import {
   codiumInstall,
-  Launch,
+  failureLines,
+  groupLaunches,
+  LaunchGroup,
+  Outcome,
+  outcomes,
   planLaunches,
-  suiteOf,
+  Progress,
   testWindowPids,
 } from "./runPlan";
 
@@ -41,6 +45,7 @@ const fakeClaude = path.join(fakeClaudeDir, "bin", "claude");
 const backgroundCodium = path.join(testRoot, "background-codium");
 const codiumOutput = path.join(testRoot, "codium-output");
 const suiteResult = path.join(codiumOutput, "result");
+const suiteProgress = path.join(codiumOutput, "progress.json");
 // One run at a time on this machine: see docs/adr/0028-one-test-run-at-a-time.md.
 const runLock = path.join(os.tmpdir(), "dear-reviewer-test-run.lock");
 // Only DEAR_REVIEWER_SUITES=screenshots runs the screenshots suite: it opens a
@@ -183,61 +188,100 @@ function folder(name: string): string {
   return folder;
 }
 
-/** A workspace that later phases of a suite reopen, made on first use. */
-function sharedWorkspace(name: string): () => string {
-  let file: string | undefined;
-  return () => (file ??= multiRootWorkspace(name, name));
+/** The workspace the reload suites share, in the launch before the reload and the one after. */
+let reloadWorkspaceFile: string | undefined;
+function reloadWorkspace(): string {
+  return (reloadWorkspaceFile ??= multiRootWorkspace("reload", "reload"));
 }
 
-const changeFiles = sharedWorkspace("change-files");
-const assistant = sharedWorkspace("assistant");
-const review = sharedWorkspace("review");
-const lifecycle = sharedWorkspace("lifecycle");
-const localReview = sharedWorkspace("local-review");
-const readingOrder = sharedWorkspace("reading-order");
-const dashboard = sharedWorkspace("dashboard");
-
 /**
- * Every launch of a run, in order, with what it opens. A phase like
- * `name/phase` is a later launch of suite `name`, sharing its fixtures folder;
+ * Every launch of a run, in order: the phases it runs one after another, and
+ * what it opens. A launch is one VSCodium start (ADR 0039). A phase like
+ * `name/phase` is a later phase of suite `name`, sharing its fixtures folder;
  * an `afterReload` phase reopens the workspace, like a window reload.
+ *
+ * Only the Change in front keeps its tabs across a reload (ADR 0020), so the
+ * reload suites that read them back each need a launch of their own after
+ * their first phase. Each such launch also runs the first phase of the next
+ * suite, which leaves its Change in front for the launch after: a chain, one
+ * launch longer than the suites in it, not twice as long.
  */
-const phases: [phase: string, open: () => string][] = [
-  ["multiRoot", () => multiRootWorkspace()],
-  ["singleFolder", () => folder("single-folder")],
-  ["inbox", () => folder("inbox")],
-  ["changeFiles", changeFiles],
-  ["changeFiles/afterReload", changeFiles],
-  ["assistant", assistant],
-  ["assistant/afterReload", assistant],
-  ["pullRequest", () => multiRootWorkspace("pull-request", "pull-request")],
-  ["review", review],
-  ["review/afterReload", review],
-  ["timeline", () => multiRootWorkspace("timeline", "timeline")],
-  ["threads", () => multiRootWorkspace("threads", "threads")],
-  [
-    "localBranches",
-    () => multiRootWorkspace("local-branches", "local-branches"),
-  ],
-  ["lifecycle", lifecycle],
-  ["lifecycle/afterReload", lifecycle],
-  [
-    "sinceLastReview",
-    () => multiRootWorkspace("since-last-review", "since-last-review"),
-  ],
-  ["localReview", localReview],
-  ["localReview/afterReload", localReview],
-  ["findings", () => multiRootWorkspace("findings", "findings")],
-  ["codeFlow", () => multiRootWorkspace("code-flow", "code-flow")],
-  ["readingOrder", readingOrder],
-  ["readingOrder/afterReload", readingOrder],
-  ["dashboard", dashboard],
-  ["dashboard/afterReload", dashboard],
+const launchGroups: {
+  name: string;
+  phases: string[];
+  open: () => string;
+}[] = [
+  {
+    name: "single folder",
+    phases: ["singleFolder"],
+    open: () => folder("single-folder"),
+  },
+  // Before the suites that leave pull request Changes open in the user data, which a later window would poll.
+  { name: "inbox", phases: ["inbox"], open: () => folder("inbox") },
+  // First in the window: a suite that signs in makes the extension learn the Reviewer's name, which a local Change's Comments don't have.
+  {
+    name: "local review",
+    phases: ["localReview"],
+    open: reloadWorkspace,
+  },
+  {
+    name: "local review reloaded, then dashboard and change files",
+    phases: ["localReview/afterReload", "dashboard", "changeFiles"],
+    open: reloadWorkspace,
+  },
+  {
+    name: "change files reloaded, then assistant",
+    phases: ["changeFiles/afterReload", "dashboard/afterReload", "assistant"],
+    open: reloadWorkspace,
+  },
+  {
+    name: "assistant reloaded, then review",
+    phases: ["assistant/afterReload", "review"],
+    open: reloadWorkspace,
+  },
+  {
+    name: "review reloaded, then reading order",
+    phases: ["review/afterReload", "readingOrder"],
+    open: reloadWorkspace,
+  },
+  {
+    // It deletes Dear Reviewer's storage, so it comes after the suites that keep Changes in it.
+    name: "reading order reloaded, then lifecycle",
+    phases: ["readingOrder/afterReload", "lifecycle"],
+    open: reloadWorkspace,
+  },
+  {
+    name: "lifecycle reloaded, then the multi-root suites",
+    phases: [
+      "lifecycle/afterReload",
+      "multiRoot",
+      "pullRequest",
+      "timeline",
+      "threads",
+      "localBranches",
+      "sinceLastReview",
+      "findings",
+      "codeFlow",
+    ],
+    open: reloadWorkspace,
+  },
   // Last, so the repositories it remembers can't reach other suites; it forgets them when done.
-  ["openFolders", () => multiRootWorkspace("open-folders", "open-folders")],
-  ["openFolders/elsewhere", () => multiRootWorkspace("elsewhere", "elsewhere")],
+  {
+    name: "open folders",
+    phases: ["openFolders"],
+    open: () => multiRootWorkspace("open-folders", "open-folders"),
+  },
+  {
+    name: "open folders, elsewhere",
+    phases: ["openFolders/elsewhere"],
+    open: () => multiRootWorkspace("elsewhere", "elsewhere"),
+  },
   // Opt-in, after the rest: see screenshotsRequested.
-  ["screenshots", () => multiRootWorkspace("screenshots", "screenshots")],
+  {
+    name: "screenshots",
+    phases: ["screenshots"],
+    open: () => multiRootWorkspace("screenshots", "screenshots"),
+  },
 ];
 
 const listed = (value: string | undefined) =>
@@ -247,24 +291,34 @@ const listed = (value: string | undefined) =>
     .filter(Boolean);
 
 /** The launches DEAR_REVIEWER_SUITES and DEAR_REVIEWER_FILES pick. */
-function plannedLaunches(): Launch[] {
-  const launches = planLaunches(
-    phases
-      .map(([phase]) => phase)
-      .filter((phase) => screenshotsRequested || phase !== "screenshots"),
-    {
-      suites: listed(process.env.DEAR_REVIEWER_SUITES),
-      files: listed(process.env.DEAR_REVIEWER_FILES),
-    }
+function plannedLaunches(): LaunchGroup[] {
+  const groups = launchGroups.filter(
+    (g) => screenshotsRequested || g.name !== "screenshots"
   );
-  for (const { phase, files } of launches)
-    for (const file of files ?? []) {
-      const compiled = path.join(__dirname, "suite", phase, `${file}.test.js`);
-      if (!fs.existsSync(compiled))
-        throw new Error(
-          `There is no test file test/suite/${phase}/${file}.test.ts`
+  const launches = groupLaunches(
+    planLaunches(
+      groups.flatMap((g) => g.phases),
+      {
+        suites: listed(process.env.DEAR_REVIEWER_SUITES),
+        files: listed(process.env.DEAR_REVIEWER_FILES),
+      }
+    ),
+    groups
+  );
+  for (const { phases } of launches)
+    for (const { phase, files } of phases)
+      for (const file of files ?? []) {
+        const compiled = path.join(
+          __dirname,
+          "suite",
+          phase,
+          `${file}.test.js`
         );
-    }
+        if (!fs.existsSync(compiled))
+          throw new Error(
+            `There is no test file test/suite/${phase}/${file}.test.ts`
+          );
+      }
   return launches;
 }
 
@@ -302,35 +356,45 @@ async function killTestWindows() {
 let fakeGitHubUrl = "";
 let executable = "";
 
-/** The full titles of the tests that failed, from the suite's result file. */
-function failedTests(): string[] {
+/** What the launch's suites did before it ended, from the progress file. */
+function readProgress(): Progress | undefined {
   try {
-    const [, ...titles] = fs.readFileSync(suiteResult, "utf8").split("\n");
-    return titles.filter(Boolean);
+    return JSON.parse(fs.readFileSync(suiteProgress, "utf8")) as Progress;
   } catch {
-    return [];
+    return undefined;
   }
 }
 
-/** Runs one launch, and returns what failed in it, if anything. */
-async function launch({ phase, files }: Launch): Promise<string[]> {
-  const openPath = phases.find(([p]) => p === phase)![1]();
-  console.log(`\n=== ${phase} suite, opening ${path.basename(openPath)} ===`);
+/**
+ * Runs one launch, and gives how each of its phases ended. A phase the
+ * launch never finished fails, and nothing reruns it.
+ */
+async function launch({
+  name,
+  phases,
+  open,
+}: LaunchGroup & { open: () => string }) {
+  const openPath = open();
+  console.log(
+    `\n=== ${name}: ${phases.map((p) => p.phase).join(", ")}, opening ${path.basename(openPath)} ===`
+  );
   fs.rmSync(suiteResult, { force: true });
+  fs.rmSync(suiteProgress, { force: true });
+  let crash: string | undefined;
   try {
     await runTests({
       vscodeExecutablePath: executable,
       extensionDevelopmentPath: root,
       extensionTestsPath: path.join(__dirname, "suite", "index.js"),
       extensionTestsEnv: {
-        DEAR_REVIEWER_SUITE: phase,
-        DEAR_REVIEWER_TEST_FILES: files?.join(","),
+        DEAR_REVIEWER_PLAN: JSON.stringify(phases),
         DEAR_REVIEWER_GREP: process.env.DEAR_REVIEWER_GREP,
-        DEAR_REVIEWER_FIXTURES: path.join(work, "fixtures", suiteOf(phase)),
+        DEAR_REVIEWER_FIXTURES_ROOT: path.join(work, "fixtures"),
         DEAR_REVIEWER_FAKE_GITHUB: fakeGitHubUrl,
         DEAR_REVIEWER_FAKE_CLAUDE: fakeClaude,
         DEAR_REVIEWER_FAKE_CLAUDE_DIR: fakeClaudeDir,
         DEAR_REVIEWER_RESULT: suiteResult,
+        DEAR_REVIEWER_PROGRESS: suiteProgress,
         DEAR_REVIEWER_USER_DATA: userDataDir,
         DEAR_REVIEWER_SCREENSHOTS: screenshotsRequested
           ? screenshotsDir
@@ -351,13 +415,18 @@ async function launch({ phase, files }: Launch): Promise<string[]> {
         "--use-inmemory-secretstorage",
       ],
     });
-    return [];
   } catch (err) {
-    const tests = failedTests();
-    return tests.length > 0 ? tests : [(err as Error).message];
+    crash = (err as Error).message;
   } finally {
     await killTestWindows();
   }
+  const results = outcomes(
+    phases.map((p) => p.phase),
+    readProgress()
+  );
+  if (crash && results.every((o) => o.status === "passed"))
+    results.push({ phase: name, status: "failed", failed: [crash] });
+  return results;
 }
 
 /** Closes the test window and frees the lock when the run is interrupted. */
@@ -390,7 +459,8 @@ async function main() {
     await closeFakeGitHub();
     release();
   });
-  const failures: [phase: string, tests: string[]][] = [];
+  const failures: Outcome[] = [];
+  let launched = 0;
   try {
     await killTestWindows();
     linkUserData();
@@ -404,21 +474,21 @@ async function main() {
     fakeGitHubUrl = fakeGitHub.url;
     for (const planned of launches) {
       if (interrupted) break;
-      const failed = await launch(planned);
-      if (failed.length > 0) failures.push([planned.phase, failed]);
+      launched++;
+      const open = launchGroups.find((g) => g.name === planned.name)!.open;
+      failures.push(...(await launch({ ...planned, open })));
     }
   } finally {
     await closeFakeGitHub();
     release();
   }
-  if (failures.length === 0) return;
+  console.log(`\n${launched} launches.`);
+  const failed = failures.filter((o) => o.status !== "passed");
+  if (failed.length === 0) return;
   console.error(
-    `\n=== ${failures.length} of ${launches.length} launches failed ===`
+    `\n=== ${failed.length} of ${failures.length} suites failed, in ${launched} launches ===`
   );
-  for (const [phase, tests] of failures) {
-    console.error(`${phase}:`);
-    for (const test of tests) console.error(`  ${test}`);
-  }
+  for (const line of failureLines(failures)) console.error(line);
   process.exitCode = 1;
 }
 

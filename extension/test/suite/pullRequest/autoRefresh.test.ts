@@ -266,6 +266,11 @@ describe("Refreshing a pull request's Change as its remote changes", () => {
         JSON.stringify(overview.standing)
       );
     });
+    // A repeated focus left a check owed, which runs after the one that
+    // loaded the thread, and its request would land in the next test's count.
+    await eventually(async () =>
+      assert.strictEqual(await refreshRunning(), false, "the checks have ended")
+    );
   });
 
   it("sends one request for a burst of focus changes within the gap of the last check", async () => {

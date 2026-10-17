@@ -216,7 +216,7 @@ The palette is borrowed whole from the active theme; Dear Reviewer chooses roles
 
 **The Relative Size Rule.** Sizes are `em` multiples of the theme size, so a Reviewer's zoom and font settings carry through.
 
-**The Masthead Rule.** Only the overview's masthead, its title and facts line, is set larger than the theme size, and nothing else in Dear Reviewer may be. It is what makes the overview recognizably Dear Reviewer's without a color or font of its own: scale at the top, editor-plain below. Everything under the masthead reads at body size or smaller, so the masthead stays the one peak.
+**The Masthead Rule.** Only the overview's masthead, its title and facts line, is set larger than the theme size; nothing else in Dear Reviewer is. It is what makes the overview recognizably Dear Reviewer's without a color or font of its own: scale at the top, editor-plain below. Everything under the masthead reads at body size or smaller, so the masthead stays the one peak.
 
 ## Layout
 

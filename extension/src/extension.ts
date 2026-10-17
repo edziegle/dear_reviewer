@@ -408,11 +408,14 @@ export function activate(context: vscode.ExtensionContext) {
    */
   async function fetchUpdates(
     change: Change,
-    automatic: boolean
+    automatic: boolean,
+    owed = false
   ): Promise<string | undefined> {
     const pullRequest = change.pullRequest;
     if (!pullRequest) return;
-    const end = refreshGate.begin(change.conversation, automatic);
+    const end = owed
+      ? refreshGate.beginOwed(change.conversation)
+      : refreshGate.begin(change.conversation, automatic);
     if (!end) return;
     try {
       const remote = await github.pullRequestHead(
@@ -444,15 +447,20 @@ export function activate(context: vscode.ExtensionContext) {
     } catch (err) {
       if (!automatic) throw err;
     } finally {
-      // A focus event turned away while this ran is owed a check, of the
-      // Change now shown: a swap replaced this one.
-      if (end()) {
-        const current = changes
-          .shownHere()
-          .find((shown) => shown.conversation === change.conversation);
-        if (current) void fetchUpdates(current, true);
-      }
+      if (end()) runOwedCheck(change.conversation);
     }
+  }
+
+  /**
+   * Runs the check a focus event turned away while another ran (ADR 0036), on
+   * the Change now shown under the conversation: a swap replaced the one that
+   * was checked.
+   */
+  function runOwedCheck(conversation: string): void {
+    const current = changes
+      .shownHere()
+      .find((shown) => shown.conversation === conversation);
+    if (current) void fetchUpdates(current, true, true);
   }
 
   /** Opens the pull request's new head in place of the Change, and the file the Reviewer was on. */

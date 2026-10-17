@@ -61,16 +61,44 @@ describe("RefreshGate", () => {
     assert.strictEqual(end(), false);
   });
 
-  it("owes a check only once for a burst, which the gap then holds to one request", () => {
+  it("runs the owed check even when the running one ends within the gap", () => {
+    const g = gate();
+    const end = g.begin("a", true)!;
+    assert.strictEqual(g.begin("a", true), undefined);
+    now += 1;
+    assert.strictEqual(end(), true, "one more check is owed");
+    assert.ok(g.beginOwed("a"), "and the gap does not turn it away");
+  });
+
+  it("owes a check only once for a burst, so the burst sends one more request", () => {
     const g = gate();
     const end = g.begin("a", true)!;
     for (let i = 0; i < 3; i++)
       assert.strictEqual(g.begin("a", true), undefined);
     assert.strictEqual(end(), true);
-    assert.ok(
-      g.begin("a", true) === undefined,
-      "too soon after the last start"
-    );
+    const endOwed = g.beginOwed("a")!;
+    assert.ok(endOwed);
+    assert.strictEqual(endOwed(), false, "the burst owes nothing more");
+  });
+
+  it("still turns the owed check away while another runs, and owes it again for what arrives meanwhile", () => {
+    const g = gate();
+    const end = g.begin("a", true)!;
+    g.begin("a", true);
+    end();
+    const endOwed = g.beginOwed("a")!;
+    assert.strictEqual(g.beginOwed("a"), undefined);
+    assert.strictEqual(g.begin("a", true), undefined);
+    assert.strictEqual(endOwed(), true);
+  });
+
+  it("holds a fresh automatic check to the gap after the owed one", () => {
+    const g = gate();
+    const end = g.begin("a", true)!;
+    g.begin("a", true);
+    end();
+    g.beginOwed("a")!();
+    assert.strictEqual(g.begin("a", true), undefined);
     now += minimumGapMs;
     assert.ok(g.begin("a", true));
   });
@@ -86,11 +114,11 @@ describe("RefreshGate", () => {
 
   it("says whether any check runs", () => {
     const g = gate();
-    assert.strictEqual(g.isRunning("a"), false);
+    assert.strictEqual(g.anyRunning(), false);
     const end = g.begin("a", true)!;
-    assert.strictEqual(g.isRunning("a"), true);
+    assert.strictEqual(g.anyRunning(), true);
     end();
-    assert.strictEqual(g.isRunning("a"), false);
+    assert.strictEqual(g.anyRunning(), false);
   });
 
   it("forgets what a closed Change owed", () => {

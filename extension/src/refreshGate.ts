@@ -2,7 +2,7 @@
 // (ADR 0036): never while another check of it runs, and not again within a
 // few seconds of the last, so a burst of focus changes sends one request. An
 // automatic check turned away because one runs is owed, and runs once when
-// the running one ends. Pure, so it's tested under plain Node.
+// the running one ends, whatever the gap. Pure, so it's tested under plain Node.
 
 /** How long after a check another automatic one is skipped. */
 export const minimumGapMs = 5_000;
@@ -22,7 +22,7 @@ export class RefreshGate {
    * one runs already or, for an automatic one, the last began too recently.
    * A check the Reviewer asked for skips only the overlap. An automatic one
    * turned away by the overlap is owed: ending the running check says
-   * whether to begin another, which the gap may still turn away.
+   * whether to run the owed one, with `beginOwed`.
    */
   begin(key: string, automatic: boolean): (() => boolean) | undefined {
     if (this.running.has(key)) {
@@ -32,17 +32,29 @@ export class RefreshGate {
     const last = this.lastStart.get(key);
     if (automatic && last !== undefined && this.now() - last < this.gapMs)
       return;
+    return this.start(key);
+  }
+
+  /**
+   * Starts the check a finished one owed, which the gap doesn't turn away: it
+   * exists to catch what arrived while that check ran, however soon it ended.
+   * Only an overlap does, and then what arrives meanwhile is owed again.
+   */
+  beginOwed(key: string): (() => boolean) | undefined {
+    if (this.running.has(key)) {
+      this.owed.add(key);
+      return;
+    }
+    return this.start(key);
+  }
+
+  private start(key: string): () => boolean {
     this.running.add(key);
     this.lastStart.set(key, this.now());
     return () => {
       this.running.delete(key);
       return this.owed.delete(key);
     };
-  }
-
-  /** Whether a check of the key runs now. */
-  isRunning(key: string): boolean {
-    return this.running.has(key);
   }
 
   /** Whether a check of any Change runs now. */

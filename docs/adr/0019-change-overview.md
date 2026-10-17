@@ -9,6 +9,8 @@ Amended by [ADR 0020](0020-open-a-change-quietly.md): the overview opens alone, 
 
 Amended by [ADR 0022](0022-suggested-reading-order.md): after the summary, the Assistant suggests a Reading Order that starts at the summary's start point, and the overview lists it under the Assistant's take.
 
+Amended by [ADR 0038](0038-the-assistant-in-the-secondary-side-bar.md): the Assistant's chat is a view in the Secondary Side Bar, which still opens only when the Reviewer asks.
+
 ## Context and Problem Statement
 
 Opening a Change opened its diff, a timeline tab for a pull request, and the Assistant's panel in front of it, which wrote a long summary of what the Change does and where its risk is. The Reviewer was thrown in: two tabs to sort out, a summary that retold the diff they were about to read, and nothing saying how big the Change is, where they stand on it or where to start. A local Change, such as an agent's branch, got the Assistant's summary but no history. What should a Reviewer see first, beside the diff, and how long should the Assistant's summary be?

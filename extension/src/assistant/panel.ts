@@ -1,16 +1,17 @@
-// The Assistant panel for one Change: a webview beside the diff that shows
-// the conversation and takes the Reviewer's messages. The extension sends it
-// the whole conversation state; the webview renders it, says which state it
-// rendered, and sends what the Reviewer asks. The Assistant's replies are
-// Markdown, which the extension renders and sanitises before sending
-// (ADR 0011); the webview opens no links or files itself, but asks.
+// The Assistant's view in the Secondary Side Bar (ADR 0038): a webview that
+// shows one Change's conversation at a time and takes the Reviewer's
+// messages. The extension sends it the whole conversation state; the webview
+// renders it, says which state it rendered, and sends what the Reviewer asks.
+// The Assistant's replies are Markdown, which the extension renders and
+// sanitises before sending (ADR 0011); the webview opens no links or files
+// itself, but asks.
 
 import * as crypto from "crypto";
 import * as vscode from "vscode";
 import { catMark, catSymbol } from "../assistantMark";
 import {
   Handshake,
-  MarkdownPanel,
+  MarkdownState,
   RenderInto,
   sharedScript,
   sharedStyles,
@@ -30,7 +31,7 @@ export interface Message {
 }
 
 export interface ConversationState {
-  /** The Change as the Reviewer knows it, which the tab and heading show. */
+  /** The Change as the Reviewer knows it, which the view's title and heading show. */
   name: string;
   /** The Change's commits, such as `3f2a1c0..9be41d7`. */
   range: string;
@@ -71,60 +72,91 @@ export type FromWebview =
   | { type: "openLink"; url: string }
   | { type: "openReference"; path: string; startLine: number; endLine: number };
 
-/** What the Reviewer does in the panel. */
+/** What the Reviewer does in the view. */
 export type ReviewerAction = Exclude<FromWebview, Handshake>;
 
-export class AssistantPanel {
-  private readonly view: MarkdownPanel<ConversationState, ShownConversation>;
+/** The conversation the view shows before it is given one: none. */
+const noConversation: ConversationState = {
+  name: "",
+  range: "",
+  busy: false,
+  messages: [],
+};
+
+export class AssistantView implements vscode.WebviewViewProvider {
+  static readonly viewType = "dearReviewer.assistant";
+  private view?: vscode.WebviewView;
+  private readonly content: MarkdownState<ConversationState, ShownConversation>;
+  /** The Change's name the view's title shows. */
+  private name = "";
   /** Whether the message box takes the cursor once the webview is ready. */
   private focusWhenReady = false;
-  /** Fires when the Reviewer closes the panel. */
-  readonly onDidDispose: vscode.Event<void>;
+  private readonly shown = new vscode.EventEmitter<void>();
+  /** Fires when the view comes into sight. */
+  readonly onDidShow = this.shown.event;
 
-  constructor(
-    state: ConversationState,
-    private readonly onAction: (action: ReviewerAction) => void
-  ) {
-    this.view = new MarkdownPanel(state, {
-      viewType: "dearReviewer.assistant",
-      title: tabTitle(state),
-      localResourceRoots: [],
-      html,
-      show: shown,
-      receive: (message) => this.receive(message as FromWebview),
-    });
-    this.onDidDispose = this.view.onDidDispose;
+  /** `onAction` gets what the Reviewer does, in whichever conversation the view shows. */
+  constructor(private readonly onAction: (action: ReviewerAction) => void) {
+    this.content = new MarkdownState(
+      noConversation,
+      shownConversation,
+      () => this.view?.webview
+    );
   }
 
-  /** Whether the panel is the one the Reviewer is looking at. */
-  get active(): boolean {
-    return this.view.active;
+  resolveWebviewView(view: vscode.WebviewView): void {
+    this.view = view;
+    view.description = this.name;
+    view.webview.options = { enableScripts: true, localResourceRoots: [] };
+    view.webview.html = html();
+    view.webview.onDidReceiveMessage((message: unknown) =>
+      this.receive(message as FromWebview)
+    );
+    view.onDidChangeVisibility(() => {
+      if (view.visible) this.shown.fire();
+    });
+    view.onDidDispose(() => {
+      if (this.view === view) this.view = undefined;
+    });
+    if (view.visible) this.shown.fire();
+  }
+
+  /** Whether the view is in sight. */
+  get visible(): boolean {
+    return !!this.view?.visible;
   }
 
   /** The state last sent to the webview. */
   get sent(): ShownConversation {
-    return this.view.sent;
+    return this.content.sent;
   }
 
   /** The state the webview last rendered, once it has rendered the latest one. */
   get rendered(): ShownConversation | undefined {
-    return this.view.rendered;
+    return this.content.rendered;
   }
 
+  /** Shows the conversation, which may be another Change's than the one shown before. */
   update(state: ConversationState): void {
-    this.view.title = tabTitle(state);
-    this.view.update(state);
+    this.name = state.name;
+    if (this.view) this.view.description = state.name;
+    this.content.update(state);
+  }
+
+  /** Shows no conversation, once the Change it showed has closed. */
+  clear(): void {
+    this.update(noConversation);
   }
 
   /** Handles a message from the webview; the tests send them here too. */
   receive(message: FromWebview): void {
     if (message.type === "ready" && this.focusWhenReady) {
       this.focusWhenReady = false;
-      void this.view.webview.postMessage({
+      void this.view?.webview.postMessage({
         type: "focus",
       } satisfies ToWebview);
     }
-    if (this.view.handshake(message)) return;
+    if (this.content.handshake(message)) return;
     if (message.type === "ask") {
       if (typeof message.text === "string" && message.text.trim())
         this.onAction({ type: "ask", text: message.text.trim() });
@@ -137,8 +169,8 @@ export class AssistantPanel {
     ) {
       this.onAction({ type: message.type });
     } else if (message.type === "openLink") {
-      // Only links in the replies sent, the only ones the panel may open.
-      if (typeof message.url === "string" && this.view.hasLink(message.url))
+      // Only links in the replies sent, the only ones the view may open.
+      if (typeof message.url === "string" && this.content.hasLink(message.url))
         this.onAction({ type: "openLink", url: message.url });
     } else if (message.type === "openReference") {
       const { path, startLine, endLine } = message;
@@ -151,28 +183,26 @@ export class AssistantPanel {
     }
   }
 
-  /** Brings the panel forward; with `focus`, puts the cursor in its message box. */
-  reveal(focus = false): void {
-    this.view.reveal(!focus);
-    if (!focus) return;
+  /**
+   * Shows the view, opening the Secondary Side Bar if it is closed, and puts
+   * the cursor in its message box.
+   */
+  async reveal(): Promise<void> {
+    await vscode.commands.executeCommand(`${AssistantView.viewType}.focus`);
     // A webview that hasn't loaded yet would drop the message.
     this.focusWhenReady = true;
-    void this.view.webview.postMessage({
+    void this.view?.webview.postMessage({
       type: "focus",
     } satisfies ToWebview);
   }
 
   dispose(): void {
-    this.view.dispose();
+    this.shown.dispose();
   }
 }
 
-function tabTitle(state: ConversationState): string {
-  return `Assistant · ${state.name}`;
-}
-
 /** Renders each reply's Markdown, with `path:line` references. */
-function shown(
+function shownConversation(
   state: ConversationState,
   render: RenderInto
 ): ShownConversation {
@@ -193,8 +223,8 @@ function html(): string {
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}';">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style nonce="${nonce}">${sharedStyles}
-  body { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); padding: 0 16px; margin: 0; display: flex; flex-direction: column; min-height: 100vh; }
-  header { position: sticky; top: 0; background: var(--vscode-editor-background); padding: 12px 0 8px; border-bottom: 1px solid var(--vscode-panel-border); }
+  body { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-sideBar-foreground, var(--vscode-foreground)); padding: 0 12px; margin: 0; display: flex; flex-direction: column; min-height: 100vh; }
+  header { position: sticky; top: 0; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); padding: 12px 0 8px; border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border, var(--vscode-panel-border)); }
   h1 { font-size: 1.1em; margin: 0 0 4px; }
   .muted { color: var(--vscode-descriptionForeground); font-size: 0.9em; }
   /* The working line and any problem follow the conversation, and the footer keeps to the bottom. */
@@ -220,7 +250,7 @@ function html(): string {
   .problem .buttons button { margin-top: 0; }
   .problem button.secondary { color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); }
   .problem button.secondary:hover { background: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-secondaryBackground)); }
-  footer { position: sticky; bottom: 0; background: var(--vscode-editor-background); padding: 8px 0 12px; border-top: 1px solid var(--vscode-panel-border); }
+  footer { position: sticky; bottom: 0; background: var(--vscode-sideBar-background, var(--vscode-editor-background)); padding: 8px 0 12px; border-top: 1px solid var(--vscode-sideBarSectionHeader-border, var(--vscode-panel-border)); }
   form { display: flex; gap: 6px; align-items: flex-end; }
   textarea { flex: 1; }
   .hint { margin-top: 4px; }
@@ -377,9 +407,20 @@ ${catSymbol}
   text.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); send(); }
   });
+  // What the Reviewer was writing to each Change's Assistant, kept while the view shows another.
+  const drafts = new Map();
+  let shownName;
   const render = (state) => {
-    // A Reviewer reading at the end keeps following the reply as it grows.
-    const following = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 24;
+    const another = state.name !== shownName;
+    if (another) {
+      if (shownName !== undefined) drafts.set(shownName, text.value);
+      text.value = drafts.get(state.name) || "";
+      drafts.delete(state.name);
+      shownName = state.name;
+    }
+    // A Reviewer reading at the end keeps following the reply as it grows,
+    // and another Change's conversation opens at its end.
+    const following = another || window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 24;
     setText(byId("title"), state.name);
     setText(byId("range"), state.range);
     setText(byId("login"), state.login ? "Claude login: " + state.login : "");
@@ -402,8 +443,9 @@ ${catSymbol}
       byId("context").replaceChildren(...(state.context || []).map((s, index) =>
         chip(s, () => vscode.postMessage({ type: "removeContext", index }))));
     }
-    // Tells a screen reader when a reply starts and ends, not each step.
-    if (busy !== undefined && state.busy !== busy)
+    // Tells a screen reader when a reply starts and ends, not each step, nor
+    // when the view moves to another Change's conversation.
+    if (busy !== undefined && !another && state.busy !== busy)
       byId("announce").textContent = state.busy ? "The Assistant is working on a reply." : "The Assistant replied.";
     busy = state.busy;
     unavailable = !!state.unavailable;

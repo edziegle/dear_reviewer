@@ -3,6 +3,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 import {
+  assistantInSight,
   assistantRuns,
   fakeClaudePath,
   flag,
@@ -188,10 +189,11 @@ describe("The Assistant's summary when a Change opens", () => {
     });
 
     await clickOverview(title, "ask");
-    await eventually(() =>
-      assert.ok(
-        webviewTabs().includes(`Assistant · ${title}`),
-        `the Assistant opens: ${webviewTabs().join(", ")}`
+    await eventually(async () =>
+      assert.strictEqual(
+        await assistantInSight(),
+        title,
+        "the Assistant's view opens, with the Change's conversation"
       )
     );
 

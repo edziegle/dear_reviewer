@@ -1,5 +1,6 @@
 // The Assistant for each Change shown in this window: one conversation per
-// Change, and a panel where the Reviewer chats with it once they ask. A
+// Change, and one view in the Secondary Side Bar where the Reviewer chats
+// with the Assistant of the Change in front, once they ask (ADR 0038). A
 // Change keeps its conversation across new commits and window reloads (ADR
 // 0009): a new conversation starts with a short summary of what the Change
 // does and where to start reading, which the Change's overview shows (ADR
@@ -9,7 +10,7 @@
 // 0015). At the end of a local Change's Review, it turns the Reviewer's
 // Comments into a Brief in the same conversation (ADR 0016), and when the
 // Reviewer asks, it raises Findings there too (ADR 0017). After the summary,
-// it suggests a Reading Order for the Change's files, out of the panel's
+// it suggests a Reading Order for the Change's files, out of the view's
 // sight, and again when the Reviewer asks (ADR 0022). It reads the Change's
 // review threads from a file, and each message tells it where the Reviewer
 // is reading (ADR 0023).
@@ -36,7 +37,7 @@ import {
 } from "./claude";
 import { Conversations, SavedConversation } from "./conversations";
 import {
-  AssistantPanel,
+  AssistantView,
   ConversationState,
   FromWebview,
   ReviewerAction,
@@ -108,6 +109,12 @@ interface PanelState {
 export class Assistants implements vscode.Disposable {
   /** By the Change's conversation name, which outlasts new commits. */
   private readonly byConversation = new Map<string, ChangeAssistant>();
+  private readonly view: AssistantView;
+  /** The Assistant whose conversation the view shows. */
+  private inView?: ChangeAssistant;
+  /** The Change in front, which the view follows. */
+  private front?: Change;
+  private readonly subscriptions: vscode.Disposable[];
   private readonly status: vscode.StatusBarItem;
   private readonly overviewChanged = new vscode.EventEmitter<string>();
   /** Fires with a Change's conversation name when its overview's Assistant part changes. */
@@ -136,11 +143,23 @@ export class Assistants implements vscode.Disposable {
     );
     this.status.name = "Dear Reviewer: Assistant";
     this.status.command = "dearReviewer.checkClaudeLogin";
+    this.view = new AssistantView((action) => this.inView?.act(action));
+    this.subscriptions = [
+      vscode.window.registerWebviewViewProvider(
+        AssistantView.viewType,
+        this.view,
+        { webviewOptions: { retainContextWhenHidden: true } }
+      ),
+      // Looking at the view is asking for the Assistant of the Change in front.
+      this.view.onDidShow(() => {
+        if (!this.inView) this.showFront();
+      }),
+    ];
   }
 
   /**
    * Starts the Change's Assistant if it hasn't started, which writes the
-   * summary the Change's overview shows; its panel stays closed until the
+   * summary the Change's overview shows; the view stays closed until the
    * Reviewer asks. If the Assistant is running for an older head of the same
    * Change, it moves to this one.
    */
@@ -161,28 +180,56 @@ export class Assistants implements vscode.Disposable {
       (current) => this.codeColumn(current),
       () => this.retryStart(assistant),
       this.reviewerView,
-      this.descriptionOf
+      this.descriptionOf,
+      (changed) => {
+        if (this.inView === changed)
+          this.view.update(changed.conversationState);
+      }
     );
     this.byConversation.set(change.conversation, assistant);
+    if (this.front?.conversation === change.conversation)
+      this.showInView(assistant);
     // Its overview may already be open, showing nothing from it yet.
     this.overviewChanged.fire(change.conversation);
     return this.boot(assistant);
   }
 
   /**
-   * Shows the Change's Assistant panel, starting the Assistant if it hasn't
-   * started; with `focus`, puts the cursor in its message box.
+   * Shows the Change's conversation in the view, starting its Assistant if
+   * it hasn't started, and puts the cursor in the view's message box.
    */
-  async open(change: Change, focus = false): Promise<void> {
+  async open(change: Change): Promise<void> {
     const started = this.start(change);
-    this.byConversation.get(change.conversation)?.show(focus);
+    const assistant = this.byConversation.get(change.conversation);
+    if (assistant) this.showInView(assistant);
+    await this.view.reveal();
     await started;
   }
 
-  /** Closes the chat panels of every Change but this one; their conversations go on. */
-  closePanelsExcept(change: Change): void {
-    for (const assistant of this.byConversation.values())
-      if (assistant.changeId !== change.id) assistant.closePanel();
+  /**
+   * Has the view follow the Change in front when another comes to the
+   * front: it shows that Change's conversation, starting its Assistant if
+   * the view is in sight. Until then, it keeps showing any other Change's
+   * conversation the Reviewer asked for.
+   */
+  follow(front: Change | undefined): void {
+    if (front?.id === this.front?.id) return;
+    this.front = front;
+    this.showFront();
+  }
+
+  private showFront(): void {
+    const front = this.front;
+    if (!front) return;
+    if (!this.byConversation.has(front.conversation) && this.view.visible)
+      void this.start(front);
+    const assistant = this.byConversation.get(front.conversation);
+    if (assistant) this.showInView(assistant);
+  }
+
+  private showInView(assistant: ChangeAssistant): void {
+    this.inView = assistant;
+    this.view.update(assistant.conversationState);
   }
 
   /** What the Change's overview shows from its Assistant, once it has started. */
@@ -256,14 +303,15 @@ export class Assistants implements vscode.Disposable {
     selection: Selection & { text: string }
   ): Promise<void> {
     const assistant = this.started(change);
-    assistant.show(true);
     assistant.addSelection(selection);
+    this.showInView(assistant);
+    await this.view.reveal();
   }
 
   /**
    * Has the Change's Assistant write a Brief from the Reviewer's Comments,
-   * starting it if it hasn't started, and gives the Brief. Its panel shows
-   * only a note about the Brief, which opens in the editor instead.
+   * starting it if it hasn't started, and gives the Brief. Its conversation
+   * shows only a note about the Brief, which opens in the editor instead.
    */
   async writeBrief(change: Change, threads: LocalThread[]): Promise<string> {
     const assistant = this.started(change);
@@ -279,13 +327,13 @@ export class Assistants implements vscode.Disposable {
 
   /**
    * Asks the Change's Assistant for Findings, starting it if it hasn't
-   * started, and gives its reply, which the panel doesn't show.
+   * started, and gives its reply, which the view doesn't show.
    */
   findIssues(change: Change): Promise<string> {
     return this.started(change).aside(findingsPrompt);
   }
 
-  /** Adds a note to the Change's Assistant panel, if it has one. */
+  /** Adds a note to the conversation of the Change's Assistant, if it has started. */
   addNote(change: Change, text: string): void {
     this.byConversation.get(change.conversation)?.addNote(text);
   }
@@ -296,6 +344,12 @@ export class Assistants implements vscode.Disposable {
     if (assistant?.changeId !== change.id) return;
     assistant.dispose();
     this.byConversation.delete(change.conversation);
+    if (this.front?.id === change.id) this.front = undefined;
+    if (this.inView !== assistant) return;
+    this.inView = undefined;
+    this.view.clear();
+    // If it showed a Change other than the one in front, it goes back to that one.
+    this.showFront();
   }
 
   /** The Change's Assistant, started or moved to this head if it wasn't. */
@@ -319,12 +373,6 @@ export class Assistants implements vscode.Disposable {
     }
   }
 
-  /** The id of the Change whose Assistant the Reviewer is looking at, if any. */
-  activeChangeId(): string | undefined {
-    for (const assistant of this.byConversation.values())
-      if (assistant.active) return assistant.changeId;
-  }
-
   /** What each Assistant has for its overview, by its Change's title, for the tests. */
   overviews(): { title: string; take: AssistantOverview }[] {
     return [...this.byConversation.values()].map((a) => ({
@@ -333,9 +381,30 @@ export class Assistants implements vscode.Disposable {
     }));
   }
 
-  /** Each panel's conversation, for the tests. */
+  /** The conversation the view shows, if any, for the tests. */
   panels(): PanelState[] {
-    return [...this.byConversation.values()].flatMap((a) => a.panelStates());
+    const shown = this.inView;
+    if (!shown) return [];
+    // Just after the view moves to this conversation, its webview may not
+    // have rendered it yet, and still shows the one before.
+    const rendered = this.view.rendered;
+    const { name, range } = shown.conversationState;
+    return [
+      {
+        title: shown.title,
+        sent: this.view.sent,
+        rendered:
+          rendered?.name === name && rendered.range === range
+            ? rendered
+            : undefined,
+        receive: (message) => this.view.receive(message),
+      },
+    ];
+  }
+
+  /** Whether the view is in sight, and the title of the Change it shows, for the tests. */
+  viewState(): { visible: boolean; showing?: string } {
+    return { visible: this.view.visible, showing: this.inView?.title };
   }
 
   loginStatus():
@@ -354,6 +423,8 @@ export class Assistants implements vscode.Disposable {
   dispose(): void {
     for (const assistant of this.byConversation.values()) assistant.dispose();
     this.byConversation.clear();
+    for (const subscription of this.subscriptions) subscription.dispose();
+    this.view.dispose();
     this.status.dispose();
     this.overviewChanged.dispose();
     this.readingOrderChanged.dispose();
@@ -388,7 +459,6 @@ export class Assistants implements vscode.Disposable {
 
 class ChangeAssistant {
   private state: ConversationState;
-  private panel?: AssistantPanel;
   private cli?: ClaudeCli;
   private conversation?: ClaudeConversation;
   /** The Claude session and head the saved conversation has. */
@@ -431,7 +501,9 @@ class ChangeAssistant {
     /** Starts the Assistant again, once `claude` couldn't run. */
     private readonly retry: () => void,
     private readonly reviewerView: ReviewerView,
-    private readonly descriptionOf: DescriptionOf
+    private readonly descriptionOf: DescriptionOf,
+    /** Tells the view, if it shows this conversation, that it changed. */
+    private readonly stateChanged: (assistant: ChangeAssistant) => void
   ) {
     this.state = {
       ...namesOf(change),
@@ -514,33 +586,14 @@ class ChangeAssistant {
     return changeTitle(this.change);
   }
 
-  /** Whether its panel is the one the Reviewer is looking at. */
-  get active(): boolean {
-    return this.panel?.active ?? false;
-  }
-
-  closePanel(): void {
-    this.panel?.dispose();
-  }
-
-  /** Shows the panel; with `focus`, puts the cursor in its message box. */
-  show(focus = false): void {
-    if (!this.panel) {
-      const panel = new AssistantPanel(this.state, (action) =>
-        this.act(action)
-      );
-      panel.onDidDispose(() => {
-        if (this.panel === panel) this.panel = undefined;
-      });
-      this.panel = panel;
-      if (!focus) return;
-    }
-    this.panel.reveal(focus);
+  /** The conversation as the view shows it. */
+  get conversationState(): ConversationState {
+    return this.state;
   }
 
   update(changes: Partial<ConversationState>): void {
     this.state = { ...this.state, ...changes };
-    this.panel?.update(this.state);
+    this.stateChanged(this);
   }
 
   /**
@@ -612,7 +665,7 @@ class ChangeAssistant {
   }
 
   /**
-   * Has the Assistant answer a prompt the panel doesn't show, such as for a
+   * Has the Assistant answer a prompt the view doesn't show, such as for a
    * Brief or Findings, after whatever it is busy with, and gives the reply.
    * `promptOf` gets the Change at its current head, and any news for the
    * Assistant to go first.
@@ -639,7 +692,7 @@ class ChangeAssistant {
     return reply;
   }
 
-  /** Adds a note to the panel, kept with the conversation, once no turn is running. */
+  /** Adds a note to the conversation, kept with it, once no turn is running. */
   addNote(text: string): void {
     void this.enqueue(async () => {
       this.update({
@@ -672,26 +725,13 @@ class ChangeAssistant {
       });
   }
 
-  panelStates(): PanelState[] {
-    const panel = this.panel;
-    if (!panel) return [];
-    return [
-      {
-        title: this.title,
-        sent: panel.sent,
-        rendered: panel.rendered,
-        receive: (message) => panel.receive(message),
-      },
-    ];
-  }
-
   dispose(): void {
     this.disposed = true;
     this.conversation?.dispose();
-    this.panel?.dispose();
   }
 
-  private act(action: ReviewerAction): void {
+  /** Does what the Reviewer did in the view while it showed this conversation. */
+  act(action: ReviewerAction): void {
     if (action.type === "problemAction") this.helpWithProblem();
     else if (action.type === "retry") this.retry();
     else if (action.type === "stop") this.stop();
@@ -700,7 +740,7 @@ class ChangeAssistant {
       context.splice(action.index, 1);
       this.update({ context: context.length ? context : undefined });
     } else if (action.type === "openLink") {
-      // The panel passes on only links from the replies it was sent.
+      // The view passes on only links from the replies it was sent.
       if (/^https?:\/\//i.test(action.url))
         void this.openLink(vscode.Uri.parse(action.url, true));
     } else if (action.type === "openReference") {
@@ -785,7 +825,7 @@ class ChangeAssistant {
   }
 
   /**
-   * Asks for a Reading Order in a turn the panel doesn't show, starting at
+   * Asks for a Reading Order in a turn the view doesn't show, starting at
    * the summary's start, and keeps it if the reply holds a usable one. If
    * the turn fails, or the reply holds no usable order, the Change stays in
    * tree order and the overview says so, with a way to try again.
@@ -812,7 +852,8 @@ class ChangeAssistant {
       this.setWritingOrder(false);
     }
     if (this.disposed) return;
-    const steps = reply === undefined ? undefined : parseReadingOrder(reply, files, start);
+    const steps =
+      reply === undefined ? undefined : parseReadingOrder(reply, files, start);
     if (!steps) {
       // A reply stopped on purpose, with nothing back, isn't a problem.
       if (reply !== undefined && !this.orderProblem) {
@@ -846,7 +887,7 @@ class ChangeAssistant {
   }
 
   /**
-   * Sends the prompt and streams the reply into the panel, or the overview,
+   * Sends the prompt and streams the reply into the conversation, or the overview,
    * or neither, and gives the reply, if the Assistant is still open.
    */
   private async turn(

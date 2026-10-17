@@ -250,7 +250,7 @@ export function activate(context: vscode.ExtensionContext) {
     submit: (change, verdict, summary) =>
       submitReviewOf(change, verdict, summary),
     act: (change, action) => {
-      if (action === "ask") void assistants.open(change, true);
+      if (action === "ask") void assistants.open(change);
       else if (action === "suggestReadingOrder")
         void assistants.suggestReadingOrder(change);
       else if (action === "takeAction") assistants.helpWithProblem(change);
@@ -575,7 +575,7 @@ export function activate(context: vscode.ExtensionContext) {
    * Shows a Change the way a review starts (ADR 0020): its overview alone in
    * the main column, with the focus, Change Files in the side bar, and
    * nothing of other Changes or of the last session: no bottom panel, and no
-   * other Change's editors, overview or Assistant chat.
+   * other Change's editors or overview. The Assistant's view follows it.
    */
   function showChange(change: Change): Promise<void> {
     shownLast = change.id;
@@ -587,7 +587,6 @@ export function activate(context: vscode.ExtensionContext) {
         await vscode.commands.executeCommand("workbench.action.closePanel");
         await closeOtherChangesEditors(change);
         timelines.closeOthers(change);
-        assistants.closePanelsExcept(change);
         await vscode.commands.executeCommand("dearReviewer.changeFiles.focus");
         void assistants.start(change);
         await timelines.open(change, true);
@@ -667,9 +666,10 @@ export function activate(context: vscode.ExtensionContext) {
   }
 
   /**
-   * Shows which Changes are open: the one in front in Change Files and
-   * Findings, and to the review keybindings and the palette, which work
-   * while one is in front in this window; and every one in the Inbox.
+   * Shows which Changes are open: the one in front in Change Files,
+   * Findings and the Assistant's view, and to the review keybindings and the
+   * palette, which work while one is in front in this window; and every one
+   * in the Inbox.
    */
   function showOpenChanges(): void {
     changeFiles.refresh();
@@ -677,6 +677,7 @@ export function activate(context: vscode.ExtensionContext) {
     inbox.redraw();
     dashboard.refresh();
     const front = changes.inFront();
+    assistants.follow(front);
     void setContext("dearReviewer.hasOpenChange", !!front);
     // The palette offers the one way to finish that fits the Change in front.
     void setContext("dearReviewer.frontIsPullRequest", !!front?.pullRequest);
@@ -809,7 +810,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   /** The Change open in this window of the panel or editor the Reviewer is looking at. */
   function activeChange(): Change | undefined {
-    const panel = assistants.activeChangeId() ?? timelines.activeChangeId();
+    const panel = timelines.activeChangeId();
     if (panel) return changes.shownHere().find((c) => c.id === panel);
     return activeFile()?.change;
   }
@@ -1500,7 +1501,7 @@ export function activate(context: vscode.ExtensionContext) {
       "dearReviewer.showAssistant",
       async (target?: ChangeTarget) => {
         const change = await changeFor(target, "Show Assistant");
-        if (change) await assistants.open(change, true);
+        if (change) await assistants.open(change);
       }
     ),
     vscode.commands.registerCommand(
@@ -1544,7 +1545,7 @@ export function activate(context: vscode.ExtensionContext) {
         return;
       }
       const change = await changeFor(undefined, "Ask the Assistant");
-      if (change) await assistants.open(change, true);
+      if (change) await assistants.open(change);
     }),
     vscode.commands.registerCommand(
       "dearReviewer.checkClaudeLogin",
@@ -1757,6 +1758,7 @@ export function activate(context: vscode.ExtensionContext) {
     },
     assistant: {
       panels: () => assistants.panels(),
+      view: () => assistants.viewState(),
       overviews: () => assistants.overviews(),
       loginStatus: () => assistants.loginStatus(),
       /** The folder the conversation of the Change the request opens runs `claude` in, by name. */

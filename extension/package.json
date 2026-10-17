@@ -420,9 +420,24 @@
           "title": "Dear Reviewer",
           "icon": "media/dear-reviewer.svg"
         }
+      ],
+      "secondarySidebar": [
+        {
+          "id": "dearReviewerAssistant",
+          "title": "Assistant",
+          "icon": "$(comment-discussion)"
+        }
       ]
     },
     "views": {
+      "dearReviewerAssistant": [
+        {
+          "type": "webview",
+          "id": "dearReviewer.assistant",
+          "name": "Assistant",
+          "when": "dearReviewer.inReviewWindow || dearReviewer.hasOpenChange"
+        }
+      ],
       "dearReviewer": [
         {
           "type": "webview",

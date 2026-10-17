@@ -1,8 +1,9 @@
-// What the Assistant and timeline panels share: a webview beside the diff to
-// which the extension sends its whole state, with any Markdown in it already
-// rendered and sanitised (ADR 0011). The webview says when it is ready for
-// the state, and which state it rendered. The panel keeps the web links in
-// the Markdown it sent, the only links the webview may ask to open.
+// What the webviews share: a webview, in a panel beside the diff or in a
+// view, to which the extension sends its whole state, with any Markdown in it
+// already rendered and sanitised (ADR 0011). The webview says when it is
+// ready for the state, and which state it rendered. The extension keeps the
+// web links in the Markdown it sent, the only links the webview may ask to
+// open.
 
 import * as vscode from "vscode";
 import { renderMarkdown, type RenderOptions } from "./markdown";
@@ -114,21 +115,97 @@ export interface MarkdownPanelOptions<State, Shown> {
   receive: (message: unknown) => void;
 }
 
-export class MarkdownPanel<State, Shown> {
-  private readonly panel: vscode.WebviewPanel;
+/**
+ * The state a webview of rendered Markdown was sent, which state it last
+ * rendered, and the web links in it, for a panel or a view alike.
+ */
+export class MarkdownState<State, Shown> {
   private state: Shown;
   private revision = 0;
   private renderedState?: Shown;
   private links = new Set<string>();
+
+  /** `webview` gives the webview to send the state to, while there is one. */
+  constructor(
+    state: State,
+    private readonly show: (state: State, render: RenderInto) => Shown,
+    private readonly webview: () => vscode.Webview | undefined
+  ) {
+    this.state = this.shown(state);
+  }
+
+  /** The state last sent to the webview. */
+  get sent(): Shown {
+    return clone(this.state);
+  }
+
+  /** The state the webview last rendered, once it has rendered the latest one. */
+  get rendered(): Shown | undefined {
+    return this.renderedState && clone(this.renderedState);
+  }
+
+  /** Whether Markdown the webview was sent links to the URL. */
+  hasLink(url: string): boolean {
+    return this.links.has(url);
+  }
+
+  /**
+   * Sends the webview the state once it is ready, and notes which state it
+   * rendered. Gives whether the message was one of these.
+   */
+  handshake(message: { type?: unknown; revision?: unknown }): boolean {
+    if (message.type === "ready") {
+      // A webview made again, such as a view moved elsewhere, has rendered nothing.
+      this.renderedState = undefined;
+      void this.post();
+      return true;
+    }
+    if (message.type === "rendered") {
+      if (message.revision === this.revision)
+        this.renderedState = clone(this.state);
+      return true;
+    }
+    return false;
+  }
+
+  update(state: State): void {
+    this.state = this.shown(state);
+    void this.post();
+  }
+
+  private shown(state: State): Shown {
+    const links = new Set<string>();
+    const shown = this.show(state, (text, options) => {
+      const rendered = renderMarkdown(text, options);
+      for (const link of rendered.links) links.add(link);
+      return rendered.html;
+    });
+    this.links = links;
+    return clone(shown);
+  }
+
+  private post(): Thenable<boolean> | undefined {
+    return this.webview()?.postMessage({
+      type: "state",
+      revision: ++this.revision,
+      state: this.state,
+    });
+  }
+}
+
+export class MarkdownPanel<State, Shown> {
+  private readonly panel: vscode.WebviewPanel;
+  private readonly content: MarkdownState<State, Shown>;
   private readonly disposed = new vscode.EventEmitter<void>();
   /** Fires when the Reviewer closes the panel. */
   readonly onDidDispose = this.disposed.event;
 
-  constructor(
-    state: State,
-    private readonly options: MarkdownPanelOptions<State, Shown>
-  ) {
-    this.state = this.shown(state);
+  constructor(state: State, options: MarkdownPanelOptions<State, Shown>) {
+    this.content = new MarkdownState(
+      state,
+      options.show,
+      () => this.panel.webview
+    );
     this.panel = vscode.window.createWebviewPanel(
       options.viewType,
       options.title,
@@ -171,17 +248,17 @@ export class MarkdownPanel<State, Shown> {
 
   /** The state last sent to the webview. */
   get sent(): Shown {
-    return clone(this.state);
+    return this.content.sent;
   }
 
   /** The state the webview last rendered, once it has rendered the latest one. */
   get rendered(): Shown | undefined {
-    return this.renderedState && clone(this.renderedState);
+    return this.content.rendered;
   }
 
   /** Whether Markdown the panel was sent links to the URL. */
   hasLink(url: string): boolean {
-    return this.links.has(url);
+    return this.content.hasLink(url);
   }
 
   /**
@@ -189,21 +266,11 @@ export class MarkdownPanel<State, Shown> {
    * rendered. Gives whether the message was one of these.
    */
   handshake(message: { type?: unknown; revision?: unknown }): boolean {
-    if (message.type === "ready") {
-      void this.post();
-      return true;
-    }
-    if (message.type === "rendered") {
-      if (message.revision === this.revision)
-        this.renderedState = clone(this.state);
-      return true;
-    }
-    return false;
+    return this.content.handshake(message);
   }
 
   update(state: State): void {
-    this.state = this.shown(state);
-    void this.post();
+    this.content.update(state);
   }
 
   /** The editor column the panel is in, while it is shown. */
@@ -218,25 +285,6 @@ export class MarkdownPanel<State, Shown> {
 
   dispose(): void {
     this.panel.dispose();
-  }
-
-  private shown(state: State): Shown {
-    const links = new Set<string>();
-    const shown = this.options.show(state, (text, options) => {
-      const rendered = renderMarkdown(text, options);
-      for (const link of rendered.links) links.add(link);
-      return rendered.html;
-    });
-    this.links = links;
-    return clone(shown);
-  }
-
-  private post(): Thenable<boolean> {
-    return this.panel.webview.postMessage({
-      type: "state",
-      revision: ++this.revision,
-      state: this.state,
-    });
   }
 }
 

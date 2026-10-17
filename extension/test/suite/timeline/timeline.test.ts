@@ -49,7 +49,7 @@ import {
   type Timeline,
   type TimelineItem,
 } from "../timeline";
-import { webviewTabs } from "../assistant";
+import { assistantInSight, closeAssistant, webviewTabs } from "../assistant";
 import { standInForTrust } from "../trust";
 
 const viewer = { login: "reviewer", token: "test-token" };
@@ -325,6 +325,8 @@ describe("A pull request's timeline", () => {
   });
 
   it("opens with the pull request's overview alone, in front, listing the description, commits, Comments and reviews in order", async () => {
+    // An earlier test may have left the Assistant's view open.
+    await closeAssistant();
     await openFromInbox(inboxEntry(await inbox(), "Restructure pkg"));
 
     await eventually(async () =>
@@ -339,10 +341,10 @@ describe("A pull request's timeline", () => {
       [title],
       "nothing else opens: no diff, no other tab"
     );
-    assert.deepStrictEqual(
-      webviewTabs().filter((label) => label.startsWith("Assistant · ")),
-      [],
-      "the Assistant's panel waits until the Reviewer asks"
+    assert.strictEqual(
+      await assistantInSight(),
+      undefined,
+      "the Assistant's view waits until the Reviewer asks"
     );
   });
 
@@ -793,7 +795,12 @@ describe("A pull request's timeline", () => {
         ["Comment", "Approve", "Request Changes"]
       );
       assert.deepStrictEqual(step?.comments, [
-        { path: "util.py", side: "RIGHT", line: line + 1, text: "Rename this." },
+        {
+          path: "util.py",
+          side: "RIGHT",
+          line: line + 1,
+          text: "Rename this.",
+        },
       ]);
       // A Comment is something to say, so every verdict can go without a summary.
       assert.deepStrictEqual(step?.needsSummary, {});
@@ -861,7 +868,9 @@ describe("A pull request's timeline", () => {
   it("offers only Comment on the Reviewer's own pull request, which GitHub takes no other verdict on", async () => {
     await serveGitHub({
       viewer,
-      pullRequests: [{ ...structuredClone(fakePullRequest), author: "reviewer" }],
+      pullRequests: [
+        { ...structuredClone(fakePullRequest), author: "reviewer" },
+      ],
     });
     try {
       await clickRefresh(title);

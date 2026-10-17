@@ -5,6 +5,8 @@ date: 2026-10-13
 
 # Show the Change's code only in VS Code's editors, never in a webview
 
+Amended by [ADR 0038](0038-the-assistant-in-the-secondary-side-bar.md): the Assistant is a webview view in the Secondary Side Bar, not a panel in an editor tab.
+
 ## Context and Problem Statement
 
 The official GitHub Pull Requests extension builds much of its review UI from webviews, such as its Description page and timeline (`docs/research/review-code-navigation.md`, section 1.4). On moderate diffs those webviews are slow, and they feel, and sometimes look, wrong next to the rest of VSCodium. Code drawn in a webview is a copy of the editor: it has no navigation, no editor selection and no comment threads, and the larger the diff, the slower it gets. Dear Reviewer exists so the Reviewer reads a Change in the real editor (ADR 0001). Its Assistant and timeline panels are webviews already, and coming features (review threads, Findings, Briefs, what changed since the last Review) could reach for one. Where can Dear Reviewer show the Change's code?

@@ -1,5 +1,5 @@
 // Scripts the fake `claude`, reads back what it received, and reads the
-// Assistant panel and the Claude login the way the Reviewer sees them.
+// Assistant's view and the Claude login the way the Reviewer sees them.
 
 import * as crypto from "crypto";
 import * as fs from "fs";
@@ -192,11 +192,11 @@ export interface Step {
 }
 
 export interface Conversation {
-  /** The Change's name, which the panel's tab and heading show. */
+  /** The Change's name, which the view's title and heading show. */
   name: string;
   /** The Change's commits, such as `3f2a1c0..9be41d7`, under the heading. */
   range: string;
-  /** The Claude login the Assistant runs on, as the panel shows it. */
+  /** The Claude login the Assistant runs on, as the view shows it. */
   login?: string;
   /** Whether the Assistant is still working. */
   busy: boolean;
@@ -224,8 +224,9 @@ export interface Conversation {
 
 interface AssistantApi {
   /**
-   * Each Assistant panel: the state last sent to it, the state it last
-   * rendered, and a way to send it what the webview would.
+   * The conversation the Assistant's view shows, if any, by its Change's
+   * title: the state last sent to it, the state it last rendered, and a way
+   * to send it what the webview would.
    */
   panels(): {
     title: string;
@@ -233,6 +234,8 @@ interface AssistantApi {
     rendered?: Conversation;
     receive(message: unknown): void;
   }[];
+  /** Whether the view is in sight, and the title of the Change whose conversation it shows. */
+  view(): { visible: boolean; showing?: string };
   /** What each running Assistant has for its Change's overview, by the Change's title. */
   overviews(): { title: string; take: Take }[];
   /** The Assistant's status bar item, once a login has been checked. */
@@ -250,8 +253,9 @@ async function assistantApi(): Promise<AssistantApi> {
 }
 
 /**
- * What the Change's Assistant panel has rendered, if it has one, leaving out
- * the replies' rendered Markdown, which `renderedPanelWithHtml` gives.
+ * What the Assistant's view has rendered of the Change's conversation, if
+ * the view shows it, leaving out the replies' rendered Markdown, which
+ * `renderedPanelWithHtml` gives.
  */
 export async function renderedPanel(
   title: string
@@ -264,7 +268,7 @@ export async function renderedPanel(
   };
 }
 
-/** What the Change's Assistant panel has rendered, with each reply's HTML. */
+/** What the Assistant's view has rendered of the Change's conversation, with each reply's HTML. */
 export async function renderedPanelWithHtml(
   title: string
 ): Promise<Conversation | undefined> {
@@ -274,8 +278,19 @@ export async function renderedPanelWithHtml(
 
 async function sendToPanel(title: string, message: unknown): Promise<void> {
   const panel = (await assistantApi()).panels().find((p) => p.title === title);
-  if (!panel) throw new Error(`No Assistant panel for ${title}`);
+  if (!panel) throw new Error(`The Assistant's view doesn't show ${title}`);
   panel.receive(message);
+}
+
+/** The title of the Change whose conversation the Assistant's view shows, while the view is in sight. */
+export async function assistantInSight(): Promise<string | undefined> {
+  const { visible, showing } = (await assistantApi()).view();
+  return visible ? showing : undefined;
+}
+
+/** Closes the Secondary Side Bar, and with it the Assistant's view. */
+export function closeAssistant(): Thenable<unknown> {
+  return vscode.commands.executeCommand("workbench.action.closeAuxiliaryBar");
 }
 
 /** What the Assistant has for the Change's overview, while it runs, by the Change's title. */
@@ -294,7 +309,7 @@ export async function summaryWritten(title: string): Promise<Take> {
   return take!;
 }
 
-/** Types the message into the Change's Assistant panel and sends it. */
+/** Types the message into the Assistant's view, showing the Change's conversation, and sends it. */
 export function askAssistant(title: string, text: string): Promise<void> {
   return sendToPanel(title, { type: "ask", text });
 }
@@ -317,12 +332,12 @@ export function stopAssistant(title: string): Promise<void> {
   return sendToPanel(title, { type: "stop" });
 }
 
-/** Clicks Retry in the panel's problem, which starts the Assistant again. */
+/** Clicks Retry in the view's problem, which starts the Assistant again. */
 export function retryAssistant(title: string): Promise<void> {
   return sendToPanel(title, { type: "retry" });
 }
 
-/** Clicks the remove button of a selection waiting in the panel, counted from 0. */
+/** Clicks the remove button of a selection waiting in the view, counted from 0. */
 export function removeSelection(title: string, index: number): Promise<void> {
   return sendToPanel(title, { type: "removeContext", index });
 }
@@ -382,21 +397,22 @@ export async function loginStatus(): Promise<LoginStatus | undefined> {
 }
 
 /**
- * Runs Show Assistant on the Change, which opens its chat panel. Showing a
- * Change closes every other Change's panel, though their conversations go
- * on, so a test that shows another Change runs this again for a panel.
+ * Runs Show Assistant on the Change, which shows its conversation in the
+ * Assistant's view. The view shows one conversation at a time, following
+ * the Change in front, though every conversation goes on, so a test that
+ * shows another Change runs this again to read or ask in this one.
  */
 export function showAssistant(change: ChangeRequest): Thenable<unknown> {
   return vscode.commands.executeCommand("dearReviewer.showAssistant", change);
 }
 
-/** The note an Assistant panel starts with: the summary itself is in the Change's overview. */
+/** The note a conversation starts with: the summary itself is in the Change's overview. */
 export const summaryNote = {
   from: "note",
   text: "The Assistant's summary of this Change is in its overview.",
 } as const;
 
-/** The editor tabs that hold a webview, such as the Assistant panel, by label. */
+/** The editor tabs that hold a webview, such as a Change's overview, by label. */
 export function webviewTabs(): string[] {
   return vscode.window.tabGroups.all
     .flatMap((group) => group.tabs)

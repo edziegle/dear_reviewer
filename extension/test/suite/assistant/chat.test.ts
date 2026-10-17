@@ -4,7 +4,9 @@ import * as vscode from "vscode";
 import {
   askAboutFile,
   askAssistant,
+  assistantInSight,
   assistantRuns,
+  closeAssistant,
   flag,
   forgetClaudeSessions,
   releaseClaude,
@@ -15,7 +17,6 @@ import {
   sendSelection,
   userMessages,
   waitFor,
-  webviewTabs,
   showAssistant,
   stopAssistant,
   summaryNote,
@@ -37,8 +38,6 @@ describe("Chatting with the Assistant about a Change", () => {
     request: { repository: repo.path, base, head },
     title: `${path.basename(repo.path)} ${short(base)}..${short(head)}`,
   });
-  const assistantTabs = () =>
-    webviewTabs().filter((label) => label.startsWith("Assistant · "));
 
   it("sends the Reviewer's turns to the Assistant and streams its replies", async () => {
     const answer = "util.py defines new_helper, which returns 2.";
@@ -285,10 +284,10 @@ describe("Chatting with the Assistant about a Change", () => {
         },
       ])
     );
-    assert.deepStrictEqual(
-      assistantTabs(),
-      [`Assistant · ${title}`],
-      "the Assistant's panel is open"
+    assert.strictEqual(
+      await assistantInSight(),
+      title,
+      "the Assistant's view is in sight, with the Change's conversation"
     );
     await eventually(async () =>
       assert.strictEqual((await renderedPanel(title))?.busy, false)
@@ -320,7 +319,7 @@ describe("Chatting with the Assistant about a Change", () => {
     await askAboutFile(elsewhere.uri, { startLine: 0, endLine: 0 });
 
     await eventually(async () =>
-      assert.deepStrictEqual(assistantTabs(), [`Assistant · ${title}`])
+      assert.strictEqual(await assistantInSight(), title)
     );
     assert.deepStrictEqual((await renderedPanel(title))?.context ?? [], []);
 
@@ -397,7 +396,7 @@ describe("Chatting with the Assistant about a Change", () => {
     });
     try {
       await openChange(first.request);
-      // Opening the second Change closes the first's chat; its conversation goes on.
+      // Opening the second Change puts it in front; the first's conversation goes on.
       await openChange(second.request);
       await showAssistant(second.request);
       await eventually(async () =>
@@ -439,6 +438,61 @@ describe("Chatting with the Assistant about a Change", () => {
     assert.deepStrictEqual(userMessages(secondRun).slice(1), [
       "Only for the second?",
     ]);
+  });
+
+  it("shows the conversation of the Change in front in the Assistant's view, once the Reviewer asks", async () => {
+    // A repository of its own, so the conversations are new.
+    const following = buildFixtureRepo("chat-following");
+    const first = {
+      repository: following.path,
+      base: following.commits.initial,
+      head: following.commits.renamed,
+    };
+    const second = { ...first, head: following.commits.documented };
+    const titleOf = (request: typeof first) =>
+      `${path.basename(following.path)} ${short(request.base)}..${short(request.head)}`;
+    await scriptClaude(first, { turns: [replyTurn("The first summary.")] });
+    await scriptClaude(second, { turns: [replyTurn("The second summary.")] });
+    await closeAssistant();
+    try {
+      await openChange(first);
+      await summaryWritten(titleOf(first));
+      assert.strictEqual(
+        await assistantInSight(),
+        undefined,
+        "the view stays closed until the Reviewer asks"
+      );
+      await showAssistant(first);
+      await eventually(async () =>
+        assert.strictEqual(await assistantInSight(), titleOf(first))
+      );
+
+      await openChange(second);
+
+      await eventually(async () =>
+        assert.strictEqual(
+          await assistantInSight(),
+          titleOf(second),
+          "the view follows the Change in front"
+        )
+      );
+      await eventually(async () =>
+        assert.deepStrictEqual(
+          (await renderedPanel(titleOf(second)))?.messages,
+          [summaryNote]
+        )
+      );
+
+      // Opening the first Change again brings it back to the front.
+      await openChange(first);
+
+      await eventually(async () =>
+        assert.strictEqual(await assistantInSight(), titleOf(first))
+      );
+    } finally {
+      await closeChange(first);
+      await closeChange(second);
+    }
   });
 
   it("keeps a branch's conversation when the branch gets new commits", async () => {
@@ -490,7 +544,7 @@ describe("Chatting with the Assistant about a Change", () => {
       })
     );
     assert.deepStrictEqual(await assistantRuns(request), [], "no new summary");
-    assert.deepStrictEqual(assistantTabs(), ["Assistant · chat-feature"]);
+    assert.strictEqual(await assistantInSight(), newTitle);
 
     await askAssistant(newTitle, "Second question?");
 
@@ -552,7 +606,7 @@ describe("Chatting with the Assistant about a Change", () => {
         ["note", "reviewer", "assistant", "note"]
       )
     );
-    assert.deepStrictEqual(assistantTabs(), ["Assistant · acme/chat #5"]);
+    assert.strictEqual(await assistantInSight(), newer.title);
     const shown = await renderedPanel(newer.title);
     assert.strictEqual(shown?.name, "acme/chat #5");
     assert.strictEqual(
@@ -578,7 +632,13 @@ describe("Chatting with the Assistant about a Change", () => {
       "the old head's Change closed when the new head opened"
     );
     await closeChange(newerRequest);
-    await eventually(() => assert.deepStrictEqual(assistantTabs(), []));
+    await eventually(async () =>
+      assert.notStrictEqual(
+        await assistantInSight(),
+        newer.title,
+        "the view no longer shows the closed Change's conversation"
+      )
+    );
   });
 
   it("starts the conversation again, and says so, when Claude Code can't resume it", async () => {

@@ -7,6 +7,8 @@ date: 2026-10-14
 
 Amended by [ADR 0025](0025-home-replaces-the-inbox-in-the-review-window.md): the review window's side bar holds Change Files and Findings, and no Inbox.
 
+Amended by [ADR 0038](0038-the-assistant-in-the-secondary-side-bar.md): showing a Change leaves the Assistant's view as it is, open or closed, and the view moves to the shown Change's conversation.
+
 Amended by issue #25: an added file opens from the head worktree, and a deleted file from the base worktree, in a plain editor in the column beside the overview, not as a diff with one empty side. Modified files still open as diffs.
 
 ## Context and Problem Statement

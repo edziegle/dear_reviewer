@@ -124,6 +124,9 @@ export class MarkdownState<State, Shown> {
   private revision = 0;
   private renderedState?: Shown;
   private links = new Set<string>();
+  private markReady!: () => void;
+  /** Settles once the webview first says it is ready. */
+  readonly ready = new Promise<void>((resolve) => (this.markReady = resolve));
 
   /** `webview` gives the webview to send the state to, while there is one. */
   constructor(
@@ -155,6 +158,7 @@ export class MarkdownState<State, Shown> {
    */
   handshake(message: { type?: unknown; revision?: unknown }): boolean {
     if (message.type === "ready") {
+      this.markReady();
       // A webview made again, such as a view moved elsewhere, has rendered nothing.
       this.renderedState = undefined;
       void this.post();
@@ -199,6 +203,13 @@ export class MarkdownPanel<State, Shown> {
   private readonly disposed = new vscode.EventEmitter<void>();
   /** Fires when the Reviewer closes the panel. */
   readonly onDidDispose = this.disposed.event;
+  /**
+   * Settles once the webview is ready, or the panel closed before it was.
+   * VS Code holds the focus a panel was shown with until its webview is
+   * ready, and then gives it to the panel whatever has the focus since, so
+   * an editor opened meanwhile loses it.
+   */
+  readonly ready: Promise<void>;
 
   constructor(state: State, options: MarkdownPanelOptions<State, Shown>) {
     this.content = new MarkdownState(
@@ -227,6 +238,10 @@ export class MarkdownPanel<State, Shown> {
       this.disposed.fire();
       this.disposed.dispose();
     });
+    this.ready = Promise.race([
+      this.content.ready,
+      new Promise<void>((resolve) => this.panel.onDidDispose(() => resolve())),
+    ]);
   }
 
   get title(): string {

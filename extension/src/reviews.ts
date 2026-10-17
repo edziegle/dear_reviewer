@@ -8,7 +8,8 @@
 
 import * as path from "path";
 import * as vscode from "vscode";
-import { Change, filesChangedBetween, remoteFor } from "./changeWorkspace";
+import { Change, filesChangedBetween } from "./changeWorkspace";
+import { remoteFor } from "./remotes";
 import { git, gitOutput } from "./git";
 import type { GitHubClient, LastReview } from "./github/client";
 import type { LocalPendingReviews } from "./localReviews";

@@ -2,8 +2,8 @@
 // as an agent's branch, for the Inbox (see ADR 0006).
 
 import * as fs from "fs";
-import { remoteFor } from "./changeWorkspace";
 import { git } from "./git";
+import { remoteFor } from "./remotes";
 
 export interface LocalBranch {
   /** The branch's short name, such as `agent/fix-login`. */

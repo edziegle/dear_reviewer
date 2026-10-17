@@ -2,7 +2,6 @@ import * as assert from "assert";
 import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
-import { eventually } from "../reviewer";
 import {
   configure,
   fakeGitHubUrl,
@@ -48,19 +47,21 @@ describe("Where the GitHub token goes", () => {
     fs.mkdirSync(path.dirname(settingsFile), { recursive: true });
     fs.writeFileSync(
       settingsFile,
-      JSON.stringify({
-        "dearReviewer.githubApiUrl": otherOrigin(),
-        // Shows when VS Code has read the file.
-        "dearReviewer.repositories": ["acme/web"],
-      })
+      JSON.stringify({ "dearReviewer.githubApiUrl": otherOrigin() })
     );
     try {
-      // On Linux, VSCodium can take more than 10 seconds to see a new
-      // .vscode folder.
-      await eventually(
-        () =>
-          assert.deepStrictEqual(config().get("repositories"), ["acme/web"]),
-        30_000
+      // VSCodium's watcher can miss a new .vscode folder for good. Writing a
+      // setting through the API edits the file and reads it again at once,
+      // the base URL with it.
+      await config().update(
+        "repositories",
+        ["acme/web"],
+        vscode.ConfigurationTarget.Workspace
+      );
+      assert.deepStrictEqual(config().get("repositories"), ["acme/web"]);
+      assert.ok(
+        fs.readFileSync(settingsFile, "utf8").includes(otherOrigin()),
+        "the workspace's settings still set the base URL"
       );
       await refreshInbox();
 
@@ -73,10 +74,13 @@ describe("Where the GitHub token goes", () => {
         "every request went to the user-level base URL"
       );
     } finally {
-      fs.rmSync(path.dirname(settingsFile), { recursive: true, force: true });
-      await eventually(() =>
-        assert.deepStrictEqual(config().get("repositories"), ["acme/api"])
+      await config().update(
+        "repositories",
+        undefined,
+        vscode.ConfigurationTarget.Workspace
       );
+      fs.rmSync(path.dirname(settingsFile), { recursive: true, force: true });
+      assert.deepStrictEqual(config().get("repositories"), ["acme/api"]);
     }
   });
 

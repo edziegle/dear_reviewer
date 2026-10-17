@@ -43,6 +43,15 @@ const codiumOutput = path.join(testRoot, "codium-output");
 const suiteResult = path.join(codiumOutput, "result");
 // One run at a time on this machine: see docs/adr/0028-one-test-run-at-a-time.md.
 const runLock = path.join(os.tmpdir(), "dear-reviewer-test-run.lock");
+// Only DEAR_REVIEWER_SUITES=screenshots runs the screenshots suite: it opens a
+// visible window and writes images here, which no test run should do.
+const screenshotsRequested = process.env.DEAR_REVIEWER_SUITES?.split(",")
+  .map((s) => s.trim())
+  .includes("screenshots");
+const screenshotsDir = path.resolve(
+  process.env.DEAR_REVIEWER_SCREENSHOTS ??
+    path.join(root, "..", "docs", "images", "screenshots")
+);
 
 /**
  * Only the basedpyright suite needs these, so a failed install stops a CI run
@@ -135,6 +144,21 @@ function writeUserSettings() {
         "window.restoreWindows": "none",
         // Every suite opens Changes, and each one starts the Assistant.
         "dearReviewer.claudePath": fakeClaude,
+        ...(screenshotsRequested && {
+          "workbench.startupEditor": "none",
+          "workbench.tips.enabled": false,
+          "workbench.welcomePage.walkthroughs.openOnInstall": false,
+          "workbench.editor.empty.hint": "hidden",
+          "editor.minimap.enabled": false,
+          "editor.fontSize": 14,
+          "extensions.autoUpdate": false,
+          "update.mode": "none",
+          "telemetry.telemetryLevel": "off",
+          "security.workspace.trust.enabled": false,
+          "window.commandCenter": false,
+          "window.title": "Dear Reviewer",
+          "breadcrumbs.enabled": false,
+        }),
       },
       null,
       2
@@ -212,6 +236,8 @@ const phases: [phase: string, open: () => string][] = [
   // Last, so the repositories it remembers can't reach other suites; it forgets them when done.
   ["openFolders", () => multiRootWorkspace("open-folders", "open-folders")],
   ["openFolders/elsewhere", () => multiRootWorkspace("elsewhere", "elsewhere")],
+  // Opt-in, after the rest: see screenshotsRequested.
+  ["screenshots", () => multiRootWorkspace("screenshots", "screenshots")],
 ];
 
 const listed = (value: string | undefined) =>
@@ -223,7 +249,9 @@ const listed = (value: string | undefined) =>
 /** The launches DEAR_REVIEWER_SUITES and DEAR_REVIEWER_FILES pick. */
 function plannedLaunches(): Launch[] {
   const launches = planLaunches(
-    phases.map(([phase]) => phase),
+    phases
+      .map(([phase]) => phase)
+      .filter((phase) => screenshotsRequested || phase !== "screenshots"),
     {
       suites: listed(process.env.DEAR_REVIEWER_SUITES),
       files: listed(process.env.DEAR_REVIEWER_FILES),
@@ -303,6 +331,10 @@ async function launch({ phase, files }: Launch): Promise<string[]> {
         DEAR_REVIEWER_FAKE_CLAUDE: fakeClaude,
         DEAR_REVIEWER_FAKE_CLAUDE_DIR: fakeClaudeDir,
         DEAR_REVIEWER_RESULT: suiteResult,
+        DEAR_REVIEWER_USER_DATA: userDataDir,
+        DEAR_REVIEWER_SCREENSHOTS: screenshotsRequested
+          ? screenshotsDir
+          : undefined,
       },
       // --force-disable-user-env keeps the launching PATH instead of
       // re-resolving it from the login shell.

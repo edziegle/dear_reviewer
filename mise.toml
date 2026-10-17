@@ -82,6 +82,17 @@ run = [
   'CODIUM_DIR="$(mise where github:VSCodium/vscodium)" node out/test/run.js',
 ]
 
+# Opens a visible VSCodium window, so leave the machine alone while it runs.
+# The screenshots land in docs/images/screenshots, or in $DEAR_REVIEWER_SCREENSHOTS.
+[tasks.screenshots]
+description = "Take the marketing screenshots in VSCodium, in a dark and a light theme"
+dir = "extension"
+depends = ["typecheck", "build"]
+run = [
+  "npx tsc -p test",
+  'DEAR_REVIEWER_SUITES=screenshots CODIUM_DIR="$(mise where github:VSCodium/vscodium)" node out/test/run.js',
+]
+
 [tasks.test]
 description = "Run the unit tests, then the integration tests in VSCodium"
 depends = ["test-unit"]

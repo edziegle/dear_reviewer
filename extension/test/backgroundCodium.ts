@@ -33,11 +33,12 @@ const stderr = relay("stderr", process.stderr);
 // open rejects `_`, which the shell sets to the program path.
 const { _, ...inherited } = process.env;
 const env = { ...inherited, DEAR_REVIEWER_RESULT: result };
+// The screenshots suite needs a window on screen, in front.
+const onScreen = !!process.env.DEAR_REVIEWER_SCREENSHOTS;
 const open = cp.spawn(
   "open",
   [
-    "-g",
-    "-j",
+    ...(onScreen ? [] : ["-g", "-j"]),
     "-n",
     "-W",
     "--stdout",
@@ -94,20 +95,21 @@ function launchedPid(): number | undefined {
 }
 
 // CI runners have no one to take focus from, and may not let System Events in.
-const findPid = process.env.CI
-  ? undefined
-  : setInterval(() => {
-      const pid = launchedPid();
-      if (pid === undefined) return;
-      clearInterval(findPid);
-      cp.spawn(
-        "osascript",
-        ["-l", "JavaScript", "-e", keepHidden, String(pid)],
-        {
-          stdio: "ignore",
-        }
-      );
-    }, 100);
+const findPid =
+  process.env.CI || onScreen
+    ? undefined
+    : setInterval(() => {
+        const pid = launchedPid();
+        if (pid === undefined) return;
+        clearInterval(findPid);
+        cp.spawn(
+          "osascript",
+          ["-l", "JavaScript", "-e", keepHidden, String(pid)],
+          {
+            stdio: "ignore",
+          }
+        );
+      }, 100);
 
 const closed = (stream: fs.ReadStream) =>
   new Promise<void>((resolve) => stream.on("close", () => resolve()));

@@ -244,6 +244,11 @@ export class TimelinePanel {
     return this.view.active;
   }
 
+  /** Settles once the webview is ready, and has taken the focus it was shown with. */
+  get ready(): Promise<void> {
+    return this.view.ready;
+  }
+
   /** The state last sent to the webview. */
   get sent(): ShownTimeline {
     return this.view.sent;

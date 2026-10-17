@@ -128,7 +128,11 @@ export class Timelines implements vscode.Disposable {
     private readonly sources: OverviewSources
   ) {}
 
-  /** Shows the Change's overview and reloads it; with `focus`, gives it the focus. */
+  /**
+   * Shows the Change's overview and reloads it; with `focus`, gives it the
+   * focus. Settles once the overview has taken the focus, so a file opened
+   * next keeps it.
+   */
   async open(change: Change, focus = false): Promise<void> {
     let timeline = this.byChange.get(change.id);
     if (!timeline) {
@@ -142,7 +146,7 @@ export class Timelines implements vscode.Disposable {
       this.byChange.set(change.id, timeline);
     }
     timeline.show(focus);
-    await timeline.load();
+    await Promise.all([timeline.load(), timeline.panel?.ready]);
   }
 
   /**
@@ -425,7 +429,11 @@ class ChangeTimeline {
       },
     });
     try {
-      const submitted = await this.sources.submit(this.change, verdict, summary);
+      const submitted = await this.sources.submit(
+        this.change,
+        verdict,
+        summary
+      );
       await this.showStanding();
       this.update({ submit: undefined, submitted });
       void this.load();
@@ -570,13 +578,16 @@ class ChangeTimeline {
       this.github.timeline(repository, number),
       this.github.viewer().catch(() => undefined),
     ]);
-    const opener = timeline.events.find((e) => e.kind === "description")
-      ?.author.login;
+    const opener = timeline.events.find((e) => e.kind === "description")?.author
+      .login;
     const own = !!viewer && opener === viewer;
     if (own !== this.ownPullRequest) {
       this.ownPullRequest = own;
       if (this.state.submit)
-        this.state = { ...this.state, submit: this.pendingOf(this.state.submit) };
+        this.state = {
+          ...this.state,
+          submit: this.pendingOf(this.state.submit),
+        };
     }
     const avatars = new Map<string, string | undefined>();
     const author = async (user: GitHubUser) => {

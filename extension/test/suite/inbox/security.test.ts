@@ -2,7 +2,6 @@ import * as assert from "assert";
 import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
-import { eventually } from "../reviewer";
 import {
   configure,
   fakeGitHubUrl,
@@ -11,6 +10,7 @@ import {
   requestsToGitHub,
   serveGitHub,
   setToken,
+  type RecordedRequest,
 } from "../github";
 
 const viewer = { login: "reviewer", token: "test-token" };
@@ -22,6 +22,18 @@ function otherOrigin(): string {
 
 function apiHost(): string {
   return new URL(fakeGitHubUrl()).host;
+}
+
+/**
+ * The requests that carried a token to the origin. An Inbox load of the test
+ * before may still send some to the fake GitHub's own origin, rightly.
+ */
+function tokensTo(
+  requests: RecordedRequest[],
+  origin: string
+): RecordedRequest[] {
+  const host = new URL(origin).host;
+  return requests.filter((r) => r.host === host && r.authorization);
 }
 
 function awaitingMyReview(repository: string, title: string) {
@@ -48,19 +60,21 @@ describe("Where the GitHub token goes", () => {
     fs.mkdirSync(path.dirname(settingsFile), { recursive: true });
     fs.writeFileSync(
       settingsFile,
-      JSON.stringify({
-        "dearReviewer.githubApiUrl": otherOrigin(),
-        // Shows when VS Code has read the file.
-        "dearReviewer.repositories": ["acme/web"],
-      })
+      JSON.stringify({ "dearReviewer.githubApiUrl": otherOrigin() })
     );
     try {
-      // On Linux, VSCodium can take more than 10 seconds to see a new
-      // .vscode folder.
-      await eventually(
-        () =>
-          assert.deepStrictEqual(config().get("repositories"), ["acme/web"]),
-        30_000
+      // VSCodium's watcher can miss a new .vscode folder for good. Writing a
+      // setting through the API edits the file and reads it again at once,
+      // the base URL with it.
+      await config().update(
+        "repositories",
+        ["acme/web"],
+        vscode.ConfigurationTarget.Workspace
+      );
+      assert.deepStrictEqual(config().get("repositories"), ["acme/web"]);
+      assert.ok(
+        fs.readFileSync(settingsFile, "utf8").includes(otherOrigin()),
+        "the workspace's settings still set the base URL"
       );
       await refreshInbox();
 
@@ -73,10 +87,13 @@ describe("Where the GitHub token goes", () => {
         "every request went to the user-level base URL"
       );
     } finally {
-      fs.rmSync(path.dirname(settingsFile), { recursive: true, force: true });
-      await eventually(() =>
-        assert.deepStrictEqual(config().get("repositories"), ["acme/api"])
+      await config().update(
+        "repositories",
+        undefined,
+        vscode.ConfigurationTarget.Workspace
       );
+      fs.rmSync(path.dirname(settingsFile), { recursive: true, force: true });
+      assert.deepStrictEqual(config().get("repositories"), ["acme/api"]);
     }
   });
 
@@ -94,7 +111,7 @@ describe("Where the GitHub token goes", () => {
 
     assert.deepStrictEqual(await inbox(), [], "signed out on the other origin");
     assert.deepStrictEqual(
-      (await requestsToGitHub()).filter((r) => r.authorization),
+      tokensTo(await requestsToGitHub(), otherOrigin()),
       [],
       "no token went to the other origin"
     );
@@ -122,7 +139,7 @@ describe("Where the GitHub token goes", () => {
     assert.match(groups[0].label, /https/);
     assert.strictEqual(groups[0].icon, "$(error)");
     assert.deepStrictEqual(
-      (await requestsToGitHub()).filter((r) => r.authorization),
+      tokensTo(await requestsToGitHub(), insecure),
       [],
       "no token went to the plain-http origin"
     );

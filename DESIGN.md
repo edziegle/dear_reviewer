@@ -34,6 +34,22 @@ typography:
     fontSize: "1.1em"
     fontWeight: 700
     lineHeight: "normal"
+  masthead-title:
+    fontFamily: "var(--vscode-font-family)"
+    fontSize: "1.6em"
+    fontWeight: 700
+    lineHeight: 1.25
+  masthead-facts:
+    fontFamily: "var(--vscode-font-family)"
+    fontSize: "1.25em"
+    fontWeight: 400
+    lineHeight: "normal"
+  section-label:
+    fontFamily: "var(--vscode-font-family)"
+    fontSize: "0.85em"
+    fontWeight: 700
+    lineHeight: "normal"
+    letterSpacing: "0.04em"
   headline:
     fontFamily: "var(--vscode-font-family)"
     fontSize: "1em"
@@ -184,8 +200,11 @@ The palette is borrowed whole from the active theme; Dear Reviewer chooses roles
 
 ### Hierarchy
 
-- **Title** (bold, 1.1em): the panel heading, which is the pull request's or Change's title.
-- **Headline** (bold, 1em): section headings in a panel, such as Checks and Timeline.
+- **Masthead Title** (bold, 1.6em, line-height 1.25, balanced): the overview's title, the one large line in Dear Reviewer (see The Masthead Rule). In a column 640px or narrower, such as beside code, it steps down to 1.3em and the facts line to 1.1em, so the sticky header doesn't take the screen.
+- **Masthead Facts** (regular, 1.25em, tabular numerals): the overview's facts line under it.
+- **Title** (bold, 1.1em): a panel heading elsewhere.
+- **Headline** (bold, 1em): section headings in a panel, such as Your Review.
+- **Section Label** (bold, 0.85em, uppercase, 0.04em tracking): the overview's sections below the masthead, Checks, the history and the Reading Order, headed as the editor heads its own views. A SHA in one keeps its case, in the editor font.
 - **Body** (regular, the theme size, line-height 1.5): messages, timeline bodies and rendered Markdown. Headings inside Markdown stay small (1.05–1.2em) so a reply can't outshout the panel, and sit two levels below the panel's own (`# Title` becomes an `h3`), so a description's headings don't break the page's outline.
 - **Label** (regular, 0.9em, `muted-foreground`): metadata lines, the pull-request reference, the Claude login and the step list.
 - **Status** (regular, 0.85em): check status pills and selection chips.
@@ -196,6 +215,8 @@ The palette is borrowed whole from the active theme; Dear Reviewer chooses roles
 **The Two Fonts Rule.** The workbench font for words, the editor font for anything a Reviewer might paste into a terminal or search for in the code. No third family, no web fonts.
 
 **The Relative Size Rule.** Sizes are `em` multiples of the theme size, so a Reviewer's zoom and font settings carry through.
+
+**The Masthead Rule.** Only the overview's masthead, its title and facts line, is set larger than the theme size, and nothing else in Dear Reviewer may be. It is what makes the overview recognizably Dear Reviewer's without a color or font of its own: scale at the top, editor-plain below. Everything under the masthead reads at body size or smaller, so the masthead stays the one peak.
 
 ## Layout
 
@@ -270,14 +291,14 @@ Open Pull Request or Branch… is the Dashboard's door for the keyboard: a palet
 
 The only thing that opens when a Change opens: alone in the main column, with the focus, while the bottom panel closes and other Changes' editors go (ADR 0019, ADR 0020). Once the Reviewer starts, code opens in the column beside it, and the overview stays put. It reads top to bottom as four answers, each one line or one paragraph, and the Reading Order, then the history:
 
-- **What is this:** the title (a link to the pull request) and a muted byline, `acme/api #482 · octocat → main`. Until the pull request loads, the title is its name and the byline is empty, so nothing shows twice.
-- **How big, and is it healthy:** `12 files · +340 −58 · checks failed`, with tabular numerals, additions and deletions in the git decoration colors mixed 60% with `foreground` (`color-mix`), which keeps the hue and lifts small text past 4.5:1.
+- **What is this:** the title (a link to the pull request, at masthead size in `foreground`, taking the link color and underline on hover) and a muted byline, `acme/api #482 · octocat → main`. Until the pull request loads, the title is its name and the byline is empty, so nothing shows twice.
+- **How big, and is it healthy:** `12 files · +340 −58 · ✗ checks failed`, at masthead size with muted separators, the checks' mark in its state color (`✗` in `check-failed`, `✓` in `check-passed` mixed 70% with `foreground`; running checks have no verdict, so no mark) and the words in `foreground`, with tabular numerals, additions and deletions in the git decoration colors mixed 60% with `foreground` (`color-mix`), which keeps the hue and lifts small text past 4.5:1.
 - **Your place:** a muted line, `New commits since your Review · 2 pending Comments · 3 of 12 viewed`. While no new commits came since the Reviewer's last Review, the line opens with it in `foreground`: `✓ You approved at 14:32 · 3 Comments published`, `✗ You requested changes at 14:32` or `• You commented at 14:32`. Only the mark takes a hue: `check-passed` for approved, `check-failed` for changes requested, `muted-foreground` for commented. In an untrusted review window it ends `Navigation off: Trust the review window…`, a link that shows Workspace Trust. That says why go to definition does nothing, where the Reviewer is looking; it informs rather than asks, so ADR 0021's one prompt stays the only one.
 - **Will its syntax highlight:** while some changed files have a file extension no installed language covers, a muted line below the checks, after everything about the Change, since it is about the Reviewer's setup and not the Change, `No syntax highlighting for .tofu files. Find an Extension · Don't ask again`. Find an Extension opens the Extensions view with a search for the bare extension, `tofu`; with more than one, each extension is its own link. The Reviewer picks and installs; Dear Reviewer keeps no list of extensions to suggest. Don't ask again drops those extensions for good, in every Change. The line drops what an installed extension or `files.associations` comes to cover. Files without an extension, binary files and plain ones such as `.txt` or `.lock` never count.
 - **The Assistant's take:** in the Assistant's Hand, which holds the Reading Order too: the cat and "Assistant" as its heading, followed by a muted "· Since your Review at `3f9c2a1`" when it explains new commits, over one paragraph of rendered Markdown, capped at 40em. While it is written, a muted italic "Reading the Change…"; when `claude` can't run, a muted line with a link that helps and, when trying again can mend it, Retry. Both sit in one status region that screen readers hear only when its words change. Never a red banner: the overview works without the Assistant.
-- **The Reading Order:** under the take, a small "Reading Order" heading, an `h3` under the Assistant's `h2`, over a numbered list of steps, each a semibold label with its files beneath: the path, a link in the editor font that opens its diff, then its reason, muted. A viewed file has a ✓ in `foreground` and a muted path; hue would claim it passed. While the order is written, a muted italic "Choosing an order to read the files in…"; once new commits make it out of date, a muted line says so with a Suggest again link (ADR 0022). When the Assistant couldn't write one, because its turn failed or its reply held no usable order, a muted line says `The Assistant couldn't order the files, so they stay as they are in the Change.` with Try again, so the Reviewer can tell a failure from an order still to come. A Change that hasn't asked for one shows nothing here.
+- **The Reading Order:** under the take, a "Reading Order" section label, an `h3` under the Assistant's `h2`, over a numbered list of steps, each a semibold label with its files beneath: the path, a link in the editor font that opens its diff, then its reason, muted. A viewed file has a ✓ in `foreground` and a muted path; hue would claim it passed. While the order is written, a muted italic "Choosing an order to read the files in…"; once new commits make it out of date, a muted line says so with a Suggest again link (ADR 0022). When the Assistant couldn't write one, because its turn failed or its reply held no usable order, a muted line says `The Assistant couldn't order the files, so they stay as they are in the Change.` with Try again, so the Reviewer can tell a failure from an order still to come. A Change that hasn't asked for one shows nothing here.
 
-The take shows at most three sentences, with a Show all link (with `aria-expanded`) for the rest. Under it is one row of buttons: Start at `session.ts:42` (the take's first reference to a changed file, by file name, with the full path in its tooltip), Next unviewed file once the files are counted, and Ask the Assistant. The reference also stays a link inside the take's sentence, where its reason is. Refresh is an icon button beside the finishing button in the header. A hairline closes the overview. A pull request's checks on its latest commit come next: the heading `Checks on 9be41d7: failed`, a muted summary in tabular numerals (`1 failed · 1 running · 38 passed`), then the failed and running checks as status pills with their Details, and the rest behind Show all with the count (`Show all 41`, with `aria-expanded`); five checks or fewer show whole. The history follows: the pull request's timeline, or a local Change's commits, as a list. If the history can't load, a muted line under its heading says so in plain words with Retry; the rest of the overview is fine, so it doesn't shout.
+The take shows at most three sentences, with a Show all link (with `aria-expanded`) for the rest. Under it is one row of buttons: Start at `session.ts:42` (the take's first reference to a changed file, by file name, with the full path in its tooltip), Next unviewed file once the files are counted, and Ask the Assistant. The reference also stays a link inside the take's sentence, where its reason is. Refresh is an icon button beside the finishing button in the header. A hairline closes the overview. A pull request's checks on its latest commit come next: the section label `Checks on 9be41d7: failed`, a muted summary in tabular numerals (`1 failed · 1 running · 38 passed`), then the failed and running checks as status pills with their Details, and the rest behind Show all with the count (`Show all 41`, with `aria-expanded`); five checks or fewer show whole. The history follows: the pull request's timeline, or a local Change's commits, as a list. If the history can't load, a muted line under its heading says so in plain words with Retry; the rest of the overview is fine, so it doesn't shout.
 
 **The Submit step** (ADR 0033). A pull request's Review ends here. Submit Review…, from the header or anywhere else (the palette, `Ctrl+Alt+R S`, the offer once every file is viewed, the Dashboard's next step), brings the overview forward with the step open under the header, under a hairline of its own and the heading Your Review, and the focus on its verdict. While it is open, the header's Submit Review… hides, since the step has its own Submit Review, Cancel and Escape, and a button of the same name would do the opposite; Cancel returns the focus to it. The step holds:
 

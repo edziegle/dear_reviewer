@@ -394,7 +394,10 @@ export const pageStyles = `
   body { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); padding: 0 24px 24px; max-width: 64em; margin: 0 auto; }
   header { position: sticky; top: 0; z-index: 1; background: var(--vscode-editor-background); padding: 12px 0 8px; border-bottom: 1px solid var(--vscode-panel-border); display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
   header .heading { flex: 1 1 16em; min-width: 0; }
-  h1 { font-size: 1.1em; margin: 0 0 4px; overflow-wrap: anywhere; }
+  /* The masthead: the title is the page's one large line, in ink rather than link blue. */
+  h1 { font-size: 1.6em; line-height: 1.25; margin: 0 0 4px; overflow-wrap: anywhere; text-wrap: balance; }
+  h1 .link { color: inherit; font-weight: inherit; }
+  h1 .link:hover { color: var(--vscode-textLink-foreground); text-decoration: underline; text-underline-offset: 3px; }
   h2 { font-size: 1em; margin: 16px 0 8px; }
   .muted { color: var(--vscode-descriptionForeground); font-size: 0.9em; }
   button.icon { background: none; border: none; padding: 4px; border-radius: 2px; color: var(--vscode-icon-foreground, var(--vscode-foreground)); cursor: pointer; display: inline-flex; }
@@ -412,6 +415,16 @@ export const pageStyles = `
   header button.primary { padding: 2px 8px; }
   button.primary:hover { background: var(--vscode-button-hoverBackground); }
   .facts { font-variant-numeric: tabular-nums; }
+  /* How big, and is it healthy: the first answer under the title, at headline size. */
+  #facts { font-size: 1.25em; margin: 0 0 6px; }
+  #facts .sep { color: var(--vscode-descriptionForeground); }
+  #facts .mark { margin-right: 0.25em; }
+  #facts .passed .mark { color: color-mix(in srgb, var(--vscode-testing-iconPassed) 70%, var(--vscode-foreground)); }
+  #facts .failed .mark { color: var(--vscode-testing-iconFailed); }
+  /* Below the masthead, sections are headed as the editor heads its own views, so the history recedes. */
+  #checksHeading, #history, .order h3 { font-size: 0.85em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+  #checksHeading, #history { margin: 24px 0 8px; }
+  #checksHeading code { font-family: var(--vscode-editor-font-family); text-transform: none; letter-spacing: 0; font-weight: 600; color: inherit; background: none; padding: 0; }
   .facts .added { color: var(--vscode-gitDecoration-addedResourceForeground); color: color-mix(in srgb, var(--vscode-gitDecoration-addedResourceForeground) 60%, var(--vscode-foreground)); }
   .facts .deleted { color: var(--vscode-gitDecoration-deletedResourceForeground); color: color-mix(in srgb, var(--vscode-gitDecoration-deletedResourceForeground) 60%, var(--vscode-foreground)); }
   ul { list-style: none; padding: 0; margin: 0; }
@@ -426,7 +439,7 @@ export const pageStyles = `
   .item .author { font-weight: 600; }
   #byline span { display: inline-block; max-width: 100%; overflow-wrap: anywhere; }
   .overview .actions button { max-width: 100%; overflow-wrap: anywhere; text-align: start; }
-  .overview { padding: 12px 0 14px; border-bottom: 1px solid var(--vscode-panel-border); }
+  .overview { padding: 16px 0 14px; border-bottom: 1px solid var(--vscode-panel-border); }
   .overview p { margin: 0 0 4px; }
   .overview .actions { margin-top: 12px; }
   .review { color: var(--vscode-foreground); }
@@ -435,7 +448,9 @@ export const pageStyles = `
   .review.commented .mark { color: var(--vscode-descriptionForeground); }
   .review.briefed .mark { color: color-mix(in srgb, var(--vscode-testing-iconPassed) 70%, var(--vscode-foreground)); }
   /* A link standing alone is a target of its own: give it height to hit. */
-  .link.more, .link.file, #showTake { padding-block: 4px; }`;
+  .link.more, .link.file, #showTake { padding-block: 4px; }
+  /* In a narrow column, such as beside code, the sticky header shouldn't take the screen. */
+  @media (max-width: 640px) { h1 { font-size: 1.3em; } #facts { font-size: 1.1em; } }`;
 
 function html(cspSource: string): string {
   const nonce = crypto.randomBytes(16).toString("base64");
@@ -457,7 +472,7 @@ function html(cspSource: string): string {
   .problem-line .link { margin-left: 4px; }
   /* A link inside a sentence is underlined, so it doesn't rely on color alone. */
   .problem-line .link, #standing .link, #highlighting .link, #orderNote .link { text-decoration: underline; text-underline-offset: 2px; }
-  .order h3 { font-size: 1em; margin: 14px 0 4px; }
+  .order h3 { margin: 16px 0 4px; }
   .order ol { margin: 0; padding-left: 1.6em; }
   .order ol > li { margin: 6px 0 0; }
   .order .step { font-weight: 600; }
@@ -696,6 +711,8 @@ ${catSymbol}
     return row;
   }
 
+  // Running checks have no verdict yet, so no mark.
+  const checkMarks = { passed: "✓", failed: "✗" };
   function facts(state) {
     const node = byId("facts");
     const parts = [];
@@ -704,14 +721,24 @@ ${catSymbol}
       const size = el("span");
       const shown = el("span");
       shown.setAttribute("aria-hidden", "true");
-      shown.append(files + (files === 1 ? " file · " : " files · "), el("span", "added", "+" + additions), " ", el("span", "deleted", "−" + deletions));
+      shown.append(files + (files === 1 ? " file" : " files"), el("span", "sep", " · "), el("span", "added", "+" + additions), " ", el("span", "deleted", "−" + deletions));
       size.append(shown, el("span", "visually-hidden", files + (files === 1 ? " file, " : " files, ") + additions + " lines added, " + deletions + " removed"));
       parts.push(size);
     }
-    if (state.checks && state.checks.status) parts.push("checks " + state.checks.status);
+    if (state.checks && state.checks.status) {
+      const status = state.checks.status;
+      const health = el("span", status);
+      if (checkMarks[status]) {
+        const mark = el("span", "mark", checkMarks[status]);
+        mark.setAttribute("aria-hidden", "true");
+        health.append(mark);
+      }
+      health.append("checks " + status);
+      parts.push(health);
+    }
     node.hidden = parts.length === 0;
     node.replaceChildren();
-    parts.forEach((part, i) => node.append(...(i ? [" · ", part] : [part])));
+    parts.forEach((part, i) => node.append(...(i ? [el("span", "sep", " · "), part] : [part])));
   }
 
   const reviewMarks = { approved: "✓", changesRequested: "✗", commented: "•", briefed: "✓" };
@@ -1260,7 +1287,12 @@ ${catSymbol}
   function checks(state, changed) {
     byId("checks").hidden = !state;
     if (!state || !changed) return;
-    setText(byId("checksHeading"), "Checks on " + state.commit + (state.status ? ": " + state.status : ""));
+    const heading = byId("checksHeading");
+    const said = state.commit + "\0" + (state.status || "");
+    if (heading.dataset.said !== said) {
+      heading.dataset.said = said;
+      heading.replaceChildren("Checks on ", el("code", "", state.commit), state.status ? ": " + state.status : "");
+    }
     setText(byId("checksSummary"), state.summary);
     const whole = state.runs.length <= fewChecks;
     const runs = whole || allChecks ? state.runs : state.runs.slice(0, state.attention);

@@ -29,3 +29,6 @@ extension/.impeccable/
 # Impeccable critique snapshots, kept for later runs on this machine
 **/.impeccable/critique/
 !.vale/styles/House/
+
+# macOS
+.DS_Store

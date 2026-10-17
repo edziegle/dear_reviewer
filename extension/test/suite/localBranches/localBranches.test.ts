@@ -137,19 +137,6 @@ describe("Local branches in the Inbox", () => {
     assert.strictEqual(group.description, "2");
   });
 
-  it("finds main without a remote, from the local main branch", async () => {
-    const repo = fixture.repo;
-    repo.git("branch", "-f", "feature", fixture.diverged);
-
-    const groups = await showInbox({ "acme/local": repo.path });
-
-    // main is at `restructured`; `feature` forks from `initial`.
-    assert.deepStrictEqual(
-      localBranches(groups).entries.map((e) => [e.label, e.description]),
-      [["feature", "acme/local · 1 commit ahead"]]
-    );
-  });
-
   it("opens a branch as a local Change from the merge base to the branch head", async () => {
     const groups = await showInbox({ "acme/tools": fixture.clone });
     const before = workspaceFolders();

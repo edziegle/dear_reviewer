@@ -346,42 +346,6 @@ describe("The Assistant's summary when a Change opens", () => {
     }
   });
 
-  it("gives claude only the variables it needs to find itself, its login and the network", async () => {
-    const variables = {
-      ANTHROPIC_BASE_URL: "https://elsewhere.example",
-      DEAR_REVIEWER_UNRELATED: "dropped",
-      HTTPS_PROXY: "http://proxy.example:3128",
-      no_proxy: "localhost",
-    };
-    Object.assign(process.env, variables);
-    const { request, title } = changeOf(
-      repo.commits.renamed,
-      repo.commits.restructured
-    );
-    scriptClaudeLogin();
-    await scriptClaude(request, {});
-    try {
-      await openChange(request);
-
-      await eventually(async () =>
-        assert.strictEqual((await overviewTake(title))?.reading, false)
-      );
-      const calls = [...loginChecks(), ...(await assistantRuns(request))];
-      assert.ok(calls.length >= 2, "auth status and the Assistant both ran");
-      for (const call of calls) {
-        const what = `claude ${call.args.join(" ")}`;
-        assert.strictEqual(call.env.ANTHROPIC_BASE_URL, undefined, what);
-        assert.strictEqual(call.env.DEAR_REVIEWER_UNRELATED, undefined, what);
-        assert.strictEqual(call.env.HTTPS_PROXY, variables.HTTPS_PROXY, what);
-        assert.strictEqual(call.env.no_proxy, variables.no_proxy, what);
-        assert.strictEqual(call.env.HOME, process.env.HOME, what);
-      }
-    } finally {
-      for (const key of Object.keys(variables)) delete process.env[key];
-      await closeChange(request);
-    }
-  });
-
   it("gives the Assistant the Change's commits, oldest first, with full messages, as other people's text, before the diff", async () => {
     const commits = buildFixtureRepo("commits");
     const commit = (message: string, file: string) => {

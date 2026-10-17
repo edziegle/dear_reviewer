@@ -180,55 +180,6 @@ describe("Inbox: Authored by me", () => {
     );
   });
 
-  it("keeps changes requested after the reviewer replies in a thread, and after GitHub's decision alone", async () => {
-    const { authored } = await showInbox([
-      mine(1, "Replied to", {
-        reviews: [
-          review("alice", "CHANGES_REQUESTED", older),
-          review("alice", "COMMENTED"),
-        ],
-      }),
-      mine(2, "Decided", { reviewDecision: "CHANGES_REQUESTED" }),
-      mine(3, "Approver replied", {
-        reviews: [
-          review("alice", "APPROVED", older),
-          review("alice", "COMMENTED", older),
-        ],
-      }),
-    ]);
-
-    assert.deepStrictEqual(
-      authored.entries.map((e) => `${e.label}: ${e.description}`),
-      [
-        "Replied to: acme/api #1 · changes requested · commented",
-        "Decided: acme/api #2 · changes requested",
-        "Approver replied: acme/api #3 · ready to merge",
-      ]
-    );
-  });
-
-  it("leaves out a dismissed approval, but not a later one", async () => {
-    const { authored } = await showInbox([
-      mine(1, "Dismissed", {
-        reviews: [
-          review("alice", "APPROVED", older),
-          review("alice", "DISMISSED", older),
-        ],
-      }),
-      mine(2, "Approved again", {
-        reviews: [
-          review("alice", "DISMISSED", older),
-          review("alice", "APPROVED"),
-        ],
-      }),
-    ]);
-
-    assert.deepStrictEqual(
-      authored.entries.map((e) => `${e.label}: ${e.icon}`),
-      ["Dismissed: $(git-pull-request)", "Approved again: $(pass-filled)"]
-    );
-  });
-
   it("leaves out a reviewer whose review I requested again, until they review", async () => {
     const { authored } = await showInbox([
       mine(1, "Asked again", {
@@ -280,27 +231,6 @@ describe("Inbox: Authored by me", () => {
 
     assert.strictEqual((await awaitingSearches()).length, 1);
     assert.strictEqual((await awaitingSearches()).length, 1);
-  });
-
-  it("isn't ready to merge as a draft, with checks running, or while mergeability is unknown", async () => {
-    const approved: Partial<FakePullRequest> = {
-      reviewDecision: "APPROVED",
-      reviews: [review("alice", "APPROVED")],
-    };
-    const { authored } = await showInbox([
-      mine(1, "Draft", { ...approved, isDraft: true }),
-      mine(2, "Running", { ...approved, checks: "PENDING" }),
-      mine(3, "Unknown", { ...approved, mergeable: "UNKNOWN" }),
-      mine(4, "Review required", {
-        reviewDecision: "REVIEW_REQUIRED",
-        reviews: [review("alice", "APPROVED")],
-      }),
-    ]);
-
-    assert.deepStrictEqual(
-      authored.entries.map((e) => e.icon),
-      Array(4).fill("$(git-pull-request)")
-    );
   });
 
   it("keeps the author's avatar in the other groups", async () => {

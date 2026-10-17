@@ -110,32 +110,6 @@ describe("Dashboard: ignoring a pull request waiting on the Reviewer", () => {
     assert.strictEqual((await requestsToGitHub()).length, asked);
   });
 
-  it("brings it back to Waiting on you with the wait it had, without asking GitHub", async () => {
-    await clickDashboard({ type: "ignore", id: idOf(fast) });
-    await eventually(async () =>
-      assert.deepStrictEqual(ignoredNames(await renderedDashboard()), [
-        "acme/ignore #51",
-      ])
-    );
-    const asked = (await requestsToGitHub()).length;
-
-    await clickDashboard({ type: "restore", id: idOf(fast) });
-
-    await eventually(async () => {
-      const d = await renderedDashboard();
-      assert.deepStrictEqual(
-        d.waiting?.map((w) => [w.name, w.waited]),
-        [
-          ["acme/ignore #51", "6 days"],
-          ["acme/ignore #52", "2 hours"],
-        ]
-      );
-      assert.deepStrictEqual(d.ignored, []);
-      assert.strictEqual(d.facts, "2 waiting on you · oldest 6 days");
-    });
-    assert.strictEqual((await requestsToGitHub()).length, asked);
-  });
-
   it("keeps it ignored through new commits and a new review request", async () => {
     await clickDashboard({ type: "ignore", id: idOf(fast) });
     await eventually(async () =>

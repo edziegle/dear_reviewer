@@ -10,6 +10,7 @@ import {
   requestsToGitHub,
   serveGitHub,
   setToken,
+  type RecordedRequest,
 } from "../github";
 
 const viewer = { login: "reviewer", token: "test-token" };
@@ -21,6 +22,18 @@ function otherOrigin(): string {
 
 function apiHost(): string {
   return new URL(fakeGitHubUrl()).host;
+}
+
+/**
+ * The requests that carried a token to the origin. An Inbox load of the test
+ * before may still send some to the fake GitHub's own origin, rightly.
+ */
+function tokensTo(
+  requests: RecordedRequest[],
+  origin: string
+): RecordedRequest[] {
+  const host = new URL(origin).host;
+  return requests.filter((r) => r.host === host && r.authorization);
 }
 
 function awaitingMyReview(repository: string, title: string) {
@@ -98,7 +111,7 @@ describe("Where the GitHub token goes", () => {
 
     assert.deepStrictEqual(await inbox(), [], "signed out on the other origin");
     assert.deepStrictEqual(
-      (await requestsToGitHub()).filter((r) => r.authorization),
+      tokensTo(await requestsToGitHub(), otherOrigin()),
       [],
       "no token went to the other origin"
     );
@@ -126,7 +139,7 @@ describe("Where the GitHub token goes", () => {
     assert.match(groups[0].label, /https/);
     assert.strictEqual(groups[0].icon, "$(error)");
     assert.deepStrictEqual(
-      (await requestsToGitHub()).filter((r) => r.authorization),
+      tokensTo(await requestsToGitHub(), insecure),
       [],
       "no token went to the plain-http origin"
     );

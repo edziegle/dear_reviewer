@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.4.0](https://github.com/edziegle/dear_reviewer/compare/v0.3.0...v0.4.0) (2026-10-17)
+
+
+### Features
+
+* **assistant:** show the Assistant in the Secondary Side Bar ([ce18724](https://github.com/edziegle/dear_reviewer/commit/ce187248a78b4d4f00aed2fd6ceb12201e165fbd)), closes [#84](https://github.com/edziegle/dear_reviewer/issues/84)
+* **code-flow:** add code flow view ([95b8f45](https://github.com/edziegle/dear_reviewer/commit/95b8f452a45f5ee969969b1b78fd81e5cdcb0930))
+* keep a team-requested pull request in the Inbox once a teammate reviews it ([1b7f9d7](https://github.com/edziegle/dear_reviewer/commit/1b7f9d70a72e484b40b7c7a6b89119db6dc8f33c)), closes [#54](https://github.com/edziegle/dear_reviewer/issues/54)
+* let the Reviewer ignore a pull request waiting on them ([8e72878](https://github.com/edziegle/dear_reviewer/commit/8e728780ca26eedf8917054623c3d78ba08fe713)), closes [#70](https://github.com/edziegle/dear_reviewer/issues/70)
+* **overview:** give the Change overview a masthead ([fdd5501](https://github.com/edziegle/dear_reviewer/commit/fdd5501e678700735338072a14c41dcf70e69ee7)), closes [#37](https://github.com/edziegle/dear_reviewer/issues/37)
+* refresh a pull request's Change when the window regains focus ([624ab60](https://github.com/edziegle/dear_reviewer/commit/624ab607e59d15584618c744e8efda1b48aed71a)), closes [#75](https://github.com/edziegle/dear_reviewer/issues/75)
+
+
+### Bug Fixes
+
+* keep a Comment being written when new commits arrive, and check what GitHub gives git ([c1a6fa0](https://github.com/edziegle/dear_reviewer/commit/c1a6fa0d1be1da760bc23511e39cb240c37233c2)), closes [#75](https://github.com/edziegle/dear_reviewer/issues/75)
+* let go of a Change's state when another window closes it ([b4e0536](https://github.com/edziegle/dear_reviewer/commit/b4e053634685a617ab4a8c67537ca6179ac0c825)), closes [#56](https://github.com/edziegle/dear_reviewer/issues/56)
+* **refresh:** run a focus check that met a running one when it ends ([93f09cc](https://github.com/edziegle/dear_reviewer/commit/93f09cc57c53b5c221a6880f6e008c66411b0732)), closes [#87](https://github.com/edziegle/dear_reviewer/issues/87)
+* **refresh:** run the owed check whatever the gap ([c9e6b4c](https://github.com/edziegle/dear_reviewer/commit/c9e6b4cd4f705d38b2de56b65cb1289cbb1f2238)), closes [#87](https://github.com/edziegle/dear_reviewer/issues/87)
+* start Change Files tall and Findings small in a fresh layout ([bdea6da](https://github.com/edziegle/dear_reviewer/commit/bdea6daa868fd9e76db4b36646cfb56ad92f90d0)), closes [#80](https://github.com/edziegle/dear_reviewer/issues/80)
+* time out GitHub requests that never answer ([7520ef4](https://github.com/edziegle/dear_reviewer/commit/7520ef458c4cc8196ab7cf31cb9af2ff91d7b6e4)), closes [#65](https://github.com/edziegle/dear_reviewer/issues/65)
+
 ## [0.3.0](https://github.com/edziegle/dear_reviewer/compare/v0.2.1...v0.3.0) (2026-10-16)
 
 

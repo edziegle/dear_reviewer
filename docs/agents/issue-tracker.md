@@ -33,8 +33,7 @@ Used by `/implement-next` and by any agent taking a `ready-for-agent` issue. The
 - **Implementing**: `gh issue edit <n> --add-assignee @me`.
 - **Awaiting verification**: `gh issue edit <n> --remove-label ready-for-agent` once the work is on `main`. The issue stays open, assigned; the maintainer verifies and closes it. Don't comment on the issue: the commits' `Refs #<n>` link them to it.
 - **Branch**: work in a worktree named `i<n>`: `wt switch --create i<n> --no-cd`, then work in `.worktrees/i<n>`. Never `git switch -c`. Keep the name short: a longer worktree path pushes the test window's socket path over the length macOS allows.
-- **Commits**: Conventional Commits, ending `Refs #<n>`, never `Closes #<n>`, so landing doesn't close the issue before verification. Commits are signed; never disable signing. If signing fails, stop and ask the maintainer.
-- **Landing**: after the full test suite passes, `wt merge main --no-squash` from the worktree. Agents never push; the maintainer pushes `main`.
+- **Commits**: Conventional Commits, ending `Refs #<n>`, never `Closes #<n>`, so landing doesn't close the issue before verification.
 
 ## When a skill says "publish to the issue tracker"
 

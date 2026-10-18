@@ -5,6 +5,8 @@ date: 2026-10-16
 
 # Refresh a pull request's Change when the window regains focus
 
+Amended by [ADR 0040](0040-one-active-change-in-the-review-window.md): only the Active Change is checked on focus, since the review window holds no other.
+
 Amends [ADR 0013](0013-end-changes-that-are-over.md): focus is one more moment the window catches up with GitHub.
 
 ## Context and Problem Statement

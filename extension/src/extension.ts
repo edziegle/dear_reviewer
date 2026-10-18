@@ -5,6 +5,7 @@ import * as vscode from "vscode";
 import {
   Change,
   ChangeRequest,
+  OpenDeclined,
   ChangeWorkspace,
   changeName,
   changeTitle,
@@ -89,12 +90,15 @@ export function activate(context: vscode.ExtensionContext) {
   // For the setup walkthrough's checklist.
   const showSignedIn = async () =>
     setContext("dearReviewer.signedIn", !!(await auth.token(apiUrl())));
+  const localViewedFiles = new LocalViewedFiles(
+    context.globalStorageUri.fsPath
+  );
   const viewedFiles = new ViewedFilesBySource(
-    new LocalViewedFiles(context.globalStorageUri.fsPath),
+    localViewedFiles,
     new GitHubViewedFiles(github)
   );
   const changeFiles = new ChangeFilesView(
-    () => changes.inFront(),
+    () => changes.active(),
     viewedFiles,
     path.join(context.globalStorageUri.fsPath, "change-files-view.json"),
     (change) => reviews.lastReview(change),
@@ -117,7 +121,7 @@ export function activate(context: vscode.ExtensionContext) {
     () => changes.list(),
     new PendingReviewsBySource(localReviews, githubReviews),
     avatars,
-    () => changes.inFront(),
+    () => changes.active(),
     (message, ...actions) => reportProblem(message, ...actions)
   );
   // The Assistant reads the threads from a file, and learns where the Reviewer is reading.
@@ -490,11 +494,7 @@ export function activate(context: vscode.ExtensionContext) {
     );
     // A force push can leave none that git can count from the old head.
     const newCommits = count > 0 ? count : ("some" as const);
-    // A Change behind the one in front stays behind it.
-    const next = await changes.open(
-      request,
-      change.id !== changes.inFront()?.id
-    );
+    const next = await changes.open(request);
     const text = foundText({ newCommits, threads: 0 });
     arrivals.set(next.conversation, text);
     if (reopen) {
@@ -552,7 +552,7 @@ export function activate(context: vscode.ExtensionContext) {
   }
   const findings = new Findings(
     context.extensionUri,
-    () => changes.inFront(),
+    () => changes.active(),
     (change) => assistants.findIssues(change),
     (change, note) => assistants.addNote(change, note),
     (change, place) => review.onDiff(change, place),
@@ -576,13 +576,32 @@ export function activate(context: vscode.ExtensionContext) {
     await viewedFiles.forget(change);
   }
 
+  // Opening another Change stops reviewing this one, losing a Comment still
+  // being written in it, so the Reviewer is asked first (ADR 0040).
+  let discardAnswer: boolean | undefined;
+  const discardAsked: string[] = [];
+  changes.confirmStopping = async (active) => {
+    if (!review.hasOpenDraft(active)) return true;
+    const question = `Discard the Comment you're writing on ${changeName(active)}?`;
+    discardAsked.push(question);
+    // The tests answer for the Reviewer, whose modal they can't click.
+    if (discardAnswer !== undefined) return discardAnswer;
+    const discard = "Discard";
+    const answer = await vscode.window.showWarningMessage(
+      question,
+      { modal: true },
+      discard
+    );
+    return answer === discard;
+  };
+
   /** The Changes the last sync saw open, to let go of those that left the list. */
   const closedChanges = new ClosedChanges<Change>();
 
   const lifecycle = new Lifecycle(
     changes,
     github,
-    { conversations, localReviews, briefs },
+    { conversations, localReviews, briefs, viewedFiles: localViewedFiles },
     async (clone) =>
       (await repositories.inboxClones()).find(
         (c) => path.resolve(c.clone) === path.resolve(clone)
@@ -698,7 +717,7 @@ export function activate(context: vscode.ExtensionContext) {
     findings.refresh();
     inbox.redraw();
     dashboard.refresh();
-    const front = changes.inFront();
+    const front = changes.active();
     assistants.follow(front);
     void setContext("dearReviewer.hasOpenChange", !!front);
     // The palette offers the one way to finish that fits the Change in front.
@@ -708,7 +727,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   /** Whether the Change in front has Comments pending, for Write Brief…, which has nothing to write from without one. */
   function showFrontComments(): void {
-    const front = changes.inFront();
+    const front = changes.active();
     void setContext(
       "dearReviewer.frontHasComments",
       !!front && review.pendingCount(front) > 0
@@ -730,7 +749,7 @@ export function activate(context: vscode.ExtensionContext) {
     // Only a Dashboard in sight shows the pull request in its new list.
     if (closed.length > 0 && dashboard.inSight) inbox.changeClosedElsewhere();
     showOpenChanges();
-    const front = changes.inFront();
+    const front = changes.active();
     carryOutRequests();
     if (!front) shownLast = undefined;
     else if (
@@ -871,7 +890,7 @@ export function activate(context: vscode.ExtensionContext) {
     }
     const looking = activeChange();
     if (looking && fits(looking)) return looking;
-    const front = changes.inFront();
+    const front = changes.active();
     // The way to a Change: the Dashboard, or in the review window, a commit range.
     const way = inReviewWindow()
       ? { title: "Open Commit Range…", command: "dearReviewer.openChange" }
@@ -1071,6 +1090,7 @@ export function activate(context: vscode.ExtensionContext) {
             () => changes.open(request)
           );
         } catch (err) {
+          if (err instanceof OpenDeclined) return;
           // Git's own words run to several lines; the first says what failed.
           const message = messageOf(err).split(/\r?\n/, 1)[0].trim();
           void vscode.window.showErrorMessage(
@@ -1098,6 +1118,7 @@ export function activate(context: vscode.ExtensionContext) {
               async () => changes.open(await fetchPullRequest(clone, pr))
             );
           } catch (err) {
+            if (err instanceof OpenDeclined) return;
             const message = messageOf(err);
             const locate = "Locate Another Clone…";
             const picked = await vscode.window.showErrorMessage(
@@ -1181,6 +1202,7 @@ export function activate(context: vscode.ExtensionContext) {
             })
           );
         } catch (err) {
+          if (err instanceof OpenDeclined) return;
           const message = messageOf(err);
           void vscode.window.showErrorMessage(
             `Couldn't open ${branch.name}: ${message}`
@@ -1847,6 +1869,17 @@ export function activate(context: vscode.ExtensionContext) {
       closeWith: (close?: () => void) => {
         closeReviewWindow = close ?? closeWindow;
       },
+      /**
+       * Has this window hold Changes as the review window does, which the
+       * tests can't run in: a Change opened here gets its folders here.
+       */
+      holdChangesHere: (holds: boolean) => changes.holdChangesHere(holds),
+      /** Answers the question of discarding a Comment being written, or with none asks the Reviewer again. */
+      answerDiscardQuestion: (discard?: boolean) => {
+        discardAnswer = discard;
+      },
+      /** The questions about discarding a Comment that were asked. */
+      discardQuestions: (): readonly string[] => [...discardAsked],
     },
     /**
      * What this window holds for Changes, for the tests: the names of those

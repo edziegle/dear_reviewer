@@ -342,6 +342,7 @@ export class Assistants implements vscode.Disposable {
   close(change: Change): void {
     const assistant = this.byConversation.get(change.conversation);
     if (assistant?.changeId !== change.id) return;
+    assistant.stopWithNote();
     assistant.dispose();
     this.byConversation.delete(change.conversation);
     if (this.front?.id === change.id) this.front = undefined;
@@ -723,6 +724,28 @@ class ChangeAssistant {
         problemAction: this.problemAction?.title,
         canRetry: this.unavailable || undefined,
       });
+  }
+
+  /**
+   * Ends a reply in progress as its Change stops (ADR 0040), with a note in
+   * the conversation, which is kept so the Change picks it up when it opens
+   * again.
+   */
+  stopWithNote(): void {
+    if (!this.state.stoppable || !this.conversation) return;
+    this.update({
+      busy: false,
+      stoppable: undefined,
+      steps: undefined,
+      messages: [
+        ...this.state.messages,
+        {
+          from: "note",
+          text: "Stopped before the reply was finished, because the Change stopped being reviewed.",
+        },
+      ],
+    });
+    this.save(this.conversation);
   }
 
   dispose(): void {

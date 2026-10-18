@@ -4,19 +4,11 @@ import { closeChange, openChange } from "../../reviewer";
 import { pickUpAfterReload } from "../handoff";
 
 // A second launch of the workspace the first changeFiles launch left with a
-// Change in front, two of its files viewed and viewed files hidden, and
-// another Change open behind it.
+// Active Change, two of its files viewed and viewed files hidden.
 describe("The Change files view after a reload", () => {
-  const { title, behind, ...request } = pickUpAfterReload();
+  const { title, ...request } = pickUpAfterReload();
 
-  it("still lists only the Change that was in front", async () => {
-    assert.deepStrictEqual(
-      (await changeFiles()).map((entry) => entry.label),
-      [title]
-    );
-
-    await closeChange(behind);
-
+  it("still lists only the Active Change", async () => {
     assert.deepStrictEqual(
       (await changeFiles()).map((entry) => entry.label),
       [title]
@@ -52,7 +44,7 @@ describe("The Change files view after a reload", () => {
     ]);
   });
 
-  it("forgets viewed files when the Change is closed", async () => {
+  it("keeps viewed files when the Change is closed, for when it opens again", async () => {
     await closeChange(request);
     assert.deepStrictEqual(render(await changeFiles()), []);
 
@@ -60,10 +52,6 @@ describe("The Change files view after a reload", () => {
     const reopened = render(await changeFiles());
     await closeChange(request);
 
-    assert.strictEqual(reopened[0], `${title} — □□□□□□□ 0/7`);
-    assert.ok(
-      reopened.every((line) => !line.includes("(viewed)")),
-      reopened.join("\n")
-    );
+    assert.strictEqual(reopened[0], `${title} — ■■□□□□□ 2/7`);
   });
 });

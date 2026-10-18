@@ -464,7 +464,7 @@ describe("Findings on request", () => {
     assert.deepStrictEqual(await findingsView(), []);
   });
 
-  it("lists only the Change in front's Findings, and a Change's come back when it's shown again", async () => {
+  it("lists only the Active Change's Findings, and drops a Change's when it stops", async () => {
     await scriptClaude(change, { turns: [replyTurn(findingsReply)] });
     await findIssues(change);
     const listed = async () =>
@@ -494,7 +494,8 @@ describe("Findings on request", () => {
         inboxEntry(await inbox(), "Restructure pkg, with Findings")
       );
 
-      assert.deepStrictEqual(await listed(), raised);
+      // Findings are not kept when a Change stops; the Reviewer asks again.
+      assert.deepStrictEqual(await listed(), []);
     } finally {
       await closeChange(other);
       // Showing the other Change closed this one's Assistant panel.
@@ -583,5 +584,64 @@ describe("Findings on request", () => {
       (await findingsView()).map((e) => e.where),
       ["util.py:1-2 (base)", "util.py:2 (base)"]
     );
+  });
+
+  describe("opening another Change with a Comment being written", () => {
+    const repo = buildFixtureRepo("discard-prompt");
+    const other = {
+      repository: repo.path,
+      base: repo.commits.initial,
+      head: repo.commits.renamed,
+    };
+
+    async function discardApi() {
+      const extension = vscode.extensions.getExtension<{
+        reviewWindow: {
+          answerDiscardQuestion(discard?: boolean): void;
+          discardQuestions(): readonly string[];
+        };
+      }>("edziegle.dear-reviewer");
+      return (await extension!.activate()).reviewWindow;
+    }
+
+    afterEach(async () => (await discardApi()).answerDiscardQuestion());
+
+    it("asks first, and Cancel keeps the Active Change and opens nothing", async () => {
+      await scriptClaude(change, { turns: [replyTurn(findingsReply)] });
+      await findIssues(change);
+      await convertFinding(await findingAt("util.py:2"));
+      const api = await discardApi();
+      api.answerDiscardQuestion(false);
+      const before = workspaceFolders();
+
+      await openChange(other);
+
+      assert.deepStrictEqual(api.discardQuestions().slice(-1), [
+        "Discard the Comment you're writing on acme/api #31?",
+      ]);
+      assert.deepStrictEqual(workspaceFolders(), before);
+      assert.ok(
+        await threadAt(path.join(head, "util.py"), 1),
+        "the Comment is still being written"
+      );
+    });
+
+    it("opens the other Change once the Reviewer discards the Comment", async () => {
+      const api = await discardApi();
+      api.answerDiscardQuestion(true);
+      const before = workspaceFolders();
+
+      await openChange(other);
+
+      try {
+        assert.strictEqual(foldersAddedSince(before).length, 2);
+        assert.ok(
+          !workspaceFolders().some((f) => f.path === head),
+          "the pull request's folders are gone"
+        );
+      } finally {
+        await closeChange(other);
+      }
+    });
   });
 });

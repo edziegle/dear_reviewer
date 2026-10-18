@@ -647,6 +647,14 @@ describe("A pull request's timeline", () => {
     );
   }
 
+  /** Opens the pull request again, which makes it the Active Change and stops the other. */
+  async function openPullRequestAgain(): Promise<void> {
+    await openFromInbox(inboxEntry(await inbox(), "Restructure pkg"));
+    await eventually(async () =>
+      assert.ok(await renderedTimeline(title), "the overview rendered")
+    );
+  }
+
   /** A file of the pull request's Change, in its head worktree. */
   function pullRequestFile(file: string): vscode.Uri {
     const head = workspaceFolders().find(
@@ -752,16 +760,6 @@ describe("A pull request's timeline", () => {
     await eventually(() => assert.strictEqual(activeTabLabel(), other.title));
   });
 
-  it("comes back from a file's title bar for that file's Change, with another Change's file in front", async () => {
-    const tab = timelineTab(title);
-    if (tab) await vscode.window.tabGroups.close(tab);
-    await inFrontOfOtherChange();
-
-    await onTab("showTimeline", pullRequestFile("util.py"));
-
-    await eventually(() => assert.strictEqual(activeTabLabel(), title));
-  });
-
   it("does nothing from the title bar of a file of no Change open here, rather than act on the Change in front", async () => {
     await inFrontOfOtherChange();
     const tab = timelineTab(other.title);
@@ -780,10 +778,10 @@ describe("A pull request's timeline", () => {
   });
 
   it("ends the Review in the overview's Submit step, listing the Comments it publishes", async () => {
+    await openPullRequestAgain();
     const file = pullRequestFile("util.py").fsPath;
     const [[line]] = await commentingLines(file);
     await comment(file, line, line, "Rename this.\n\nIt reads better.");
-    await inFrontOfOtherChange();
     const before = await submittedReviews();
 
     await vscode.commands.executeCommand("dearReviewer.submitReview", change);
@@ -829,7 +827,6 @@ describe("A pull request's timeline", () => {
   });
 
   it("opens the Submit step for a file's Change from its finishing key, and says why GitHub would refuse a verdict", async () => {
-    await inFrontOfOtherChange();
     const before = await submittedReviews();
 
     void onTab("finishReview", pullRequestFile("util.py"));
@@ -900,7 +897,6 @@ describe("A pull request's timeline", () => {
   });
 
   it("offers to finish the Review once stepping finds every file viewed", async () => {
-    // Change Files lists only the Change in front.
     await openChange(change);
     await markViewed(
       entryAt(
@@ -908,7 +904,6 @@ describe("A pull request's timeline", () => {
         `${path.basename(pr.clone)} ${short(pr.base)}..${short(pr.head)}`
       )
     );
-    await inFrontOfOtherChange();
     const before = await submittedReviews();
 
     await vscode.commands.executeCommand(

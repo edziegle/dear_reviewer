@@ -4,11 +4,11 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import {
+  activeChange,
+  activeOf,
   arrivedDiffs,
-  changeInFront,
   OpenChange,
   OpenChanges,
-  placeInPlaceOf,
   waitingToShow,
 } from "../../src/openChanges";
 
@@ -28,65 +28,52 @@ function changeNamed(id: string, more: Partial<OpenChange> = {}): OpenChange {
 
 const ids = (changes: readonly OpenChange[]) => changes.map((c) => c.id);
 
-describe("The Change in front", () => {
+describe("The Active Change", () => {
   const here = () => true;
 
-  it("is the one shown last", () => {
-    assert.strictEqual(
-      changeInFront([changeNamed("abc"), changeNamed("xyz")], here)?.id,
-      "xyz"
-    );
+  it("is the one shown last of a list an earlier version left", () => {
+    const changes = [changeNamed("abc"), changeNamed("xyz")];
+    assert.strictEqual(activeOf(changes)?.id, "xyz");
+    assert.strictEqual(activeChange(changes, here)?.id, "xyz");
   });
 
   it("is none when no Change is open", () => {
-    assert.strictEqual(changeInFront([], here), undefined);
+    assert.strictEqual(activeOf([]), undefined);
+    assert.strictEqual(activeChange([], here), undefined);
   });
 
-  it("is never one whose folders are in another window", () => {
-    const changes = [changeNamed("abc"), changeNamed("xyz")];
+  it("is none in a window whose folders are not the Change's", () => {
     assert.strictEqual(
-      changeInFront(changes, (c) => c.id !== "xyz")?.id,
-      "abc"
-    );
-    assert.strictEqual(
-      changeInFront(changes, () => false),
+      activeChange([changeNamed("abc")], () => false),
       undefined
     );
   });
 
-  it("is never one still waiting for its diff to show", () => {
+  it("is none here while its diff waits to show", () => {
     assert.strictEqual(
-      changeInFront(
-        [changeNamed("abc"), changeNamed("xyz", { diffPending: true })],
-        here
-      )?.id,
-      "abc"
+      activeChange([changeNamed("abc", { diffPending: true })], here),
+      undefined
     );
   });
-});
 
-describe("Placing a newer head", () => {
-  const list = ["a", "b", "c"].map((id) => changeNamed(id));
-
-  it("puts it where the older head was", () => {
-    const placed = placeInPlaceOf(list, changeNamed("a2"), new Set(["a"]));
-    assert.deepStrictEqual(ids(placed), ["a2", "b", "c"]);
-    const middle = placeInPlaceOf(list, changeNamed("b2"), new Set(["b"]));
-    assert.deepStrictEqual(ids(middle), ["a", "b2", "c"]);
+  it("is the one shown last, not one opened after it that has not shown", () => {
+    const changes = [
+      changeNamed("abc"),
+      changeNamed("xyz", { diffPending: true }),
+    ];
+    assert.strictEqual(activeOf(changes)?.id, "abc");
   });
 
-  it("puts it last when no older head is in the list", () => {
-    const placed = placeInPlaceOf(list, changeNamed("d"), new Set(["x"]));
-    assert.deepStrictEqual(ids(placed), ["a", "b", "c", "d"]);
-  });
-
-  it("takes the place of the first of several older heads", () => {
-    const placed = placeInPlaceOf(list, changeNamed("n"), new Set(["b", "c"]));
-    assert.deepStrictEqual(ids(placed), ["a", "n"]);
+  it("is the last listed when none has shown", () => {
+    const changes = [
+      changeNamed("abc", { diffPending: true }),
+      changeNamed("xyz", { diffPending: true }),
+    ];
+    assert.strictEqual(activeOf(changes)?.id, "xyz");
   });
 });
 
-describe("The open Changes' order", () => {
+describe("The open Changes' list", () => {
   let dir: string;
   let open: OpenChanges;
 
@@ -97,56 +84,46 @@ describe("The open Changes' order", () => {
 
   afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
 
-  it("runs in the order the Changes were shown", () => {
+  it("holds one Change: putting another replaces it", () => {
     open.put(changeNamed("abc"));
     open.put(changeNamed("xyz"));
-    assert.deepStrictEqual(ids(open.all()), ["abc", "xyz"]);
-    assert.strictEqual(changeInFront(open.all(), () => true)?.id, "xyz");
+    assert.deepStrictEqual(ids(open.all()), ["xyz"]);
   });
 
-  it("moves a Change shown again to the front", () => {
+  it("holds the Change once when it is put again", () => {
     open.put(changeNamed("abc"));
-    open.put(changeNamed("xyz"));
     open.put(changeNamed("abc"));
-    assert.deepStrictEqual(ids(open.all()), ["xyz", "abc"]);
-    assert.strictEqual(changeInFront(open.all(), () => true)?.id, "abc");
+    assert.deepStrictEqual(ids(open.all()), ["abc"]);
   });
 
-  it("brings the Change shown before the one in front to the front when that one closes", () => {
-    for (const id of ["abc", "def", "xyz"]) open.put(changeNamed(id));
+  it("is empty once the Active Change is removed", () => {
     open.put(changeNamed("abc"));
     open.remove("abc");
-    assert.strictEqual(changeInFront(open.all(), () => true)?.id, "xyz");
-    open.remove("xyz");
-    assert.strictEqual(changeInFront(open.all(), () => true)?.id, "def");
-    open.remove("def");
-    assert.strictEqual(
-      changeInFront(open.all(), () => true),
-      undefined
-    );
+    assert.deepStrictEqual(open.all(), []);
   });
 
-  it("removes several Changes at once, leaving the others in their order", () => {
-    for (const id of ["abc", "def", "ghi", "xyz"]) open.put(changeNamed(id));
+  it("removes several Changes of a list an earlier version left, leaving the others", () => {
+    seed(open, ["abc", "def", "ghi", "xyz"]);
     open.removeAll(["xyz", "def"]);
     assert.deepStrictEqual(ids(open.all()), ["abc", "ghi"]);
   });
 
-  it("leaves the others in their order when a Change behind the front closes", () => {
-    for (const id of ["abc", "def", "xyz"]) open.put(changeNamed(id));
-    open.remove("def");
-    assert.deepStrictEqual(ids(open.all()), ["abc", "xyz"]);
-  });
-
-  it("keeps a Change where it is when its diff shows, so one opened later stays in front", () => {
+  it("keeps the Change where it is when its diff shows", () => {
     open.put(changeNamed("abc", { diffPending: true }));
-    open.put(changeNamed("xyz"));
     open.markShown(["abc"]);
-    assert.deepStrictEqual(ids(open.all()), ["abc", "xyz"]);
     assert.strictEqual(open.get("abc")?.diffPending, false);
-    assert.strictEqual(changeInFront(open.all(), () => true)?.id, "xyz");
+    assert.strictEqual(activeChange(open.all(), () => true)?.id, "abc");
   });
 });
+
+/** Writes a list of Changes as an earlier version, which held several, left it. */
+function seed(open: OpenChanges, names: string[]): void {
+  fs.mkdirSync(path.dirname(open.file), { recursive: true });
+  fs.writeFileSync(
+    open.file,
+    JSON.stringify(names.map((id) => changeNamed(id)))
+  );
+}
 
 describe("Whether the review window has a Change sent to it still to show", () => {
   const pending = changeNamed("abc", { diffPending: true });
@@ -182,59 +159,28 @@ describe("Whether the review window has a Change sent to it still to show", () =
   });
 });
 
-describe("The diffs that arrive in the review window", () => {
+describe("The diff that arrives in the review window", () => {
   const arrived = (
     changes: OpenChange[],
     isHere: (change: OpenChange) => boolean = () => true
-  ) =>
-    arrivedDiffs(changes, isHere).map(({ change, show }) => [change.id, show]);
+  ) => arrivedDiffs(changes, isHere).map((change) => change.id);
 
-  it("show in the order their Changes were opened", () => {
+  it("shows once the Change's folders have arrived", () => {
     assert.deepStrictEqual(
-      arrived([
-        changeNamed("abc", { diffPending: true }),
-        changeNamed("xyz", { diffPending: true }),
-      ]),
-      [
-        ["abc", true],
-        ["xyz", true],
-      ]
+      arrived([changeNamed("abc", { diffPending: true })]),
+      ["abc"]
     );
   });
 
-  it("leave out a Change already shown, and one whose folders haven't arrived", () => {
+  it("waits for the folders", () => {
     assert.deepStrictEqual(
-      arrived(
-        [
-          changeNamed("abc"),
-          changeNamed("def", { diffPending: true }),
-          changeNamed("xyz", { diffPending: true }),
-        ],
-        (c) => c.id !== "def"
-      ),
-      [["xyz", true]]
+      arrived([changeNamed("abc", { diffPending: true })], () => false),
+      []
     );
   });
 
-  it("keep one opened before a Change already shown here behind it, unshown", () => {
-    assert.deepStrictEqual(
-      arrived([
-        changeNamed("abc"),
-        changeNamed("def", { diffPending: true }),
-        changeNamed("xyz"),
-      ]),
-      [["def", false]]
-    );
-  });
-
-  it("show one opened before a Change shown only in another window", () => {
-    assert.deepStrictEqual(
-      arrived(
-        [changeNamed("def", { diffPending: true }), changeNamed("xyz")],
-        (c) => c.id !== "xyz"
-      ),
-      [["def", true]]
-    );
+  it("is none for a Change already shown", () => {
+    assert.deepStrictEqual(arrived([changeNamed("abc")]), []);
   });
 });
 
@@ -267,20 +213,27 @@ describe("The open Changes shared by several windows", () => {
     });
   }
 
-  it("loses no write when several windows put Changes at once", async function () {
+  it("loses no write when several windows remove Changes at once", async function () {
     this.timeout(10_000);
+    seed(
+      open,
+      Array.from({ length: 6 * 15 }, (_, i) => `c-${i}`)
+    );
     const windows = Array.from({ length: 6 }, (_, w) =>
       inOtherWindow(
-        `for (let i = 0; i < 15; i++) open.put(change("w${w}-" + i));`
+        `for (let i = 0; i < 15; i++) open.removeAll(["c-" + (${w} * 15 + i)]);`
       )
     );
     await Promise.all(windows);
-    assert.strictEqual(open.all().length, 6 * 15);
+    assert.deepStrictEqual(open.all(), []);
   });
 
-  it("loses no write when a window removes Changes while others put theirs", async function () {
+  it("loses no removal when other windows put Changes", async function () {
     this.timeout(10_000);
-    for (let i = 0; i < 20; i++) open.put(changeNamed(`old-${i}`));
+    seed(
+      open,
+      Array.from({ length: 20 }, (_, i) => `old-${i}`)
+    );
     await Promise.all([
       inOtherWindow(
         `for (let i = 0; i < 20; i++) open.removeAll(["old-" + i]);`
@@ -289,17 +242,21 @@ describe("The open Changes shared by several windows", () => {
       inOtherWindow(`for (let i = 0; i < 20; i++) open.put(change("b-" + i));`),
     ]);
     const kept = ids(open.all());
-    assert.strictEqual(kept.length, 40);
-    assert.ok(kept.every((id) => !id.startsWith("old-")));
+    assert.strictEqual(kept.length, 1);
+    assert.ok(/^[ab]-19$/.test(kept[0]), `kept ${kept[0]}`);
   });
 
   it("never lets a reader see a partial list while windows write", async function () {
     this.timeout(30_000);
-    for (let i = 0; i < 300; i++) open.put(changeNamed(`seed-${i}`));
+    seed(
+      open,
+      Array.from({ length: 300 }, (_, i) => `seed-${i}`)
+    );
     let writing = true;
+    const marking = `for (let i = 0; i < 300; i++) open.markShown(["seed-" + i]);`;
     const writers = Promise.all([
-      inOtherWindow(`for (let i = 0; i < 40; i++) open.put(change("a-" + i));`),
-      inOtherWindow(`for (let i = 0; i < 40; i++) open.put(change("b-" + i));`),
+      inOtherWindow(marking),
+      inOtherWindow(marking),
     ]).finally(() => (writing = false));
     let smallest = Infinity;
     while (writing) {

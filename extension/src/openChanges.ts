@@ -1,6 +1,7 @@
-// The Changes that are open, kept in a file in the extension's storage so
-// every window, and the next session, sees the same list. The list runs in
-// the order the Changes were last shown: putting one again moves it last.
+// The Active Change (ADR 0040), kept in a file in the extension's storage so
+// every window, and the next session, sees the same list. The list holds at
+// most one Change: putting another replaces it. A list written before that,
+// which may hold several, is cut down to one by `activeOf`.
 
 import * as fs from "fs";
 import * as path from "path";
@@ -72,22 +73,12 @@ export class OpenChanges {
     return this.all().find((change) => change.id === id);
   }
 
-  /** Adds the Change, or updates it, as the one shown last. */
-  put(change: OpenChange): void {
-    this.update((changes) => [
-      ...changes.filter((c) => c.id !== change.id),
-      change,
-    ]);
-  }
-
   /**
-   * Puts a newer head where the older head's Change was, in one write that
-   * also removes the older ones, so no window sees another Change in front
-   * on the way.
+   * Makes the Change the only one in the list, in one write, so no window
+   * sees two Changes, or none, on the way.
    */
-  putInPlaceOf(change: OpenChange, olderIds: Iterable<string>): void {
-    const older = new Set(olderIds);
-    this.update((changes) => placeInPlaceOf(changes, change, older));
+  put(change: OpenChange): void {
+    this.update(() => [change]);
   }
 
   remove(id: string): void {
@@ -121,10 +112,7 @@ export class OpenChanges {
     }
   }
 
-  /**
-   * Marks these Changes' diffs shown, each where it is, so a Change opened
-   * after them stays in front.
-   */
+  /** Marks these Changes' diffs shown. */
   markShown(ids: Iterable<string>): void {
     const shown = new Set(ids);
     this.update((changes) =>
@@ -268,61 +256,37 @@ function processIsAlive(pid: number): boolean {
 }
 
 /**
- * The Change in front (ADR 0025): of those whose folders are here and whose
- * diff has been shown, the one shown last. When it closes, the one shown
- * before it comes to the front.
+ * The Active Change of a list that may hold several, as one written before
+ * ADR 0040 does: the one whose diff was shown last, or else the last listed.
  */
-export function changeInFront<T extends OpenChange>(
+export function activeOf<T extends OpenChange>(
+  changes: readonly T[]
+): T | undefined {
+  return changes.filter((c) => !c.diffPending).at(-1) ?? changes.at(-1);
+}
+
+/**
+ * The Active Change if its folders are here and its diff has been shown.
+ */
+export function activeChange<T extends OpenChange>(
   changes: readonly T[],
   isHere: (change: T) => boolean
 ): T | undefined {
-  return changes
-    .filter((change) => !change.diffPending && isHere(change))
-    .at(-1);
+  const active = activeOf(changes);
+  return active && !active.diffPending && isHere(active) ? active : undefined;
 }
 
 /**
- * The list with the Change where the first of the older Changes was, and the
- * older ones gone. Without an older one in the list, the Change goes last.
- */
-export function placeInPlaceOf<T extends OpenChange>(
-  changes: readonly T[],
-  change: T,
-  olderIds: ReadonlySet<string>
-): T[] {
-  const index = changes.findIndex((c) => olderIds.has(c.id));
-  const others = changes.filter(
-    (c) => !olderIds.has(c.id) && c.id !== change.id
-  );
-  if (index < 0) return [...others, change];
-  const before = changes
-    .slice(0, index)
-    .filter((c) => !olderIds.has(c.id) && c.id !== change.id);
-  return [...before, change, ...others.slice(before.length)];
-}
-
-/**
- * The Changes waiting for their diff whose folders have arrived here, in the
- * order they were opened, and whether each is to show the way a review
- * starts. One opened before a Change already shown here, whose folders
- * arrived later, stays behind that one rather than taking the front.
+ * The Change waiting for its diff, if its folders have arrived here. A
+ * Change opened since replaced it, so it is the Active Change if it is
+ * listed at all.
  */
 export function arrivedDiffs<T extends OpenChange>(
   changes: readonly T[],
   isHere: (change: T) => boolean
-): { change: T; show: boolean }[] {
-  return changes.flatMap((change, i) =>
-    change.diffPending && isHere(change)
-      ? [
-          {
-            change,
-            show: !changes
-              .slice(i + 1)
-              .some((later) => !later.diffPending && isHere(later)),
-          },
-        ]
-      : []
-  );
+): T[] {
+  const active = activeOf(changes);
+  return active?.diffPending && isHere(active) ? [active] : [];
 }
 
 /**

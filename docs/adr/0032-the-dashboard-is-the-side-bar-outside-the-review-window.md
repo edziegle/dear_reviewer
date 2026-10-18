@@ -5,6 +5,8 @@ date: 2026-10-15
 
 # The Dashboard is the Dear Reviewer side bar outside the review window
 
+Amended by [ADR 0040](0040-one-active-change-in-the-review-window.md): the Dashboard lists the one Active Change under that heading, where In progress listed every open Change, and no window but the review window holds a Change.
+
 ## Context and Problem Statement
 
 ADR 0025 hid the Inbox in the review window and put Home in its place: a page in the editor area that showed where the Reviewer stood across their Changes when no Change was in front there. That served a moment the Reviewer doesn't have. In the review window a Change is nearly always in front, and its overview already says where they stand on it. Meanwhile, in the Reviewer's own windows, where they work all day and choose what to review next, the Dear Reviewer side bar held three views and only one worked there. Change Files and Findings showed welcome text and buttons, Open Change and Ask for Findings, that only make sense with a Change in front, and in the Reviewer's own window there never is one: opening a Change hands it to the review window. Where should the Reviewer see where they stand, and start the next review (issue #38)?

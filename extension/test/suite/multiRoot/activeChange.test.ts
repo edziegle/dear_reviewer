@@ -26,81 +26,9 @@ import {
   worktreesOf,
 } from "../reviewer";
 
-describe("Two open Changes", () => {
-  it("keep their own worktrees, and closing one leaves the other open", async () => {
-    const repo = buildFixtureRepo("two");
-    const rename = {
-      repository: repo.path,
-      base: repo.commits.initial,
-      head: repo.commits.renamed,
-    };
-    const docs = {
-      repository: repo.path,
-      base: repo.commits.renamed,
-      head: repo.commits.documented,
-    };
-    const before = workspaceFolders();
-
-    await openChange(rename);
-    const renameFolders = foldersAddedSince(before);
-    await openChange(docs);
-    const docsFolders = foldersAddedSince([...before, ...renameFolders]);
-
-    assert.strictEqual(renameFolders.length, 2);
-    assert.strictEqual(docsFolders.length, 2);
-    const heads = [renameFolders[1], docsFolders[1]].map((f) =>
-      gitIn(f.path, "rev-parse", "HEAD")
-    );
-    assert.deepStrictEqual(heads, [
-      repo.commits.renamed,
-      repo.commits.documented,
-    ]);
-
-    await closeChange(rename);
-
-    assert.deepStrictEqual(workspaceFolders(), [...before, ...docsFolders]);
-    assert.deepStrictEqual(
-      worktreesOf(repo.path).map((w) => w.path),
-      [repo.path, ...docsFolders.map((f) => f.path)]
-    );
-    assert.match(
-      fs.readFileSync(path.join(docsFolders[1].path, "util.py"), "utf8"),
-      /"""Two."""/
-    );
-
-    await closeChange(docs);
-  });
-
-  it("lists only the Change in front in Change Files, the one opened last (#35)", async () => {
-    const repo = buildFixtureRepo("front");
-    const first = {
-      repository: repo.path,
-      base: repo.commits.initial,
-      head: repo.commits.renamed,
-    };
-    const second = {
-      repository: repo.path,
-      base: repo.commits.renamed,
-      head: repo.commits.documented,
-    };
-    const title = `${path.basename(repo.path)} ${short(second.base)}..${short(second.head)}`;
-
-    await openChange(first);
-    await openChange(second);
-
-    try {
-      await eventually(async () =>
-        assert.deepStrictEqual(render(await changeFiles()), [
-          `${title} — □□□□□□□ 0/1`,
-          "  util.py [M]",
-        ])
-      );
-    } finally {
-      await closeChange(second);
-      await closeChange(first);
-    }
-  });
-
+// The review window holds one Change, the Active Change (ADR 0040). This
+// window stands in for it.
+describe("The Active Change", () => {
   /** Two Changes of one repository, and their titles in Change Files. */
   function twoChangesOf(name: string) {
     const repo = buildFixtureRepo(name);
@@ -116,7 +44,7 @@ describe("Two open Changes", () => {
     };
     const titleOf = (c: typeof first) =>
       `${path.basename(repo.path)} ${short(c.base)}..${short(c.head)}`;
-    return { first, second, titles: [titleOf(first), titleOf(second)] };
+    return { repo, first, second, titles: [titleOf(first), titleOf(second)] };
   }
 
   const listed = async () =>
@@ -124,7 +52,61 @@ describe("Two open Changes", () => {
       (entry) => `${entry.label} — ${entry.description}`
     );
 
-  it("lists the Change opened again in front, as the Reviewer left it", async () => {
+  it("stops the Change before it when another opens: its worktrees and folders go", async () => {
+    const { repo, first, second } = twoChangesOf("stops");
+    const before = workspaceFolders();
+
+    await openChange(first);
+    const firstFolders = foldersAddedSince(before);
+    await openChange(second);
+
+    try {
+      const secondFolders = foldersAddedSince(before);
+      assert.strictEqual(firstFolders.length, 2);
+      assert.strictEqual(secondFolders.length, 2);
+      assert.ok(
+        secondFolders.every(
+          (folder) => !firstFolders.some((old) => old.path === folder.path)
+        ),
+        "the first Change's folders are gone"
+      );
+      assert.strictEqual(
+        gitIn(secondFolders[1].path, "rev-parse", "HEAD"),
+        repo.commits.documented
+      );
+      assert.deepStrictEqual(
+        worktreesOf(repo.path).map((w) => w.path),
+        [repo.path, ...secondFolders.map((f) => f.path)]
+      );
+      assert.match(
+        fs.readFileSync(path.join(secondFolders[1].path, "util.py"), "utf8"),
+        /"""Two."""/
+      );
+    } finally {
+      await closeChange(second);
+    }
+    assert.deepStrictEqual(workspaceFolders(), before);
+  });
+
+  it("is the only Change Change Files lists", async () => {
+    const { first, second, titles } = twoChangesOf("front");
+
+    await openChange(first);
+    await openChange(second);
+
+    try {
+      await eventually(async () =>
+        assert.deepStrictEqual(render(await changeFiles()), [
+          `${titles[1]} — □□□□□□□ 0/1`,
+          "  util.py [M]",
+        ])
+      );
+    } finally {
+      await closeChange(second);
+    }
+  });
+
+  it("is picked up again with the files the Reviewer viewed, when its Change opens again", async () => {
     const { first, second, titles } = twoChangesOf("again");
 
     await openChange(first);
@@ -148,12 +130,11 @@ describe("Two open Changes", () => {
       );
       assert.strictEqual((await viewedFilesKey()).length, 2);
     } finally {
-      await closeChange(second);
       await closeChange(first);
     }
   });
 
-  it("keeps the pending Comments of a Change behind the one in front, and shows them when it comes back", async () => {
+  it("keeps the pending Comments of the Change it stops, and shows them when that Change opens again", async () => {
     const { first, second } = twoChangesOf("comments");
     const before = workspaceFolders();
     await openChange(first);
@@ -172,44 +153,40 @@ describe("Two open Changes", () => {
     await openChange(second);
 
     try {
-      assert.deepStrictEqual(await commentThreads(), pending);
+      assert.deepStrictEqual(await commentThreads(), []);
 
       await openChange(first);
 
-      assert.deepStrictEqual(await commentThreads(), pending);
+      await eventually(async () =>
+        assert.deepStrictEqual(await commentThreads(), pending)
+      );
     } finally {
-      await closeChange(second);
       await closeChange(first);
     }
   });
 
-  it("lists the Change shown before once the one in front closes, and none once the last closes", async () => {
+  it("leaves none once the Active Change closes", async () => {
     const { first, second, titles } = twoChangesOf("closing");
 
     await openChange(first);
     await openChange(second);
-    await openChange(first);
-    await closeChange(first);
+    await eventually(async () =>
+      assert.deepStrictEqual(await listed(), [`${titles[1]} — □□□□□□□ 0/1`])
+    );
 
-    try {
-      await eventually(async () =>
-        assert.deepStrictEqual(await listed(), [`${titles[1]} — □□□□□□□ 0/1`])
-      );
-    } finally {
-      await closeChange(second);
-    }
-    assert.deepStrictEqual(await changeFiles(), []);
+    await closeChange(second);
+
+    await eventually(async () =>
+      assert.deepStrictEqual(await changeFiles(), [])
+    );
   });
 
-  it("shows the Change shown before as a review starts, its overview alone, once the one in front closes", async () => {
+  it("shows only the overview of the Change that opened last", async () => {
     const { first, second, titles } = twoChangesOf("showing");
     await vscode.commands.executeCommand("workbench.action.closeAllEditors");
 
     await openChange(first);
     await openChange(second);
-    await openChange(first);
-    await eventually(() => assert.strictEqual(activeTabLabel(), titles[0]));
-    await closeChange(first);
 
     try {
       await eventually(() => {
@@ -226,7 +203,7 @@ describe("Two open Changes", () => {
     }
   });
 
-  it("moves through the Change in front's files with the review keys, without asking which Change", async () => {
+  it("moves through its files with the review keys, without asking which Change", async () => {
     const { first, second } = twoChangesOf("keys");
     await openChange(first);
     const before = workspaceFolders();
@@ -246,24 +223,17 @@ describe("Two open Changes", () => {
     } finally {
       await vscode.commands.executeCommand("workbench.action.closeAllEditors");
       await closeChange(second);
-      await closeChange(first);
     }
   });
 
-  it("shows only the newer head when it replaces the Change in front, never the Change behind on the way", async () => {
+  it("is replaced by a newer head of its branch, with only that head shown", async () => {
     const repo = buildFixtureRepo("newerHead");
-    const behind = {
-      repository: repo.path,
-      base: repo.commits.initial,
-      head: repo.commits.renamed,
-    };
     repo.git("branch", "feature", repo.commits.documented);
     const feature = {
       repository: repo.path,
       base: repo.commits.renamed,
       head: "refs/heads/feature",
     };
-    await openChange(behind);
     await openChange(feature);
     const shownBefore = (await shownChanges()).length;
     repo.git("branch", "-f", "feature", repo.commits.restructured);
@@ -276,14 +246,15 @@ describe("Two open Changes", () => {
           "feature",
         ])
       );
-      // Give a late showing of the Change behind the time to show up.
-      await new Promise((resolve) => setTimeout(resolve, 1_000));
-      assert.deepStrictEqual((await shownChanges()).slice(shownBefore), [
-        "feature",
-      ]);
+      await eventually(async () =>
+        assert.strictEqual(
+          (await changeFiles()).length > 0 &&
+            worktreesOf(repo.path).length === 3,
+          true
+        )
+      );
     } finally {
       await closeChange(feature);
-      await closeChange(behind);
     }
   });
 });

@@ -25,7 +25,7 @@ const viewer = { login: "reviewer", token: "test-token" };
 const settingKeys = ["githubApiUrl", "repositories", "localClones"];
 
 // GitHub unreachable or refusing while pull requests open: the Reviewer hears
-// about the Change in front, once, and the rest wait until something changes.
+// about the Active Change, once, and it waits until something changes.
 describe("Review threads that fail to load", () => {
   const fixtures = [31, 32, 33, 34].map((number) => {
     const repository = `acme/failing${number}`;
@@ -114,7 +114,7 @@ describe("Review threads that fail to load", () => {
       );
   });
 
-  it("tells the Reviewer about each Change in front once, and nothing again about the ones it was in front of", async () => {
+  it("tells the Reviewer about each Active Change once, and nothing again about the ones it stopped", async () => {
     await open(first);
     await eventually(() => assert.strictEqual(errors.length, 1));
     assert.match(errors[0].message, new RegExp(first.name));
@@ -126,11 +126,11 @@ describe("Review threads that fail to load", () => {
     assert.deepStrictEqual(
       errors.map((e) => fixtures.filter((f) => e.message.includes(f.name))),
       [[first], [second], [third]],
-      "each message names only the Change that was in front"
+      "each message names only the Change that was active"
     );
   });
 
-  it("tries only the Change shown again, once GitHub answers", async () => {
+  it("tries only the Active Change again, once GitHub answers", async () => {
     await serveGitHub(up);
     await openChange(first.change);
     await eventually(async () =>
@@ -141,13 +141,20 @@ describe("Review threads that fail to load", () => {
     assert.strictEqual(errors.length, 0);
   });
 
-  it("tries them all again when the sign-in changes", async () => {
+  it("tries the Active Change again when the sign-in changes", async () => {
+    await serveGitHub(down);
+    await open(second);
+    await eventually(() => assert.strictEqual(errors.length, 1));
+    assert.deepStrictEqual(await shownFor(second), []);
+    await serveGitHub(up);
+
     await forgetToken();
     await setToken(viewer.token);
-    await eventually(async () => {
-      assert.strictEqual((await shownFor(second)).length, 1);
-      assert.strictEqual((await shownFor(third)).length, 1);
-    });
+
+    await eventually(async () =>
+      assert.strictEqual((await shownFor(second)).length, 1)
+    );
+    assert.deepStrictEqual(await shownFor(first), []);
   });
 
   it("tries the Change again when the Reviewer picks Retry", async () => {

@@ -26,7 +26,7 @@ Real navigation on both sides of every diff, for pull requests and local Changes
 
 ## Operating Context
 
-- The Reviewer works inside VS Code or VSCodium all day, in long sessions, often with several Changes open, in a review window Dear Reviewer manages (ADR 0002).
+- The Reviewer works inside VS Code or VSCodium all day, in long sessions, one Change at a time, in a review window Dear Reviewer manages (ADR 0002).
 - A Review is one pass over a Change, ending with a verdict submitted to GitHub or a Brief copied for an agent. A Change can have several Reviews as new commits arrive.
 - The JetBrains review workflow is the explicit reference: a timeline with checks and avatars, a pull-request files view, Comments in the diff gutter, a pending review submitted with a verdict, and viewed-file tracking kept in sync with github.com.
 

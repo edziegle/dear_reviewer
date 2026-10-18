@@ -13,13 +13,16 @@ import type { Change, PullRequestRef } from "./openChanges";
 export interface ViewedFiles {
   viewed(change: Change): Promise<ReadonlySet<string>>;
   setViewed(change: Change, paths: string[], viewed: boolean): Promise<void>;
-  /** Drops what's kept for a Change that has been closed. */
+  /** Lets go of what's kept for a Change that stopped; what outlives it stays. */
   forget(change: Change): Promise<void>;
 }
 
 /**
  * Keeps viewed files in a file in the extension's storage, so they survive
- * reloads and every window sees the same state.
+ * reloads and every window sees the same state. They are kept by the
+ * Change's conversation, its branch or commit range, rather than by its id,
+ * so they outlive the Change's stopping (ADR 0040); `forgetConversation`
+ * drops them once the branch is over.
  */
 export class LocalViewedFiles implements ViewedFiles {
   private readonly file: string;
@@ -29,7 +32,7 @@ export class LocalViewedFiles implements ViewedFiles {
   }
 
   async viewed(change: Change): Promise<ReadonlySet<string>> {
-    return new Set(this.read()[change.id] ?? []);
+    return new Set(this.read()[change.conversation] ?? []);
   }
 
   async setViewed(
@@ -38,19 +41,24 @@ export class LocalViewedFiles implements ViewedFiles {
     viewed: boolean
   ): Promise<void> {
     const all = this.read();
-    const files = new Set(all[change.id] ?? []);
+    const files = new Set(all[change.conversation] ?? []);
     for (const p of paths) {
       if (viewed) files.add(p);
       else files.delete(p);
     }
-    all[change.id] = [...files].sort();
-    if (files.size === 0) delete all[change.id];
+    all[change.conversation] = [...files].sort();
+    if (files.size === 0) delete all[change.conversation];
     this.write(all);
   }
 
-  async forget(change: Change): Promise<void> {
+  /** Stopping a Change keeps its viewed files, for when it is opened again. */
+  async forget(): Promise<void> {}
+
+  /** Drops the viewed files of a branch or pull request that is over. */
+  forgetConversation(conversation: string): void {
     const all = this.read();
-    delete all[change.id];
+    if (!(conversation in all)) return;
+    delete all[conversation];
     this.write(all);
   }
 

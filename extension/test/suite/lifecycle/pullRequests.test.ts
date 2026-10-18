@@ -106,38 +106,44 @@ describe("Pull requests that are merged or closed", () => {
       );
   });
 
-  it("lose their worktrees and folders when the Inbox refreshes, while open ones keep theirs", async () => {
+  it("lose their worktrees and folders when the Inbox refreshes, while an open one keeps theirs", async () => {
     for (const pr of titles.keys())
       await scriptClaude(requestFor(pr), { turns: [replyTurn("A summary.")] });
     const before = workspaceFolders();
-    const added = new Map<
-      PullRequestFixture,
-      { name: string; path: string }[]
-    >();
-    for (const pr of titles.keys()) {
+    // Only one Change is the Active Change, so each ends in its turn.
+    for (const [pr, state] of [
+      [merged, "MERGED"],
+      [closed, "CLOSED"],
+    ] as const) {
       const was = workspaceFolders();
       await openFromTheInbox(pr);
-      added.set(pr, foldersAddedSince(was));
-    }
-    states.set(merged, "MERGED");
-    states.set(closed, "CLOSED");
-    await serve();
+      const added = foldersAddedSince(was);
+      states.set(pr, state);
+      await serve();
 
-    await refreshInbox();
+      await refreshInbox();
 
-    assert.deepStrictEqual(workspaceFolders(), [
-      ...before,
-      ...added.get(open)!,
-    ]);
-    assert.deepStrictEqual(workspaceFolders()[0], before[0]);
-    for (const pr of [merged, closed]) {
+      assert.deepStrictEqual(workspaceFolders(), before);
       assert.deepStrictEqual(
         worktreesOf(pr.clone).map((w) => w.path),
         [pr.clone]
       );
-      for (const folder of added.get(pr)!)
+      for (const folder of added)
         assert.ok(!fs.existsSync(folder.path), `${folder.path} was deleted`);
+      assert.strictEqual(
+        await assistantTake(changeTitle(pr)),
+        undefined,
+        `${titles.get(pr)} has no Assistant running`
+      );
     }
+    const was = workspaceFolders();
+    await openFromTheInbox(open);
+    const added = foldersAddedSince(was);
+
+    await refreshInbox();
+
+    assert.deepStrictEqual(workspaceFolders(), [...before, ...added]);
+    assert.deepStrictEqual(workspaceFolders()[0], before[0]);
     assert.strictEqual(worktreesOf(open.clone).length, 3);
     assert.deepStrictEqual(
       render(await changeFiles())
@@ -148,12 +154,6 @@ describe("Pull requests that are merged or closed", () => {
         ),
       [changeTitle(open)]
     );
-    for (const pr of [merged, closed])
-      assert.strictEqual(
-        await assistantTake(changeTitle(pr)),
-        undefined,
-        `${titles.get(pr)} has no Assistant running`
-      );
   });
 
   it("forget their Assistant conversation, so a reopened pull request starts a new one", async () => {

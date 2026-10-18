@@ -2,7 +2,7 @@
 // Change is over when GitHub says the pull request was merged or closed, and
 // a local branch's when the branch was deleted or main has all its commits:
 // its worktrees and folders go, and so do its Assistant conversation and,
-// for a branch, its local Review and Briefs, even if the Reviewer had
+// for a branch, its local Review, Briefs and viewed files, even if the Reviewer had
 // already closed the Change. Any Change is over when its worktrees or its
 // repository were deleted outside Dear Reviewer, but that keeps what it
 // leaves in the extension's storage.
@@ -14,12 +14,14 @@ import { Conversations } from "./assistant/conversations";
 import { GitHubClient } from "./github/client";
 import { branchIsOver } from "./localBranches";
 import { LocalPendingReviews } from "./localReviews";
+import { LocalViewedFiles } from "./viewedFiles";
 
 /** What a Change leaves in the extension's storage, under its conversation name. */
 export interface Kept {
   conversations: Conversations;
   localReviews: LocalPendingReviews;
   briefs: Briefs;
+  viewedFiles: LocalViewedFiles;
 }
 
 export class Lifecycle {
@@ -58,6 +60,7 @@ export class Lifecycle {
       this.kept.conversations.forget(name);
       this.kept.localReviews.forget(name);
       this.kept.briefs.forget(name);
+      this.kept.viewedFiles.forgetConversation(name);
     }
   }
 

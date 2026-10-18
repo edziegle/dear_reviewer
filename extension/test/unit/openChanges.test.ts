@@ -8,6 +8,7 @@ import {
   changeInFront,
   OpenChange,
   OpenChanges,
+  placeInPlaceOf,
   waitingToShow,
 } from "../../src/openChanges";
 
@@ -61,6 +62,27 @@ describe("The Change in front", () => {
       )?.id,
       "abc"
     );
+  });
+});
+
+describe("Placing a newer head", () => {
+  const list = ["a", "b", "c"].map((id) => changeNamed(id));
+
+  it("puts it where the older head was", () => {
+    const placed = placeInPlaceOf(list, changeNamed("a2"), new Set(["a"]));
+    assert.deepStrictEqual(ids(placed), ["a2", "b", "c"]);
+    const middle = placeInPlaceOf(list, changeNamed("b2"), new Set(["b"]));
+    assert.deepStrictEqual(ids(middle), ["a", "b2", "c"]);
+  });
+
+  it("puts it last when no older head is in the list", () => {
+    const placed = placeInPlaceOf(list, changeNamed("d"), new Set(["x"]));
+    assert.deepStrictEqual(ids(placed), ["a", "b", "c", "d"]);
+  });
+
+  it("takes the place of the first of several older heads", () => {
+    const placed = placeInPlaceOf(list, changeNamed("n"), new Set(["b", "c"]));
+    assert.deepStrictEqual(ids(placed), ["a", "n"]);
   });
 });
 

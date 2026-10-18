@@ -80,6 +80,16 @@ export class OpenChanges {
     ]);
   }
 
+  /**
+   * Puts a newer head where the older head's Change was, in one write that
+   * also removes the older ones, so no window sees another Change in front
+   * on the way.
+   */
+  putInPlaceOf(change: OpenChange, olderIds: Iterable<string>): void {
+    const older = new Set(olderIds);
+    this.update((changes) => placeInPlaceOf(changes, change, older));
+  }
+
   remove(id: string): void {
     this.removeAll([id]);
   }
@@ -269,6 +279,26 @@ export function changeInFront<T extends OpenChange>(
   return changes
     .filter((change) => !change.diffPending && isHere(change))
     .at(-1);
+}
+
+/**
+ * The list with the Change where the first of the older Changes was, and the
+ * older ones gone. Without an older one in the list, the Change goes last.
+ */
+export function placeInPlaceOf<T extends OpenChange>(
+  changes: readonly T[],
+  change: T,
+  olderIds: ReadonlySet<string>
+): T[] {
+  const index = changes.findIndex((c) => olderIds.has(c.id));
+  const others = changes.filter(
+    (c) => !olderIds.has(c.id) && c.id !== change.id
+  );
+  if (index < 0) return [...others, change];
+  const before = changes
+    .slice(0, index)
+    .filter((c) => !olderIds.has(c.id) && c.id !== change.id);
+  return [...before, change, ...others.slice(before.length)];
 }
 
 /**

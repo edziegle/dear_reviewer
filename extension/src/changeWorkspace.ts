@@ -124,11 +124,19 @@ export class ChangeWorkspace implements vscode.Disposable {
     );
   }
 
-  open(request: ChangeRequest): Promise<Change> {
-    return this.serially(() => this.openNow(request));
+  /**
+   * Opens the Change. With `keepPlace`, a newer head of a pull request or
+   * branch takes the older head's place in the list and is not shown, so a
+   * Change behind the one in front stays behind it.
+   */
+  open(request: ChangeRequest, keepPlace = false): Promise<Change> {
+    return this.serially(() => this.openNow(request, keepPlace));
   }
 
-  private async openNow(request: ChangeRequest): Promise<Change> {
+  private async openNow(
+    request: ChangeRequest,
+    keepPlace: boolean
+  ): Promise<Change> {
     const change = await this.resolve(request);
     if (change.mergeBase === change.headSha)
       throw new Error(
@@ -145,18 +153,23 @@ export class ChangeWorkspace implements vscode.Disposable {
       );
     const here = ReviewWindow.canAddFoldersHere();
     this.openChanges.withdrawCloseAsk();
-    this.openChanges.put(
-      here
-        ? { ...change, inReviewWindow: this.reviewWindow.isThisWindow() }
-        : { ...change, inReviewWindow: true, diffPending: true }
-    );
+    const entry = here
+      ? { ...change, inReviewWindow: this.reviewWindow.isThisWindow() }
+      : { ...change, inReviewWindow: true, diffPending: true };
+    const inPlace = keepPlace && here && older.length > 0;
+    if (inPlace)
+      this.openChanges.putInPlaceOf(
+        entry,
+        older.map((c) => c.id)
+      );
+    else this.openChanges.put(entry);
     for (const old of older) {
       await this.remove(old);
       this.replaced.fire(old);
     }
     if (here) {
       await appendFolders(changeFolders(change));
-      this.shown.fire(change);
+      if (!inPlace) this.shown.fire(change);
     } else {
       this.syncReviewWindow();
       await this.reviewWindow.open();

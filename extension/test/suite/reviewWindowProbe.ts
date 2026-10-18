@@ -1,7 +1,9 @@
 // Runs instead of the tests when Dear Reviewer opens its review window during
 // a test run: VSCodium starts that window with the same test entry point. It
 // records what the Reviewer sees there, for the test in the first window to
-// check, and then waits for the run to end.
+// check, and then waits for the run to end. It keeps the window open when Dear
+// Reviewer closes it, since VSCodium ends the whole run once a window running
+// the tests' entry point closes.
 
 import * as fs from "fs";
 import * as path from "path";
@@ -29,6 +31,22 @@ export function isReviewWindow(): boolean {
  */
 function meetingFolder(): string {
   return path.join(process.env.DEAR_REVIEWER_FIXTURES_ROOT!, "singleFolder");
+}
+
+/** How many times Dear Reviewer has closed this window, the review window. */
+let closed = 0;
+
+/**
+ * Has Dear Reviewer count the times it closes the review window instead of
+ * closing it: VSCodium exits, ending the run, once a window running the tests'
+ * entry point closes.
+ */
+export async function keepReviewWindowOpen(): Promise<void> {
+  const extension = vscode.extensions.getExtension<{
+    reviewWindow: { closeWith(close?: () => void): void };
+  }>("edziegle.dear-reviewer");
+  if (!extension) throw new Error("Dear Reviewer is not installed");
+  (await extension.activate()).reviewWindow.closeWith(() => closed++);
 }
 
 export function reviewWindowReportFile(): string {
@@ -103,13 +121,16 @@ export interface ReviewWindowReport {
   held: HeldState;
   /** The commands asked of it with `runInReviewWindow` that have run, by id. */
   ran: string[];
+  /** How many times Dear Reviewer has closed it, which it keeps open. */
+  closed: number;
 }
 
 /**
  * Writes what the review window shows now, and again whenever its editors,
  * tabs, folders or Change Files change, and every half second, for as long
  * as the run's fixtures last: its folders, the active tab, every tab, any
- * diff's files, the Changes Change Files lists, and every Change shown.
+ * diff's files, the Changes Change Files lists, every Change shown, and
+ * how many times it was closed.
  */
 export async function observeReviewWindow(): Promise<never> {
   const file = reviewWindowReportFile();
@@ -151,6 +172,7 @@ export async function observeReviewWindow(): Promise<never> {
           shown: await shownChanges(),
           held: await heldState(),
           ran: [...ran],
+          closed,
         };
         // Renamed into place, so the test never reads a half-written report.
         fs.writeFileSync(`${file}.tmp`, JSON.stringify(report, null, 2));

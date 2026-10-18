@@ -10,7 +10,11 @@ import * as fs from "fs";
 import * as path from "path";
 import Mocha from "mocha";
 import type { Progress } from "../runPlan";
-import { isReviewWindow, observeReviewWindow } from "./reviewWindowProbe";
+import {
+  isReviewWindow,
+  keepReviewWindowOpen,
+  observeReviewWindow,
+} from "./reviewWindowProbe";
 
 interface PlannedPhase {
   phase: string;
@@ -46,6 +50,7 @@ function runPhase({ phase, files }: PlannedPhase): Promise<string[]> {
 }
 
 export async function run(): Promise<void> {
+  if (isReviewWindow()) await keepReviewWindowOpen();
   // A review window Dear Reviewer opened only reports what it shows, unless
   // the launch opened it to run its tests there.
   if (isReviewWindow() && !process.env.DEAR_REVIEWER_TESTS_IN_REVIEW_WINDOW)

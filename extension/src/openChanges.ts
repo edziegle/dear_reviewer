@@ -47,12 +47,15 @@ export class OpenChanges {
   /** The file every window reads and writes the open Changes in. */
   readonly file: string;
   private readonly lockFile: string;
+  /** Exists while the Reviewer's close of the last Change awaits the review window's closing. */
+  readonly closeAskFile: string;
   private readonly waitMs: number;
   private readonly staleMs: number;
 
   constructor(storageDir: string, timing: OpenChangesTiming = {}) {
     this.file = path.join(storageDir, "open-changes.json");
     this.lockFile = `${this.file}.lock`;
+    this.closeAskFile = `${this.file}.close-window`;
     this.waitMs = timing.waitMs ?? 10_000;
     this.staleMs = timing.staleMs ?? 5_000;
   }
@@ -85,6 +88,27 @@ export class OpenChanges {
   removeAll(ids: Iterable<string>): void {
     const gone = new Set(ids);
     this.update((changes) => changes.filter((c) => !gone.has(c.id)));
+  }
+
+  /** Asks the review window, which may be another window, to close once it holds no Change. */
+  askToCloseWindow(): void {
+    fs.mkdirSync(path.dirname(this.closeAskFile), { recursive: true });
+    fs.writeFileSync(this.closeAskFile, "");
+  }
+
+  /** Withdraws the ask, such as when a Change opens in the review window. */
+  withdrawCloseAsk(): void {
+    fs.rmSync(this.closeAskFile, { force: true });
+  }
+
+  /** Takes the ask, if there is one; only one window gets it. */
+  takeCloseAsk(): boolean {
+    try {
+      fs.unlinkSync(this.closeAskFile);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /**

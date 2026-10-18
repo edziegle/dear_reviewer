@@ -288,6 +288,20 @@ describe("The open Changes shared by several windows", () => {
     assert.ok(smallest >= 300, `a read saw only ${smallest} Changes`);
   });
 
+  describe("the ask to close the review window", () => {
+    it("goes to one window only, once", () => {
+      open.askToCloseWindow();
+      assert.strictEqual(new OpenChanges(dir).takeCloseAsk(), true);
+      assert.strictEqual(open.takeCloseAsk(), false);
+    });
+
+    it("is gone once withdrawn", () => {
+      open.askToCloseWindow();
+      open.withdrawCloseAsk();
+      assert.strictEqual(open.takeCloseAsk(), false);
+    });
+  });
+
   describe("the lock", () => {
     const lockFile = () => `${open.file}.lock`;
 

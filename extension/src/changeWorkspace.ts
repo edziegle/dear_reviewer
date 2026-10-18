@@ -48,6 +48,7 @@ export interface ChangeRequest {
 export class ChangeWorkspace implements vscode.Disposable {
   private readonly openChanges: OpenChanges;
   private readonly watcher: vscode.FileSystemWatcher;
+  private readonly closeAskWatcher: vscode.FileSystemWatcher;
   /**
    * Fires when the open Changes change, in this window or another, such as
    * when another window opens again a Change this one shows.
@@ -64,6 +65,9 @@ export class ChangeWorkspace implements vscode.Disposable {
   private queue: Promise<unknown> = Promise.resolve();
   /** How many of them are queued or running. */
   private operations = 0;
+  private readonly emptied = new vscode.EventEmitter<void>();
+  /** Fires in the review window when the Reviewer closed its last Change, so the window should close. */
+  readonly onDidEmptyReviewWindow = this.emptied.event;
   private readonly settled = new vscode.EventEmitter<void>();
   /** Fires when the last opening, closing or tidying queued finishes. */
   readonly onDidSettle = this.settled.event;
@@ -77,6 +81,14 @@ export class ChangeWorkspace implements vscode.Disposable {
         path.basename(this.openChanges.file)
       )
     );
+    this.closeAskWatcher = vscode.workspace.createFileSystemWatcher(
+      new vscode.RelativePattern(
+        vscode.Uri.file(path.dirname(this.openChanges.closeAskFile)),
+        path.basename(this.openChanges.closeAskFile)
+      )
+    );
+    this.closeAskWatcher.onDidCreate(() => this.closeIfAsked());
+    this.closeAskWatcher.onDidChange(() => this.closeIfAsked());
     const { onDidCreate, onDidChange, onDidDelete } = this.watcher;
     this.onDidChangeOpenChanges = (listener, thisArgs, disposables) => {
       const subscriptions = [onDidCreate, onDidChange, onDidDelete].map(
@@ -88,6 +100,8 @@ export class ChangeWorkspace implements vscode.Disposable {
 
   dispose(): void {
     this.watcher.dispose();
+    this.closeAskWatcher.dispose();
+    this.emptied.dispose();
     this.settled.dispose();
   }
 
@@ -130,6 +144,7 @@ export class ChangeWorkspace implements vscode.Disposable {
         (c) => c.conversation === change.conversation && c.id !== change.id
       );
     const here = ReviewWindow.canAddFoldersHere();
+    this.openChanges.withdrawCloseAsk();
     this.openChanges.put(
       here
         ? { ...change, inReviewWindow: this.reviewWindow.isThisWindow() }
@@ -170,12 +185,43 @@ export class ChangeWorkspace implements vscode.Disposable {
     });
   }
 
+  /**
+   * Closes a Change the Reviewer asked to close. If it was the last Change
+   * in the review window, that window closes too: this one if it is the
+   * review window, otherwise the review window is asked to.
+   */
   close(request: ChangeRequest): Promise<Change> {
     return this.serially(async () => {
       const change = await this.resolve(request);
+      const inReviewWindow = this.openChanges.get(change.id)?.inReviewWindow;
       await this.remove(change);
+      if (inReviewWindow && !this.holdsReviewWindowChange()) {
+        if (this.reviewWindow.isThisWindow()) this.windowEmptied = true;
+        else this.openChanges.askToCloseWindow();
+      }
       return change;
     });
+  }
+
+  /** Whether the last `close` emptied this window, the review window. */
+  private windowEmptied = false;
+
+  /** Once the closed Change is let go of, closes this window if closing it emptied it. */
+  closeWindowIfEmptied(): void {
+    if (!this.windowEmptied) return;
+    this.windowEmptied = false;
+    this.emptied.fire();
+  }
+
+  private holdsReviewWindowChange(): boolean {
+    return this.openChanges.all().some((c) => c.inReviewWindow);
+  }
+
+  /** In the review window, closes it if another window asked and no Change is left in it. */
+  private closeIfAsked(): void {
+    if (!this.reviewWindow.isThisWindow()) return;
+    if (!this.openChanges.takeCloseAsk()) return;
+    if (!this.holdsReviewWindowChange()) this.emptied.fire();
   }
 
   /**

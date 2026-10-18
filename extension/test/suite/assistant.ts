@@ -234,6 +234,14 @@ interface AssistantApi {
     rendered?: Conversation;
     receive(message: unknown): void;
   }[];
+  /** The view while it shows no conversation: its state, and a way to send it what the webview would. */
+  emptyView():
+    | {
+        sent: Conversation;
+        rendered?: Conversation;
+        receive(message: unknown): void;
+      }
+    | undefined;
   /** Whether the view is in sight, and the title of the Change whose conversation it shows. */
   view(): { visible: boolean; showing?: string };
   /** What each running Assistant has for its Change's overview, by the Change's title. */
@@ -280,6 +288,18 @@ async function sendToPanel(title: string, message: unknown): Promise<void> {
   const panel = (await assistantApi()).panels().find((p) => p.title === title);
   if (!panel) throw new Error(`The Assistant's view doesn't show ${title}`);
   panel.receive(message);
+}
+
+/** What the Assistant's view has rendered while it shows no conversation, if it does. */
+export async function renderedEmptyView(): Promise<Conversation | undefined> {
+  return (await assistantApi()).emptyView()?.rendered;
+}
+
+/** Clicks Open Assistant in the view that shows no conversation. */
+export async function openAssistantFromEmptyView(): Promise<void> {
+  const view = (await assistantApi()).emptyView();
+  if (!view) throw new Error("The Assistant's view shows a conversation");
+  view.receive({ type: "openAssistant" });
 }
 
 /** The title of the Change whose conversation the Assistant's view shows, while the view is in sight. */

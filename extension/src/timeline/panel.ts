@@ -1049,7 +1049,7 @@ ${catSymbol}
       const mark = el("span", "mark", "✓");
       mark.setAttribute("aria-hidden", "true");
       text.append(mark, "Nothing to brief. You found nothing to change.");
-      actions.append(button("primary", "Close Change", { type: "closeChange" }, "Close this Change and its worktrees, and go back to the Dashboard", "closeChange"));
+      actions.append(button("primary", "Close Change", { type: "closeChange" }, "Close this Change and its worktrees; closes this window too if it was the last Change", "closeChange"));
     } else if (kind === "ended") {
       const review = state.review;
       const done = state.submitted;
@@ -1058,7 +1058,7 @@ ${catSymbol}
       const mark = el("span", "mark", reviewMarks[verdict] || "✓");
       mark.setAttribute("aria-hidden", "true");
       text.append(mark, done ? done.text.replace(/\.$/, "") : review ? review.text : "Your Review is submitted");
-      actions.append(button("primary", "Close Change", { type: "closeChange" }, "Close this Change and its worktrees, and go back to the Dashboard", "closeChange"));
+      actions.append(button("primary", "Close Change", { type: "closeChange" }, "Close this Change and its worktrees; closes this window too if it was the last Change", "closeChange"));
       if (done && done.url) actions.append(button("secondary", "View on GitHub", { type: "openLink", url: done.url }, "Open your Review on GitHub", "viewSubmitted"));
       if (brief && brief.canShow) actions.append(button("secondary", "Show Brief", { type: "showBrief" }, "Open the Brief in the editor"));
     } else if (kind === "problem") {

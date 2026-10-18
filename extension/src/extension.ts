@@ -1204,6 +1204,7 @@ export function activate(context: vscode.ExtensionContext) {
         if (!request) return;
         await letGo(await changes.close(request));
         void syncOpenChanges();
+        changes.closeWindowIfEmptied();
       }
     ),
     // A Change opens with its overview alone; the Assistant starts behind
@@ -1215,6 +1216,9 @@ export function activate(context: vscode.ExtensionContext) {
       void showChange(change);
     }),
     assistants,
+    changes.onDidEmptyReviewWindow(() => {
+      void vscode.commands.executeCommand("workbench.action.closeWindow");
+    }),
     changes.onDidReplaceChange(async (older) => {
       await letGo(older);
       showOpenChanges();

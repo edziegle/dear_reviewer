@@ -143,7 +143,11 @@ export class Assistants implements vscode.Disposable {
     );
     this.status.name = "Dear Reviewer: Assistant";
     this.status.command = "dearReviewer.checkClaudeLogin";
-    this.view = new AssistantView((action) => this.inView?.act(action));
+    this.view = new AssistantView((action) => {
+      if (action.type === "openAssistant")
+        void vscode.commands.executeCommand("dearReviewer.showAssistant");
+      else this.inView?.act(action);
+    });
     this.subscriptions = [
       vscode.window.registerWebviewViewProvider(
         AssistantView.viewType,
@@ -405,6 +409,17 @@ export class Assistants implements vscode.Disposable {
   /** Whether the view is in sight, and the title of the Change it shows, for the tests. */
   viewState(): { visible: boolean; showing?: string } {
     return { visible: this.view.visible, showing: this.inView?.title };
+  }
+
+  /** The view with no conversation, for the tests: what it was sent and rendered, and a way to send it what the webview would. */
+  emptyView(): PanelState | undefined {
+    if (this.inView) return;
+    return {
+      title: "",
+      sent: this.view.sent,
+      rendered: this.view.rendered,
+      receive: (message) => this.view.receive(message),
+    };
   }
 
   loginStatus():
@@ -731,7 +746,7 @@ class ChangeAssistant {
   }
 
   /** Does what the Reviewer did in the view while it showed this conversation. */
-  act(action: ReviewerAction): void {
+  act(action: Exclude<ReviewerAction, { type: "openAssistant" }>): void {
     if (action.type === "problemAction") this.helpWithProblem();
     else if (action.type === "retry") this.retry();
     else if (action.type === "stop") this.stop();

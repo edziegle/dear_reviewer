@@ -114,6 +114,11 @@ export class Dashboard implements vscode.Disposable {
     this.view.focus();
   }
 
+  /** Whether the Dashboard is in sight in this window. */
+  get inSight(): boolean {
+    return this.view.visible;
+  }
+
   /** Shows the lists afresh soon, while the Dashboard is in sight, once a burst of changes has passed. */
   refresh(): void {
     if (!this.view.visible) return;

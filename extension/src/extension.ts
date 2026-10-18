@@ -718,8 +718,10 @@ export function activate(context: vscode.ExtensionContext) {
    */
   function syncOpenChanges(): Promise<void> {
     // Another window may have closed Changes this one still holds state for.
-    for (const gone of closedChanges.leftSince(changes.list()))
-      void letGo(gone).catch(() => undefined);
+    const closed = closedChanges.leftSince(changes.list());
+    for (const gone of closed) void letGo(gone).catch(() => undefined);
+    // Only a Dashboard in sight shows the pull request in its new list.
+    if (closed.length > 0 && dashboard.inSight) inbox.changeClosedElsewhere();
     showOpenChanges();
     const front = changes.inFront();
     carryOutRequests();
@@ -1812,6 +1814,10 @@ export function activate(context: vscode.ExtensionContext) {
       /** Asks the review window to act on an open Change, as another window's Dashboard would. */
       askReviewWindow: (id: string, action: WindowAction) =>
         windowRequests.ask(id, action),
+      /** Catches up with the open Changes, as the watcher of their shared list does. */
+      syncOpenChanges: () => syncOpenChanges(),
+      /** The folder of the list of open Changes every window shares. */
+      storageDir: context.globalStorageUri.fsPath,
       /** The requests to close every open Change by, in any window. */
       openChanges: (): ChangeRequest[] => changes.list().map(requestOf),
     },

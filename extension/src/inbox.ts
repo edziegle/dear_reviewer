@@ -112,6 +112,15 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
     this.refreshIn(refreshAfterReview);
   }
 
+  /**
+   * Loads the Inbox again once GitHub's search has caught up, as another
+   * window closed a Change, perhaps by submitting a Review there, which this
+   * window's Inbox wasn't told of. Closes close together make one load.
+   */
+  changeClosedElsewhere(): void {
+    this.refreshIn(refreshAfterReview);
+  }
+
   /** Loads the Inbox again in this many milliseconds, instead of any later refresh due. */
   private refreshIn(delay: number): void {
     clearTimeout(this.laterRefresh);

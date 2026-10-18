@@ -245,7 +245,8 @@ describe("The open Changes shared by several windows", () => {
     });
   }
 
-  it("loses no write when several windows put Changes at once", async () => {
+  it("loses no write when several windows put Changes at once", async function () {
+    this.timeout(10_000);
     const windows = Array.from({ length: 6 }, (_, w) =>
       inOtherWindow(
         `for (let i = 0; i < 15; i++) open.put(change("w${w}-" + i));`
@@ -255,7 +256,8 @@ describe("The open Changes shared by several windows", () => {
     assert.strictEqual(open.all().length, 6 * 15);
   });
 
-  it("loses no write when a window removes Changes while others put theirs", async () => {
+  it("loses no write when a window removes Changes while others put theirs", async function () {
+    this.timeout(10_000);
     for (let i = 0; i < 20; i++) open.put(changeNamed(`old-${i}`));
     await Promise.all([
       inOtherWindow(

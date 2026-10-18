@@ -5,7 +5,10 @@
 // tests can't run in, is stood in for with `actAsReviewWindow`; a test that
 // does stops before it ends.
 
+import * as path from "path";
 import * as vscode from "vscode";
+import * as fs from "fs";
+import { worktreesOf } from "./reviewer";
 
 export interface DashboardChange {
   id: string;
@@ -91,6 +94,8 @@ interface DashboardApi {
     views(): DashboardView[];
     askReviewWindow(id: string, action: "resume" | "finish"): void;
     openChanges(): unknown[];
+    storageDir: string;
+    syncOpenChanges(): Promise<void>;
   };
   reviewWindow: { actAs(acting: boolean): Promise<void> };
 }
@@ -150,4 +155,33 @@ export async function clickDashboard(click: DashboardClick): Promise<void> {
 
 export function showDashboard(): Thenable<unknown> {
   return vscode.commands.executeCommand("dearReviewer.showDashboard");
+}
+
+/**
+ * Closes the pull request's Change as another window does, by taking it off
+ * the list every window shares: this window then hears of it only from the
+ * file, and the Change's folders stay.
+ */
+export async function closeAsAnotherWindow(pullRequest: {
+  repository: string;
+  number: number;
+}): Promise<void> {
+  const storage = (await api()).dashboard.storageDir;
+  const file = path.join(storage, "open-changes.json");
+  const open = JSON.parse(fs.readFileSync(file, "utf8")) as {
+    pullRequest?: { repository: string; number: number };
+  }[];
+  const left = open.filter(
+    (c) =>
+      c.pullRequest?.repository !== pullRequest.repository ||
+      c.pullRequest.number !== pullRequest.number
+  );
+  if (left.length === open.length)
+    throw new Error("The pull request has no Change open");
+  // Replaces the file as an open Changes does, which is how a watcher hears of it.
+  fs.writeFileSync(`${file}.test.tmp`, JSON.stringify(left, null, 2));
+  fs.renameSync(`${file}.test.tmp`, file);
+  // The test host doesn't deliver the list's file events, so this window is
+  // told as its watcher would.
+  await (await api()).dashboard.syncOpenChanges();
 }

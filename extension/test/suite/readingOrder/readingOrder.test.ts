@@ -312,11 +312,14 @@ describe("The Reading Order", () => {
       )
     );
 
-    await clickReadingOrderFile(overview, "main.py");
-
-    await eventually(() =>
-      assert.ok(activeDiff().modified.path.endsWith("/main.py"))
-    );
+    // The overview's panel can retake the active tab from the diff a
+    // moment after it opens, while the overview still gets background
+    // updates; clicking the same file again is idempotent, so retry it
+    // until the diff stays put.
+    await eventually(async () => {
+      await clickReadingOrderFile(overview, "main.py");
+      assert.ok(activeDiff().modified.path.endsWith("/main.py"));
+    });
 
     fs.writeFileSync(
       path.join(repo.path, "util.py"),

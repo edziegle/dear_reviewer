@@ -67,8 +67,11 @@ export class ChangeWorkspace implements vscode.Disposable {
   private readonly shown = new vscode.EventEmitter<Change>();
   /** Fires when a Change opens in this window, for its overview to show. */
   readonly onDidShowChange = this.shown.event;
-  private readonly replaced = new vscode.EventEmitter<Change>();
-  /** Fires with an older head's Change that a newer head of the same pull request or branch closed. */
+  private readonly replaced = new vscode.EventEmitter<{
+    older: Change;
+    by: Change;
+  }>();
+  /** Fires with a Change that opening another stopped, and the Change that did. */
   readonly onDidReplaceChange = this.replaced.event;
   private holdsHere = false;
   /**
@@ -188,7 +191,7 @@ export class ChangeWorkspace implements vscode.Disposable {
     this.openChanges.put(entry);
     for (const old of stopping) {
       await this.remove(old);
-      this.replaced.fire(old);
+      this.replaced.fire({ older: old, by: change });
     }
     if (here) {
       await appendFolders(changeFolders(change));

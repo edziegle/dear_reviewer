@@ -567,8 +567,11 @@ export function activate(context: vscode.ExtensionContext) {
   }
 
   /** Lets go of a Change that was closed: its panels, Comments, Findings and viewed files. */
-  async function letGo(change: Change): Promise<void> {
-    assistants.close(change);
+  async function letGo(
+    change: Change,
+    movedToNewerHead = false
+  ): Promise<void> {
+    assistants.close(change, !movedToNewerHead);
     timelines.close(change);
     codeFlows.close(change);
     review.forget(change);
@@ -1246,8 +1249,8 @@ export function activate(context: vscode.ExtensionContext) {
     }),
     assistants,
     changes.onDidEmptyReviewWindow(() => closeReviewWindow()),
-    changes.onDidReplaceChange(async (older) => {
-      await letGo(older);
+    changes.onDidReplaceChange(async ({ older, by }) => {
+      await letGo(older, older.conversation === by.conversation);
       showOpenChanges();
     }),
     assistants.onDidChangeOverview((conversation) =>

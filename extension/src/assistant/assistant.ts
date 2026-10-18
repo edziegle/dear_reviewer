@@ -338,11 +338,16 @@ export class Assistants implements vscode.Disposable {
     this.byConversation.get(change.conversation)?.addNote(text);
   }
 
-  /** Stops the Change's Assistant, unless it has moved to a newer head. The conversation stays saved. */
-  close(change: Change): void {
+  /**
+   * Stops the Change's Assistant, unless it has moved to a newer head. The
+   * conversation stays saved. A reply in progress gets a note saying it
+   * stopped, unless `note` is false, as when a newer head of the same pull
+   * request or branch takes over the conversation.
+   */
+  close(change: Change, note = true): void {
     const assistant = this.byConversation.get(change.conversation);
     if (assistant?.changeId !== change.id) return;
-    assistant.stopWithNote();
+    if (note) assistant.stopWithNote();
     assistant.dispose();
     this.byConversation.delete(change.conversation);
     if (this.front?.id === change.id) this.front = undefined;
@@ -471,6 +476,8 @@ class ChangeAssistant {
   /** Turns and moves run one after another. */
   private queue: Promise<unknown> = Promise.resolve();
   private disposed = false;
+  /** Where the turn under way, or the last one, shows its reply. */
+  private turnInto?: "panel" | "overview" | "hidden";
   /** What the problem's button runs. */
   private problemAction?: vscode.Command;
   /** Whether the Reviewer asked to stop the turn under way. */
@@ -732,7 +739,9 @@ class ChangeAssistant {
    * again.
    */
   stopWithNote(): void {
+    // A turn the view doesn't show, such as for Findings, leaves no note.
     if (!this.state.stoppable || !this.conversation) return;
+    if (this.turnInto !== "panel") return;
     this.update({
       busy: false,
       stoppable: undefined,
@@ -923,6 +932,7 @@ class ChangeAssistant {
         this.state.problem ?? "The Assistant hasn't started yet."
       );
     this.problemAction = undefined;
+    this.turnInto = into;
     this.update({
       busy: true,
       stoppable: true,

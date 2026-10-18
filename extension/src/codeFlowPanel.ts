@@ -18,6 +18,8 @@ export interface CodeFlowState {
   loading: boolean;
   hops: 0 | 1 | 2;
   view: FlowView;
+  /** Whether the symbols of test files are drawn. */
+  showTests: boolean;
   flow: ShownFlow;
   /** Every symbol gathered, for the details of one the picture doesn't draw. */
   known: FlowNode[];
@@ -36,6 +38,7 @@ export type FromCodeFlow =
   | { type: "openDiff"; id: string }
   | { type: "setEntry"; id: string }
   | { type: "showAll" }
+  | { type: "setShowTests"; show: boolean }
   | { type: "retry" }
   | { type: "findExtensions"; language: string }
   | { type: "ready" }
@@ -116,6 +119,11 @@ export class CodeFlowPanel {
           this.onAction(message);
         }
         break;
+      case "setShowTests":
+        if (typeof message.show === "boolean") {
+          this.onAction(message);
+        }
+        break;
       case "findExtensions":
         if (typeof message.language === "string") {
           this.onAction(message);
@@ -146,6 +154,7 @@ function html(): string {
   .seg button { font: inherit; padding: 2px 10px; color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); border: 1px solid var(--vscode-button-border, var(--vscode-contrastBorder, transparent)); cursor: pointer; }
   .seg button:first-child { border-radius: 2px 0 0 2px; }
   .seg button:last-child { border-radius: 0 2px 2px 0; }
+  .seg button:only-child { border-radius: 2px; }
   .seg button[aria-pressed=true] { color: var(--vscode-button-foreground); background: var(--vscode-button-background); }
   .seg button[aria-pressed=true]::before { content: "\\2713\\00a0"; }
   select { font: inherit; color: var(--vscode-dropdown-foreground); background: var(--vscode-dropdown-background); border: 1px solid var(--vscode-dropdown-border, var(--vscode-contrastBorder, transparent)); padding: 2px 4px; }
@@ -259,6 +268,8 @@ function html(): string {
         state.flow.entries.map((entry) => el("option", { value: entry.id, selected: entry.id === state.flow.entry, text: entry.name })));
       bar.append(el("span", { class: "group" }, el("label", { for: "entry", text: "Calls from" }), select));
     }
+    bar.append(el("span", { class: "seg" },
+      el("button", { type: "button", "aria-pressed": String(state.showTests), "data-focus": "showTests", onclick: () => post({ type: "setShowTests", show: !state.showTests }), text: "Show tests" })));
     bar.append(el("span", { class: "legend" },
       el("span", {}, el("i", { class: "key changed" }), "changed"),
       el("span", {}, el("i", { class: "key new" }), "new"),
@@ -280,6 +291,10 @@ function html(): string {
           "The language server for " + language + " did not answer.",
           el("button", { type: "button", onclick: () => post({ type: "retry" }), text: "Try again" })));
       }
+    }
+    if (!state.showTests && state.flow.testsHidden > 0) {
+      out.push(el("div", { class: "notice" }, state.flow.testsHidden + (state.flow.testsHidden === 1 ? " test symbol hidden." : " test symbols hidden."),
+        el("button", { type: "button", onclick: () => post({ type: "setShowTests", show: true }), text: "Show tests" })));
     }
     if (state.undrawn > 0) {
       out.push(el("div", { class: "notice" }, state.undrawn + " more symbols are left out to keep the map readable.",
@@ -421,6 +436,8 @@ function html(): string {
       app.replaceChildren(toolbar(state), ...notices(state));
       if (state.loading) {
         app.append(el("p", { class: "empty", text: "Asking the language servers\\u2026" }));
+      } else if (!state.showTests && state.flow.testsHidden > 0 && state.flow.entries.length === 0) {
+        app.append(el("p", { class: "empty", text: "Every symbol this Change touches is test code, which is hidden." }));
       } else if (state.flow.nodes.length === 0 && state.flow.entries.length === 0 && state.languages.every((l) => l.outcome === "answered") && !state.problem) {
         app.append(el("p", { class: "empty", text: "This Change touches no functions or methods Code Flow can draw." }));
       } else if (state.flow.nodes.length > 0 || state.view === "lanes") {

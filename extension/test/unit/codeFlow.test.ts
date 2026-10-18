@@ -7,6 +7,7 @@ import {
   swimlanes,
   symbolStatus,
   withinHops,
+  withoutTests,
   type FileChange,
   type FlowGraph,
   type FlowNode,
@@ -47,7 +48,13 @@ describe("Code Flow hops", () => {
   });
 
   it("walks a second hop from each changed symbol", () => {
-    assert.deepStrictEqual(ids(withinHops(chain, 2)), ["a", "b", "c", "d", "x"]);
+    assert.deepStrictEqual(ids(withinHops(chain, 2)), [
+      "a",
+      "b",
+      "c",
+      "d",
+      "x",
+    ]);
   });
 
   it("keeps only the edges between symbols it shows", () => {
@@ -84,7 +91,9 @@ describe("Code Flow symbol marks", () => {
 
   it("marks a symbol with a modified line inside it as changed", () => {
     assert.strictEqual(
-      symbolStatus(symbol, [change({ modifiedLines: [{ start: 15, end: 15 }] })]),
+      symbolStatus(symbol, [
+        change({ modifiedLines: [{ start: 15, end: 15 }] }),
+      ]),
       "changed"
     );
   });
@@ -119,10 +128,13 @@ describe("Code Flow node cap", () => {
   });
 
   it("counts what is hidden behind each node shown", () => {
-    assert.deepStrictEqual([...capNodes(chain, 4).hidden], [
-      ["b", 1],
-      ["d", 1],
-    ]);
+    assert.deepStrictEqual(
+      [...capNodes(chain, 4).hidden],
+      [
+        ["b", 1],
+        ["d", 1],
+      ]
+    );
   });
 
   it("never drops a changed or new symbol", () => {
@@ -286,31 +298,159 @@ describe("Code Flow as the panel shows it", () => {
 
   it("offers the changed and new symbols as entry points, the first chosen", () => {
     const shown = shownFlow(chain, controls);
-    assert.deepStrictEqual(shown.entries.map((e) => e.id), ["a", "x"]);
+    assert.deepStrictEqual(
+      shown.entries.map((e) => e.id),
+      ["a", "x"]
+    );
     assert.strictEqual(shown.entry, "a");
-    assert.strictEqual(shownFlow(chain, { ...controls, entry: "x" }).entry, "x");
+    assert.strictEqual(
+      shownFlow(chain, { ...controls, entry: "x" }).entry,
+      "x"
+    );
   });
 
   it("draws the lanes from the entry point", () => {
     const shown = shownFlow(chain, { ...controls, entry: "a" });
-    assert.deepStrictEqual(shown.lanes, ["src/a.py", "src/b.py", "src/c.py", "src/d.py"]);
+    assert.deepStrictEqual(shown.lanes, [
+      "src/a.py",
+      "src/b.py",
+      "src/c.py",
+      "src/d.py",
+    ]);
     assert.strictEqual(shown.calls.length, 3);
   });
 
   it("marks a symbol with neighbours the cap left out", () => {
     const many: FlowGraph = {
-      nodes: [node("hub", "changed"), ...[1, 2, 3].map((i) => node(`n${i}`, "unchanged"))],
+      nodes: [
+        node("hub", "changed"),
+        ...[1, 2, 3].map((i) => node(`n${i}`, "unchanged")),
+      ],
       edges: [1, 2, 3].map((i) => ({ from: "hub", to: `n${i}` })),
     };
     const shown = shownFlow(many, { ...controls, cap: 2 });
     assert.strictEqual(shown.nodes.length, 2);
     assert.strictEqual(shown.nodes.find((n) => n.id === "hub")!.hidden, 2);
-    assert.strictEqual(shownFlow(many, { ...controls, cap: 2, showAll: true }).nodes.length, 4);
+    assert.strictEqual(
+      shownFlow(many, { ...controls, cap: 2, showAll: true }).nodes.length,
+      4
+    );
   });
 
   it("has no entry point when nothing changed", () => {
     const quiet: FlowGraph = { nodes: [node("a", "unchanged")], edges: [] };
     const shown = shownFlow(quiet, controls);
-    assert.deepStrictEqual([shown.nodes, shown.entries, shown.entry], [[], [], undefined]);
+    assert.deepStrictEqual(
+      [shown.nodes, shown.entries, shown.entry],
+      [[], [], undefined]
+    );
+  });
+});
+
+describe("Code Flow with test code hidden", () => {
+  const at = (
+    id: string,
+    path: string,
+    status: FlowNode["status"]
+  ): FlowNode => ({
+    id,
+    name: id,
+    path,
+    line: 1,
+    status,
+  });
+
+  /**
+   * prod (changed) is called by t1 (a changed test) and calls shared;
+   * t1 calls only_via_test, and t2 (an unchanged test) calls shared.
+   * helper (unchanged) is called by prod and by t1, so a test and
+   * production code both reach it.
+   */
+  const graph: FlowGraph = {
+    nodes: [
+      at("prod", "src/pay.py", "changed"),
+      at("t1", "tests/test_pay.py", "changed"),
+      at("t2", "tests/test_other.py", "unchanged"),
+      at("shared", "src/shared.py", "unchanged"),
+      at("only_via_test", "src/rare.py", "unchanged"),
+      at("helper", "src/helper.py", "unchanged"),
+    ],
+    edges: [
+      { from: "t1", to: "prod" },
+      { from: "prod", to: "shared" },
+      { from: "t1", to: "only_via_test" },
+      { from: "t2", to: "shared" },
+      { from: "prod", to: "helper" },
+      { from: "t1", to: "helper" },
+    ],
+  };
+
+  const shown = (showTests: boolean, hops: 0 | 1 | 2 = 2) =>
+    shownFlow(graph, { hops, showAll: true, showTests });
+
+  it("leaves out test symbols and every edge to or from them", () => {
+    const flow = shown(false);
+    assert.deepStrictEqual(flow.nodes.map((n) => n.id).sort(), [
+      "helper",
+      "prod",
+      "shared",
+    ]);
+    assert.deepStrictEqual(flow.edges, [
+      { from: "prod", to: "shared" },
+      { from: "prod", to: "helper" },
+    ]);
+  });
+
+  it("leaves out a symbol reached only through a test, and keeps one reached through production code too", () => {
+    const ids = shown(false).nodes.map((n) => n.id);
+    assert.ok(!ids.includes("only_via_test"));
+    assert.ok(ids.includes("helper"));
+  });
+
+  it("counts the test symbols within the hops it left out", () => {
+    assert.strictEqual(shown(false).testsHidden, 2);
+    assert.strictEqual(shown(false, 0).testsHidden, 1);
+  });
+
+  it("draws everything, and hides nothing, once tests are shown", () => {
+    const flow = shown(true);
+    assert.strictEqual(flow.nodes.length, 6);
+    assert.strictEqual(flow.testsHidden, 0);
+  });
+
+  it("offers no test function as an entry point while they are hidden", () => {
+    assert.deepStrictEqual(
+      shown(false).entries.map((e) => e.id),
+      ["prod"]
+    );
+    assert.deepStrictEqual(
+      shown(true).entries.map((e) => e.id),
+      ["prod", "t1"]
+    );
+  });
+
+  it("draws nothing for a Change whose changed symbols are all tests", () => {
+    const onlyTests: FlowGraph = {
+      nodes: [
+        at("t1", "tests/test_pay.py", "changed"),
+        at("shared", "src/shared.py", "unchanged"),
+      ],
+      edges: [{ from: "t1", to: "shared" }],
+    };
+    const flow = shownFlow(onlyTests, {
+      hops: 1,
+      showAll: false,
+      showTests: false,
+    });
+    assert.deepStrictEqual(flow.nodes, []);
+    assert.deepStrictEqual(flow.entries, []);
+    assert.strictEqual(flow.testsHidden, 1);
+  });
+
+  it("gives the graph without test symbols", () => {
+    assert.deepStrictEqual(
+      withoutTests(graph).nodes.map((n) => n.id),
+      ["prod", "shared", "only_via_test", "helper"]
+    );
   });
 });

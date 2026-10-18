@@ -2,6 +2,8 @@
 // how they are marked. Kept apart from `vscode` so the unit tests can run it
 // under plain Node.
 
+import { isTestPath } from "./testFiles";
+
 export interface FlowNode {
   id: string;
   name: string;
@@ -112,6 +114,18 @@ function keeping(graph: FlowGraph, kept: ReadonlySet<string>): FlowGraph {
       (edge) => kept.has(edge.from) && kept.has(edge.to)
     ),
   };
+}
+
+/**
+ * The graph without the symbols of test files and their edges. What only a
+ * test symbol reaches is left out by `withinHops`, which counts distance from
+ * the changed symbols that remain.
+ */
+export function withoutTests(graph: FlowGraph): FlowGraph {
+  return keeping(
+    graph,
+    new Set(graph.nodes.filter((n) => !isTestPath(n.path)).map((n) => n.id))
+  );
 }
 
 /**
@@ -253,7 +267,7 @@ export function layerLayout(
     }
   }
   const column = new Map(graph.nodes.map((node) => [node.id, 0]));
-  for (let changed = true; changed; ) {
+  for (let changed = true; changed;) {
     changed = false;
     for (const [from, to] of forward) {
       if (column.get(to)! < column.get(from)! + 1) {
@@ -316,6 +330,8 @@ export interface FlowControls {
   cap?: number;
   /** The changed or new symbol the swimlanes follow; the first one if absent. */
   entry?: string;
+  /** Draw the symbols of test files too. */
+  showTests?: boolean;
 }
 
 export interface ShownNode extends FlowNode {
@@ -330,12 +346,19 @@ export interface ShownFlow {
   nodes: ShownNode[];
   edges: FlowEdge[];
   entries: { id: string; name: string }[];
+  /** How many test symbols within the hops are left out. */
+  testsHidden: number;
   entry?: string;
   lanes: string[];
   calls: SwimlaneCall[];
 }
 
-export function shownFlow(graph: FlowGraph, controls: FlowControls): ShownFlow {
+export function shownFlow(full: FlowGraph, controls: FlowControls): ShownFlow {
+  const graph = controls.showTests ? full : withoutTests(full);
+  const testsHidden = controls.showTests
+    ? 0
+    : withinHops(full, controls.hops).nodes.filter((n) => isTestPath(n.path))
+        .length;
   const within = withinHops(graph, controls.hops);
   const { graph: capped, hidden } = controls.showAll
     ? { graph: within, hidden: new Map<string, number>() }
@@ -344,7 +367,8 @@ export function shownFlow(graph: FlowGraph, controls: FlowControls): ShownFlow {
   const entries = graph.nodes
     .filter((node) => node.status !== "unchanged")
     .map(({ id, name }) => ({ id, name }));
-  const entry = entries.find((e) => e.id === controls.entry)?.id ?? entries[0]?.id;
+  const entry =
+    entries.find((e) => e.id === controls.entry)?.id ?? entries[0]?.id;
   return {
     nodes: capped.nodes.map((node) => ({
       ...node,
@@ -353,7 +377,10 @@ export function shownFlow(graph: FlowGraph, controls: FlowControls): ShownFlow {
     })),
     edges: capped.edges,
     entries,
+    testsHidden,
     entry,
-    ...(entry === undefined ? { lanes: [], calls: [] } : swimlanes(graph, entry)),
+    ...(entry === undefined
+      ? { lanes: [], calls: [] }
+      : swimlanes(graph, entry)),
   };
 }

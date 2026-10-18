@@ -1809,6 +1809,7 @@ export function activate(context: vscode.ExtensionContext) {
     },
     assistant: {
       panels: () => assistants.panels(),
+      emptyView: () => assistants.emptyView(),
       view: () => assistants.viewState(),
       overviews: () => assistants.overviews(),
       loginStatus: () => assistants.loginStatus(),

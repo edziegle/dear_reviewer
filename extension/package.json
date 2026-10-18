@@ -434,8 +434,7 @@
         {
           "type": "webview",
           "id": "dearReviewer.assistant",
-          "name": "Assistant",
-          "when": "dearReviewer.inReviewWindow || dearReviewer.hasOpenChange"
+          "name": "Assistant"
         }
       ],
       "dearReviewer": [

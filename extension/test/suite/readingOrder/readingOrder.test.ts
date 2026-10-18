@@ -17,7 +17,6 @@ import * as fs from "fs";
 import { leaveForReload } from "./handoff";
 import * as vscode from "vscode";
 import {
-  activeDiff,
   filesIn,
   changeFiles,
   entryAt,
@@ -312,13 +311,20 @@ describe("The Reading Order", () => {
       )
     );
 
-    // The overview's panel can retake the active tab from the diff a
-    // moment after it opens, while the overview still gets background
-    // updates; clicking the same file again is idempotent, so retry it
-    // until the diff stays put.
-    await eventually(async () => {
-      await clickReadingOrderFile(overview, "main.py");
-      assert.ok(activeDiff().modified.path.endsWith("/main.py"));
+    await clickReadingOrderFile(overview, "main.py");
+
+    // The diff opens in front of the code column, beside the overview.
+    // VS Code can hand the focus back to the overview a moment later, so
+    // which of the two is active isn't the click's to say.
+    await eventually(() => {
+      const input = vscode.window.tabGroups.all.find(
+        (group) => group.viewColumn === vscode.ViewColumn.Two
+      )?.activeTab?.input;
+      assert.ok(
+        input instanceof vscode.TabInputTextDiff &&
+          input.modified.path.endsWith("/main.py"),
+        `the code column shows ${JSON.stringify(input)}`
+      );
     });
 
     fs.writeFileSync(

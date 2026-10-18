@@ -490,7 +490,11 @@ export function activate(context: vscode.ExtensionContext) {
     );
     // A force push can leave none that git can count from the old head.
     const newCommits = count > 0 ? count : ("some" as const);
-    const next = await changes.open(request);
+    // A Change behind the one in front stays behind it.
+    const next = await changes.open(
+      request,
+      change.id !== changes.inFront()?.id
+    );
     const text = foundText({ newCommits, threads: 0 });
     arrivals.set(next.conversation, text);
     if (reopen) {

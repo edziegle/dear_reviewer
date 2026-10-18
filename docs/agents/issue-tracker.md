@@ -31,9 +31,9 @@ GitHub shares one number space across issues and PRs, so a bare `#42` can be eit
 Used by `/implement-next` and by any agent taking a `ready-for-agent` issue. The tracker marks these states as follows. An issue labeled `In Progress` is taken: skip it when picking.
 
 - **Implementing**: `gh issue edit <n> --add-label "In Progress"`.
-- **Awaiting verification**: `gh issue edit <n> --remove-label ready-for-agent --remove-label "In Progress"` once the work is on `main`. The issue stays open; the maintainer verifies and closes it. Don't comment on the issue: the commits' `Refs #<n>` link them to it.
+- **Done**: the pull request's merge is the verification, and its body's `Fixes #<n>` closes the issue.
 - **Branch**: work in a worktree named `i<n>`: `wt switch --create i<n> --no-cd`, then work in `.worktrees/i<n>`. Never `git switch -c`. Keep the name short: a longer worktree path pushes the test window's socket path over the length macOS allows.
-- **Commits**: Conventional Commits, ending `Refs #<n>`, never `Closes #<n>`, so landing doesn't close the issue before verification.
+- **Commits**: Conventional Commits, ending `Refs #<n>`.
 
 ## When a skill says "publish to the issue tracker"
 

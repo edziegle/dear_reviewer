@@ -220,6 +220,9 @@ export function activate(context: vscode.ExtensionContext) {
   // windows the Dashboard (ADR 0032); tests, which can't run in the review
   // window, stand in for it.
   let inReviewWindow = () => reviewWindow.isThisWindow();
+  const closeWindow = () =>
+    void vscode.commands.executeCommand("workbench.action.closeWindow");
+  let closeReviewWindow: () => void = closeWindow;
   const showInReviewWindow = () =>
     setContext("dearReviewer.inReviewWindow", inReviewWindow());
   const trust = new ReviewWindowTrust(
@@ -1216,9 +1219,7 @@ export function activate(context: vscode.ExtensionContext) {
       void showChange(change);
     }),
     assistants,
-    changes.onDidEmptyReviewWindow(() => {
-      void vscode.commands.executeCommand("workbench.action.closeWindow");
-    }),
+    changes.onDidEmptyReviewWindow(() => closeReviewWindow()),
     changes.onDidReplaceChange(async (older) => {
       await letGo(older);
       showOpenChanges();
@@ -1833,6 +1834,14 @@ export function activate(context: vscode.ExtensionContext) {
           : () => reviewWindow.isThisWindow();
         await showInReviewWindow();
         carryOutRequests();
+      },
+      /**
+       * Hands closing the review window to `close` instead, or back with
+       * none. A review window the tests open runs their entry point, and
+       * VSCodium exits, ending the run, once that window closes.
+       */
+      closeWith: (close?: () => void) => {
+        closeReviewWindow = close ?? closeWindow;
       },
     },
     /**

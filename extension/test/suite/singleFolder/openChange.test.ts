@@ -48,7 +48,8 @@ describe("Open Change from a single-folder window", () => {
       tab?: string;
       tabs: string[];
       files: { original?: string; modified?: string }[];
-    } = { folders: [], tabs: [], files: [] };
+      closed: number;
+    } = { folders: [], tabs: [], files: [], closed: 0 };
     // The probe rewrites its report as the review window settles.
     await eventually(() => {
       report = JSON.parse(fs.readFileSync(reviewWindowReportFile(), "utf8"));
@@ -91,6 +92,13 @@ describe("Open Change from a single-folder window", () => {
       [repo.path]
     );
     for (const w of [base, head]) assert.ok(!fs.existsSync(w.path));
+    await inReviewWindow((after) =>
+      assert.strictEqual(
+        after.closed,
+        report.closed + 1,
+        "closing its last Change closes the review window"
+      )
+    );
   });
 
   /**

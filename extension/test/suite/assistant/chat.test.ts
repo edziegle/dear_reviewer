@@ -513,10 +513,11 @@ describe("Chatting with the Assistant about a Change", () => {
 
       await openChange(second);
 
+      // The view stays open, so it follows the Active Change.
       await eventually(async () =>
-        assert.strictEqual(
+        assert.notStrictEqual(
           await assistantInSight(),
-          undefined,
+          titleOf(first),
           "the first Change's Assistant stopped with its Change"
         )
       );

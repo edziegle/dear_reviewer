@@ -8,17 +8,29 @@ import {
 } from "../../src/codeFlowGather";
 
 function item(name: string, path: string, line: number): CallItem {
-  return { id: `${path}:${line}:${name}`, name, path, line, endLine: line + 4, handle: name };
+  return {
+    id: `${path}:${line}:${name}`,
+    name,
+    path,
+    line,
+    endLine: line + 4,
+    handle: name,
+  };
 }
 
 const submit = item("submit", "pay.py", 10);
 const charge = item("charge", "bank.py", 3);
 const checkout = item("checkout", "cart.py", 7);
 const audit = item("audit", "audit.py", 1);
+const refund = item("refund", "pay.py", 30);
 
 /** A symbol of the base worktree, whose id keeps it apart from the head's symbol of the same place. */
 function baseItem(name: string, path: string, line: number): CallItem {
-  return { ...item(name, path, line), id: `base:${path}:${line}:${name}`, side: "base" };
+  return {
+    ...item(name, path, line),
+    id: `base:${path}:${line}:${name}`,
+    side: "base",
+  };
 }
 const legacy = baseItem("legacy", "old.py", 1);
 const user = baseItem("user", "pay.py", 12);
@@ -103,14 +115,22 @@ describe("gathering a Code Flow", () => {
       submit: { out: [{ item: charge }] },
       charge: { out: [{ item: audit }] },
     };
-    const one = await gatherFlow(source({ calls }), [edited("pay.py", 12, 12)], {
-      hops: 1,
-      waitMs: 1000,
-    });
-    const two = await gatherFlow(source({ calls }), [edited("pay.py", 12, 12)], {
-      hops: 2,
-      waitMs: 1000,
-    });
+    const one = await gatherFlow(
+      source({ calls }),
+      [edited("pay.py", 12, 12)],
+      {
+        hops: 1,
+        waitMs: 1000,
+      }
+    );
+    const two = await gatherFlow(
+      source({ calls }),
+      [edited("pay.py", 12, 12)],
+      {
+        hops: 2,
+        waitMs: 1000,
+      }
+    );
     assert.strictEqual(one.graph.nodes.length, 2);
     assert.strictEqual(two.graph.nodes.length, 3);
   });
@@ -125,11 +145,57 @@ describe("gathering a Code Flow", () => {
     ]);
   });
 
-  it("says a server didn't answer when it knows symbols but gives no call hierarchy", async () => {
+  it("says a server gave no calls when it knows symbols but gives no call hierarchy", async () => {
     const flow = await gatherFlow(
       source({ prepared: false }),
       [edited("pay.py", 12, 12)],
       { hops: 1, waitMs: 1000 }
+    );
+    assert.deepStrictEqual(flow.languages, [
+      { language: "python", outcome: "noCalls" },
+    ]);
+  });
+
+  it("tells a server with no call hierarchy from one that timed out", async () => {
+    const empty = await gatherFlow(
+      source({ prepare: async () => [] }),
+      [edited("pay.py", 12, 12)],
+      { hops: 1, waitMs: 20 }
+    );
+    const slow = await gatherFlow(
+      source({ prepare: () => new Promise(() => undefined) }),
+      [edited("pay.py", 12, 12)],
+      { hops: 1, waitMs: 20 }
+    );
+    assert.strictEqual(empty.languages[0].outcome, "noCalls");
+    assert.strictEqual(slow.languages[0].outcome, "silent");
+  });
+
+  it("says a server answered when one changed symbol has a call hierarchy and another has none", async () => {
+    const flow = await gatherFlow(
+      source({
+        symbols: { "pay.py": [submit, refund] },
+        prepare: async (symbol) => (symbol.id === submit.id ? [submit] : []),
+      }),
+      [edited("pay.py", 12, 12), edited("pay.py", 31, 31)],
+      { hops: 1, waitMs: 1000 }
+    );
+    assert.deepStrictEqual(flow.languages, [
+      { language: "python", outcome: "answered" },
+    ]);
+  });
+
+  it("says a server timed out, not that it gave no calls, when one symbol is empty and another never answers", async () => {
+    const flow = await gatherFlow(
+      source({
+        symbols: { "pay.py": [submit, refund] },
+        prepare: (symbol) =>
+          symbol.id === submit.id
+            ? Promise.resolve([])
+            : new Promise(() => undefined),
+      }),
+      [edited("pay.py", 12, 12), edited("pay.py", 31, 31)],
+      { hops: 1, waitMs: 20 }
     );
     assert.deepStrictEqual(flow.languages, [
       { language: "python", outcome: "silent" },
@@ -184,10 +250,14 @@ describe("gathering a Code Flow", () => {
   });
 
   it("says a server answered when its file has symbols but the diff reaches none", async () => {
-    const flow = await gatherFlow(source({ prepared: false }), [edited("pay.py", 40, 41)], {
-      hops: 1,
-      waitMs: 1000,
-    });
+    const flow = await gatherFlow(
+      source({ prepared: false }),
+      [edited("pay.py", 40, 41)],
+      {
+        hops: 1,
+        waitMs: 1000,
+      }
+    );
     assert.deepStrictEqual(flow.languages, [
       { language: "python", outcome: "answered" },
     ]);
@@ -195,7 +265,9 @@ describe("gathering a Code Flow", () => {
 
   it("skips files whose language isn't code", async () => {
     const flow = await gatherFlow(
-      source({ languageOf: (path) => (path.endsWith(".md") ? undefined : "python") }),
+      source({
+        languageOf: (path) => (path.endsWith(".md") ? undefined : "python"),
+      }),
       [edited("README.md", 1, 5), edited("pay.py", 12, 12)],
       { hops: 1, waitMs: 1000 }
     );
@@ -239,7 +311,11 @@ describe("gathering a Code Flow", () => {
   });
 
   it("draws a symbol once when the server names it differently", async () => {
-    const renamed = { ...submit, id: "pay.py:10:submit(int)", name: "submit(int)" };
+    const renamed = {
+      ...submit,
+      id: "pay.py:10:submit(int)",
+      name: "submit(int)",
+    };
     const flow = await gatherFlow(
       source({
         prepare: async () => [renamed],
@@ -248,8 +324,13 @@ describe("gathering a Code Flow", () => {
       [edited("pay.py", 12, 12)],
       { hops: 1, waitMs: 1000 }
     );
-    assert.deepStrictEqual(flow.graph.edges, [{ from: submit.id, to: charge.id }]);
-    assert.strictEqual(flow.graph.nodes.filter((n) => n.path === "pay.py").length, 1);
+    assert.deepStrictEqual(flow.graph.edges, [
+      { from: submit.id, to: charge.id },
+    ]);
+    assert.strictEqual(
+      flow.graph.nodes.filter((n) => n.path === "pay.py").length,
+      1
+    );
   });
 
   const deleted = (path: string): FileChange => ({
@@ -270,7 +351,9 @@ describe("gathering a Code Flow", () => {
       flow.graph.nodes.map((n) => [n.name, n.status, n.side]),
       [["legacy", "removed", "base"]]
     );
-    assert.deepStrictEqual(flow.languages, [{ language: "python", outcome: "answered" }]);
+    assert.deepStrictEqual(flow.languages, [
+      { language: "python", outcome: "answered" },
+    ]);
   });
 
   it("asks for a deleted file's language from the base side", async () => {
@@ -305,7 +388,9 @@ describe("gathering a Code Flow", () => {
         ["user", "unchanged", "base"],
       ]
     );
-    assert.deepStrictEqual(flow.graph.edges, [{ from: user.id, to: legacy.id, label: "user()" }]);
+    assert.deepStrictEqual(flow.graph.edges, [
+      { from: user.id, to: legacy.id, label: "user()" },
+    ]);
   });
 
   it("doesn't mark a base-side neighbour by the head's diff", async () => {
@@ -317,6 +402,9 @@ describe("gathering a Code Flow", () => {
       [deleted("old.py"), edited("pay.py", 12, 12)],
       { hops: 1, waitMs: 1000 }
     );
-    assert.strictEqual(flow.graph.nodes.find((n) => n.id === user.id)!.status, "unchanged");
+    assert.strictEqual(
+      flow.graph.nodes.find((n) => n.id === user.id)!.status,
+      "unchanged"
+    );
   });
 });

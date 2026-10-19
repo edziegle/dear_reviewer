@@ -340,11 +340,11 @@ describe("Code Flow", () => {
     ]);
   });
 
-  it("says the language server did not answer when it knows symbols but no calls", async () => {
+  it("says the language server gave no calls when it knows symbols but has no call hierarchy", async () => {
     const { title } = await start({ withoutHierarchy: true });
     const state = await settled(title);
     assert.deepStrictEqual(state.languages, [
-      { language: "shellscript", outcome: "silent" },
+      { language: "shellscript", outcome: "noCalls" },
     ]);
   });
 

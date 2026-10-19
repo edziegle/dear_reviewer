@@ -53,7 +53,10 @@ export interface CodeFlowState {
   }[];
   undrawn: number;
   selected?: string;
-  languages: { language: string; outcome: "answered" | "silent" | "none" }[];
+  languages: {
+    language: string;
+    outcome: "answered" | "silent" | "noCalls" | "none";
+  }[];
   problem?: string;
 }
 

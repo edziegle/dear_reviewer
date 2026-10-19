@@ -5,9 +5,11 @@
 // VS Code can't say whether a call hierarchy provider exists: it gives an
 // empty answer both when there is none and when the server has nothing yet.
 // So a language's outcome is judged from what comes back within the wait:
-// a call hierarchy for a changed symbol means the server answered, symbols
-// without one (or a call that never returned) mean it didn't, and nothing at
-// all for the file means the Reviewer has no language server for it.
+// a call hierarchy for a changed symbol means the server answered, a call
+// that never returned means it didn't answer in time, symbols with an empty
+// call hierarchy for every changed symbol mean it gives no calls (trying
+// again would give the same empty answer), and nothing at all for the file
+// means the Reviewer has no language server for it.
 
 import {
   symbolStatus,
@@ -51,7 +53,12 @@ export interface FlowSource {
   outgoing(item: CallItem): Promise<CallLink[]>;
 }
 
-export type LanguageOutcome = "answered" | "silent" | "none";
+/**
+ * "silent": a request timed out, so trying again may help. "noCalls": the
+ * symbols came back but no changed symbol got a call hierarchy, which the
+ * server probably doesn't support, so trying again can't help.
+ */
+export type LanguageOutcome = "answered" | "silent" | "noCalls" | "none";
 
 export interface GatheredFlow {
   graph: FlowGraph;
@@ -62,7 +69,10 @@ export interface GatheredFlow {
 const TIMED_OUT = Symbol("timed out");
 
 /** The promise's value, nothing if it fails, or `TIMED_OUT` if it takes longer than `ms`. */
-function within<T>(ms: number, promise: Promise<T>): Promise<T | typeof TIMED_OUT | undefined> {
+function within<T>(
+  ms: number,
+  promise: Promise<T>
+): Promise<T | typeof TIMED_OUT | undefined> {
   return new Promise((resolve) => {
     const timer = setTimeout(() => resolve(TIMED_OUT), ms);
     promise.then(
@@ -98,7 +108,8 @@ export async function gatherFlow(
   const edges = new Map<string, FlowEdge>();
   const languageOrder: string[] = [];
   const sawSymbols = new Set<string>();
-  const gaveUp = new Set<string>();
+  const timedOut = new Set<string>();
+  const noCalls = new Set<string>();
   const answered = new Set<string>();
 
   // Every file is asked at once, so servers that never answer cost one wait, not one each.
@@ -132,7 +143,7 @@ export async function gatherFlow(
       languageOrder.push(language);
     }
     if (symbols === TIMED_OUT) {
-      gaveUp.add(language);
+      timedOut.add(language);
       continue;
     }
     if (!Array.isArray(symbols) || symbols.length === 0) {
@@ -143,7 +154,11 @@ export async function gatherFlow(
       const status = change.isDeletedFile
         ? "removed"
         : symbolStatus(
-            { path: symbol.path, startLine: symbol.line, endLine: symbol.endLine },
+            {
+              path: symbol.path,
+              startLine: symbol.line,
+              endLine: symbol.endLine,
+            },
             [change]
           );
       if (status !== "unchanged") {
@@ -163,13 +178,13 @@ export async function gatherFlow(
   let frontier: CallItem[] = [];
   for (const { seed, language, items } of prepared) {
     if (items === TIMED_OUT) {
-      gaveUp.add(language);
+      timedOut.add(language);
     } else if (Array.isArray(items) && items.length > 0) {
       answered.add(language);
       // The server may name the symbol differently than the symbol list did.
       frontier.push({ ...items[0], id: seed.id });
     } else {
-      gaveUp.add(language);
+      noCalls.add(language);
     }
   }
 
@@ -200,7 +215,9 @@ export async function gatherFlow(
           next.push(link.item);
         }
         const [from, to] =
-          direction === "in" ? [link.item.id, item.id] : [item.id, link.item.id];
+          direction === "in"
+            ? [link.item.id, item.id]
+            : [item.id, link.item.id];
         edges.set(`${from}\0${to}`, {
           from,
           to,
@@ -224,8 +241,11 @@ export async function gatherFlow(
     if (answered.has(language)) {
       return "answered";
     }
-    if (gaveUp.has(language)) {
+    if (timedOut.has(language)) {
       return "silent";
+    }
+    if (noCalls.has(language)) {
+      return "noCalls";
     }
     return sawSymbols.has(language) ? "answered" : "none";
   }

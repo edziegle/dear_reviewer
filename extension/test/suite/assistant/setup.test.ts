@@ -211,9 +211,11 @@ describe("Setting up the Assistant", () => {
         assert.strictEqual((await renderedPanel(title))?.messages.length, 1)
       );
       assert.ok(!fs.existsSync(marker), "the workspace's claude never ran");
-      assert.ok(
-        (await assistantRuns(request)).length > 0,
-        "the Reviewer's claude ran"
+      await eventually(async () =>
+        assert.ok(
+          (await assistantRuns(request)).length > 0,
+          "the Reviewer's claude ran"
+        )
       );
     } finally {
       await closeChange(request);

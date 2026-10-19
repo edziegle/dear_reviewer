@@ -3,7 +3,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 import {
-  activeDiff,
+  shownDiff,
   changeFiles,
   entryAt,
   markViewed,
@@ -216,7 +216,7 @@ describe("The Active Change", () => {
 
       await eventually(() =>
         assert.strictEqual(
-          activeDiff().modified.fsPath,
+          shownDiff().modified.fsPath,
           path.join(head, "util.py")
         )
       );

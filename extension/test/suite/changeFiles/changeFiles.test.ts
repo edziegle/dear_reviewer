@@ -4,6 +4,7 @@ import * as path from "path";
 import * as vscode from "vscode";
 import {
   activeDiff,
+  shownDiff,
   activeText,
   changeFiles,
   entryAt,
@@ -323,14 +324,14 @@ describe("The Change files view", () => {
     await select(entryAt(await changeFiles(), title, "main.py"));
     await eventually(() =>
       assert.strictEqual(
-        activeDiff().modified.fsPath,
+        shownDiff().modified.fsPath,
         path.join(head, "main.py")
       )
     );
     await select(entryAt(await changeFiles(), title, "util.py"));
     await eventually(() =>
       assert.strictEqual(
-        activeDiff().modified.fsPath,
+        shownDiff().modified.fsPath,
         path.join(head, "util.py")
       )
     );
@@ -393,7 +394,7 @@ describe("The Change files view", () => {
     const file = path.join(head, "util.py");
     await select(entryAt(await changeFiles(), title, "util.py"));
     await eventually(() =>
-      assert.strictEqual(activeDiff().modified.fsPath, file)
+      assert.strictEqual(shownDiff().modified.fsPath, file)
     );
     await markViewed(entryAt(await changeFiles(), title, "util.py"));
 

@@ -207,7 +207,8 @@ function html(): string {
   .seg button:last-child { border-radius: 0 2px 2px 0; }
   .seg button:only-child { border-radius: 2px; }
   .seg button[aria-pressed=true] { color: var(--vscode-button-foreground); background: var(--vscode-button-background); }
-  .seg button[aria-pressed=true]::before { content: "\\2713\\00a0"; }
+  .seg button::before { content: "\\2713\\00a0"; content: "\\2713\\00a0" / ""; visibility: hidden; }
+  .seg button[aria-pressed=true]::before { visibility: visible; }
   select { font: inherit; color: var(--vscode-dropdown-foreground); background: var(--vscode-dropdown-background); border: 1px solid var(--vscode-dropdown-border, var(--vscode-contrastBorder, transparent)); padding: 2px 4px; }
   select:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
   .legend { display: inline-flex; gap: 12px; color: var(--vscode-descriptionForeground); font-size: 0.9em; }
@@ -223,11 +224,11 @@ function html(): string {
   .canvas svg { display: block; }
   .node .box { fill: var(--vscode-editor-background); stroke: var(--vscode-descriptionForeground); stroke-width: 1; }
   .node.changed .box { stroke: var(--vscode-gitDecoration-modifiedResourceForeground, var(--vscode-focusBorder)); stroke-width: 2.5; }
-  .node.new .box { stroke: var(--vscode-gitDecoration-addedResourceForeground, var(--vscode-focusBorder)); stroke-width: 2.5; stroke-dasharray: 5 3; }
-  .node.removed .box { stroke: var(--vscode-gitDecoration-deletedResourceForeground, var(--vscode-focusBorder)); stroke-width: 2.5; stroke-dasharray: 2 3; }
-  .node[aria-pressed=true] .box { fill: var(--vscode-list-activeSelectionBackground); }
-  .node[aria-pressed=true] text { fill: var(--vscode-list-activeSelectionForeground); }
-  .call[aria-pressed=true] .hit { stroke-dasharray: none; }
+  .node.new .box { stroke: var(--vscode-gitDecoration-addedResourceForeground, var(--vscode-focusBorder)); stroke-width: 2.5; stroke-dasharray: 10 5; }
+  .node.removed .box { stroke: var(--vscode-gitDecoration-deletedResourceForeground, var(--vscode-focusBorder)); stroke-width: 2.5; stroke-dasharray: 0.1 5; stroke-linecap: round; }
+  .node[aria-selected=true] .box { fill: var(--vscode-list-activeSelectionBackground); }
+  .node[aria-selected=true] text { fill: var(--vscode-list-activeSelectionForeground); }
+  .call[aria-selected=true] .hit { stroke-dasharray: none; }
   /* The focus ring goes around the box, so the box keeps the stroke and dash that mark its status. */
   .node .ring { fill: none; stroke: none; }
   .node:focus { outline: none; }
@@ -242,14 +243,14 @@ function html(): string {
   .lane-head { font-weight: 600; }
   .lane-line { stroke: var(--vscode-panel-border, var(--vscode-descriptionForeground)); stroke-dasharray: 3 4; }
   .call.changed .edge { stroke: var(--vscode-gitDecoration-modifiedResourceForeground, var(--vscode-focusBorder)); stroke-width: 2.5; }
-  .call.new .edge { stroke: var(--vscode-gitDecoration-addedResourceForeground, var(--vscode-focusBorder)); stroke-width: 2.5; stroke-dasharray: 5 3; }
-  .call.removed .edge { stroke: var(--vscode-gitDecoration-deletedResourceForeground, var(--vscode-focusBorder)); stroke-width: 2.5; stroke-dasharray: 2 3; }
+  .call.new .edge { stroke: var(--vscode-gitDecoration-addedResourceForeground, var(--vscode-focusBorder)); stroke-width: 2.5; stroke-dasharray: 10 5; }
+  .call.removed .edge { stroke: var(--vscode-gitDecoration-deletedResourceForeground, var(--vscode-focusBorder)); stroke-width: 2.5; stroke-dasharray: 0.1 5; stroke-linecap: round; }
   .call .where { fill: var(--vscode-descriptionForeground); font-size: calc(var(--vscode-font-size) * 0.9); }
-  .call[aria-pressed=true] .where { fill: var(--vscode-list-activeSelectionForeground); }
+  .call[aria-selected=true] .where { fill: var(--vscode-list-activeSelectionForeground); }
   .call .hit { fill: transparent; stroke: transparent; }
   .call:hover .hit { fill: var(--vscode-list-hoverBackground); }
-  .call[aria-pressed=true] .hit { fill: var(--vscode-list-activeSelectionBackground); stroke: var(--vscode-list-activeSelectionForeground); }
-  .call[aria-pressed=true] text { fill: var(--vscode-list-activeSelectionForeground); }
+  .call[aria-selected=true] .hit { fill: var(--vscode-list-activeSelectionBackground); stroke: var(--vscode-list-activeSelectionForeground); }
+  .call[aria-selected=true] text { fill: var(--vscode-list-activeSelectionForeground); }
   .details { position: sticky; bottom: 0; background: var(--vscode-editor-background); margin: 10px 0 0; padding: 8px; border: 1px solid var(--vscode-panel-border, var(--vscode-contrastBorder)); min-height: 3em; }
   .details .where, .list .where { font-family: var(--vscode-editor-font-family); color: var(--vscode-descriptionForeground); overflow-wrap: anywhere; }
   .details button { margin-top: 6px; font: inherit; padding: 2px 12px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); border: 1px solid var(--vscode-button-border, var(--vscode-contrastBorder, transparent)); border-radius: 2px; cursor: pointer; }
@@ -258,7 +259,9 @@ function html(): string {
   .details .actions button { margin-top: 0; }
   .list { margin: 0; padding-left: 1.2em; }
   .list li { margin: 6px 0; }
-  .list button.sym { font: inherit; font-family: var(--vscode-editor-font-family); background: none; border: none; color: var(--vscode-textLink-foreground); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; padding: 0; }
+  .hint { margin: 0 0 6px; color: var(--vscode-descriptionForeground); font-size: 0.9em; }
+  .neighbours { margin-top: 6px; }
+  .neighbours button.sym, .list button.sym { font: inherit; font-family: var(--vscode-editor-font-family); background: none; border: none; color: var(--vscode-textLink-foreground); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; padding: 0; }
   .badge { font-size: 0.85em; margin-left: 6px; padding: 0 6px; border-radius: 8px; color: var(--vscode-badge-foreground); background: var(--vscode-badge-background); }
   .empty { color: var(--vscode-descriptionForeground); margin: 14px 0; }
 </style>
@@ -314,6 +317,21 @@ function html(): string {
     else post({ type: "select", id });
   }
 
+  /** Says how to move through the picture, since the keys are not otherwise visible. */
+  const hint = (view) => el("p", { class: "hint", id: "hint",
+    text: (view === "lanes" ? "Up and Down move between calls. " : "Arrow keys move between symbols; Right and Left follow calls. ") + "Enter shows a symbol in the diff; Enter again moves to the diff." });
+
+  /** Makes the symbol the one tab stop into the call map. */
+  function setRoving(id) {
+    rovingNode = id;
+    for (const n of document.querySelectorAll("[data-node]")) n.setAttribute("tabindex", n.getAttribute("data-node") === id ? "0" : "-1");
+  }
+  /** Makes the call row the one tab stop into the swimlanes. */
+  function setRovingCall(index) {
+    rovingCall = index;
+    document.querySelectorAll("[data-focus^='call:']").forEach((row, i) => row.setAttribute("tabindex", i === index ? "0" : "-1"));
+  }
+
   const NODE_W = 190, NODE_H = 46, COL_GAP = 90, ROW_GAP = 24, PAD = 20;
 
   function toolbar(state) {
@@ -328,7 +346,7 @@ function html(): string {
     if (state.offers.hops) {
       bar.append(seg("Show", [[0, "Changed only"], [1, "+1 hop"], [2, "+2 hops"]], state.hops, (hops) => post({ type: "setHops", hops })));
     } else if (state.flow.entries.length > 0) {
-      const select = el("select", { id: "entry", "aria-label": "Entry point", onchange: () => post({ type: "setEntry", id: select.value }) },
+      const select = el("select", { id: "entry", onchange: () => post({ type: "setEntry", id: select.value }) },
         state.flow.entries.map((entry) => el("option", { value: entry.id, selected: entry.id === state.flow.entry, text: entry.label })));
       bar.append(el("span", { class: "group" }, el("label", { for: "entry", text: "Calls from" }), select));
     }
@@ -391,8 +409,10 @@ function html(): string {
     const byId = new Map(nodes.map((n) => [n.id, n]));
     const width = PAD * 2 + columns * NODE_W + (columns - 1) * COL_GAP;
     const height = PAD * 2 + rows * NODE_H + (rows - 1) * ROW_GAP;
-    const drawing = svg("svg", { width, height, viewBox: "0 0 " + width + " " + height, role: "group", "aria-label": "Call map: " + nodes.length + " symbols" },
+    const drawing = svg("svg", { width, height, viewBox: "0 0 " + width + " " + height, role: "listbox", "aria-label": "Call map: " + nodes.length + " symbols", "aria-describedby": "hint" },
       arrowDefs());
+    const inReadingOrder = nodes.slice().sort((a, b) => a.column - b.column || a.row - b.row);
+    const stopId = nodes.some((n) => n.id === rovingNode) ? rovingNode : nodes.some((n) => n.id === state.selected) ? state.selected : inReadingOrder[0] && inReadingOrder[0].id;
     for (const edge of state.flow.edges) {
       const from = byId.get(edge.from), to = byId.get(edge.to);
       if (!from || !to) continue;
@@ -406,7 +426,7 @@ function html(): string {
     }
     for (const node of nodes) {
       const { x, y } = at(node);
-      const group = svg("g", { class: "node " + node.status, transform: "translate(" + x + " " + y + ")", tabindex: "0", role: "button", "aria-pressed": String(state.selected === node.id), "aria-label": describe(node) + (node.hidden ? ", " + node.hidden + " more neighbours not drawn" : ""), "data-node": node.id, "data-focus": "node:" + node.id },
+      const group = svg("g", { class: "node " + node.status, transform: "translate(" + x + " " + y + ")", tabindex: node.id === stopId ? "0" : "-1", role: "option", "aria-selected": String(state.selected === node.id), "aria-label": describe(node) + (node.hidden ? ", " + node.hidden + " more neighbours not drawn" : ""), "data-node": node.id, "data-focus": "node:" + node.id },
         svg("title", { text: describe(node) }),
         svg("rect", { class: "ring", x: -4, y: -4, width: NODE_W + 8, height: NODE_H + 8, rx: 5 }),
         svg("rect", { class: "box", width: NODE_W, height: NODE_H, rx: 3 }),
@@ -415,6 +435,7 @@ function html(): string {
       if (node.status !== "unchanged") group.append(svg("text", { class: "where status", x: NODE_W - 8, y: 19, "text-anchor": "end" }, statusMark(node)));
       if (node.hidden) group.append(svg("text", { class: "more", x: NODE_W - 8, y: 36, "text-anchor": "end" }, node.hidden + " not drawn"));
       group.addEventListener("click", () => post({ type: "select", id: node.id }));
+      group.addEventListener("focus", () => { rovingNode = node.id; setRoving(node.id); });
       group.addEventListener("dblclick", () => post({ type: "openDiff", id: node.id }));
       group.addEventListener("keydown", (event) => nodeKey(event, node, nodes));
       drawing.append(group);
@@ -448,21 +469,34 @@ function html(): string {
     }
   }
 
-  /** Enter and Space select, Enter again opens the diff; arrows move to the symbols around. */
+  /**
+   * Enter and Space select, Enter again opens the diff. Up and Down move
+   * along the column, and Right and Left follow a call to the callee or caller
+   * nearest in the column, going back the way the Reviewer came when they
+   * press the opposite key. The details list every caller and callee too.
+   */
   function nodeKey(event, node, nodes) {
-    const focusNode = (target) => {
+    const move = (target) => {
       if (!target) return;
       event.preventDefault();
       const found = document.querySelector('[data-node="' + CSS.escape(target.id) + '"]');
-      if (found) found.focus();
+      if (found) { setRoving(target.id); found.focus(); }
     };
-    const sameColumn = nodes.filter((n) => n.column === node.column).sort((a, b) => a.row - b.row);
-    const index = sameColumn.indexOf(node);
+    const column = nodes.filter((n) => n.column === node.column).sort((a, b) => a.row - b.row);
+    const index = column.indexOf(node);
+    const linked = (ids) => ids.map((id) => nodes.find((n) => n.id === id)).filter(Boolean);
+    const callees = linked(current.flow.edges.filter((e) => e.from === node.id).map((e) => e.to));
+    const callers = linked(current.flow.edges.filter((e) => e.to === node.id).map((e) => e.from));
+    const nearest = (list) => list.slice().sort((a, b) => Math.abs(a.row - node.row) - Math.abs(b.row - node.row) || a.row - b.row)[0];
+    const toward = (list) => list.find((n) => trail.to === node.id && n.id === trail.from) || nearest(list);
+    const follow = (target) => { if (!target) return; trail = { from: node.id, to: target.id }; move(target); };
     if (event.key === "Enter" || event.key === " ") activate(event, node.id);
-    else if (event.key === "ArrowDown") focusNode(sameColumn[index + 1]);
-    else if (event.key === "ArrowUp") focusNode(sameColumn[index - 1]);
-    else if (event.key === "ArrowRight") focusNode(current.flow.edges.map((e) => e.from === node.id && nodes.find((n) => n.id === e.to)).find(Boolean));
-    else if (event.key === "ArrowLeft") focusNode(current.flow.edges.map((e) => e.to === node.id && nodes.find((n) => n.id === e.from)).find(Boolean));
+    else if (event.key === "ArrowDown") move(column[index + 1]);
+    else if (event.key === "ArrowUp") move(column[index - 1]);
+    else if (event.key === "Home") move(column[0]);
+    else if (event.key === "End") move(column[column.length - 1]);
+    else if (event.key === "ArrowRight") follow(toward(callees));
+    else if (event.key === "ArrowLeft") follow(toward(callers));
   }
 
   function lanes(state) {
@@ -472,8 +506,11 @@ function html(): string {
     const width = PAD * 2 + names.length * LANE_W;
     const height = TOP + calls.length * ROW_H + PAD;
     const x = (lane) => PAD + lane * LANE_W + LANE_W / 2;
-    const drawing = svg("svg", { width, height, viewBox: "0 0 " + width + " " + height, role: "group", "aria-label": "Swimlanes: " + calls.length + " calls" },
+    const drawing = svg("svg", { width, height, viewBox: "0 0 " + width + " " + height, role: "listbox", "aria-label": "Swimlanes: " + calls.length + " calls", "aria-describedby": "hint" },
       arrowDefs());
+    // Rows that share a callee share the selection; only the one the Reviewer chose reads as selected.
+    const selectedRow = calls.some((c, i) => i === selectedCall && c.to === state.selected) ? selectedCall : calls.findIndex((c) => c.to === state.selected);
+    const stopRow = rovingCall !== undefined && rovingCall < calls.length ? rovingCall : Math.max(selectedRow, 0);
     names.forEach((name, i) => {
       drawing.append(svg("g", { class: "lane" },
         svg("text", { class: "lane-head", x: x(i), y: 24, "text-anchor": "middle" }, svg("title", { text: name }), clip(name, 28)),
@@ -487,21 +524,22 @@ function html(): string {
       // What marks the callee marks the call; the caller's mark is named in the row's second line.
       const calleeMark = target ? statusMark(target) : "", callerMark = source ? statusMark(source) : "";
       const detail = [calleeMark, target ? placeOf(target) : "", callerMark && source ? "called from " + callerMark + " " + source.name : ""].filter(Boolean).join("  \u00b7  ");
-      const group = svg("g", { class: "call " + (target ? target.status : "unchanged"), tabindex: "0", role: "button", "aria-pressed": String(state.selected === call.to), "aria-label": (i + 1) + ". " + (source ? source.name + (callerMark ? " (" + STATUS[source.status] + ")" : "") : call.from) + " calls " + (target ? target.name + ", " + STATUS[target.status] + ", " + before(target) + target.path + " line " + target.line : call.to) + (call.label ? ", " + call.label : ""), "data-focus": "call:" + i },
+      const group = svg("g", { class: "call " + (target ? target.status : "unchanged"), tabindex: i === stopRow ? "0" : "-1", role: "option", "aria-selected": String(i === selectedRow), "aria-label": (i + 1) + ". " + (source ? source.name + (callerMark ? " (" + STATUS[source.status] + ")" : "") : call.from) + " calls " + (target ? target.name + ", " + STATUS[target.status] + ", " + before(target) + target.path + " line " + target.line : call.to) + (call.label ? ", " + call.label : ""), "data-focus": "call:" + i },
         svg("rect", { class: "hit", x: PAD, y: y - ROW_H / 2 + 2, width: width - PAD * 2, height: ROW_H - 4, rx: 3 }),
         same
           ? svg("path", { class: "edge", d: "M" + x1 + " " + (y - 6) + " h28 v12 h-26", "marker-end": "url(#arrow)" })
           : svg("line", { class: "edge", x1, x2: x2 + (x2 > x1 ? -2 : 2), y1: y, y2: y, "marker-end": "url(#arrow)" }),
         svg("text", { x: Math.min(x1, x2) + 8, y: y - 8 }, (i + 1) + ". " + clip((target ? target.name : call.to) + (call.label ? "  " + call.label : ""), 40)),
         detail && svg("text", { class: "where", x: Math.min(x1, x2) + 8, y: y + 14 }, clip(detail, 70)));
-      group.addEventListener("click", () => post({ type: "select", id: call.to }));
+      group.addEventListener("click", () => { selectedCall = i; post({ type: "select", id: call.to }); });
+      group.addEventListener("focus", () => setRovingCall(i));
       group.addEventListener("keydown", (event) => {
-        if (event.key === "Enter" || event.key === " ") activate(event, call.to);
-        else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        if (event.key === "Enter" || event.key === " ") { selectedCall = i; activate(event, call.to); }
+        else if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
           event.preventDefault();
-          const calls = [...document.querySelectorAll("[data-focus^='call:']")];
-          const target = calls[calls.indexOf(group) + (event.key === "ArrowDown" ? 1 : -1)];
-          if (target) target.focus();
+          const rows = [...document.querySelectorAll("[data-focus^='call:']")];
+          const to = event.key === "Home" ? 0 : event.key === "End" ? rows.length - 1 : i + (event.key === "ArrowDown" ? 1 : -1);
+          if (rows[to]) { setRovingCall(to); rows[to].focus(); }
         }
       });
       drawing.append(group);
@@ -529,9 +567,22 @@ function html(): string {
     return el("div", { class: "details", id: "details" },
       el("strong", { text: node.name }), el("span", { class: "badge", text: node.status }), " ",
       el("div", { class: "where", text: before(node) + node.path + ":" + node.line }),
+      neighbours(state, node),
       el("div", { class: "actions" },
         el("button", { type: "button", onclick: () => post({ type: "openDiff", id: node.id }), text: "Open in diff" }),
         expandButton(state, node.id)));
+  }
+
+  /** The symbols the selected one calls and is called by, as buttons that select them: the map's calls without the arrow keys. */
+  function neighbours(state, node) {
+    if (state.view !== "map") return null;
+    const known = new Map(state.known.map((n) => [n.id, n]));
+    const drawn = new Set(state.flow.nodes.map((n) => n.id));
+    const ends = (pick) => state.flow.edges.map(pick).map((id) => known.get(id)).filter((n) => n && drawn.has(n.id));
+    const calls = ends((e) => e.from === node.id && e.to), callers = ends((e) => e.to === node.id && e.from);
+    const link = (n) => el("button", { type: "button", class: "sym", "data-focus": "nb:" + n.id, onclick: () => { focusAfter = n.id; post({ type: "select", id: n.id }); }, text: n.name });
+    const names = (list) => list.length ? list.flatMap((n, i) => (i ? [", ", link(n)] : [link(n)])) : ["none"];
+    return el("div", { class: "neighbours" }, el("div", {}, "Calls: ", ...names(calls)), el("div", {}, "Called by: ", ...names(callers)));
   }
 
   /** Draws the neighbours the cap left out around a symbol the call map or list shows. */
@@ -543,6 +594,16 @@ function html(): string {
   }
 
   let current;
+  /** The symbol, and the call row, that hold the one tab stop into the picture. */
+  let rovingNode, rovingCall;
+  /** The call row the Reviewer chose, since several rows may share a callee. */
+  let selectedCall;
+  /** Where the Reviewer last moved with Right or Left, so the opposite key goes back. */
+  let trail = {};
+  /** A symbol to focus once the next render has drawn it. */
+  let focusAfter;
+  /** The symbol whose selection the live region last announced. */
+  let announced;
   /** What identifies the focused control across a render: the shared script only follows buttons and inputs. */
   const focusKey = () => {
     const active = document.activeElement;
@@ -558,6 +619,7 @@ function html(): string {
       if (state.loading) {
         app.append(el("p", { class: "empty", text: "Asking the language servers\\u2026" }));
       } else if (state.offers.picture) {
+        if (state.view !== "list") app.append(hint(state.view));
         app.append(state.view === "lanes" ? lanes(state) : state.view === "list" ? list(state) : callMap(state));
       } else if (state.offers.empty) {
         app.append(el("p", { class: "empty", text: state.offers.empty }));
@@ -574,7 +636,19 @@ function html(): string {
       // Only as far as it takes to see it: the canvas and the page stay where they were.
       restored.scrollIntoView({ block: "nearest", inline: "nearest" });
     }
-    setText(live, state.loading ? "Asking the language servers" : state.flow.nodes.length + " symbols shown");
+    if (focusAfter) {
+      const target = document.querySelector('[data-node="' + CSS.escape(focusAfter) + '"]');
+      focusAfter = undefined;
+      if (target) { setRoving(target.getAttribute("data-node")); target.focus({ preventScroll: true }); target.scrollIntoView({ block: "nearest", inline: "nearest" }); }
+    }
+    const picked = state.selected && state.known.find((n) => n.id === state.selected);
+    if (!state.loading && picked && picked.id !== announced) {
+      const calls = state.flow.edges.filter((e) => e.from === picked.id).length, callers = state.flow.edges.filter((e) => e.to === picked.id).length;
+      setText(live, "Selected " + describe(picked) + ", " + calls + (calls === 1 ? " call, " : " calls, ") + callers + (callers === 1 ? " caller" : " callers"));
+    } else {
+      setText(live, state.loading ? "Asking the language servers" : state.flow.nodes.length + " symbols shown");
+    }
+    announced = picked ? picked.id : undefined;
   }
 
   const scrollOf = (canvas) => canvas ? { left: canvas.scrollLeft, top: canvas.scrollTop } : null;

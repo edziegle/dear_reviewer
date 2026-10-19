@@ -475,6 +475,9 @@ async function launch({
         "--force-disable-user-env",
         // Software rendering avoids GPU surface failures that crash the window.
         "--disable-gpu",
+        // Chromium's shared memory lives in /dev/shm, which a container caps at
+        // 64 MB; when it fills, a webview's renderer dies and never says ready.
+        "--disable-dev-shm-usage",
         // Keeps test tokens out of the OS keychain.
         "--use-inmemory-secretstorage",
       ],

@@ -33,7 +33,9 @@ export interface Message {
 export interface ConversationState {
   /** The Change as the Reviewer knows it, which the view's title and heading show. */
   name: string;
-  /** The Change's commits, such as `3f2a1c0..9be41d7`. */
+  /** The pull request's title once it has loaded, which the heading shows in place of the name. */
+  heading?: string;
+  /** The Change's commits, such as `3f2a1c0..9be41d7`; with a title in the heading, where the Change comes from too. */
   range: string;
   /** The Claude login the Assistant runs on. */
   login?: string;
@@ -432,7 +434,7 @@ ${catSymbol}
     byId("empty").hidden = !none;
     byId("header").hidden = none;
     byId("footer").hidden = none;
-    setText(byId("title"), state.name);
+    setText(byId("title"), state.heading || state.name);
     setText(byId("range"), state.range);
     setText(byId("login"), state.login ? "Claude login: " + state.login : "");
     const grew = showMessages(state.messages);

@@ -23,6 +23,7 @@ import {
   Change,
   changedFiles,
   changeName,
+  changeSource,
   changeTitle,
 } from "../changeWorkspace";
 import type { LocalThread } from "../localReviews";
@@ -135,7 +136,9 @@ export class Assistants implements vscode.Disposable {
     /** The column a Change's code opens in, beside its overview. */
     private readonly codeColumn: (change: Change) => vscode.ViewColumn,
     private readonly reviewerView: ReviewerView,
-    private readonly descriptionOf: DescriptionOf
+    private readonly descriptionOf: DescriptionOf,
+    /** The title of the Change's pull request, once it has loaded. */
+    private readonly titleOf: (change: Change) => string | undefined
   ) {
     this.status = vscode.window.createStatusBarItem(
       "dearReviewer.claudeLogin",
@@ -185,6 +188,7 @@ export class Assistants implements vscode.Disposable {
       () => this.retryStart(assistant),
       this.reviewerView,
       this.descriptionOf,
+      (current) => this.titleOf(current),
       (changed) => {
         if (this.inView === changed)
           this.view.update(changed.conversationState);
@@ -335,6 +339,11 @@ export class Assistants implements vscode.Disposable {
    */
   findIssues(change: Change): Promise<string> {
     return this.started(change).aside(findingsPrompt);
+  }
+
+  /** Has each Assistant's heading show its Change's title, such as once its pull request has loaded. */
+  retitle(): void {
+    for (const assistant of this.byConversation.values()) assistant.retitle();
   }
 
   /** Adds a note to the conversation of the Change's Assistant, if it has started. */
@@ -525,11 +534,12 @@ class ChangeAssistant {
     private readonly retry: () => void,
     private readonly reviewerView: ReviewerView,
     private readonly descriptionOf: DescriptionOf,
+    private readonly titleOf: (change: Change) => string | undefined,
     /** Tells the view, if it shows this conversation, that it changed. */
     private readonly stateChanged: (assistant: ChangeAssistant) => void
   ) {
     this.state = {
-      ...namesOf(change),
+      ...namesOf(change, titleOf(change)),
       busy: true,
       messages: saved?.messages ?? [],
     };
@@ -669,6 +679,10 @@ class ChangeAssistant {
   }
 
   /** Carries the conversation on at the Change's new head. */
+  retitle(): void {
+    this.update(namesOf(this.change, this.titleOf(this.change)));
+  }
+
   moveTo(change: Change): void {
     if (change.id === this.change.id) return;
     void this.enqueue(async () => {
@@ -677,7 +691,7 @@ class ChangeAssistant {
       // The next turn restarts `claude` with the new worktrees.
       this.conversation?.dispose();
       this.conversation = undefined;
-      this.update(namesOf(change));
+      this.update(namesOf(change, this.titleOf(change)));
       this.noteNewHead(previousHead);
     });
     void this.explainSinceLastReview();
@@ -1090,10 +1104,21 @@ class ChangeAssistant {
 const summaryNote =
   "The Assistant's summary of this Change is in its overview.";
 
-function namesOf(change: Change): Pick<ConversationState, "name" | "range"> {
+/**
+ * What the view shows of the Change: with the pull request's title, the
+ * title in the heading and where the Change comes from under it; until
+ * then, its name over its commits.
+ */
+function namesOf(
+  change: Change,
+  title?: string
+): Pick<ConversationState, "name" | "range" | "heading"> {
   return {
     name: changeName(change),
-    range: `${change.mergeBase.slice(0, 7)}..${change.headSha.slice(0, 7)}`,
+    range: title
+      ? changeSource(change)
+      : `${change.mergeBase.slice(0, 7)}..${change.headSha.slice(0, 7)}`,
+    ...(title && { heading: title }),
   };
 }
 

@@ -2,9 +2,11 @@ import * as assert from "assert";
 import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
+import { renderedPanel, showAssistant, webviewTabs } from "../assistant";
 import {
   shownDiff,
   changeFiles,
+  changeFilesTitled,
   entryAt,
   markViewed,
   render,
@@ -41,7 +43,8 @@ const settingKeys = ["githubApiUrl", "repositories", "localClones"];
 
 describe("Opening a pull request from the Inbox", () => {
   const pr = buildPullRequestFixture("pr", "acme/api", 7);
-  const title = `${path.basename(pr.clone)} ${short(pr.base)}..${short(pr.head)}`;
+  // What names the Change once its pull request has loaded (ADR 0020).
+  const title = "Restructure pkg";
   const fakePullRequest: FakePullRequest = {
     repository: pr.repository,
     number: pr.number,
@@ -146,7 +149,7 @@ describe("Opening a pull request from the Inbox", () => {
 
   it("opens with its overview, and shows its diff and files as for a local Change once asked", async () => {
     const overview = `${pr.repository} #${pr.number}`;
-    await eventually(() => assert.strictEqual(activeTabLabel(), overview));
+    await eventually(() => assert.strictEqual(activeTabLabel(), title));
 
     // Run from the overview, the command acts on its Change.
     await vscode.commands.executeCommand("dearReviewer.openAllChanges");
@@ -181,16 +184,39 @@ describe("Opening a pull request from the Inbox", () => {
     });
   });
 
+  it("names the Change by the pull request's title in Change Files, the overview's tab and the Assistant's heading", async () => {
+    const range = `${short(pr.base)}..${short(pr.head)}`;
+    const source = `${pr.repository} #${pr.number} · ${range}`;
+
+    const root = entryAt(await changeFilesTitled(title), title);
+    await eventually(() => assert.ok(webviewTabs().includes(title)));
+    await showAssistant(pullRequestRequest);
+
+    assert.strictEqual(
+      root.tooltip,
+      source,
+      "the row says where it comes from"
+    );
+    await eventually(async () => {
+      const panel = await renderedPanel(`${path.basename(pr.clone)} ${range}`);
+      assert.strictEqual(panel?.heading, title);
+      assert.strictEqual(panel?.range, source);
+      assert.strictEqual(panel?.name, `${pr.repository} #${pr.number}`);
+    });
+  });
+
   it("reads viewed state from GitHub", async () => {
-    assert.deepStrictEqual(render(await changeFiles()), [
-      `${title} — ■■□□□□□ 1/4`,
-      "  pkg",
-      "    sub",
-      "      new.py [A]",
-      "    core.py [M] (viewed)",
-      "    legacy.py [D]",
-      "  util.py [M]",
-    ]);
+    await eventually(async () =>
+      assert.deepStrictEqual(render(await changeFiles()), [
+        `${title} — ■■□□□□□ 1/4`,
+        "  pkg",
+        "    sub",
+        "      new.py [A]",
+        "    core.py [M] (viewed)",
+        "    legacy.py [D]",
+        "  util.py [M]",
+      ])
+    );
   });
 
   it("marks and unmarks files viewed on GitHub", async () => {

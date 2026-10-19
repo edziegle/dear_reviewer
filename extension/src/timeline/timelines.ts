@@ -71,6 +71,10 @@ export interface Standing {
 export interface OverviewSources {
   /** Where the Reviewer stands on the Change. */
   standing(change: Change): Promise<Standing>;
+  /** Tells the pull request's title, once it has loaded. */
+  titleLoaded(change: Change, title: string): void;
+  /** The title the Change's tab shows: its pull request's, once that has loaded. */
+  heading(change: Change): string;
   /** Whether the review window is untrusted, so code navigation is off in it. */
   navigationOff(): boolean;
   /** What the Change's Assistant has to show, once it has started. */
@@ -291,6 +295,7 @@ class ChangeTimeline {
       if (this.panel === panel) this.panel = undefined;
     });
     this.panel = panel;
+    panel.label(this.sources.heading(this.change));
   }
 
   /**
@@ -314,7 +319,12 @@ class ChangeTimeline {
       const found = this.change.pullRequest
         ? await this.pullRequestState(panel)
         : await this.localState();
-      if (load === this.loads) this.update(found, true);
+      if (load === this.loads) {
+        this.update(found, true);
+        if (this.change.pullRequest && found.title)
+          this.sources.titleLoaded(this.change, found.title);
+        this.panel?.label(this.sources.heading(this.change));
+      }
     } catch (err) {
       if (load !== this.loads) return;
       const signedOut = err instanceof NotSignedInError;

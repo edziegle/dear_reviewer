@@ -15,6 +15,7 @@ import {
   ChangedFile,
   changedFiles,
   changeName,
+  changeSource,
   changeTitle,
   fileSides,
   FileStatus,
@@ -146,7 +147,9 @@ export class ChangeFilesView
     /** The Change's Reading Order, and whether the Assistant is writing one. */
     private readonly readingOrderOf: (
       change: Change
-    ) => ReadingOrderState | undefined
+    ) => ReadingOrderState | undefined,
+    /** What names the Change: its pull request's title once loaded (ADR 0020). */
+    private readonly headingOf: (change: Change) => string
   ) {
     void this.showSettingsContext();
   }
@@ -385,8 +388,9 @@ export class ChangeFilesView
         return item;
       }
       case "change": {
+        const heading = this.headingOf(node.change);
         const item = new vscode.TreeItem(
-          changeTitle(node.change),
+          heading,
           vscode.TreeItemCollapsibleState.Expanded
         );
         item.id = node.change.id;
@@ -401,9 +405,11 @@ export class ChangeFilesView
         const note = node.sinceReview ? [since[node.sinceReview]] : [];
         item.description = [progress.text, ...note].join(" · ");
         item.accessibilityInformation = {
-          label: [changeTitle(node.change), progress.label, ...note].join(", "),
+          label: [heading, progress.label, ...note].join(", "),
         };
-        item.tooltip = node.change.repository;
+        item.tooltip = node.change.pullRequest
+          ? changeSource(node.change)
+          : node.change.repository;
         item.iconPath = new vscode.ThemeIcon("git-compare");
         // Menus show the actions that fit: submit or a Brief, and what changed since.
         item.contextValue = [

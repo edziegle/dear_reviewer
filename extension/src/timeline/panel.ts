@@ -218,6 +218,8 @@ export class TimelinePanel {
    * references to open, and `onAction` gets what the Reviewer does. With
    * `focus`, it opens with the focus.
    */
+  private readonly name: string;
+
   constructor(
     state: TimelineState,
     title: string,
@@ -227,6 +229,7 @@ export class TimelinePanel {
     focus: boolean
   ) {
     this.openedWithFocus = focus;
+    this.name = title;
     this.view = new MarkdownPanel(state, {
       viewType: "dearReviewer.timeline",
       title,
@@ -240,8 +243,14 @@ export class TimelinePanel {
     this.onDidDispose = this.view.onDidDispose;
   }
 
+  /** The Change's name, which names the panel to the tests; the tab's label may show its title instead. */
   get title(): string {
-    return this.view.title;
+    return this.name;
+  }
+
+  /** Puts the label on the panel's tab, such as the pull request's title once it has loaded. */
+  label(label: string): void {
+    this.view.title = label;
   }
 
   /** Whether the panel is the one the Reviewer is looking at. */

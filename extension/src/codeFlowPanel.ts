@@ -329,9 +329,9 @@ function html(): string {
       const group = svg("g", { class: "node " + node.status, transform: "translate(" + x + " " + y + ")", tabindex: "0", role: "button", "aria-pressed": String(state.selected === node.id), "aria-label": describe(node) + (node.hidden ? ", " + node.hidden + " more neighbours not drawn" : ""), "data-node": node.id, "data-focus": "node:" + node.id },
         svg("title", { text: describe(node) }),
         svg("rect", { width: NODE_W, height: NODE_H, rx: 3 }),
-        svg("text", { class: "name", x: 8, y: 19 }, clip(node.name, 22)),
-        svg("text", { class: "where", x: 8, y: 36 }, clip((node.side === "base" ? "before: " : "") + baseName(node.path) + ":" + node.line, 26)));
-      if (node.status !== "unchanged") group.append(svg("text", { class: "where", x: NODE_W - 8, y: 19, "text-anchor": "end" }, node.status === "new" ? "+ new" : node.status === "removed" ? "\\u2212 removed" : "\\u25cf changed"));
+        svg("text", { class: "name", x: 8, y: 19 }, node.name),
+        svg("text", { class: "where loc", x: 8, y: 36 }, (node.side === "base" ? "before: " : "") + baseName(node.path) + ":" + node.line));
+      if (node.status !== "unchanged") group.append(svg("text", { class: "where status", x: NODE_W - 8, y: 19, "text-anchor": "end" }, node.status === "new" ? "+ new" : node.status === "removed" ? "\\u2212 removed" : "\\u25cf changed"));
       if (node.hidden) group.append(svg("text", { class: "more", x: NODE_W - 8, y: 36, "text-anchor": "end" }, "+" + node.hidden + " more"));
       group.addEventListener("click", () => post({ type: "select", id: node.id }));
       group.addEventListener("dblclick", () => post({ type: "openDiff", id: node.id }));
@@ -339,6 +339,32 @@ function html(): string {
       drawing.append(group);
     }
     return el("div", { class: "canvas" }, drawing);
+  }
+
+  /**
+   * Cuts each symbol's name and location to the room left beside the text on
+   * its line, the status or the count of neighbours not drawn, measured at
+   * the Reviewer's font size. The whole box's tooltip keeps the full text.
+   */
+  function fitNodeTexts() {
+    const fit = (text, room) => {
+      if (!text) return;
+      const full = text.textContent;
+      if (text.getComputedTextLength() <= room) return;
+      let low = 0, high = full.length;
+      while (low < high) {
+        const mid = Math.ceil((low + high) / 2);
+        text.textContent = full.slice(0, mid) + "\\u2026";
+        if (text.getComputedTextLength() <= room) low = mid;
+        else high = mid - 1;
+      }
+      text.textContent = full.slice(0, low) + "\\u2026";
+    };
+    const room = (beside) => NODE_W - 16 - (beside ? beside.getComputedTextLength() + 8 : 0);
+    for (const group of document.querySelectorAll(".node")) {
+      fit(group.querySelector(".name"), room(group.querySelector(".status")));
+      fit(group.querySelector(".loc"), room(group.querySelector(".more")));
+    }
   }
 
   /** Enter and Space select, Enter again opens the diff; arrows move to the symbols around. */
@@ -445,6 +471,7 @@ function html(): string {
       }
       if (!state.loading) app.append(details(state));
     });
+    fitNodeTexts();
     const restored = key && document.querySelector(key === "entry" ? "#entry" : '[data-focus="' + CSS.escape(key) + '"]');
     if (restored && document.activeElement !== restored) restored.focus({ preventScroll: true });
     setText(live, state.loading ? "Asking the language servers" : state.flow.nodes.length + " symbols shown");

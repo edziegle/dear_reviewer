@@ -333,11 +333,14 @@ describe("The Assistant's summary when a Change opens", () => {
       assert.ok(run.args.includes("--strict-mcp-config"));
       assert.strictEqual(flag(run, "--permission-mode"), "dontAsk");
       assert.deepStrictEqual(
-        run.args.filter((arg) =>
-          /dangerously|bypassPermissions|Bash|Edit|Write|NotebookEdit|WebFetch/.test(
-            arg
-          )
-        ),
+        // The system prompt is prose, which may say "Write like…".
+        run.args
+          .filter((arg) => arg !== flag(run, "--append-system-prompt"))
+          .filter((arg) =>
+            /dangerously|bypassPermissions|Bash|Edit|Write|NotebookEdit|WebFetch/.test(
+              arg
+            )
+          ),
         []
       );
     } finally {

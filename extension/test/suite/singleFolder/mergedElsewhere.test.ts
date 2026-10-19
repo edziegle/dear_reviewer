@@ -80,7 +80,7 @@ describe("Pull request merged, seen from a single-folder window", () => {
     for (const pr of titles.keys()) states.set(pr, "CLOSED");
     await serve();
     await refreshInbox();
-    for (const pr of titles.keys()) await closeChange(requestFor(pr));
+    await closeChange(requestFor(merged));
     const config = vscode.workspace.getConfiguration("dearReviewer");
     for (const key of settingKeys)
       await config.update(
@@ -90,21 +90,16 @@ describe("Pull request merged, seen from a single-folder window", () => {
       );
   });
 
-  it("lets go of what the review window holds for a Change that ends because its pull request merged here", async () => {
+  it("lets go of what the review window holds for the Active Change when it ends because its pull request merged here", async () => {
     for (const [i, pr] of [...titles.keys()].entries())
       await scriptClaude(requestFor(pr), {
         turns: [replyTurn("A summary."), findingTurn(1, `Finding ${i}.`)],
       });
     await refreshInbox();
-    for (const pr of [open, merged])
-      await openFromInbox(inboxEntry(await inbox(), titles.get(pr)!));
-    for (const pr of [open, merged])
-      await runInReviewWindow("dearReviewer.findIssues", requestFor(pr));
+    await openFromInbox(inboxEntry(await inbox(), titles.get(merged)!));
+    await runInReviewWindow("dearReviewer.findIssues", requestFor(merged));
     await inReviewWindow((report) => {
-      assert.deepStrictEqual(
-        [...report.held.findings].sort(),
-        [findingsName(open), findingsName(merged)].sort()
-      );
+      assert.deepStrictEqual(report.held.findings, [findingsName(merged)]);
     });
 
     states.set(merged, "MERGED");
@@ -112,7 +107,7 @@ describe("Pull request merged, seen from a single-folder window", () => {
     await refreshInbox();
 
     await inReviewWindow((report) => {
-      assert.deepStrictEqual(report.held.findings, [findingsName(open)]);
+      assert.deepStrictEqual(report.held.findings, []);
       assert.ok(
         !report.held.assistants.includes(changeTitle(merged)),
         `the review window still holds ${changeTitle(merged)}'s Assistant`

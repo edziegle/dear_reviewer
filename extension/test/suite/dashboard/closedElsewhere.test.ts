@@ -159,22 +159,6 @@ describe("Dashboard when another window closes a Change", () => {
     assert.strictEqual((await awaitingSearches()).length, 1);
   });
 
-  it("reloads once for Changes that close close together", async () => {
-    await openFromDashboard(first);
-    await openFromDashboard(second);
-    await inProgress(["First", "Second"]);
-    await reviewedOnGitHub();
-
-    await closeAsAnotherWindow(requestOf(first).pullRequest);
-    await closeAsAnotherWindow(requestOf(second).pullRequest);
-
-    await eventually(async () =>
-      assert.deepStrictEqual((await renderedDashboard()).inProgress, [])
-    );
-    await inboxSettled();
-    assert.strictEqual((await awaitingSearches()).length, 1);
-  });
-
   it("doesn't reload in a window that doesn't show the Dashboard", async () => {
     await openFromDashboard(first);
     await inProgress(["First"]);

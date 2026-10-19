@@ -144,62 +144,55 @@ describe("Open Change from a single-folder window", () => {
     assert.deepStrictEqual(report.tabs, [title]);
   };
 
-  it("shows the Change behind in the review window once the one in front closes from this window", async () => {
+  it("shows only the Change opened last in the review window, the one before it stopped", async () => {
     const { first, second, titles } = twoChangesOf("closedElsewhere");
     await openChange(first);
+    await inReviewWindow(inFront(titles[0]));
     await openChange(second);
-    await inReviewWindow(inFront(titles[1]));
-
-    await closeChange(second);
 
     try {
-      await inReviewWindow(inFront(titles[0]));
+      await inReviewWindow(inFront(titles[1]));
+      await inReviewWindow((report) =>
+        assert.strictEqual(
+          report.folders.length,
+          3,
+          "the home folder and the second Change's two"
+        )
+      );
     } finally {
-      await closeChange(first);
+      await closeChange(second);
     }
   });
 
-  it("lets go of what the review window holds for a Change closed from this window, and keeps the others'", async () => {
+  it("lets go of what the review window holds for the Change it stops", async () => {
     const { first, second, titles } = twoChangesOf("letGoElsewhere");
     await scriptClaude(first, {
       turns: [replyTurn("First."), findingTurn(2)],
     });
-    await scriptClaude(second, {
-      turns: [replyTurn("Second."), findingTurn(3)],
-    });
+    await scriptClaude(second, { turns: [replyTurn("Second.")] });
     await openChange(first);
-    await openChange(second);
-    await inReviewWindow(inFront(titles[1]));
+    await inReviewWindow(inFront(titles[0]));
     await runInReviewWindow("dearReviewer.findIssues", first);
-    await runInReviewWindow("dearReviewer.findIssues", second);
-    // Only the Change in front has an overview.
     await inReviewWindow((report) => {
-      assert.deepStrictEqual(
-        [...report.held.findings].sort(),
-        [...titles].sort()
-      );
-      assert.deepStrictEqual(
-        [...report.held.assistants].sort(),
-        [...titles].sort()
-      );
-      assert.deepStrictEqual(report.held.timelines, [titles[1]]);
+      assert.deepStrictEqual(report.held.findings, [titles[0]]);
+      assert.deepStrictEqual(report.held.assistants, [titles[0]]);
+      assert.deepStrictEqual(report.held.timelines, [titles[0]]);
     });
 
-    await closeChange(second);
+    await openChange(second);
 
     try {
-      // The one behind comes to the front, and the closed one is let go of.
       await inReviewWindow((report) => {
-        assert.deepStrictEqual(report.held.findings, [titles[0]]);
-        assert.deepStrictEqual(report.held.assistants, [titles[0]]);
-        assert.deepStrictEqual(report.held.timelines, [titles[0]]);
+        assert.deepStrictEqual(report.held.findings, []);
+        assert.deepStrictEqual(report.held.assistants, [titles[1]]);
+        assert.deepStrictEqual(report.held.timelines, [titles[1]]);
       });
     } finally {
-      await closeChange(first);
+      await closeChange(second);
     }
   });
 
-  it("brings a Change opened again from this window to the front of the review window", async () => {
+  it("has a Change opened again from this window stay the review window's Active Change", async () => {
     const { first, second, titles } = twoChangesOf("openedAgain");
     await openChange(first);
     await openChange(second);
@@ -219,25 +212,18 @@ describe("Open Change from a single-folder window", () => {
       );
       await inReviewWindow(inFront(titles[0]));
     } finally {
-      await closeChange(second);
       await closeChange(first);
     }
   });
 
-  it("shows only the newer head in the review window when it replaces the Change in front there", async () => {
+  it("shows only the newer head in the review window when it replaces the Active Change there", async () => {
     const repo = buildFixtureRepo("newerHeadElsewhere");
-    const behind = {
-      repository: repo.path,
-      base: repo.commits.initial,
-      head: repo.commits.renamed,
-    };
     repo.git("branch", "feature", repo.commits.documented);
     const feature = {
       repository: repo.path,
       base: repo.commits.renamed,
       head: "refs/heads/feature",
     };
-    await openChange(behind);
     await openChange(feature);
     let shownBefore = 0;
     await inReviewWindow((report) => {
@@ -258,57 +244,27 @@ describe("Open Change from a single-folder window", () => {
       );
     } finally {
       await closeChange(feature);
-      await closeChange(behind);
     }
   });
 
-  it("shows only the Change left in front in the review window when this window's lifecycle closes several there at once", async () => {
+  it("lets the Active Change go when this window's lifecycle finds it over", async () => {
     const repo = buildFixtureRepo("endedElsewhere");
-    const titleOf = (c: { base: string; head: string }) =>
-      `${path.basename(repo.path)} ${short(c.base)}..${short(c.head)}`;
-    const left = {
+    const change = {
       repository: repo.path,
       base: repo.commits.initial,
       head: repo.commits.renamed,
     };
-    const ending = [
-      [repo.commits.renamed, repo.commits.documented],
-      [repo.commits.documented, repo.commits.restructured],
-    ].map(([base, head]) => ({ repository: repo.path, base, head }));
-    await openChange(left);
-    const kept = worktreesOf(repo.path).map((w) => w.path);
-    for (const change of ending) await openChange(change);
-    // The first of them again, in front, so they don't end in the order shown.
-    await openChange(ending[0]);
-    await eventually(
-      () => assert.deepStrictEqual(pendingInReviewWindow(repo.path), []),
-      30_000
-    );
-    let shownBefore = 0;
-    await inReviewWindow((report) => {
-      inFront(titleOf(ending[0]))(report);
-      shownBefore = report.shown.length;
-    });
-    // Deleted by hand, so the lifecycle finds them over.
-    for (const worktree of worktreesOf(repo.path))
-      if (!kept.includes(worktree.path))
-        fs.rmSync(worktree.path, { recursive: true, force: true });
+    const title = `${path.basename(repo.path)} ${short(change.base)}..${short(change.head)}`;
+    await openChange(change);
+    await inReviewWindow(inFront(title));
+    // Deleted by hand, so the lifecycle finds it over.
+    for (const worktree of worktreesOf(repo.path).slice(1))
+      fs.rmSync(worktree.path, { recursive: true, force: true });
 
     await vscode.commands.executeCommand("dearReviewer.refreshInbox");
 
-    try {
-      await inReviewWindow((report) => {
-        assert.deepStrictEqual(report.shown.slice(shownBefore), [
-          titleOf(left),
-        ]);
-        assert.deepStrictEqual(report.changeFiles, [titleOf(left)]);
-      });
-      await new Promise((resolve) => setTimeout(resolve, 2_000));
-      await inReviewWindow((report) =>
-        assert.deepStrictEqual(report.shown.slice(shownBefore), [titleOf(left)])
-      );
-    } finally {
-      await closeChange(left);
-    }
+    await inReviewWindow((report) =>
+      assert.deepStrictEqual(report.changeFiles, [])
+    );
   });
 });

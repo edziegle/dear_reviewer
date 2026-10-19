@@ -5,6 +5,8 @@ date: 2026-10-17
 
 # Show the Assistant in the Secondary Side Bar, following the Change in front
 
+Amended by [ADR 0040](0040-one-active-change-in-the-review-window.md): the Assistant's view shows the Active Change's conversation, and only in the review window.
+
 ## Context and Problem Statement
 
 The Assistant's chat was a webview panel in an editor tab beside the diff, one for each Change whose Assistant the Reviewer opened (ADR 0012). A tab competes with the diff for the editor's width, and the Reviewer reads code and asks about it at the same time. Showing a Change closed every other Change's chat (ADR 0020), so only one chat was ever open anyway. VS Code's Secondary Side Bar holds views beside the editor, out of its way. In VSCodium 1.135, which Dear Reviewer requires, an extension can contribute a view container to it with `contributes.viewsContainers.secondarySidebar`, without a proposed API. Where should the Assistant's chat go (issue #84)?

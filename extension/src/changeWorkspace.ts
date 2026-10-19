@@ -1,8 +1,9 @@
-// Owns each open Change's pair of worktrees: creates detached base and head
-// worktrees in the extension's storage, puts them in a window as workspace
-// folders, and cleans up when the Change is closed, is over (see ADR 0013),
-// or gives way to a newer head of the same pull request or branch (see ADR
-// 0020). Opening a Change shows its overview, not its diff; the multi-file
+// Owns the Active Change's pair of worktrees: creates detached base and head
+// worktrees in the extension's storage, puts them in the review window as
+// workspace folders, and cleans up when the Change is closed, is over (see
+// ADR 0013), gives way to a newer head of the same pull request or branch
+// (see ADR 0020), or stops because the Reviewer opened another (see ADR
+// 0040). Opening a Change shows its overview, not its diff; the multi-file
 // diff between the worktrees opens when the Reviewer asks.
 
 import * as crypto from "crypto";
@@ -20,8 +21,9 @@ import { git } from "./git";
 import { remoteFor } from "./remotes";
 import {
   Change,
+  activeChange,
+  activeOf,
   arrivedDiffs,
-  changeInFront,
   OpenChanges,
   waitingToShow,
   PullRequestRef,
@@ -36,6 +38,13 @@ import {
 
 export type { Change, PullRequestRef } from "./openChanges";
 export * from "./changeDetails";
+
+/** Thrown by `open` when the Reviewer declined to stop reviewing the Active Change. */
+export class OpenDeclined extends Error {
+  constructor() {
+    super("Opening the Change was declined.");
+  }
+}
 
 export interface ChangeRequest {
   repository: string;
@@ -58,9 +67,18 @@ export class ChangeWorkspace implements vscode.Disposable {
   private readonly shown = new vscode.EventEmitter<Change>();
   /** Fires when a Change opens in this window, for its overview to show. */
   readonly onDidShowChange = this.shown.event;
-  private readonly replaced = new vscode.EventEmitter<Change>();
-  /** Fires with an older head's Change that a newer head of the same pull request or branch closed. */
+  private readonly replaced = new vscode.EventEmitter<{
+    older: Change;
+    by: Change;
+  }>();
+  /** Fires with a Change that opening another stopped, and the Change that did. */
   readonly onDidReplaceChange = this.replaced.event;
+  private holdsHere = false;
+  /**
+   * Asked before a Change replaces the Active Change this window shows;
+   * false declines, and the opening stops.
+   */
+  confirmStopping: (active: Change) => Promise<boolean> = async () => true;
   /** Opening, closing and tidying run one after another. */
   private queue: Promise<unknown> = Promise.resolve();
   /** How many of them are queued or running. */
@@ -125,51 +143,59 @@ export class ChangeWorkspace implements vscode.Disposable {
   }
 
   /**
-   * Opens the Change. With `keepPlace`, a newer head of a pull request or
-   * branch takes the older head's place in the list and is not shown, so a
-   * Change behind the one in front stays behind it.
+   * Makes the Change the Active Change (ADR 0040): the one Change the review
+   * window holds. Any other Change stops, as does an older head of the same
+   * pull request or branch. Only the review window holds a Change: from any
+   * other window the Change goes there.
    */
-  open(request: ChangeRequest, keepPlace = false): Promise<Change> {
-    return this.serially(() => this.openNow(request, keepPlace));
+  open(request: ChangeRequest): Promise<Change> {
+    return this.serially(() => this.openNow(request));
   }
 
-  private async openNow(
-    request: ChangeRequest,
-    keepPlace: boolean
-  ): Promise<Change> {
+  /** Has this window hold Changes though it isn't the review window, for the tests. */
+  holdChangesHere(holds: boolean): void {
+    this.holdsHere = holds;
+  }
+
+  private canHoldHere(): boolean {
+    return (
+      (this.holdsHere || this.reviewWindow.isThisWindow()) &&
+      ReviewWindow.canAddFoldersHere()
+    );
+  }
+
+  private async openNow(request: ChangeRequest): Promise<Change> {
     const change = await this.resolve(request);
     if (change.mergeBase === change.headSha)
       throw new Error(
         `${request.head} has no commits that ${request.base} doesn't have, so there is nothing to review.`
       );
+    const stopping = this.openChanges.all().filter((c) => c.id !== change.id);
+    // A newer head of the Active Change brings in its Comments as it is.
+    const active = this.active();
+    if (
+      active &&
+      active.id !== change.id &&
+      active.conversation !== change.conversation &&
+      !(await this.confirmStopping(active))
+    )
+      throw new OpenDeclined();
     await createWorktrees(change);
-    // A newer head of the same pull request or branch takes the older one's
-    // place. It is listed first, so no window, seeing the older one go,
-    // takes another Change for the one in front on the way.
-    const older = this.openChanges
-      .all()
-      .filter(
-        (c) => c.conversation === change.conversation && c.id !== change.id
-      );
-    const here = ReviewWindow.canAddFoldersHere();
+    const here = this.canHoldHere();
     this.openChanges.withdrawCloseAsk();
     const entry = here
       ? { ...change, inReviewWindow: this.reviewWindow.isThisWindow() }
       : { ...change, inReviewWindow: true, diffPending: true };
-    const inPlace = keepPlace && here && older.length > 0;
-    if (inPlace)
-      this.openChanges.putInPlaceOf(
-        entry,
-        older.map((c) => c.id)
-      );
-    else this.openChanges.put(entry);
-    for (const old of older) {
+    // Listed alone, in one write, so no window sees two Changes, or none,
+    // on the way.
+    this.openChanges.put(entry);
+    for (const old of stopping) {
       await this.remove(old);
-      this.replaced.fire(old);
+      this.replaced.fire({ older: old, by: change });
     }
     if (here) {
       await appendFolders(changeFolders(change));
-      if (!inPlace) this.shown.fire(change);
+      this.shown.fire(change);
     } else {
       this.syncReviewWindow();
       await this.reviewWindow.open();
@@ -178,14 +204,13 @@ export class ChangeWorkspace implements vscode.Disposable {
   }
 
   /**
-   * Brings a Change this window shows to the front again, as opening it
-   * again would, without fetching anything: it becomes the one shown last.
+   * Brings the Active Change this window shows to the front again, as
+   * opening it again would, without fetching anything.
    */
   bringToFront(change: Change): Promise<void> {
     return this.serially(async () => {
       const open = this.openChanges.all().find((c) => c.id === change.id);
       if (!open || open.diffPending) return;
-      this.openChanges.put(open);
       this.shown.fire(change);
     });
   }
@@ -240,15 +265,18 @@ export class ChangeWorkspace implements vscode.Disposable {
   /**
    * Closes the Changes that are over: those `isOver` names, such as a merged
    * pull request's, and those whose worktrees or repository were deleted.
-   * Then takes out of this window any Change folders no open Change has,
+   * A list left by an earlier version, holding several Changes, keeps the
+   * one shown last, and the others stop. Then takes out of this window any Change folders no open Change has,
    * such as those of a Change another window closed. Gives the Changes it
    * closed.
    */
   tidy(isOver: (change: Change) => boolean): Promise<Change[]> {
     return this.serially(async () => {
-      const closed: Change[] = this.openChanges
-        .all()
-        .filter((change) => isOver(change) || isBroken(change));
+      const all = this.openChanges.all();
+      const active = activeOf(all);
+      const closed: Change[] = all.filter(
+        (change) => change !== active || isOver(change) || isBroken(change)
+      );
       await this.remove(...closed);
       const kept = new Set(
         this.openChanges.all().flatMap((c) => [c.baseDir, c.headDir])
@@ -275,28 +303,25 @@ export class ChangeWorkspace implements vscode.Disposable {
   }
 
   /**
-   * The Change in front in this window: of those it has shown, the one
-   * shown last. Change Files, Findings and the review keybindings follow it.
+   * The Active Change, if this window shows it. Change Files, Findings and
+   * the review keybindings follow it.
    */
-  inFront(): Change | undefined {
-    return changeInFront(
+  active(): Change | undefined {
+    return activeChange(
       this.openChanges.all(),
       (c) => hasFolder(c.baseDir) && hasFolder(c.headDir)
     );
   }
 
-  /** The Changes whose diff this window has shown, such as before a reload. */
+  /** The Active Change if this window has shown its diff, such as before a reload. */
   shownHere(): Change[] {
-    return this.openChanges
-      .all()
-      .filter(
-        (c) => !c.diffPending && hasFolder(c.baseDir) && hasFolder(c.headDir)
-      );
+    const active = this.active();
+    return active ? [active] : [];
   }
 
   /**
-   * In the review window, shows each Change sent here from another window,
-   * once its folders have arrived, unless one opened after it already shows.
+   * In the review window, shows the Change sent here from another window,
+   * once its folders have arrived.
    */
   async showPendingDiffs(): Promise<void> {
     if (!this.reviewWindow.isThisWindow()) return;
@@ -305,8 +330,8 @@ export class ChangeWorkspace implements vscode.Disposable {
       (c) => hasFolder(c.baseDir) && hasFolder(c.headDir)
     );
     if (arrived.length === 0) return;
-    this.openChanges.markShown(arrived.map(({ change }) => change.id));
-    for (const { change, show } of arrived) if (show) this.shown.fire(change);
+    this.openChanges.markShown(arrived.map((change) => change.id));
+    for (const change of arrived) this.shown.fire(change);
   }
 
   /**

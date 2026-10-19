@@ -312,7 +312,7 @@ describe("Dashboard", () => {
     });
   });
 
-  it("shows each Change in progress, the one shown last first, with where the Reviewer stands, and its title brings one back to the front", async () => {
+  it("shows only the Active Change, with where the Reviewer stands, and its title brings it back to the front", async () => {
     const first = range(local.commits.renamed, local.commits.documented);
     const second = range(local.commits.documented, local.commits.restructured);
     await openChange(first.request);
@@ -328,11 +328,6 @@ describe("Dashboard", () => {
               title: second.name,
               byline: second.name.split(" ")[0],
               standing: ["0 of 3 viewed"],
-            },
-            {
-              title: first.name,
-              byline: first.name.split(" ")[0],
-              standing: ["0 of 1 viewed"],
             },
           ]
         );
@@ -354,25 +349,17 @@ describe("Dashboard", () => {
 
       await clickDashboard({
         type: "resume",
-        id: (await renderedDashboard()).inProgress[1].id,
+        id: (await renderedDashboard()).inProgress[0].id,
       });
       await eventually(async () => {
-        assert.strictEqual((await shownChanges()).at(-1), first.name);
+        assert.strictEqual((await shownChanges()).at(-1), second.name);
         assert.deepStrictEqual(
           (await changeFiles()).map((entry) => entry.label),
-          [first.name],
-          "Change Files follows the Change resumed"
+          [second.name],
+          "Change Files follows the Active Change"
         );
       });
-      await eventually(async () =>
-        assert.deepStrictEqual(
-          (await renderedDashboard()).inProgress.map((c) => c.title),
-          [first.name, second.name],
-          "the Change resumed comes first"
-        )
-      );
     } finally {
-      await closeChange(first.request);
       await closeChange(second.request);
     }
   });
@@ -411,7 +398,6 @@ describe("Dashboard", () => {
         assert.strictEqual(dashboard.next?.label, `Resume ${other.name}`);
       });
     } finally {
-      await closeChange(empty.request);
       await closeChange(other.request);
     }
   });
@@ -476,7 +462,10 @@ describe("Dashboard", () => {
       // Submit Review… opens the overview's Submit step, which approves.
       const overview = `${pr.repository} #${pr.number}`;
       await eventually(async () =>
-        assert.ok((await sentTimeline(overview)).submit, "the Submit step is open")
+        assert.ok(
+          (await sentTimeline(overview)).submit,
+          "the Submit step is open"
+        )
       );
       await submitInOverview(overview, "approve", "");
       await eventually(async () => {
@@ -494,15 +483,14 @@ describe("Dashboard", () => {
     }
   });
 
-  it("asks the review window to resume a Change it shows, which it does once it reads the request", async () => {
+  it("asks the review window to resume the Active Change it shows, which it does once it reads the request", async () => {
     const first = range(local.commits.initial, local.commits.renamed);
-    const second = range(local.commits.renamed, local.commits.documented);
     await openChange(first.request);
-    await openChange(second.request);
     try {
       await eventually(async () =>
-        assert.strictEqual((await shownChanges()).at(-1), second.name)
+        assert.strictEqual((await shownChanges()).at(-1), first.name)
       );
+      const shownBefore = (await shownChanges()).length;
       await showDashboard();
       let id: string | undefined;
       await eventually(async () => {
@@ -513,17 +501,16 @@ describe("Dashboard", () => {
       });
       await askReviewWindow(id!, "resume");
       assert.strictEqual(
-        (await shownChanges()).at(-1),
-        second.name,
+        (await shownChanges()).length,
+        shownBefore,
         "only the review window carries it out"
       );
       await actAsReviewWindow(true);
       await eventually(async () =>
-        assert.strictEqual((await shownChanges()).at(-1), first.name)
+        assert.strictEqual((await shownChanges()).length, shownBefore + 1)
       );
     } finally {
       await closeChange(first.request);
-      await closeChange(second.request);
     }
   });
 

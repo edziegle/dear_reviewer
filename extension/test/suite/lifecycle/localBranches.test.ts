@@ -180,19 +180,29 @@ describe("Local branches that are merged or deleted", () => {
       await scriptClaude(change, { turns: [replyTurn("A summary.")] });
     const before = workspaceFolders();
     await open(range, titleOf(repo, work));
-    await open(
-      main,
-      `${path.basename(repo.path)} ${short(repo.commits.initial)}..${short(repo.commits.restructured)}`
-    );
-    const added = foldersAddedSince(before);
-    assert.strictEqual(added.length, 4);
+    const rangeFolders = foldersAddedSince(before);
+    assert.strictEqual(rangeFolders.length, 2);
 
     repo.git("update-ref", "refs/heads/main", work);
     await refreshInbox();
 
-    assert.deepStrictEqual(foldersAddedSince(before), added);
-    for (const folder of added) assert.ok(fs.existsSync(folder.path));
+    assert.deepStrictEqual(foldersAddedSince(before), rangeFolders);
+    for (const folder of rangeFolders) assert.ok(fs.existsSync(folder.path));
     await closeChange(range);
+
+    repo.git("update-ref", "refs/heads/main", repo.commits.restructured);
+    await open(
+      main,
+      `${path.basename(repo.path)} ${short(repo.commits.initial)}..${short(repo.commits.restructured)}`
+    );
+    const mainFolders = foldersAddedSince(before);
+    assert.strictEqual(mainFolders.length, 2);
+
+    repo.git("update-ref", "refs/heads/main", work);
+    await refreshInbox();
+
+    assert.deepStrictEqual(foldersAddedSince(before), mainFolders);
+    for (const folder of mainFolders) assert.ok(fs.existsSync(folder.path));
     // main moved, so name its old head by commit.
     await closeChange({ ...main, head: repo.commits.restructured });
   });

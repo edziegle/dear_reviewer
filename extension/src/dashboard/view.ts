@@ -1,7 +1,7 @@
 // The Dashboard's view: the Dear Reviewer side bar in the Reviewer's own
 // windows (ADR 0032). It reads top to bottom like a Change's overview, sized
 // for the side bar: a facts line, where the Reviewer left off and the one
-// button for what comes next, then the lists, In progress, Waiting on you,
+// button for what comes next, then the lists, Active Change, Waiting on you,
 // Your pull requests, Reviewed by you and Local branches, and a way to open
 // any commit range. The extension sends it the whole state; the webview
 // renders it, says which state it rendered, and asks the extension for
@@ -304,7 +304,7 @@ function html(cspSource: string): string {
 <div role="status"><div class="muted problem-line" id="loading"></div></div>
 <div id="setup" hidden></div>
 <div id="problems"></div>
-<section id="inProgress" aria-labelledby="inProgressHeading" hidden><h2 id="inProgressHeading">In progress <span class="muted count" id="inProgressCount"></span></h2><div id="changes" role="list"></div></section>
+<section id="inProgress" aria-labelledby="inProgressHeading" hidden><h2 id="inProgressHeading">Active Change <span class="muted count" id="inProgressCount"></span></h2><div id="changes" role="list"></div></section>
 <section id="waitingSection" aria-labelledby="waitingHeading" hidden><h2 id="waitingHeading">Waiting on you <span class="muted count" id="waitingCount"></span></h2><div id="waiting" role="list"></div><button class="link more" id="waitingMore" type="button" aria-controls="waiting" aria-expanded="false" hidden></button></section>
 <section id="ignoredSection" aria-label="Ignored" hidden><details class="ignored"><summary id="ignoredLabel"></summary><div id="ignored" role="list"></div></details></section>
 <section id="authoredSection" aria-labelledby="authoredHeading" hidden><h2 id="authoredHeading">Your pull requests <span class="muted count" id="authoredCount"></span></h2><div id="authored" role="list"></div><button class="link more" id="authoredMore" type="button" aria-controls="authored" aria-expanded="false" hidden></button></section>

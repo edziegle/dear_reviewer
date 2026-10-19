@@ -25,12 +25,12 @@ A spot in a Change the Assistant thinks deserves attention. It is never publishe
 _Avoid_: AI comment, flag, suggestion (GitHub uses that for proposed code edits)
 
 **Change**:
-The code under review: the difference between two points in a repository's history. A GitHub pull request is one source of a Change; a local range of commits is another. A Change stays open across Reviews until it is merged or closed, and its conversation with the Assistant lasts while the Change does.
+The code under review: the difference between two points in a repository's history. A GitHub pull request is one source of a Change; a local range of commits is another. Its conversation with the Assistant lasts until its pull request or branch is over, through any number of Reviews and stops.
 _Avoid_: Diff (that's the rendering), Change Set, Review Target, PR (only one source)
 
-**Change in front**:
-The open Change the Reviewer opened or came back to last, which a window's side bar shows: Change Files, Findings and the review keys follow it. The other open Changes wait behind it, as the Reviewer left them, until the Reviewer shows one again.
-_Avoid_: Active Change, current Change
+**Active Change**:
+The one Change the review window holds, from opening it until the Reviewer stops reviewing it, opens another, or its pull request or branch is over. Change Files, Findings, the Assistant and the review keys follow it. It stays active while the review window is closed, and the Dashboard shows it.
+_Avoid_: Change in front, open Change, Change in progress
 
 **Reading Order**:
 The order the Assistant suggests for reading a Change's files, in a few labeled steps, starting where its summary says to start. A suggestion the Reviewer can follow or set aside for tree order.
@@ -53,7 +53,7 @@ A request on a pull request for a review from a team the Reviewer is on, directl
 _Avoid_: Group request, indirect request
 
 **Dashboard**:
-The Dear Reviewer side bar in the Reviewer's own windows, outside the review window: where they stand across their Changes, the one next step, the Changes in progress, and the Inbox. Its title in the side bar reads Dear Reviewer: Dashboard.
+The Dear Reviewer side bar in the Reviewer's own windows, outside the review window: where they stand across their Changes, the one next step, the Active Change, and the Inbox. Its title in the side bar reads Dear Reviewer: Dashboard.
 _Avoid_: Home, start page, landing page
 
 **Brief**:

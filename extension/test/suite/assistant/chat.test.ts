@@ -142,6 +142,53 @@ describe("Chatting with the Assistant about a Change", () => {
     await closeChange(request);
   });
 
+  it("stops a reply in progress when its Change stops, with a note in the conversation", async () => {
+    // A repository of its own, so the conversations are new.
+    const stopping = buildFixtureRepo("chat-stopped");
+    const first = {
+      repository: stopping.path,
+      base: stopping.commits.initial,
+      head: stopping.commits.renamed,
+    };
+    const second = { ...first, head: stopping.commits.documented };
+    const title = `${path.basename(stopping.path)} ${short(first.base)}..${short(first.head)}`;
+    const answer = "util.py defines new_helper, which returns 2.";
+    await scriptClaude(first, {
+      turns: [
+        replyTurn("A summary."),
+        [...replyTurn(answer).slice(0, 2), waitFor("chat-change-stops")],
+      ],
+    });
+    await scriptClaude(second, { turns: [replyTurn("The second summary.")] });
+    try {
+      await openChange(first);
+      await showAssistant(first);
+      await eventually(async () =>
+        assert.strictEqual((await renderedPanel(title))?.busy, false)
+      );
+      await askAssistant(title, "What does util.py do?");
+      await eventually(async () =>
+        assert.strictEqual((await renderedPanel(title))?.stoppable, true)
+      );
+
+      await openChange(second);
+      await openChange(first);
+      await showAssistant(first);
+
+      await eventually(async () => {
+        const panel = await renderedPanel(title);
+        assert.strictEqual(panel?.busy, false);
+        assert.deepStrictEqual(panel?.messages.at(-1), {
+          from: "note",
+          text: "Stopped before the reply was finished, because the Change stopped being reviewed.",
+        });
+      });
+    } finally {
+      releaseClaude("chat-change-stops");
+      await closeChange(first);
+    }
+  });
+
   it("sends the selected lines of either side of the diff into the chat as context", async () => {
     const { request, title } = changeOf(
       repo.commits.initial,
@@ -396,7 +443,8 @@ describe("Chatting with the Assistant about a Change", () => {
     });
     try {
       await openChange(first.request);
-      // Opening the second Change puts it in front; the first's conversation goes on.
+      await summaryWritten(first.title);
+      // Opening the second Change stops the first; its conversation stays saved.
       await openChange(second.request);
       await showAssistant(second.request);
       await eventually(async () =>
@@ -413,11 +461,8 @@ describe("Chatting with the Assistant about a Change", () => {
           [summaryNote.text, "Only for the second?", "An answer."]
         );
       });
-      assert.strictEqual(
-        (await summaryWritten(first.title)).text,
-        "The first summary.",
-        "each Change's summary is its own"
-      );
+      // Opening the first again picks up its own conversation and summary.
+      await openChange(first.request);
       await showAssistant(first.request);
       await eventually(async () =>
         assert.deepStrictEqual(
@@ -427,7 +472,6 @@ describe("Chatting with the Assistant about a Change", () => {
       );
     } finally {
       await closeChange(first.request);
-      await closeChange(second.request);
     }
     const [firstRun, ...moreFirst] = await assistantRuns(first.request);
     const [secondRun, ...moreSecond] = await assistantRuns(second.request);
@@ -440,7 +484,7 @@ describe("Chatting with the Assistant about a Change", () => {
     ]);
   });
 
-  it("shows the conversation of the Change in front in the Assistant's view, once the Reviewer asks", async () => {
+  it("shows the conversation of the Active Change in the Assistant's view, once the Reviewer asks", async () => {
     // A repository of its own, so the conversations are new.
     const following = buildFixtureRepo("chat-following");
     const first = {
@@ -469,12 +513,17 @@ describe("Chatting with the Assistant about a Change", () => {
 
       await openChange(second);
 
+      // The view stays open, so it follows the Active Change.
       await eventually(async () =>
-        assert.strictEqual(
+        assert.notStrictEqual(
           await assistantInSight(),
-          titleOf(second),
-          "the view follows the Change in front"
+          titleOf(first),
+          "the first Change's Assistant stopped with its Change"
         )
+      );
+      await showAssistant(second);
+      await eventually(async () =>
+        assert.strictEqual(await assistantInSight(), titleOf(second))
       );
       await eventually(async () =>
         assert.deepStrictEqual(
@@ -483,15 +532,15 @@ describe("Chatting with the Assistant about a Change", () => {
         )
       );
 
-      // Opening the first Change again brings it back to the front.
+      // Opening the first Change again makes it the one the view follows.
       await openChange(first);
+      await showAssistant(first);
 
       await eventually(async () =>
         assert.strictEqual(await assistantInSight(), titleOf(first))
       );
     } finally {
       await closeChange(first);
-      await closeChange(second);
     }
   });
 

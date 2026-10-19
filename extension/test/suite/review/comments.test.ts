@@ -252,13 +252,17 @@ describe("Commenting on a pull request", () => {
       await eventually(async () => {
         for (const file of localUtil) assert.ok(!(await inProgress(file)));
       });
-      assert.ok(
-        await inProgress(path.join(head, "util.py")),
-        "the pull request's Review is still in progress"
-      );
     } finally {
       await closeChange(local);
     }
+    // Opening the local Change stopped the pull request's; its Review waits.
+    await openFromInbox(inboxEntry(await inbox(), "Restructure pkg"));
+    await eventually(async () =>
+      assert.ok(
+        (await reviewInProgressFiles()).includes(path.join(head, "util.py")),
+        "the pull request's Review is still in progress"
+      )
+    );
   });
 
   it("offers Start Review and Add Review Comment, not Add Comment, on a new thread", () => {

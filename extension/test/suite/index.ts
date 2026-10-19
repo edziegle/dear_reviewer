@@ -9,6 +9,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import Mocha from "mocha";
+import * as vscode from "vscode";
 import type { Progress } from "../runPlan";
 import {
   isReviewWindow,
@@ -55,6 +56,12 @@ export async function run(): Promise<void> {
   // the launch opened it to run its tests there.
   if (isReviewWindow() && !process.env.DEAR_REVIEWER_TESTS_IN_REVIEW_WINDOW)
     return observeReviewWindow();
+  if (process.env.DEAR_REVIEWER_HOLD_CHANGES_HERE) {
+    const extension = vscode.extensions.getExtension<{
+      reviewWindow: { holdChangesHere(holds: boolean): void };
+    }>("edziegle.dear-reviewer");
+    (await extension!.activate()).reviewWindow.holdChangesHere(true);
+  }
   const plan: PlannedPhase[] = JSON.parse(process.env.DEAR_REVIEWER_PLAN!);
   const progress: Progress = { done: [] };
   const record = () =>

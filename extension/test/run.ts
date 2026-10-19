@@ -454,6 +454,12 @@ async function launch({
         DEAR_REVIEWER_PROGRESS: suiteProgress,
         DEAR_REVIEWER_USER_DATA: userDataDir,
         DEAR_REVIEWER_TESTS_IN_REVIEW_WINDOW: inReviewWindow ? "1" : undefined,
+        // A saved workspace takes Changes' folders as the review window does,
+        // which tests can't run in; a single folder sends them on.
+        DEAR_REVIEWER_HOLD_CHANGES_HERE:
+          !inReviewWindow && openPath.endsWith(".code-workspace")
+            ? "1"
+            : undefined,
         DEAR_REVIEWER_SCREENSHOTS: screenshotsRequested
           ? screenshotsDir
           : undefined,

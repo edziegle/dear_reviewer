@@ -32,6 +32,23 @@ export function changeName(change: Change): string {
   return branchOfConversation(change.conversation) ?? changeTitle(change);
 }
 
+/**
+ * What names the Change where there is room: its pull request's title once
+ * that has loaded, until then `changeName`.
+ */
+export function changeHeading(change: Change, title?: string): string {
+  return title ?? changeName(change);
+}
+
+/**
+ * Where the Change comes from, under its heading: its pull request or
+ * branch and its commits, such as `acme/api #7 · f8e077e..00bb329`.
+ */
+export function changeSource(change: Change): string {
+  const range = `${change.mergeBase.slice(0, 7)}..${change.headSha.slice(0, 7)}`;
+  return `${changeName(change)} · ${range}`;
+}
+
 /** The pull request as the Reviewer knows it, such as `acme/api #7`. */
 export function pullRequestName(pullRequest: PullRequestRef): string {
   return `${pullRequest.repository} #${pullRequest.number}`;

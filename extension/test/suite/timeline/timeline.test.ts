@@ -6,6 +6,7 @@ import {
   filesIn,
   shownDiff,
   changeFiles,
+  changeFilesTitled,
   entryAt,
   markViewed,
   onTab,
@@ -107,6 +108,8 @@ function timelineTab(title: string): vscode.Tab | undefined {
 describe("A pull request's timeline", () => {
   const pr = buildPullRequestFixture("timeline", "acme/api", 21);
   const title = "acme/api #21";
+  // The overview's tab and the Change's row take the pull request's title once it loads.
+  const tabLabel = "Restructure pkg";
   const fakePullRequest: FakePullRequest = {
     repository: pr.repository,
     number: pr.number,
@@ -338,10 +341,10 @@ describe("A pull request's timeline", () => {
         withoutAvatars(expected)
       )
     );
-    assert.strictEqual(activeTabLabel(), title, "the overview is in front");
+    assert.strictEqual(activeTabLabel(), tabLabel, "the overview is in front");
     assert.deepStrictEqual(
       vscode.window.tabGroups.all.flatMap((g) => g.tabs.map((t) => t.label)),
-      [title],
+      [tabLabel],
       "nothing else opens: no diff, no other tab"
     );
     assert.strictEqual(
@@ -603,20 +606,22 @@ describe("A pull request's timeline", () => {
   });
 
   it("comes back with Show Timeline after the Reviewer closes it", async () => {
-    const tab = timelineTab(title);
+    const tab = timelineTab(tabLabel);
     assert.ok(tab);
     await vscode.window.tabGroups.close(tab);
-    await eventually(() => assert.strictEqual(timelineTab(title), undefined));
+    await eventually(() =>
+      assert.strictEqual(timelineTab(tabLabel), undefined)
+    );
 
     await showTimeline(change);
 
     await eventually(async () => {
-      assert.ok(timelineTab(title), "the timeline is open again");
+      assert.ok(timelineTab(tabLabel), "the timeline is open again");
       const timeline = await renderedTimeline(title);
       assert.strictEqual(timeline?.loading, false);
       assert.strictEqual(timeline?.title, "Restructure pkg");
     });
-    assert.strictEqual(activeTabLabel(), title, "it comes back in front");
+    assert.strictEqual(activeTabLabel(), tabLabel, "it comes back in front");
   });
 
   /** A local Change opened beside the pull request's, so a command can't just take the only one. */
@@ -675,7 +680,7 @@ describe("A pull request's timeline", () => {
    */
   async function approveInSubmitStep(reviewsBefore: number): Promise<void> {
     await eventually(async () => {
-      assert.strictEqual(activeTabLabel(), title);
+      assert.strictEqual(activeTabLabel(), tabLabel);
       assert.ok((await sentTimeline(title)).submit, "the Submit step is open");
     });
     await submitInOverview(title, "approve", "");
@@ -789,7 +794,7 @@ describe("A pull request's timeline", () => {
     await vscode.commands.executeCommand("dearReviewer.submitReview", change);
 
     await eventually(async () => {
-      assert.strictEqual(activeTabLabel(), title);
+      assert.strictEqual(activeTabLabel(), tabLabel);
       const step = (await sentTimeline(title)).submit;
       assert.deepStrictEqual(
         step?.verdicts.map((v) => v.label),
@@ -829,7 +834,7 @@ describe("A pull request's timeline", () => {
     void onTab("finishReview", pullRequestFile("util.py"));
 
     await eventually(async () => {
-      assert.strictEqual(activeTabLabel(), title);
+      assert.strictEqual(activeTabLabel(), tabLabel);
       const step = (await sentTimeline(title)).submit;
       assert.deepStrictEqual(step?.comments, []);
       assert.deepStrictEqual(Object.keys(step?.needsSummary ?? {}).sort(), [
@@ -895,12 +900,7 @@ describe("A pull request's timeline", () => {
 
   it("offers to finish the Review once stepping finds every file viewed", async () => {
     await openChange(change);
-    await markViewed(
-      entryAt(
-        await changeFiles(),
-        `${path.basename(pr.clone)} ${short(pr.base)}..${short(pr.head)}`
-      )
-    );
+    await markViewed(entryAt(await changeFilesTitled(tabLabel), tabLabel));
     const before = await submittedReviews();
 
     await vscode.commands.executeCommand(
@@ -909,7 +909,7 @@ describe("A pull request's timeline", () => {
     );
     // The overview comes forward, with the focus on its filled Submit Review….
     await eventually(async () => {
-      assert.strictEqual(activeTabLabel(), title);
+      assert.strictEqual(activeTabLabel(), tabLabel);
       assert.ok((await sentTimeline(title)).finishAsked, "asked to focus it");
     });
     await clickOverview(title, "finish");
@@ -919,7 +919,9 @@ describe("A pull request's timeline", () => {
   it("closes with the Change, from the Close Change that ends its Review", async () => {
     await clickOverview(title, "closeChange");
 
-    await eventually(() => assert.strictEqual(timelineTab(title), undefined));
+    await eventually(() =>
+      assert.strictEqual(timelineTab(tabLabel), undefined)
+    );
   });
 
   it("counts a local Change's pending Comments for its overview, none before its first", async () => {

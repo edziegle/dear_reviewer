@@ -11,6 +11,8 @@ Amended by [ADR 0038](0038-the-assistant-in-the-secondary-side-bar.md): showing 
 
 Amended by issue #25: an added file opens from the head worktree, and a deleted file from the base worktree, in a plain editor in the column beside the overview, not as a diff with one empty side. Modified files still open as diffs.
 
+Amended by issue #124: a Change is named by its pull request's title once that loads, in Change Files, the overview's tab and the Assistant's heading, and until then by its name as before; the commits it spans move to the tooltip and under the heading. A diff's tab and the worktree folder names stay short.
+
 Amended by [ADR 0040](0040-one-active-change-in-the-review-window.md): opening a Change stops reviewing the Active Change, so no Change waits behind the one shown. A newer head still replaces the older one.
 
 ## Context and Problem Statement

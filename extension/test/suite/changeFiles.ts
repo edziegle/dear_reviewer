@@ -1,7 +1,9 @@
 // Drives the Change files view the way the Reviewer does, and reads the tree
 // back as the view shows it.
 
+import * as assert from "assert";
 import * as vscode from "vscode";
+import { eventually } from "./reviewer";
 
 type ChangeFilesView = vscode.TreeDataProvider<unknown> &
   vscode.FileDecorationProvider & {
@@ -11,6 +13,8 @@ type ChangeFilesView = vscode.TreeDataProvider<unknown> &
 export interface FileEntry {
   label: string;
   description?: string;
+  /** What shows on hovering the element. */
+  tooltip?: string;
   /** What a screen reader says for the element, where it isn't the label and description. */
   accessibilityLabel?: string;
   /** The status badge: A, M or D. */
@@ -41,6 +45,11 @@ export async function changeFiles(): Promise<FileEntry[]> {
           node,
         };
         if (item.description) entry.description = String(item.description);
+        if (item.tooltip)
+          entry.tooltip =
+            typeof item.tooltip === "string"
+              ? item.tooltip
+              : item.tooltip.value;
         if (item.accessibilityInformation)
           entry.accessibilityLabel = item.accessibilityInformation.label;
         if (item.resourceUri) {
@@ -63,6 +72,22 @@ export async function changeFiles(): Promise<FileEntry[]> {
       })
     );
   return entries();
+}
+
+/**
+ * The tree once a root row is labelled `title`. A pull request's row shows
+ * its number until its overview has loaded, and its title after.
+ */
+export async function changeFilesTitled(title: string): Promise<FileEntry[]> {
+  let tree: FileEntry[] = [];
+  await eventually(async () => {
+    tree = await changeFiles();
+    assert.ok(
+      tree.some((entry) => entry.label === title),
+      `no root row "${title}" among ${JSON.stringify(tree.map((e) => e.label))}`
+    );
+  });
+  return tree;
 }
 
 /**

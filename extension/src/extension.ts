@@ -7,6 +7,7 @@ import {
   ChangeRequest,
   OpenDeclined,
   ChangeWorkspace,
+  changeHeading,
   changeName,
   changeTitle,
   fetchPullRequest,
@@ -58,6 +59,7 @@ import {
   LocalViewedFiles,
   ViewedFilesBySource,
 } from "./viewedFiles";
+import { ChangeTitles } from "./changeTitles";
 import { messageOf } from "./errors";
 import { foundText, minimumGapMs, RefreshGate } from "./refreshGate";
 import { ReviewWindowTrust } from "./trust";
@@ -97,14 +99,25 @@ export function activate(context: vscode.ExtensionContext) {
     localViewedFiles,
     new GitHubViewedFiles(github)
   );
+  // What names a Change where there is room: its pull request's title, once loaded.
+  const changeTitles = new ChangeTitles();
+  const headingOf = (change: Change) =>
+    changeHeading(change, changeTitles.of(change));
   const changeFiles = new ChangeFilesView(
     () => changes.active(),
     viewedFiles,
     path.join(context.globalStorageUri.fsPath, "change-files-view.json"),
     (change) => reviews.lastReview(change),
     (change) => codeColumnOf(change),
-    (change) => assistants.readingOrderOf(change)
+    (change) => assistants.readingOrderOf(change),
+    headingOf
   );
+  context.subscriptions.push({
+    dispose: changeTitles.onDidChange(() => {
+      changeFiles.refresh();
+      assistants.retitle();
+    }),
+  });
   const avatars = new Avatars(
     github,
     path.join(context.globalStorageUri.fsPath, "avatars")
@@ -172,7 +185,8 @@ export function activate(context: vscode.ExtensionContext) {
       github.pullRequestDescription(
         change.pullRequest.repository,
         change.pullRequest.number
-      )
+      ),
+    (change) => changeTitles.of(change)
   );
   // Only the user's own setting counts: a workspace must not be able to
   // choose the repository Dear Reviewer runs git in.
@@ -240,6 +254,8 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(languageOffer);
   const timelines = new Timelines(github, avatars, (uri) => openLink(uri), {
     standing: (change) => standingOf(change),
+    titleLoaded: (change, title) => changeTitles.set(change, title),
+    heading: headingOf,
     navigationOff: () => trust.navigationOff,
     take: (change) => assistants.overviewOf(change),
     readingOrder: (change) => changeFiles.readingOrder(change),

@@ -103,6 +103,7 @@ describe("What changed since your last Review", () => {
     head,
     pullRequest: { repository: pr.repository, number: pr.number },
   });
+  const fakeTitle = "Restructure pkg";
   const titleAt = (head: string) =>
     `${path.basename(pr.clone)} ${short(pr.base)}..${short(head)}`;
   const found = new Map<string, unknown>();
@@ -118,10 +119,10 @@ describe("What changed since your last Review", () => {
     return found?.entries.map((e) => e.label) ?? [];
   }
 
-  /** The Change's row in Change Files. */
-  async function changeRow(head: string) {
-    const row = (await changeFiles()).find((c) => c.label === titleAt(head));
-    assert.ok(row, `a row for ${titleAt(head)}`);
+  /** The Change's row in Change Files, named by the pull request's title. */
+  async function changeRow() {
+    const row = (await changeFiles()).find((c) => c.label === fakeTitle);
+    assert.ok(row, `a row for ${fakeTitle}`);
     return row;
   }
 
@@ -220,7 +221,7 @@ describe("What changed since your last Review", () => {
       "reviewed at its head"
     );
     await eventually(async () => {
-      const change = await changeRow(pr.head);
+      const change = await changeRow();
       assert.match(change.description ?? "", / \d+\/\d+ · Approved$/);
       assert.strictEqual(change.contextValue, "change.pullRequest");
     });
@@ -263,7 +264,7 @@ describe("What changed since your last Review", () => {
       await submitReview(requestAt(pr.head), verdict, "Again.");
 
       await eventually(async () => {
-        const change = await changeRow(pr.head);
+        const change = await changeRow();
         assert.match(
           change.description ?? "",
           new RegExp(` \\d+/\\d+ · ${row}$`)
@@ -381,7 +382,7 @@ describe("What changed since your last Review", () => {
 
   it("says there are new commits, not the verdict, once the Change is at a newer head", async () => {
     await eventually(async () => {
-      const change = await changeRow(newHead);
+      const change = await changeRow();
       assert.match(
         change.description ?? "",
         / \d+\/\d+ · new commits since your Review$/

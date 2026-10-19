@@ -1,7 +1,7 @@
 import * as assert from "assert";
 import * as path from "path";
 import * as vscode from "vscode";
-import { shownDiff, changeFiles, entryAt, select } from "../changeFiles";
+import { changeFilesTitled, shownDiff, entryAt, select } from "../changeFiles";
 import { buildPullRequestFixture, pushToPullRequest } from "../fixtures";
 import {
   configure,
@@ -48,8 +48,6 @@ describe("Refreshing a pull request's Change as its remote changes", () => {
     head,
     pullRequest: { repository: pr.repository, number: pr.number },
   });
-  const titleAt = (head: string) =>
-    `${path.basename(pr.clone)} ${short(pr.base)}..${short(head)}`;
   const overviewTitle = `${pr.repository} #${pr.number}`;
   const thread = {
     id: "PRRT_1",
@@ -155,7 +153,12 @@ describe("Refreshing a pull request's Change as its remote changes", () => {
 
   it("swaps to the new head, reopens the file, and loads new threads when the window regains focus", async () => {
     await select(
-      entryAt(await changeFiles(), titleAt(pr.head), "pkg", "core.py")
+      entryAt(
+        await changeFilesTitled("Refresh me"),
+        "Refresh me",
+        "pkg",
+        "core.py"
+      )
     );
     await eventually(() =>
       assert.strictEqual(

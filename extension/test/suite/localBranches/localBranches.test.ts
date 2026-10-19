@@ -3,6 +3,7 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
+import { changeFiles } from "../changeFiles";
 import { buildFixtureRepo, type FixtureRepo } from "../fixtures";
 import {
   configure,
@@ -15,6 +16,7 @@ import {
 } from "../github";
 import {
   closeChange,
+  eventually,
   foldersAddedSince,
   gitIn,
   short,
@@ -162,6 +164,13 @@ describe("Local branches in the Inbox", () => {
         worktrees.some((w) => w.path === dir && w.detached),
         `${dir} is a detached worktree of the clone`
       );
+    await eventually(async () =>
+      assert.deepStrictEqual(
+        (await changeFiles()).map((row) => row.label),
+        ["agent/diverged"],
+        "Change Files names the Change by its branch"
+      )
+    );
 
     await closeChange({
       repository: fixture.clone,

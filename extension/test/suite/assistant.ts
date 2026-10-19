@@ -192,9 +192,11 @@ export interface Step {
 }
 
 export interface Conversation {
-  /** The Change's name, which the view's title and heading show. */
+  /** The Change's name, which the view's title shows and its drafts are kept by. */
   name: string;
-  /** The Change's commits, such as `3f2a1c0..9be41d7`, under the heading. */
+  /** The pull request's title once it has loaded, which the heading shows in place of the name. */
+  heading?: string;
+  /** The Change's commits, such as `3f2a1c0..9be41d7`, under the heading; with a title, where the Change comes from too. */
   range: string;
   /** The Claude login the Assistant runs on, as the view shows it. */
   login?: string;

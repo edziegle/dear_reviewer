@@ -10,7 +10,7 @@ import {
   replyTurn,
   scriptClaude,
 } from "../assistant";
-import { changeFiles, render } from "../changeFiles";
+import { changeFiles, changeFilesTitled, render } from "../changeFiles";
 import { buildPullRequestFixture, type PullRequestFixture } from "../fixtures";
 import {
   configure,
@@ -145,14 +145,14 @@ describe("Pull requests that are merged or closed", () => {
     assert.deepStrictEqual(workspaceFolders(), [...before, ...added]);
     assert.deepStrictEqual(workspaceFolders()[0], before[0]);
     assert.strictEqual(worktreesOf(open.clone).length, 3);
+    // The pull request's row is named by its title once its overview has loaded.
+    await changeFilesTitled(titles.get(open)!);
     assert.deepStrictEqual(
       render(await changeFiles())
         .filter((line) => !line.startsWith(" "))
         .map((line) => line.split(" — ")[0])
-        .filter((title) =>
-          [...titles.keys()].some((pr) => title === changeTitle(pr))
-        ),
-      [changeTitle(open)]
+        .filter((title) => [...titles.values()].includes(title)),
+      [titles.get(open)]
     );
   });
 

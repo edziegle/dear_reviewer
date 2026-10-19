@@ -106,7 +106,12 @@ export interface Timeline {
     verdict?: Verdict;
     /** Why GitHub would refuse each verdict that needs a summary, while there is none. */
     needsSummary: Partial<Record<Verdict, string>>;
-    comments: { path: string; side: "LEFT" | "RIGHT"; line: number; text: string }[];
+    comments: {
+      path: string;
+      side: "LEFT" | "RIGHT";
+      line: number;
+      text: string;
+    }[];
     submitting: boolean;
     problem?: string;
     problemAction?: string;
@@ -150,6 +155,7 @@ interface TimelineApi {
     title: string;
     sent: Timeline;
     rendered?: Timeline;
+    openedWithFocus: boolean;
     receive(message: unknown): void;
   }[];
 }
@@ -175,6 +181,15 @@ async function panel(title: string) {
 /** The state the extension last sent to the timeline panel with this title. */
 export async function sentTimeline(title: string): Promise<Timeline> {
   return (await panel(title)).sent;
+}
+
+/**
+ * Whether the panel opened with the focus. Where the focus is a moment
+ * later can't tell: VS Code can hand it back to an overview given it after
+ * a file opened beside it (see `codeColumnTab`).
+ */
+export async function openedWithFocus(title: string): Promise<boolean> {
+  return (await panel(title)).openedWithFocus;
 }
 
 /** The state the panel last rendered, once it has rendered the latest one. */

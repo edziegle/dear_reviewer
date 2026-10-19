@@ -207,7 +207,11 @@ export class MarkdownPanel<State, Shown> {
    * Settles once the webview is ready, or the panel closed before it was.
    * VS Code holds the focus a panel was shown with until its webview is
    * ready, and then gives it to the panel whatever has the focus since, so
-   * an editor opened meanwhile loses it.
+   * an editor opened meanwhile loses it. Even after this settles, the
+   * webview's page tells VS Code it has the focus only on a timer, every
+   * 250 ms, and VS Code then puts the focus on the panel again: an editor
+   * opened in that moment loses it too. Only a panel shown without the focus
+   * is sure to leave it alone.
    */
   readonly ready: Promise<void>;
 

@@ -130,8 +130,9 @@ export class Timelines implements vscode.Disposable {
 
   /**
    * Shows the Change's overview and reloads it; with `focus`, gives it the
-   * focus. Settles once the overview has taken the focus, so a file opened
-   * next keeps it.
+   * focus. Settles once the overview is ready. VS Code may still hand the
+   * overview the focus a moment later, from an editor opened since: its
+   * webview reports gaining the focus on a timer.
    */
   async open(change: Change, focus = false): Promise<void> {
     let timeline = this.byChange.get(change.id);
@@ -283,7 +284,8 @@ class ChangeTimeline {
       changeName(this.change),
       vscode.Uri.file(this.avatars.dir),
       (file) => this.files.has(file),
-      (action) => this.act(action)
+      (action) => this.act(action),
+      focus
     );
     panel.onDidDispose(() => {
       if (this.panel === panel) this.panel = undefined;

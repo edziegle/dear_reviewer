@@ -161,37 +161,50 @@ export function showViewedFiles(): Thenable<unknown> {
   return vscode.commands.executeCommand("dearReviewer.showViewedFiles");
 }
 
-/** The original and modified sides of the active diff editor. */
-export function activeDiff(): { original: vscode.Uri; modified: vscode.Uri } {
-  const input = vscode.window.tabGroups.activeTabGroup.activeTab?.input;
-  if (!(input instanceof vscode.TabInputTextDiff))
-    throw new Error(`the active tab is not a diff: ${JSON.stringify(input)}`);
-  return { original: input.original, modified: input.modified };
-}
-
 /**
- * The diff in front of any editor group. VS Code can hand the focus back to the
- * overview a moment after a diff opens, so wait for this rather than for the
- * active tab when all you need is the file being shown. The code column is
- * whichever the overview isn't in, so no column is named here.
+ * The tab in front of the code column, where a Change's files open: the
+ * editor group the overview isn't in front of, or the active one of those.
+ *
+ * Read what a file opened through this, not through the focus. A webview's
+ * page reports to VS Code that it gained the focus on a timer, so an
+ * overview given the focus, as a Change opens or Show Overview runs, can
+ * take it back from a file opened beside it a moment later: the active tab
+ * is then the overview, and no wait for anything a test can see rules that
+ * out. Only a test of where the focus goes should read the active tab.
  */
-export function shownDiff(): { original: vscode.Uri; modified: vscode.Uri } {
-  const inputs = vscode.window.tabGroups.all.map(
-    (group) => group.activeTab?.input
+export function codeColumnTab(): vscode.Tab | undefined {
+  const isOverview = (tab: vscode.Tab | undefined) =>
+    tab?.input instanceof vscode.TabInputWebview &&
+    tab.input.viewType.endsWith("dearReviewer.timeline");
+  const groups = vscode.window.tabGroups.all.filter(
+    (group) => !isOverview(group.activeTab)
   );
-  const input = inputs.find((i) => i instanceof vscode.TabInputTextDiff);
+  const group =
+    groups.find((g) => g === vscode.window.tabGroups.activeTabGroup) ??
+    groups[0];
+  return group?.activeTab;
+}
+
+/** What each editor group shows in front, for an error to say. */
+function inFront(): string {
+  return JSON.stringify(
+    vscode.window.tabGroups.all.map((group) => group.activeTab?.input)
+  );
+}
+
+/** The original and modified sides of the diff in front of the code column. */
+export function shownDiff(): { original: vscode.Uri; modified: vscode.Uri } {
+  const input = codeColumnTab()?.input;
   if (!(input instanceof vscode.TabInputTextDiff))
-    throw new Error(`no group shows a diff: ${JSON.stringify(inputs)}`);
+    throw new Error(`the code column shows no diff: ${inFront()}`);
   return { original: input.original, modified: input.modified };
 }
 
-/** The file the active tab shows in a plain editor, rather than a diff. */
-export function activeText(): vscode.Uri {
-  const input = vscode.window.tabGroups.activeTabGroup.activeTab?.input;
+/** The file in front of the code column in a plain editor, rather than a diff. */
+export function shownText(): vscode.Uri {
+  const input = codeColumnTab()?.input;
   if (!(input instanceof vscode.TabInputText))
-    throw new Error(
-      `the active tab is not a plain editor: ${JSON.stringify(input)}`
-    );
+    throw new Error(`the code column shows no plain editor: ${inFront()}`);
   return input.uri;
 }
 

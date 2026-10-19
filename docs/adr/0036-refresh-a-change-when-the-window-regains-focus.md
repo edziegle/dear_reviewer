@@ -7,6 +7,8 @@ date: 2026-10-16
 
 Amended by [ADR 0040](0040-one-active-change-in-the-review-window.md): only the Active Change is checked on focus, since the review window holds no other.
 
+Amended by issue #126: the file the Reviewer was on is the one beside the overview, wherever the focus is, and it opens again with the focus. The new head's overview opens without the focus then, since VS Code could hand it back to the overview a moment after the file opened.
+
 Amends [ADR 0013](0013-end-changes-that-are-over.md): focus is one more moment the window catches up with GitHub.
 
 ## Context and Problem Statement

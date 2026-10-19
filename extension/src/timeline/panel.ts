@@ -209,25 +209,30 @@ export class TimelinePanel {
   private readonly view: MarkdownPanel<TimelineState, ShownTimeline>;
   /** Fires when the Reviewer closes the panel. */
   readonly onDidDispose: vscode.Event<void>;
+  /** Whether it opened with the focus, for the tests. */
+  readonly openedWithFocus: boolean;
 
   /**
    * `avatarDir` holds the cached avatars, the only files the webview may
    * load. `isChangedFile` says which paths in the Assistant's take become
-   * references to open, and `onAction` gets what the Reviewer does.
+   * references to open, and `onAction` gets what the Reviewer does. With
+   * `focus`, it opens with the focus.
    */
   constructor(
     state: TimelineState,
     title: string,
     avatarDir: vscode.Uri,
     isChangedFile: (path: string) => boolean,
-    private readonly onAction: (action: OverviewAction) => void
+    private readonly onAction: (action: OverviewAction) => void,
+    focus: boolean
   ) {
+    this.openedWithFocus = focus;
     this.view = new MarkdownPanel(state, {
       viewType: "dearReviewer.timeline",
       title,
       localResourceRoots: [avatarDir],
-      // The Change opens with its overview alone, in front, with the focus.
-      placement: { viewColumn: vscode.ViewColumn.One, preserveFocus: false },
+      // The Change opens with its overview alone, in front.
+      placement: { viewColumn: vscode.ViewColumn.One, preserveFocus: !focus },
       html: (webview) => html(webview.cspSource),
       show: (shownState, render) => shown(shownState, render, isChangedFile),
       receive: (message) => this.receive(message as FromWebview),

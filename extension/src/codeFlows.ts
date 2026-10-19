@@ -11,7 +11,12 @@ import {
   fileSides,
   type Change,
 } from "./changeWorkspace";
-import { shownFlow, withinHops, type FlowGraph } from "./codeFlow";
+import {
+  shownFlow,
+  withinHops,
+  withoutTests,
+  type FlowGraph,
+} from "./codeFlow";
 import { gatherFlow, type GatheredFlow } from "./codeFlowGather";
 import {
   CodeFlowPanel,
@@ -25,7 +30,10 @@ import { messageOf } from "./errors";
 /** How long each question to a language server may take before it counts as not answering. */
 const DEFAULT_WAIT_MS = 8_000;
 
-const NO_GRAPH: GatheredFlow = { graph: { nodes: [], edges: [] }, languages: [] };
+const NO_GRAPH: GatheredFlow = {
+  graph: { nodes: [], edges: [] },
+  languages: [],
+};
 
 interface Flow {
   change: Change;
@@ -36,6 +44,8 @@ interface Flow {
   hops: 0 | 1 | 2;
   view: FlowView;
   showAll: boolean;
+  /** Whether the symbols of test files are drawn. */
+  showTests: boolean;
   entry?: string;
   selected?: string;
   /** Counts the gatherings, so one that a retry overtook doesn't show. */
@@ -83,6 +93,7 @@ export class CodeFlows implements vscode.Disposable {
       hops: 1,
       view: "map",
       showAll: false,
+      showTests: false,
       run: 0,
       panel: new CodeFlowPanel(
         this.stateOf(undefined),
@@ -158,6 +169,9 @@ export class CodeFlows implements vscode.Disposable {
         break;
       case "showAll":
         flow.showAll = true;
+        break;
+      case "setShowTests":
+        flow.showTests = action.show;
         break;
       case "select":
         flow.selected = action.id;
@@ -238,6 +252,7 @@ export class CodeFlows implements vscode.Disposable {
         loading: true,
         hops: 1,
         view: "map",
+        showTests: false,
         flow: shownFlow(NO_GRAPH.graph, { hops: 1, showAll: false }),
         known: [],
         undrawn: 0,
@@ -248,15 +263,19 @@ export class CodeFlows implements vscode.Disposable {
     const shown = shownFlow(graph, {
       hops: flow.hops,
       showAll: flow.showAll,
+      showTests: flow.showTests,
       entry: flow.entry,
     });
+    const drawable = flow.showTests ? graph : withoutTests(graph);
     return {
       loading: flow.loading,
       hops: flow.hops,
       view: flow.view,
+      showTests: flow.showTests,
       flow: shown,
       known: graph.nodes,
-      undrawn: withinHops(graph, flow.hops).nodes.length - shown.nodes.length,
+      undrawn:
+        withinHops(drawable, flow.hops).nodes.length - shown.nodes.length,
       selected: flow.selected,
       languages: flow.gathered.languages,
       ...(flow.problem === undefined ? {} : { problem: flow.problem }),

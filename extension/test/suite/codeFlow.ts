@@ -27,15 +27,30 @@ export interface CodeFlowState {
   loading: boolean;
   hops: 0 | 1 | 2;
   view: "map" | "lanes" | "list";
+  showTests: boolean;
   flow: {
     nodes: ShownNode[];
     edges: { from: string; to: string; label?: string }[];
     entries: { id: string; name: string }[];
+    testsHidden: number;
     entry?: string;
     lanes: string[];
-    calls: { from: string; to: string; label?: string; fromLane: number; toLane: number }[];
+    calls: {
+      from: string;
+      to: string;
+      label?: string;
+      fromLane: number;
+      toLane: number;
+    }[];
   };
-  known: { id: string; name: string; path: string; line: number; status: string; side?: "base" }[];
+  known: {
+    id: string;
+    name: string;
+    path: string;
+    line: number;
+    status: string;
+    side?: "base";
+  }[];
   undrawn: number;
   selected?: string;
   languages: { language: string; outcome: "answered" | "silent" | "none" }[];
@@ -49,6 +64,7 @@ export type FromCodeFlow =
   | { type: "openDiff"; id: string }
   | { type: "setEntry"; id: string }
   | { type: "showAll" }
+  | { type: "setShowTests"; show: boolean }
   | { type: "retry" }
   | { type: "findExtensions"; language: string };
 
@@ -77,7 +93,9 @@ export function showCodeFlow(change?: ChangeRequest): Thenable<unknown> {
 
 /** The Code Flow tab of the Change with this title, if it is open. */
 export async function codeFlowPanel(title: string) {
-  return (await codeFlowApi()).panels().find((p) => p.title === `Code Flow · ${title}`);
+  return (await codeFlowApi())
+    .panels()
+    .find((p) => p.title === `Code Flow · ${title}`);
 }
 
 /** How long Code Flow waits for a language server, so the slow-server tests needn't wait long. */
@@ -98,7 +116,10 @@ export interface FakeServer {
 
 /** Stands in for the Reviewer's shell script language server until the disposable is disposed. */
 export function fakeShellServer(server: FakeServer = {}): vscode.Disposable {
-  const selector: vscode.DocumentSelector = { language: "shellscript", scheme: "file" };
+  const selector: vscode.DocumentSelector = {
+    language: "shellscript",
+    scheme: "file",
+  };
   const defs = (document: vscode.TextDocument) => {
     const found: { name: string; start: number; end: number }[] = [];
     for (let line = 0; line < document.lineCount; line++) {
@@ -114,7 +135,12 @@ export function fakeShellServer(server: FakeServer = {}): vscode.Disposable {
     });
     return found;
   };
-  const itemFor = (uri: vscode.Uri, name: string, line: number, detail = "") => {
+  const itemFor = (
+    uri: vscode.Uri,
+    name: string,
+    line: number,
+    detail = ""
+  ) => {
     const range = new vscode.Range(line, 0, line, 20);
     const item = new vscode.CallHierarchyItem(
       vscode.SymbolKind.Function,

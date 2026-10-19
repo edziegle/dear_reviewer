@@ -47,6 +47,36 @@ function newChange() {
   return { request, title: titled(request) };
 }
 
+/**
+ * A Change that changes `helper` in `lib.sh` and `check` in `tests/check.sh`,
+ * a file in a tests directory. The fake server has `check` call `helper_ref`,
+ * which it puts beside `check.sh`, so that is test code too, and `helper` be
+ * called by `run_main`, beside `lib.sh`.
+ */
+function changeWithTests(onlyTests = false) {
+  const repo = buildFixtureRepo("codeFlowTests");
+  const write = (file: string, text: string) => {
+    fs.mkdirSync(path.dirname(path.join(repo.path, file)), { recursive: true });
+    fs.writeFileSync(path.join(repo.path, file), text);
+  };
+  const commit = (message: string, edit: () => void) => {
+    edit();
+    repo.git("add", "-A");
+    repo.git("commit", "-q", "-m", message);
+    return repo.git("rev-parse", "HEAD");
+  };
+  const base = commit("add scripts", () => {
+    write("lib.sh", "helper() {\n  echo one\n}\n");
+    write("tests/check.sh", "check() {\n  echo one\n}\n");
+  });
+  const head = commit("change both", () => {
+    if (!onlyTests) write("lib.sh", "helper() {\n  echo two\n}\n");
+    write("tests/check.sh", "check() {\n  echo two\n}\n");
+  });
+  const request = { repository: repo.path, base, head };
+  return { request, title: titled(request) };
+}
+
 /** A Change that deletes `legacy.sh`, a script with a function that `main.sh` called. */
 function deletingChange() {
   const repo = buildFixtureRepo("codeFlowDeleted");
@@ -66,7 +96,10 @@ function deletingPythonChange() {
   const repo = buildFixtureRepo("codeFlowPython");
   const base = commitAfter(repo, "add modules", (write) => {
     write("gone.py", "def gone():\n    return 1\n");
-    write("user.py", "from gone import gone\n\n\ndef use():\n    return gone()\n");
+    write(
+      "user.py",
+      "from gone import gone\n\n\ndef use():\n    return gone()\n"
+    );
   });
   const head = commitAfter(repo, "drop gone", () =>
     fs.rmSync(path.join(repo.path, "gone.py"))
@@ -123,8 +156,13 @@ describe("Code Flow", () => {
         ["run_main", "unchanged"],
       ]
     );
-    assert.deepStrictEqual(state.flow.edges.map((e) => e.label), ["run_main()"]);
-    assert.deepStrictEqual(state.languages, [{ language: "shellscript", outcome: "answered" }]);
+    assert.deepStrictEqual(
+      state.flow.edges.map((e) => e.label),
+      ["run_main()"]
+    );
+    assert.deepStrictEqual(state.languages, [
+      { language: "shellscript", outcome: "answered" },
+    ]);
     assert.ok((await codeFlowPanel(title))!.viewColumn, "the tab is shown");
     // The webview's script ran and drew the state it was sent.
     await eventually(async () =>
@@ -165,7 +203,11 @@ describe("Code Flow", () => {
       const { flow } = (await codeFlowPanel(title))!.sent;
       assert.deepStrictEqual(flow.lanes, ["lib.sh", "main.sh"]);
       assert.deepStrictEqual(
-        flow.calls.map((c) => [c.from.split(":").pop(), c.to.split(":").pop(), c.label]),
+        flow.calls.map((c) => [
+          c.from.split(":").pop(),
+          c.to.split(":").pop(),
+          c.label,
+        ]),
         [["helper", "run_main", "run_main()"]]
       );
     });
@@ -206,24 +248,113 @@ describe("Code Flow", () => {
     );
   });
 
+  describe("with test code in the Change", () => {
+    const server = {
+      callees: { check: ["helper_ref"] },
+      callers: { helper: ["run_main"] },
+    };
+    const names = async (title: string) =>
+      (await codeFlowPanel(title))!.sent.flow.nodes.map((n) => n.name).sort();
+
+    it("leaves test symbols out until the Reviewer shows them, and says how many it left out", async () => {
+      const { title } = await start(server, changeWithTests);
+      const state = await settled(title);
+      assert.strictEqual(state.showTests, false);
+      assert.deepStrictEqual(await names(title), ["helper", "run_main"]);
+      assert.deepStrictEqual(
+        state.flow.entries.map((e) => e.name),
+        ["helper"],
+        "the entry-point picker offers no test function"
+      );
+      assert.strictEqual(state.flow.testsHidden, 2);
+      await eventually(async () =>
+        assert.deepStrictEqual(
+          (await codeFlowPanel(title))!.rendered,
+          (await codeFlowPanel(title))!.sent
+        )
+      );
+
+      (await codeFlowPanel(title))!.receive({
+        type: "setShowTests",
+        show: true,
+      });
+      await eventually(async () =>
+        assert.deepStrictEqual(await names(title), [
+          "check",
+          "helper",
+          "helper_ref",
+          "run_main",
+        ])
+      );
+      assert.strictEqual(
+        (await codeFlowPanel(title))!.sent.flow.testsHidden,
+        0
+      );
+      assert.deepStrictEqual(
+        (await codeFlowPanel(title))!.sent.flow.entries
+          .map((e) => e.name)
+          .sort(),
+        ["check", "helper"]
+      );
+    });
+
+    it("keeps showing tests across a change of view, and hides them again on request", async () => {
+      const { title } = await start(server, changeWithTests);
+      await settled(title);
+      const panel = (await codeFlowPanel(title))!;
+      panel.receive({ type: "setShowTests", show: true });
+      panel.receive({ type: "setView", view: "list" });
+      await eventually(async () => {
+        const { sent } = (await codeFlowPanel(title))!;
+        assert.strictEqual(sent.view, "list");
+        assert.strictEqual(sent.showTests, true);
+        assert.ok(sent.flow.nodes.some((n) => n.name === "check"));
+      });
+      panel.receive({ type: "setShowTests", show: false });
+      await eventually(async () =>
+        assert.deepStrictEqual(await names(title), ["helper", "run_main"])
+      );
+    });
+
+    it("says so, rather than drawing an empty map, when the Change only changes tests", async () => {
+      const { title } = await start(server, () => changeWithTests(true));
+      const state = await settled(title);
+      assert.deepStrictEqual(state.flow.nodes, []);
+      assert.deepStrictEqual(state.flow.entries, []);
+      assert.strictEqual(state.flow.testsHidden, 2);
+      await eventually(async () =>
+        assert.deepStrictEqual(
+          (await codeFlowPanel(title))!.rendered,
+          (await codeFlowPanel(title))!.sent
+        )
+      );
+    });
+  });
+
   it("says there is no language server when none answers for the language", async () => {
     const { title } = await start();
     const state = await settled(title);
     assert.deepStrictEqual(state.flow.nodes, []);
-    assert.deepStrictEqual(state.languages, [{ language: "shellscript", outcome: "none" }]);
+    assert.deepStrictEqual(state.languages, [
+      { language: "shellscript", outcome: "none" },
+    ]);
   });
 
   it("says the language server did not answer when it knows symbols but no calls", async () => {
     const { title } = await start({ withoutHierarchy: true });
     const state = await settled(title);
-    assert.deepStrictEqual(state.languages, [{ language: "shellscript", outcome: "silent" }]);
+    assert.deepStrictEqual(state.languages, [
+      { language: "shellscript", outcome: "silent" },
+    ]);
   });
 
   it("stops waiting for a language server that never answers", async () => {
     await waitForLanguageServer(200);
     const { title } = await start({ slow: true });
     const state = await settled(title);
-    assert.deepStrictEqual(state.languages, [{ language: "shellscript", outcome: "silent" }]);
+    assert.deepStrictEqual(state.languages, [
+      { language: "shellscript", outcome: "silent" },
+    ]);
   });
 
   it("draws the functions of a deleted file as removed, with who called them before the Change", async () => {
@@ -240,10 +371,15 @@ describe("Code Flow", () => {
       ]
     );
     assert.deepStrictEqual(
-      state.flow.edges.map((e) => [e.from.split(":").pop(), e.to.split(":").pop()]),
+      state.flow.edges.map((e) => [
+        e.from.split(":").pop(),
+        e.to.split(":").pop(),
+      ]),
       [["run_main", "legacy"]]
     );
-    assert.deepStrictEqual(state.languages, [{ language: "shellscript", outcome: "answered" }]);
+    assert.deepStrictEqual(state.languages, [
+      { language: "shellscript", outcome: "answered" },
+    ]);
   });
 
   it("opens a removed function in the base worktree, where the file still is", async () => {
@@ -271,12 +407,19 @@ describe("Code Flow", () => {
       const seen = sent.flow.nodes.map((n) => [n.name, n.status, n.side]);
       const found =
         !sent.loading &&
-        seen.some((n) => n[0] === "gone" && n[1] === "removed" && n[2] === "base") &&
-        seen.some((n) => n[0] === "use" && n[1] === "unchanged" && n[2] === "base");
+        seen.some(
+          (n) => n[0] === "gone" && n[1] === "removed" && n[2] === "base"
+        ) &&
+        seen.some(
+          (n) => n[0] === "use" && n[1] === "unchanged" && n[2] === "base"
+        );
       if (!sent.loading && !found) {
         panel.receive({ type: "retry" });
       }
-      assert.ok(found, `base-side call hierarchy answered: ${JSON.stringify(seen)}`);
+      assert.ok(
+        found,
+        `base-side call hierarchy answered: ${JSON.stringify(seen)}`
+      );
     }, 150_000);
   });
 });

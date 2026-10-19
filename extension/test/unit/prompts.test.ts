@@ -1,5 +1,7 @@
 import * as assert from "assert";
 import {
+  assistantRole,
+  assistantTone,
   chatPrompt,
   commitsHeading,
   commitsLog,
@@ -35,6 +37,12 @@ function fencedAfter(prompt: string, opening: string): string {
   assert.ok(end > start, `the fence closes:\n${prompt}`);
   return lines.slice(start + 1, end).join("\n");
 }
+
+describe("The Assistant's role", () => {
+  it("tells the Assistant how to write", () => {
+    assert.ok(assistantRole(change).includes(assistantTone));
+  });
+});
 
 describe("Fences in the Assistant's prompts", () => {
   it("fences selected code in more backticks than any run in it", () => {

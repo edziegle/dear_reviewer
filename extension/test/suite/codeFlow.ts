@@ -60,6 +60,12 @@ export interface CodeFlowState {
   problem?: string;
 }
 
+/** How the Code Flow tab said it is laid out, after its last render. */
+export interface Layout {
+  canvas: { left: number; top: number } | null;
+  focusInView: boolean | null;
+}
+
 export type FromCodeFlow =
   | { type: "setHops"; hops: number }
   | { type: "setView"; view: string }
@@ -77,6 +83,9 @@ interface CodeFlowApi {
     viewColumn?: vscode.ViewColumn;
     sent: CodeFlowState;
     rendered?: CodeFlowState;
+    layout?: Layout;
+    scrollCanvas(left: number, top: number): void;
+    focusNode(id: string): void;
     receive(message: FromCodeFlow): void;
   }[];
   setWaitMs(ms: number | undefined): void;

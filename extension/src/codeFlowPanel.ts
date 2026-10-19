@@ -41,12 +41,33 @@ export type FromCodeFlow =
   | { type: "setShowTests"; show: boolean }
   | { type: "retry" }
   | { type: "findExtensions"; language: string }
+  | { type: "layout"; canvas: CanvasScroll | null; focusInView: boolean | null }
   | { type: "ready" }
   | { type: "rendered"; revision: number };
+
+/** How far the canvas is scrolled, as the webview reports it after it renders. */
+export interface CanvasScroll {
+  left: number;
+  top: number;
+}
+
+/** What the webview last said of how it is laid out, for the tests. */
+export interface Layout {
+  /** The canvas's scroll offsets; none while the view draws no canvas, such as the list. */
+  canvas: CanvasScroll | null;
+  /** Whether the symbol with the focus is inside the canvas's visible part; none if no symbol has it. */
+  focusInView: boolean | null;
+}
+
+/** Test-only messages to the webview, which answers each with a layout. */
+type ToWebview =
+  | { type: "scrollCanvas"; left: number; top: number }
+  | { type: "focusNode"; id: string };
 
 export class CodeFlowPanel {
   private readonly view: MarkdownPanel<CodeFlowState, CodeFlowState>;
   readonly onDidDispose: vscode.Event<void>;
+  private reportedLayout: Layout | undefined;
 
   constructor(
     state: CodeFlowState,
@@ -82,6 +103,28 @@ export class CodeFlowPanel {
   /** The state the webview last rendered, once it has rendered the latest one. */
   get rendered(): CodeFlowState | undefined {
     return this.view.rendered;
+  }
+
+  /** What the webview last said of how it is laid out. */
+  get layout(): Layout | undefined {
+    return this.reportedLayout && structuredClone(this.reportedLayout);
+  }
+
+  /** Scrolls the canvas, as the Reviewer would; the tests use it. */
+  scrollCanvas(left: number, top: number): void {
+    void this.view.webview.postMessage({
+      type: "scrollCanvas",
+      left,
+      top,
+    } satisfies ToWebview);
+  }
+
+  /** Gives the focus to a symbol of the call map, as the Reviewer would; the tests use it. */
+  focusNode(id: string): void {
+    void this.view.webview.postMessage({
+      type: "focusNode",
+      id,
+    } satisfies ToWebview);
   }
 
   update(state: CodeFlowState): void {
@@ -133,6 +176,12 @@ export class CodeFlowPanel {
       case "retry":
         this.onAction(message);
         break;
+      case "layout":
+        this.reportedLayout = {
+          canvas: message.canvas,
+          focusInView: message.focusInView,
+        };
+        break;
     }
   }
 }
@@ -148,7 +197,7 @@ function html(): string {
 <style nonce="${nonce}">${sharedStyles}
   body { margin: 0; padding: 0 16px 16px; color: var(--vscode-foreground); font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); line-height: 1.5; }
   h1 { font-size: 1.1em; margin: 14px 0 8px; }
-  .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 0 0 10px; }
+  .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 0 0 10px; padding: 6px 0; position: sticky; top: 0; z-index: 1; background: var(--vscode-editor-background); }
   .group { display: inline-flex; align-items: center; gap: 6px; }
   .seg { display: inline-flex; }
   .seg button { font: inherit; padding: 2px 10px; color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); border: 1px solid var(--vscode-button-border, var(--vscode-contrastBorder, transparent)); cursor: pointer; }
@@ -168,7 +217,7 @@ function html(): string {
   .notice { margin: 8px 0; padding: 8px; border: 1px solid var(--vscode-panel-border, var(--vscode-contrastBorder)); background: var(--vscode-textBlockQuote-background); }
   .notice button { margin-left: 8px; font: inherit; padding: 2px 10px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); border: 1px solid var(--vscode-button-border, var(--vscode-contrastBorder, transparent)); border-radius: 2px; cursor: pointer; }
   .notice button:hover { background: var(--vscode-button-hoverBackground); }
-  .canvas { overflow: auto; border: 1px solid var(--vscode-panel-border, var(--vscode-contrastBorder)); background: var(--vscode-editor-background); }
+  .canvas { overflow: auto; max-height: max(240px, calc(100vh - 200px)); border: 1px solid var(--vscode-panel-border, var(--vscode-contrastBorder)); background: var(--vscode-editor-background); }
   .canvas svg { display: block; }
   .node rect { fill: var(--vscode-editor-background); stroke: var(--vscode-descriptionForeground); stroke-width: 1; }
   .node.changed rect { stroke: var(--vscode-gitDecoration-modifiedResourceForeground, var(--vscode-focusBorder)); stroke-width: 2.5; }
@@ -196,7 +245,7 @@ function html(): string {
   .call:hover .hit { fill: var(--vscode-list-hoverBackground); }
   .call[aria-pressed=true] .hit { fill: var(--vscode-list-activeSelectionBackground); stroke: var(--vscode-list-activeSelectionForeground); }
   .call[aria-pressed=true] text { fill: var(--vscode-list-activeSelectionForeground); }
-  .details { margin: 10px 0 0; padding: 8px; border: 1px solid var(--vscode-panel-border, var(--vscode-contrastBorder)); min-height: 3em; }
+  .details { position: sticky; bottom: 0; background: var(--vscode-editor-background); margin: 10px 0 0; padding: 8px; border: 1px solid var(--vscode-panel-border, var(--vscode-contrastBorder)); min-height: 3em; }
   .details .where, .list .where { font-family: var(--vscode-editor-font-family); color: var(--vscode-descriptionForeground); overflow-wrap: anywhere; }
   .details button { margin-top: 6px; font: inherit; padding: 2px 12px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); border: 1px solid var(--vscode-button-border, var(--vscode-contrastBorder, transparent)); border-radius: 2px; cursor: pointer; }
   .details button:hover { background: var(--vscode-button-hoverBackground); }
@@ -475,6 +524,8 @@ function html(): string {
     return active && (active.getAttribute("data-focus") || (active.id === "entry" ? "entry" : null));
   };
   function render(state) {
+    // Rebuilding the page puts every scroll back at the start, so note where they were.
+    const prior = { view: current && current.view, page: window.scrollY, canvas: scrollOf(app.querySelector(".canvas")) };
     current = state;
     const key = focusKey();
     keepFocus(() => {
@@ -491,15 +542,49 @@ function html(): string {
       if (!state.loading) app.append(details(state));
     });
     fitNodeTexts();
+    const canvas = app.querySelector(".canvas");
+    if (canvas && prior.canvas && prior.view === state.view) { canvas.scrollLeft = prior.canvas.left; canvas.scrollTop = prior.canvas.top; }
+    window.scrollTo(window.scrollX, prior.page);
     const restored = key && document.querySelector(key === "entry" ? "#entry" : '[data-focus="' + CSS.escape(key) + '"]');
-    if (restored && document.activeElement !== restored) restored.focus({ preventScroll: true });
+    if (restored && document.activeElement !== restored) {
+      restored.focus({ preventScroll: true });
+      // Only as far as it takes to see it: the canvas and the page stay where they were.
+      restored.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }
     setText(live, state.loading ? "Asking the language servers" : state.flow.nodes.length + " symbols shown");
   }
 
+  const scrollOf = (canvas) => canvas ? { left: canvas.scrollLeft, top: canvas.scrollTop } : null;
+  /** Says how the page is laid out, so the tests can check that a render kept the Reviewer's place. */
+  function reportLayout() {
+    const canvas = app.querySelector(".canvas");
+    const active = document.activeElement;
+    const focused = canvas && active && canvas.contains(active) ? active : null;
+    let focusInView = null;
+    if (focused) {
+      const inner = focused.getBoundingClientRect(), outer = canvas.getBoundingClientRect();
+      focusInView = inner.left >= outer.left - 1 && inner.right <= outer.right + 1 && inner.top >= outer.top - 1 && inner.bottom <= outer.bottom + 1;
+    }
+    post({ type: "layout", canvas: scrollOf(canvas), focusInView });
+  }
   window.addEventListener("message", (event) => {
-    if (event.data.type !== "state") return;
-    render(event.data.state);
-    post({ type: "rendered", revision: event.data.revision });
+    const message = event.data;
+    if (message.type === "scrollCanvas") {
+      const canvas = app.querySelector(".canvas");
+      if (canvas) { canvas.scrollLeft = message.left; canvas.scrollTop = message.top; }
+      reportLayout();
+      return;
+    }
+    if (message.type === "focusNode") {
+      const node = document.querySelector('[data-node="' + CSS.escape(message.id) + '"]');
+      if (node) node.focus();
+      reportLayout();
+      return;
+    }
+    if (message.type !== "state") return;
+    render(message.state);
+    reportLayout();
+    post({ type: "rendered", revision: message.revision });
   });
   post({ type: "ready" });
 </script>

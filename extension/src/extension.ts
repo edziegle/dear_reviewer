@@ -1862,6 +1862,10 @@ export function activate(context: vscode.ExtensionContext) {
           viewColumn: panel.viewColumn,
           sent: panel.sent,
           rendered: panel.rendered,
+          layout: panel.layout,
+          scrollCanvas: (left: number, top: number) =>
+            panel.scrollCanvas(left, top),
+          focusNode: (id: string) => panel.focusNode(id),
           receive: (message: FromCodeFlow) => panel.receive(message),
         })),
       /** Shortens how long Code Flow waits for a language server to answer. */

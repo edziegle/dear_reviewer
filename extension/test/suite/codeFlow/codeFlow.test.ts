@@ -195,6 +195,36 @@ describe("Code Flow", () => {
     );
   });
 
+  it("keeps the canvas where it was, and the focused symbol in view, when the Reviewer selects a symbol", async () => {
+    const callees = Array.from({ length: 40 }, (_, i) => `callee_${i}`);
+    const { title } = await start({ callees: { helper: callees } });
+    const state = await settled(title);
+    const panel = (await codeFlowPanel(title))!;
+    const last = state.flow.nodes.find((n) => n.name === "callee_39")!;
+
+    // Scroll to the bottom of the tall map and focus the last symbol.
+    panel.scrollCanvas(0, 100_000);
+    panel.focusNode(last.id);
+    let scrolled = 0;
+    await eventually(async () => {
+      const layout = (await codeFlowPanel(title))!.layout;
+      assert.ok(layout?.canvas && layout.canvas.top > 0, "the canvas scrolls");
+      assert.strictEqual(layout.focusInView, true);
+      scrolled = layout.canvas.top;
+    });
+
+    // Selecting sends a whole new state; the canvas stays and the symbol stays in view.
+    panel.receive({ type: "select", id: last.id });
+    await eventually(async () => {
+      const current = (await codeFlowPanel(title))!;
+      assert.strictEqual(current.sent.selected, last.id);
+      assert.deepStrictEqual(current.rendered, current.sent);
+    });
+    const layout = (await codeFlowPanel(title))!.layout;
+    assert.strictEqual(layout?.canvas?.top, scrolled);
+    assert.strictEqual(layout?.focusInView, true);
+  });
+
   it("draws swimlanes for the calls from a changed symbol", async () => {
     const { title } = await start({ callees: { helper: ["run_main"] } });
     await settled(title);

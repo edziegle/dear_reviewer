@@ -187,6 +187,11 @@ function html(): string {
   .arrow { fill: var(--vscode-descriptionForeground); }
   .lane-head { font-weight: 600; }
   .lane-line { stroke: var(--vscode-panel-border, var(--vscode-descriptionForeground)); stroke-dasharray: 3 4; }
+  .call.changed .edge { stroke: var(--vscode-gitDecoration-modifiedResourceForeground, var(--vscode-focusBorder)); stroke-width: 2.5; }
+  .call.new .edge { stroke: var(--vscode-gitDecoration-addedResourceForeground, var(--vscode-focusBorder)); stroke-width: 2.5; stroke-dasharray: 5 3; }
+  .call.removed .edge { stroke: var(--vscode-gitDecoration-deletedResourceForeground, var(--vscode-focusBorder)); stroke-width: 2.5; stroke-dasharray: 2 3; }
+  .call .where { fill: var(--vscode-descriptionForeground); font-size: calc(var(--vscode-font-size) * 0.9); }
+  .call[aria-pressed=true] .where { fill: var(--vscode-list-activeSelectionForeground); }
   .call .hit { fill: transparent; stroke: transparent; }
   .call:hover .hit { fill: var(--vscode-list-hoverBackground); }
   .call[aria-pressed=true] .hit { fill: var(--vscode-list-activeSelectionBackground); stroke: var(--vscode-list-activeSelectionForeground); }
@@ -213,6 +218,9 @@ function html(): string {
   const live = document.getElementById("live");
   const STATUS = { changed: "changed", new: "new", removed: "removed", unchanged: "unchanged" };
   const before = (node) => (node.side === "base" ? "before the Change: " : "");
+  /** The glyph and word that mark a symbol the Change touched; nothing for one it left alone. */
+  const statusMark = (node) => (node.status === "new" ? "+ new" : node.status === "removed" ? "\\u2212 removed" : node.status === "changed" ? "\\u25cf changed" : "");
+  const placeOf = (node) => (node.side === "base" ? "before: " : "") + baseName(node.path) + ":" + node.line;
 
   const el = (tag, attrs, ...children) => {
     const node = document.createElement(tag);
@@ -270,11 +278,15 @@ function html(): string {
     }
     bar.append(el("span", { class: "seg" },
       el("button", { type: "button", "aria-pressed": String(state.showTests), "data-focus": "showTests", onclick: () => post({ type: "setShowTests", show: !state.showTests }), text: "Show tests" })));
-    bar.append(el("span", { class: "legend" },
-      el("span", {}, el("i", { class: "key changed" }), "changed"),
-      el("span", {}, el("i", { class: "key new" }), "new"),
-      el("span", {}, el("i", { class: "key removed" }), "removed"),
-      el("span", {}, el("i", { class: "key unchanged" }), "unchanged")));
+    // The key explains only the marks the picture draws: the list names each status in a badge.
+    const known = new Map(state.known.map((n) => [n.id, n]));
+    const drawn = state.view === "map" ? state.flow.nodes
+      : state.view === "lanes" ? state.flow.calls.flatMap((c) => [known.get(c.from), known.get(c.to)]).filter(Boolean)
+      : [];
+    const present = ["changed", "new", "removed", "unchanged"].filter((status) => drawn.some((n) => n.status === status));
+    if (present.length > 0)
+      bar.append(el("span", { class: "legend" },
+        present.map((status) => el("span", {}, el("i", { class: "key " + status }), STATUS[status]))));
     return bar;
   }
 
@@ -333,8 +345,8 @@ function html(): string {
         svg("title", { text: describe(node) }),
         svg("rect", { width: NODE_W, height: NODE_H, rx: 3 }),
         svg("text", { class: "name", x: 8, y: 19 }, node.name),
-        svg("text", { class: "where loc", x: 8, y: 36 }, (node.side === "base" ? "before: " : "") + baseName(node.path) + ":" + node.line));
-      if (node.status !== "unchanged") group.append(svg("text", { class: "where status", x: NODE_W - 8, y: 19, "text-anchor": "end" }, node.status === "new" ? "+ new" : node.status === "removed" ? "\\u2212 removed" : "\\u25cf changed"));
+        svg("text", { class: "where loc", x: 8, y: 36 }, placeOf(node)));
+      if (node.status !== "unchanged") group.append(svg("text", { class: "where status", x: NODE_W - 8, y: 19, "text-anchor": "end" }, statusMark(node)));
       if (node.hidden) group.append(svg("text", { class: "more", x: NODE_W - 8, y: 36, "text-anchor": "end" }, "+" + node.hidden + " more"));
       group.addEventListener("click", () => post({ type: "select", id: node.id }));
       group.addEventListener("dblclick", () => post({ type: "openDiff", id: node.id }));
@@ -407,12 +419,16 @@ function html(): string {
       const target = known.get(call.to), source = known.get(call.from);
       const x1 = x(call.fromLane), x2 = x(call.toLane);
       const same = call.fromLane === call.toLane;
-      const group = svg("g", { class: "call", tabindex: "0", role: "button", "aria-pressed": String(state.selected === call.to), "aria-label": (i + 1) + ". " + (source ? source.name : call.from) + " calls " + (target ? target.name : call.to) + (call.label ? ", " + call.label : ""), "data-focus": "call:" + i },
+      // What marks the callee marks the call; the caller's mark is named in the row's second line.
+      const calleeMark = target ? statusMark(target) : "", callerMark = source ? statusMark(source) : "";
+      const detail = [calleeMark, target ? placeOf(target) : "", callerMark && source ? "called from " + callerMark + " " + source.name : ""].filter(Boolean).join("  \u00b7  ");
+      const group = svg("g", { class: "call " + (target ? target.status : "unchanged"), tabindex: "0", role: "button", "aria-pressed": String(state.selected === call.to), "aria-label": (i + 1) + ". " + (source ? source.name + (callerMark ? " (" + STATUS[source.status] + ")" : "") : call.from) + " calls " + (target ? target.name + ", " + STATUS[target.status] + ", " + before(target) + target.path + " line " + target.line : call.to) + (call.label ? ", " + call.label : ""), "data-focus": "call:" + i },
         svg("rect", { class: "hit", x: PAD, y: y - ROW_H / 2 + 2, width: width - PAD * 2, height: ROW_H - 4, rx: 3 }),
         same
           ? svg("path", { class: "edge", d: "M" + x1 + " " + (y - 6) + " h28 v12 h-26", "marker-end": "url(#arrow)" })
           : svg("line", { class: "edge", x1, x2: x2 + (x2 > x1 ? -2 : 2), y1: y, y2: y, "marker-end": "url(#arrow)" }),
-        svg("text", { x: Math.min(x1, x2) + 8, y: y - 8 }, (i + 1) + ". " + clip((target ? target.name : call.to) + (call.label ? "  " + call.label : ""), 40)));
+        svg("text", { x: Math.min(x1, x2) + 8, y: y - 8 }, (i + 1) + ". " + clip((target ? target.name : call.to) + (call.label ? "  " + call.label : ""), 40)),
+        detail && svg("text", { class: "where", x: Math.min(x1, x2) + 8, y: y + 14 }, clip(detail, 70)));
       group.addEventListener("click", () => post({ type: "select", id: call.to }));
       group.addEventListener("keydown", (event) => {
         if (event.key === "Enter" || event.key === " ") activate(event, call.to);

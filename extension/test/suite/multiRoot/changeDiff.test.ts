@@ -1,6 +1,7 @@
 import * as assert from "assert";
 import * as path from "path";
 import * as vscode from "vscode";
+import { codeColumnTab } from "../changeFiles";
 import { buildFixtureRepo } from "../fixtures";
 import {
   activeTabLabel,
@@ -36,16 +37,16 @@ describe("The Change's multi-file diff", () => {
       );
 
       await eventually(() =>
-        assert.match(activeTabLabel() ?? "", /· all changes \(4 files\)$/)
+        assert.match(codeColumnTab()?.label ?? "", /· all changes \(4 files\)$/)
       );
       await eventually(() => {
         const overviewGroup = vscode.window.tabGroups.all.find((group) =>
           group.tabs.some((tab) => tab.label === title)
         );
-        assert.notStrictEqual(
-          overviewGroup,
-          vscode.window.tabGroups.activeTabGroup,
-          "the overview moved beside the diff"
+        assert.ok(
+          overviewGroup &&
+            !overviewGroup.tabs.some((tab) => tab === codeColumnTab()),
+          "the overview stays beside the diff"
         );
       });
       await eventually(() =>

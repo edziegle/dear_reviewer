@@ -476,7 +476,9 @@ export function activate(context: vscode.ExtensionContext) {
     pullRequest: PullRequestRef,
     baseRefName: string
   ): Promise<string> {
-    const onFile = activeFile();
+    // The file beside the overview, wherever the focus is: VS Code can hand
+    // the focus back to an overview a moment after a file opens beside it.
+    const onFile = await shownIn(change);
     const reopen =
       onFile?.change.id === change.id ? onFile.file.path : undefined;
     const request = await fetchPullRequest(change.repository, {
@@ -494,7 +496,10 @@ export function activate(context: vscode.ExtensionContext) {
     );
     // A force push can leave none that git can count from the old head.
     const newCommits = count > 0 ? count : ("some" as const);
-    const next = await changes.open(request);
+    if (reopen) reopeningFile.add(change.conversation);
+    const next = await changes
+      .open(request)
+      .finally(() => reopeningFile.delete(change.conversation));
     const text = foundText({ newCommits, threads: 0 });
     arrivals.set(next.conversation, text);
     if (reopen) {
@@ -620,10 +625,13 @@ export function activate(context: vscode.ExtensionContext) {
    * the main column, with the focus, Change Files in the side bar, and
    * nothing of other Changes or of the last session: no bottom panel, and no
    * other Change's editors or overview. The Assistant's view follows it.
+   * A Change whose conversation is `reopeningFile` leaves the focus to the
+   * file that opens beside its overview next.
    */
   function showChange(change: Change): Promise<void> {
     shownLast = change.id;
     shownChanges.push(changeName(change));
+    const focus = !reopeningFile.has(change.conversation);
     // A failed showing doesn't hold up the next.
     showingChange = showingChange
       .catch(() => undefined)
@@ -633,10 +641,17 @@ export function activate(context: vscode.ExtensionContext) {
         timelines.closeOthers(change);
         await vscode.commands.executeCommand("dearReviewer.changeFiles.focus");
         void assistants.start(change);
-        await timelines.open(change, true);
+        await timelines.open(change, focus);
       });
     return showingChange;
   }
+  /**
+   * The conversations of Changes a swap is opening at a new head with the
+   * file the Reviewer was on. VS Code reports that a webview gained the
+   * focus on a timer, so an overview given the focus can take it back from
+   * a file opened beside it a moment later.
+   */
+  const reopeningFile = new Set<string>();
   /** The id of the Change shown last, as a review starts. */
   let shownLast: string | undefined;
   /** Every Change shown as a review starts, by name, for the tests. */
@@ -901,6 +916,19 @@ export function activate(context: vscode.ExtensionContext) {
     return pickChange(front && fits(front) ? [front] : [], title, none, way);
   }
 
+  /**
+   * The file the Reviewer is on: the one the active tab shows, or, from an
+   * overview, the one in front of its code column. VS Code can hand the focus
+   * back to an overview a moment after a file opens beside it.
+   */
+  async function fileOn(): Promise<ReturnType<typeof whereInChange>> {
+    const active = activeFile();
+    if (active) return active;
+    const overview = timelines.activeChangeId();
+    const change = changes.shownHere().find((c) => c.id === overview);
+    return change && shownIn(change);
+  }
+
   /** The file of the Change shown in front of its code column. */
   async function shownIn(
     change: Change
@@ -932,7 +960,7 @@ export function activate(context: vscode.ExtensionContext) {
       ? await shownIn(given)
       : shown
         ? whereInChange(shown, changes.shownHere())
-        : activeFile();
+        : await fileOn();
     const here =
       where?.file.side === "commit" || (given && where?.change.id !== given.id)
         ? undefined
@@ -1823,6 +1851,7 @@ export function activate(context: vscode.ExtensionContext) {
           title: panel.title,
           sent: panel.sent,
           rendered: panel.rendered,
+          openedWithFocus: panel.openedWithFocus,
           receive: (message: FromWebview) => panel.receive(message),
         })),
     },

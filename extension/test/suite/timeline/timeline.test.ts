@@ -2,7 +2,9 @@ import * as assert from "assert";
 import * as path from "path";
 import * as vscode from "vscode";
 import {
-  activeDiff,
+  codeColumnTab,
+  filesIn,
+  shownDiff,
   changeFiles,
   entryAt,
   markViewed,
@@ -806,12 +808,7 @@ describe("A pull request's timeline", () => {
     });
 
     await clickPendingComment(title, 0);
-    await eventually(() =>
-      assert.strictEqual(
-        vscode.window.activeTextEditor?.document.uri.fsPath,
-        file
-      )
-    );
+    await eventually(() => assert.ok(filesIn(codeColumnTab()).includes(file)));
 
     await submitInOverview(title, "comment", "");
     await eventually(async () => {
@@ -953,22 +950,22 @@ describe("A pull request's timeline", () => {
     }
   });
 
-  it("leaves a file the Reviewer opens as the Change opens in front, once the overview has loaded", async () => {
+  it("shows a file the Reviewer opens as the Change opens beside the overview, not behind it", async () => {
     const local = { repository: pr.clone, base: pr.base, head: pr.head };
     const localTitle = `${path.basename(pr.clone)} ${short(pr.base)}..${short(pr.head)}`;
     await openChange(local);
     try {
-      // On a slow machine the overview's webview is still loading here, and
-      // takes the focus it was shown with only once it is ready.
+      // On a slow machine the overview's webview is still loading here. The
+      // focus can still go back to the overview: see `codeColumnTab`.
       await select(entryAt(await changeFiles(), localTitle, "pkg", "core.py"));
       await eventually(async () =>
         assert.ok(await renderedTimeline(localTitle), "the overview rendered")
       );
 
       assert.strictEqual(
-        path.basename(activeDiff().modified.fsPath),
+        path.basename(shownDiff().modified.fsPath),
         "core.py",
-        "the file is in front"
+        "the file is in front of the code column"
       );
     } finally {
       await closeChange(local);

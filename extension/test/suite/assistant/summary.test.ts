@@ -25,7 +25,7 @@ import {
   overviewTake,
   sentTimeline,
 } from "../timeline";
-import { filesIn } from "../changeFiles";
+import { codeColumnTab, filesIn } from "../changeFiles";
 import { buildFixtureRepo, buildPullRequestFixture } from "../fixtures";
 import { configure, serveGitHub, setToken } from "../github";
 import {
@@ -173,15 +173,14 @@ describe("The Assistant's summary when a Change opens", () => {
       endLine: 2,
     });
     await eventually(() =>
-      assert.strictEqual(
-        vscode.window.activeTextEditor?.document.uri.fsPath,
-        path.join(head.path, "util.py")
+      assert.ok(
+        filesIn(codeColumnTab()).includes(path.join(head.path, "util.py"))
       )
     );
 
     await clickOverview(title, "nextFile");
     await eventually(() => {
-      const shown = filesIn(vscode.window.tabGroups.activeTabGroup.activeTab);
+      const shown = filesIn(codeColumnTab());
       assert.ok(
         shown.length > 0 && !shown.includes(path.join(head.path, "util.py")),
         `another of the Change's files opens: ${shown.join(" ↔ ")}`

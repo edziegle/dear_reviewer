@@ -28,7 +28,7 @@ import {
   short,
   workspaceFolders,
 } from "../reviewer";
-import { sentTimeline } from "../timeline";
+import { openedWithFocus, sentTimeline } from "../timeline";
 
 const viewer = { login: "reviewer", token: "test-token" };
 const settingKeys = [
@@ -110,6 +110,10 @@ describe("Refreshing a pull request's Change as its remote changes", () => {
   }
 
   const changeFolderNames = () => workspaceFolders().map((f) => f.name);
+  const changeFolder = (head: string) =>
+    workspaceFolders().find(
+      (f) => f.name === `${path.basename(pr.clone)} head ${short(head)}`
+    )!;
 
   before(async () => {
     await setRefreshGap(0);
@@ -152,6 +156,22 @@ describe("Refreshing a pull request's Change as its remote changes", () => {
   it("swaps to the new head, reopens the file, and loads new threads when the window regains focus", async () => {
     await select(
       entryAt(await changeFiles(), titleAt(pr.head), "pkg", "core.py")
+    );
+    await eventually(() =>
+      assert.strictEqual(
+        shownDiff().modified.fsPath,
+        path.join(changeFolder(pr.head).path, "pkg", "core.py")
+      )
+    );
+    // The Reviewer is on the file beside the overview while reading the
+    // overview, so the swap can't go by the focus.
+    await vscode.commands.executeCommand("dearReviewer.showTimeline");
+    await eventually(() =>
+      assert.ok(
+        vscode.window.tabGroups.activeTabGroup.activeTab?.input instanceof
+          vscode.TabInputWebview,
+        "the overview has the focus"
+      )
     );
     const newHead = await authorPushes({
       reviews: [
@@ -199,13 +219,10 @@ describe("Refreshing a pull request's Change as its remote changes", () => {
       ),
       "the older head is gone"
     );
-    const newFolder = workspaceFolders().find(
-      (f) => f.name === `${path.basename(pr.clone)} head ${short(newHead)}`
-    )!;
     await eventually(() =>
       assert.strictEqual(
         shownDiff().modified.fsPath,
-        path.join(newFolder.path, "pkg", "core.py"),
+        path.join(changeFolder(newHead).path, "pkg", "core.py"),
         "the file the Reviewer was on is open again, under the new head's folder"
       )
     );
@@ -227,6 +244,12 @@ describe("Refreshing a pull request's Change as its remote changes", () => {
     // meanwhile would be remembered, not run now.
     await eventually(async () =>
       assert.strictEqual(await refreshRunning(), false, "the check has ended")
+    );
+    // An overview given the focus could take it back from the file.
+    assert.strictEqual(
+      await openedWithFocus(overviewTitle),
+      false,
+      "the new head's overview leaves the focus to the file"
     );
   });
 

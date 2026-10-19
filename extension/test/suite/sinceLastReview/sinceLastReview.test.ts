@@ -1,7 +1,7 @@
 import * as assert from "assert";
 import * as path from "path";
 import * as vscode from "vscode";
-import { changeFiles } from "../changeFiles";
+import { changeFiles, codeColumnTab } from "../changeFiles";
 import {
   askAssistant,
   assistantRuns,
@@ -32,7 +32,6 @@ import {
 } from "../github";
 import { showChangesSinceLastReview, submitReview } from "../review";
 import {
-  activeTabLabel,
   catchLinks,
   catchNotifications,
   closeChange,
@@ -293,8 +292,8 @@ describe("What changed since your last Review", () => {
     await showChangesSinceLastReview(requestAt(pr.head));
 
     assert.ok(
-      !activeTabLabel()?.includes("since your last Review"),
-      `no diff since the last Review opened: ${activeTabLabel()}`
+      !codeColumnTab()?.label.includes("since your last Review"),
+      `no diff since the last Review opened: ${codeColumnTab()?.label}`
     );
   });
 
@@ -411,7 +410,7 @@ describe("What changed since your last Review", () => {
 
     await eventually(() => {
       assert.strictEqual(
-        activeTabLabel(),
+        codeColumnTab()?.label,
         `${path.basename(pr.clone)} ${short(pr.head)}..${short(newHead)} since your last Review (2 files)`
       );
       // The old side is the reviewed commit's file; an added file has none.

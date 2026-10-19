@@ -3,9 +3,9 @@ import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 import {
-  activeDiff,
+  codeColumnTab,
   shownDiff,
-  activeText,
+  shownText,
   changeFiles,
   entryAt,
   filesIn,
@@ -70,9 +70,9 @@ describe("The Change files view", () => {
     ]);
   });
 
-  const activeIsPinned = () =>
+  const shownIsPinned = () =>
     assert.strictEqual(
-      vscode.window.tabGroups.activeTabGroup.activeTab?.isPreview,
+      codeColumnTab()?.isPreview,
       false,
       "pinned, so going to a definition doesn't replace it"
     );
@@ -81,35 +81,35 @@ describe("The Change files view", () => {
     await select(entryAt(await changeFiles(), title, "pkg", "core.py"));
 
     await eventually(() => {
-      const diff = activeDiff();
+      const diff = shownDiff();
       assert.strictEqual(diff.original.fsPath, path.join(base, "pkg/core.py"));
       assert.strictEqual(diff.modified.fsPath, path.join(head, "pkg/core.py"));
     });
-    activeIsPinned();
+    shownIsPinned();
   });
 
   it("opens a selected added file on its own, from the head worktree", async () => {
     await select(entryAt(await changeFiles(), title, "pkg", "sub", "new.py"));
 
     await eventually(() =>
-      assert.strictEqual(activeText().fsPath, path.join(head, "pkg/sub/new.py"))
+      assert.strictEqual(shownText().fsPath, path.join(head, "pkg/sub/new.py"))
     );
-    activeIsPinned();
+    shownIsPinned();
   });
 
   it("opens a selected deleted file on its own, from the base worktree", async () => {
     await select(entryAt(await changeFiles(), title, "pkg", "legacy.py"));
 
     await eventually(() =>
-      assert.strictEqual(activeText().fsPath, path.join(base, "pkg/legacy.py"))
+      assert.strictEqual(shownText().fsPath, path.join(base, "pkg/legacy.py"))
     );
-    activeIsPinned();
+    shownIsPinned();
   });
 
   it("offers Comments on every line of an added file opened on its own", async () => {
     const file = path.join(head, "added.py");
     await select(entryAt(await changeFiles(), title, "added.py"));
-    await eventually(() => assert.strictEqual(activeText().fsPath, file));
+    await eventually(() => assert.strictEqual(shownText().fsPath, file));
 
     assert.deepStrictEqual(await commentingLines(file), [[0, 2]]);
     const thread = await comment(file, 2, 2, "Why compute this on import?");
@@ -176,7 +176,7 @@ describe("The Change files view", () => {
     const shows = async (file: string, side: "base" | "head") =>
       eventually(() =>
         assert.ok(
-          filesIn(vscode.window.tabGroups.activeTabGroup.activeTab).includes(
+          filesIn(codeColumnTab()).includes(
             path.join(side === "base" ? base : head, file)
           ),
           `${file} isn't shown`
@@ -267,6 +267,20 @@ describe("The Change files view", () => {
     await unmarkViewed(entryAt(await changeFiles(), title, "pkg", "legacy.py"));
   });
 
+  it("marks the file beside the overview viewed with the review key pressed in the overview, and moves on", async () => {
+    await select(entryAt(await changeFiles(), title, "added.py"));
+    await shows("added.py");
+    await showTimeline(request);
+    await eventually(() => assert.strictEqual(activeTabLabel(), title));
+
+    await review("markViewedAndNext");
+
+    await shows("main.py");
+    const tree = await changeFiles();
+    assert.strictEqual(entryAt(tree, title, "added.py").viewed, true);
+    await unmarkViewed(entryAt(tree, title, "added.py"));
+  });
+
   it("lists both sides of every viewed file for the title bar's buttons, as files are marked and unmarked", async () => {
     const sides = (file: string) => [
       path.join(base, file),
@@ -355,7 +369,7 @@ describe("The Change files view", () => {
     await onTab("markViewed", vscode.Uri.file(file));
     await onTab("markViewedAndClose", vscode.Uri.file(file));
 
-    assert.strictEqual(activeText().fsPath, file);
+    assert.strictEqual(shownText().fsPath, file);
     // Marking a Change file afterwards shows the key once it has caught up.
     await markViewed(entryAt(await changeFiles(), title, "main.py"));
     await eventually(async () => {
@@ -371,7 +385,7 @@ describe("The Change files view", () => {
   it("marks a deleted file viewed from its tab's menu and closes the tab", async () => {
     const file = path.join(base, "obsolete.py");
     await select(entryAt(await changeFiles(), title, "obsolete.py"));
-    await eventually(() => assert.strictEqual(activeText().fsPath, file));
+    await eventually(() => assert.strictEqual(shownText().fsPath, file));
 
     await onTab("markViewedAndClose", vscode.Uri.file(file));
 
@@ -399,13 +413,13 @@ describe("The Change files view", () => {
     await markViewed(entryAt(await changeFiles(), title, "util.py"));
 
     // The title bar passes the diff's resource: its modified side.
-    await onTab("unmarkViewed", activeDiff().modified);
+    await onTab("unmarkViewed", shownDiff().modified);
 
     assert.strictEqual(
       entryAt(await changeFiles(), title, "util.py").viewed,
       false
     );
-    assert.strictEqual(activeDiff().modified.fsPath, file);
+    assert.strictEqual(shownDiff().modified.fsPath, file);
   });
 
   it("hides viewed files, and directories left empty, until they are shown again", async () => {

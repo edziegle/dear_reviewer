@@ -72,10 +72,13 @@ describe("Setting up the Assistant", () => {
       assert.ok(status.tooltip?.includes(missing), "the tooltip has the error");
       assert.deepStrictEqual(loginChecks(), []);
       assert.deepStrictEqual(await assistantRuns(request), []);
-      const take = await overviewTake(title);
-      assert.ok(take?.problem?.includes(missing), "the overview says so too");
-      assert.strictEqual(take?.problemAction, "Set Claude Path");
-      assert.strictEqual(take?.reading, false);
+      // The overview opens on its own, maybe after the Assistant's panel.
+      await eventually(async () => {
+        const take = await overviewTake(title);
+        assert.ok(take?.problem?.includes(missing), "the overview says so too");
+        assert.strictEqual(take?.problemAction, "Set Claude Path");
+        assert.strictEqual(take?.reading, false);
+      });
     } finally {
       await setClaudePath(fakeClaudePath());
       await closeChange(request);

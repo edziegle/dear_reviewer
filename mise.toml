@@ -78,6 +78,7 @@ description = "Run the integration tests in VSCodium"
 dir = "extension"
 depends = ["typecheck", "build"]
 run = [
+  "rm -rf out/test",
   "npx tsc -p test",
   'CODIUM_DIR="$(mise where github:VSCodium/vscodium)" node out/test/run.js',
 ]
@@ -89,6 +90,7 @@ description = "Take the marketing screenshots in VSCodium, in a dark and a light
 dir = "extension"
 depends = ["typecheck", "build"]
 run = [
+  "rm -rf out/test",
   "npx tsc -p test",
   'DEAR_REVIEWER_SUITES=screenshots CODIUM_DIR="$(mise where github:VSCodium/vscodium)" node out/test/run.js',
 ]

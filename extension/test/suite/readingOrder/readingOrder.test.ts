@@ -17,6 +17,7 @@ import * as fs from "fs";
 import { leaveForReload } from "./handoff";
 import * as vscode from "vscode";
 import {
+  codeColumnTab,
   filesIn,
   changeFiles,
   entryAt,
@@ -247,7 +248,7 @@ describe("The Reading Order", () => {
     await vscode.commands.executeCommand("workbench.action.closeAllEditors");
     // A worktree file's path ends with the file's, whether in a diff or on its own.
     const shown = () => {
-      const files = filesIn(vscode.window.tabGroups.activeTabGroup.activeTab);
+      const files = filesIn(codeColumnTab());
       return (
         ["util.py", "main.py", "pkg/sub/new.py", "pkg/core.py"].find((f) =>
           files.some((file) => file.endsWith(path.sep + path.normalize(f)))

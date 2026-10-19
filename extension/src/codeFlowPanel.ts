@@ -6,7 +6,7 @@
 
 import * as crypto from "crypto";
 import * as vscode from "vscode";
-import type { FlowGraph, FlowNode, ShownFlow } from "./codeFlow";
+import type { FlowNode, FlowOffers, ShownFlow } from "./codeFlow";
 import type { LanguageOutcome } from "./codeFlowGather";
 import { MarkdownPanel, sharedScript, sharedStyles } from "./markdownPanel";
 
@@ -21,10 +21,10 @@ export interface CodeFlowState {
   /** Whether the symbols of test files are drawn. */
   showTests: boolean;
   flow: ShownFlow;
+  /** The controls and notices that act on the view shown, and what it says with nothing to draw. */
+  offers: FlowOffers;
   /** Every symbol gathered, for the details of one the picture doesn't draw. */
   known: FlowNode[];
-  /** How many symbols the hops reach that the cap left undrawn. */
-  undrawn: number;
   selected?: string;
   languages: { language: string; outcome: LanguageOutcome }[];
   /** Why no Code Flow could be gathered at all. */
@@ -37,7 +37,8 @@ export type FromCodeFlow =
   | { type: "select"; id: string }
   | { type: "openDiff"; id: string }
   | { type: "setEntry"; id: string }
-  | { type: "showAll" }
+  | { type: "expand"; id: string }
+  | { type: "setShowAll"; show: boolean }
   | { type: "setShowTests"; show: boolean }
   | { type: "retry" }
   | { type: "findExtensions"; language: string }
@@ -158,11 +159,13 @@ export class CodeFlowPanel {
       case "select":
       case "openDiff":
       case "setEntry":
+      case "expand":
         if (typeof message.id === "string") {
           this.onAction(message);
         }
         break;
       case "setShowTests":
+      case "setShowAll":
         if (typeof message.show === "boolean") {
           this.onAction(message);
         }
@@ -172,7 +175,6 @@ export class CodeFlowPanel {
           this.onAction(message);
         }
         break;
-      case "showAll":
       case "retry":
         this.onAction(message);
         break;
@@ -219,15 +221,18 @@ function html(): string {
   .notice button:hover { background: var(--vscode-button-hoverBackground); }
   .canvas { overflow: auto; max-height: max(240px, calc(100vh - 200px)); border: 1px solid var(--vscode-panel-border, var(--vscode-contrastBorder)); background: var(--vscode-editor-background); }
   .canvas svg { display: block; }
-  .node rect { fill: var(--vscode-editor-background); stroke: var(--vscode-descriptionForeground); stroke-width: 1; }
-  .node.changed rect { stroke: var(--vscode-gitDecoration-modifiedResourceForeground, var(--vscode-focusBorder)); stroke-width: 2.5; }
-  .node.new rect { stroke: var(--vscode-gitDecoration-addedResourceForeground, var(--vscode-focusBorder)); stroke-width: 2.5; stroke-dasharray: 5 3; }
-  .node.removed rect { stroke: var(--vscode-gitDecoration-deletedResourceForeground, var(--vscode-focusBorder)); stroke-width: 2.5; stroke-dasharray: 2 3; }
-  .node[aria-pressed=true] rect { fill: var(--vscode-list-activeSelectionBackground); }
+  .node .box { fill: var(--vscode-editor-background); stroke: var(--vscode-descriptionForeground); stroke-width: 1; }
+  .node.changed .box { stroke: var(--vscode-gitDecoration-modifiedResourceForeground, var(--vscode-focusBorder)); stroke-width: 2.5; }
+  .node.new .box { stroke: var(--vscode-gitDecoration-addedResourceForeground, var(--vscode-focusBorder)); stroke-width: 2.5; stroke-dasharray: 5 3; }
+  .node.removed .box { stroke: var(--vscode-gitDecoration-deletedResourceForeground, var(--vscode-focusBorder)); stroke-width: 2.5; stroke-dasharray: 2 3; }
+  .node[aria-pressed=true] .box { fill: var(--vscode-list-activeSelectionBackground); }
   .node[aria-pressed=true] text { fill: var(--vscode-list-activeSelectionForeground); }
-  .node[aria-pressed=true] rect, .call[aria-pressed=true] .hit { stroke-dasharray: none; }
+  .call[aria-pressed=true] .hit { stroke-dasharray: none; }
+  /* The focus ring goes around the box, so the box keeps the stroke and dash that mark its status. */
+  .node .ring { fill: none; stroke: none; }
   .node:focus { outline: none; }
-  .node:focus-visible rect, .call:focus-visible .hit { stroke: var(--vscode-focusBorder); stroke-width: 3; }
+  .node:focus-visible .ring { stroke: var(--vscode-focusBorder); stroke-width: 2; }
+  .call:focus-visible .hit { stroke: var(--vscode-focusBorder); stroke-width: 3; }
   .node text, .lane text, .call text { fill: var(--vscode-editor-foreground); font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); }
   .node .name { font-family: var(--vscode-editor-font-family); font-weight: 600; }
   .node .where, .edge-label, .more { fill: var(--vscode-descriptionForeground); font-size: calc(var(--vscode-font-size) * 0.9); }
@@ -249,6 +254,8 @@ function html(): string {
   .details .where, .list .where { font-family: var(--vscode-editor-font-family); color: var(--vscode-descriptionForeground); overflow-wrap: anywhere; }
   .details button { margin-top: 6px; font: inherit; padding: 2px 12px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); border: 1px solid var(--vscode-button-border, var(--vscode-contrastBorder, transparent)); border-radius: 2px; cursor: pointer; }
   .details button:hover { background: var(--vscode-button-hoverBackground); }
+  .details .actions { display: flex; flex-wrap: wrap; gap: 6px 8px; margin-top: 6px; }
+  .details .actions button { margin-top: 0; }
   .list { margin: 0; padding-left: 1.2em; }
   .list li { margin: 6px 0; }
   .list button.sym { font: inherit; font-family: var(--vscode-editor-font-family); background: none; border: none; color: var(--vscode-textLink-foreground); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; padding: 0; }
@@ -318,11 +325,11 @@ function html(): string {
             el("button", { type: "button", "aria-pressed": String(current === value), onclick: () => onPick(value) , text }))));
     const bar = el("div", { class: "toolbar" },
       seg("View", [["map", "Call map"], ["lanes", "Swimlanes"], ["list", "List"]], state.view, (view) => post({ type: "setView", view })));
-    if (state.view !== "lanes") {
+    if (state.offers.hops) {
       bar.append(seg("Show", [[0, "Changed only"], [1, "+1 hop"], [2, "+2 hops"]], state.hops, (hops) => post({ type: "setHops", hops })));
     } else if (state.flow.entries.length > 0) {
       const select = el("select", { id: "entry", "aria-label": "Entry point", onchange: () => post({ type: "setEntry", id: select.value }) },
-        state.flow.entries.map((entry) => el("option", { value: entry.id, selected: entry.id === state.flow.entry, text: entry.name })));
+        state.flow.entries.map((entry) => el("option", { value: entry.id, selected: entry.id === state.flow.entry, text: entry.label })));
       bar.append(el("span", { class: "group" }, el("label", { for: "entry", text: "Calls from" }), select));
     }
     bar.append(el("span", { class: "seg" },
@@ -360,9 +367,18 @@ function html(): string {
       out.push(el("div", { class: "notice" }, state.flow.testsHidden + (state.flow.testsHidden === 1 ? " test symbol hidden." : " test symbols hidden."),
         el("button", { type: "button", onclick: () => post({ type: "setShowTests", show: true }), text: "Show tests" })));
     }
-    if (state.undrawn > 0) {
-      out.push(el("div", { class: "notice" }, state.undrawn + " more symbols are left out to keep the map readable.",
-        el("button", { type: "button", onclick: () => post({ type: "showAll" }), text: "Show all" })));
+    const offers = state.offers;
+    if (offers.undrawn > 0) {
+      out.push(el("div", { class: "notice" }, offers.undrawn + (offers.undrawn === 1 ? " more symbol is" : " more symbols are") + " left out to keep the view readable.",
+        el("button", { type: "button", onclick: () => post({ type: "setShowAll", show: true }), text: "Show all" })));
+    }
+    if (offers.showingAll) {
+      out.push(el("div", { class: "notice" }, "All " + offers.showingAll + " symbols are drawn.",
+        el("button", { type: "button", onclick: () => post({ type: "setShowAll", show: false }), text: "Show fewer" })));
+    }
+    if (offers.tryHop) {
+      out.push(el("div", { class: "notice" }, "No changed symbol calls another. One hop out shows what they call and what calls them.",
+        el("button", { type: "button", onclick: () => post({ type: "setHops", hops: 1 }), text: "+1 hop" })));
     }
     return out;
   }
@@ -392,11 +408,12 @@ function html(): string {
       const { x, y } = at(node);
       const group = svg("g", { class: "node " + node.status, transform: "translate(" + x + " " + y + ")", tabindex: "0", role: "button", "aria-pressed": String(state.selected === node.id), "aria-label": describe(node) + (node.hidden ? ", " + node.hidden + " more neighbours not drawn" : ""), "data-node": node.id, "data-focus": "node:" + node.id },
         svg("title", { text: describe(node) }),
-        svg("rect", { width: NODE_W, height: NODE_H, rx: 3 }),
+        svg("rect", { class: "ring", x: -4, y: -4, width: NODE_W + 8, height: NODE_H + 8, rx: 5 }),
+        svg("rect", { class: "box", width: NODE_W, height: NODE_H, rx: 3 }),
         svg("text", { class: "name", x: 8, y: 19 }, node.name),
         svg("text", { class: "where loc", x: 8, y: 36 }, placeOf(node)));
       if (node.status !== "unchanged") group.append(svg("text", { class: "where status", x: NODE_W - 8, y: 19, "text-anchor": "end" }, statusMark(node)));
-      if (node.hidden) group.append(svg("text", { class: "more", x: NODE_W - 8, y: 36, "text-anchor": "end" }, "+" + node.hidden + " more"));
+      if (node.hidden) group.append(svg("text", { class: "more", x: NODE_W - 8, y: 36, "text-anchor": "end" }, node.hidden + " not drawn"));
       group.addEventListener("click", () => post({ type: "select", id: node.id }));
       group.addEventListener("dblclick", () => post({ type: "openDiff", id: node.id }));
       group.addEventListener("keydown", (event) => nodeKey(event, node, nodes));
@@ -451,7 +468,6 @@ function html(): string {
   function lanes(state) {
     const { lanes: names, calls } = state.flow;
     const known = new Map(state.known.map((n) => [n.id, n]));
-    if (names.length === 0) return el("p", { class: "empty", text: "Nothing is called from here." });
     const LANE_W = 210, ROW_H = 44, TOP = 46;
     const width = PAD * 2 + names.length * LANE_W;
     const height = TOP + calls.length * ROW_H + PAD;
@@ -499,7 +515,6 @@ function html(): string {
     const calleesOf = (id) => state.flow.edges.filter((e) => e.from === id).map((e) => known.get(e.to)).filter(Boolean);
     const link = (node) => el("button", { type: "button", class: "sym", onclick: () => post({ type: "select", id: node.id }), text: node.name });
     const names = (nodes) => nodes.length ? nodes.flatMap((n, i) => (i ? [", ", link(n)] : [link(n)])) : ["none"];
-    if (state.flow.nodes.length === 0) return el("p", { class: "empty", text: "No symbols to list." });
     return el("ul", { class: "list" }, state.flow.nodes.map((node) =>
       el("li", {},
         link(node), el("span", { class: "badge", text: node.status }), " ",
@@ -514,7 +529,17 @@ function html(): string {
     return el("div", { class: "details", id: "details" },
       el("strong", { text: node.name }), el("span", { class: "badge", text: node.status }), " ",
       el("div", { class: "where", text: before(node) + node.path + ":" + node.line }),
-      el("button", { type: "button", onclick: () => post({ type: "openDiff", id: node.id }), text: "Open in diff" }));
+      el("div", { class: "actions" },
+        el("button", { type: "button", onclick: () => post({ type: "openDiff", id: node.id }), text: "Open in diff" }),
+        expandButton(state, node.id)));
+  }
+
+  /** Draws the neighbours the cap left out around a symbol the call map or list shows. */
+  function expandButton(state, id) {
+    const drawn = state.offers.hops && state.flow.nodes.find((n) => n.id === id);
+    if (!drawn || !drawn.hidden) return null;
+    return el("button", { type: "button", "data-focus": "expand", onclick: () => post({ type: "expand", id }),
+      text: "Draw its " + drawn.hidden + (drawn.hidden === 1 ? " other neighbour" : " other neighbours") });
   }
 
   let current;
@@ -532,12 +557,10 @@ function html(): string {
       app.replaceChildren(toolbar(state), ...notices(state));
       if (state.loading) {
         app.append(el("p", { class: "empty", text: "Asking the language servers\\u2026" }));
-      } else if (!state.showTests && state.flow.testsHidden > 0 && state.flow.entries.length === 0) {
-        app.append(el("p", { class: "empty", text: "Every symbol this Change touches is test code, which is hidden." }));
-      } else if (state.flow.nodes.length === 0 && state.flow.entries.length === 0 && state.languages.every((l) => l.outcome === "answered") && !state.problem) {
-        app.append(el("p", { class: "empty", text: "This Change touches no functions or methods Code Flow can draw." }));
-      } else if (state.flow.nodes.length > 0 || state.view === "lanes") {
+      } else if (state.offers.picture) {
         app.append(state.view === "lanes" ? lanes(state) : state.view === "list" ? list(state) : callMap(state));
+      } else if (state.offers.empty) {
+        app.append(el("p", { class: "empty", text: state.offers.empty }));
       }
       if (!state.loading) app.append(details(state));
     });

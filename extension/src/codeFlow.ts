@@ -2,6 +2,7 @@
 // how they are marked. Kept apart from `vscode` so the unit tests can run it
 // under plain Node.
 
+import type { LanguageOutcome } from "./codeFlowGather";
 import { isTestPath } from "./testFiles";
 
 export interface FlowNode {
@@ -138,12 +139,14 @@ export function withinHops(graph: FlowGraph, hops: number): FlowGraph {
 
 /**
  * At most `max` symbols, nearest a changed or new symbol first, though never
- * fewer than the changed and new ones. `hidden` counts, for each symbol shown,
- * the neighbours left out, which the picture offers as "+N more".
+ * fewer than the changed and new ones, and with every neighbour of an
+ * `expanded` symbol that is shown. `hidden` counts, for each symbol shown,
+ * the neighbours left out, which the picture says it doesn't draw.
  */
 export function capNodes(
   graph: FlowGraph,
-  max: number
+  max: number,
+  expanded: ReadonlySet<string> = new Set()
 ): { graph: FlowGraph; hidden: Map<string, number> } {
   const distance = distances(graph, Infinity);
   const nearestFirst = graph.nodes
@@ -154,6 +157,13 @@ export function capNodes(
     nearestFirst.slice(0, Math.max(max, mustShow.length)).map((n) => n.id)
   );
   const neighbours = neighbourIds(graph);
+  for (const id of [...kept]) {
+    if (expanded.has(id)) {
+      for (const other of neighbours.get(id) ?? []) {
+        kept.add(other);
+      }
+    }
+  }
   const hidden = new Map<string, number>();
   for (const node of graph.nodes) {
     if (!kept.has(node.id)) {
@@ -332,6 +342,8 @@ export interface FlowControls {
   entry?: string;
   /** Draw the symbols of test files too. */
   showTests?: boolean;
+  /** Symbols whose every neighbour is drawn, whatever the cap. */
+  expanded?: readonly string[];
 }
 
 export interface ShownNode extends FlowNode {
@@ -345,9 +357,14 @@ export interface ShownNode extends FlowNode {
 export interface ShownFlow {
   nodes: ShownNode[];
   edges: FlowEdge[];
-  entries: { id: string; name: string }[];
+  /** The swimlanes' entry points; `label` adds where one is when another has its name. */
+  entries: { id: string; name: string; label: string }[];
   /** How many test symbols within the hops are left out. */
   testsHidden: number;
+  /** How many symbols within the hops the cap left out. */
+  undrawn: number;
+  /** Whether the cap leaves symbols out, so Show all draws past it. */
+  overCap: boolean;
   entry?: string;
   lanes: string[];
   calls: SwimlaneCall[];
@@ -360,13 +377,25 @@ export function shownFlow(full: FlowGraph, controls: FlowControls): ShownFlow {
     : withinHops(full, controls.hops).nodes.filter((n) => isTestPath(n.path))
         .length;
   const within = withinHops(graph, controls.hops);
+  const limited = capNodes(
+    within,
+    controls.cap ?? NODE_CAP,
+    new Set(controls.expanded)
+  );
   const { graph: capped, hidden } = controls.showAll
     ? { graph: within, hidden: new Map<string, number>() }
-    : capNodes(within, controls.cap ?? NODE_CAP);
+    : limited;
   const placed = layerLayout(capped);
-  const entries = graph.nodes
-    .filter((node) => node.status !== "unchanged")
-    .map(({ id, name }) => ({ id, name }));
+  const changed = graph.nodes.filter((node) => node.status !== "unchanged");
+  const named = (name: string) => changed.filter((n) => n.name === name);
+  const entries = changed.map(({ id, name, path, line, side }) => ({
+    id,
+    name,
+    label:
+      named(name).length > 1
+        ? `${name} · ${side === "base" ? "before: " : ""}${path}:${line}`
+        : name,
+  }));
   const entry =
     entries.find((e) => e.id === controls.entry)?.id ?? entries[0]?.id;
   return {
@@ -378,9 +407,84 @@ export function shownFlow(full: FlowGraph, controls: FlowControls): ShownFlow {
     edges: capped.edges,
     entries,
     testsHidden,
+    undrawn: within.nodes.length - capped.nodes.length,
+    overCap: limited.graph.nodes.length < within.nodes.length,
     entry,
     ...(entry === undefined
       ? { lanes: [], calls: [] }
       : swimlanes(graph, entry)),
   };
+}
+
+/**
+ * What the Code Flow tab offers around its picture, for the view shown: the
+ * controls and notices that act on that view, and what it says in place of a
+ * picture with nothing to draw. The call map and the list draw the symbols
+ * within the hops, under the cap; the swimlanes follow every call from their
+ * entry point, so neither applies to them.
+ */
+export interface FlowOffers {
+  /** The hop control. */
+  hops: boolean;
+  /** How many symbols the cap left out, offered with Show all. */
+  undrawn: number;
+  /** How many symbols Show all draws past the cap, offered with Show fewer. */
+  showingAll?: number;
+  /** Changed only, and no changed symbol calls another: a hop shows their calls. */
+  tryHop: boolean;
+  /** Whether the view has a picture to draw. */
+  picture: boolean;
+  /** What the view says instead of a picture. */
+  empty?: string;
+}
+
+export function flowOffers(input: {
+  view: "map" | "lanes" | "list";
+  flow: ShownFlow;
+  hops: 0 | 1 | 2;
+  showAll: boolean;
+  showTests: boolean;
+  languages: readonly { outcome: LanguageOutcome }[];
+  /** Whether gathering the Code Flow failed. */
+  problem: boolean;
+}): FlowOffers {
+  const { view, flow } = input;
+  const answered = input.languages.every((l) => l.outcome === "answered");
+  const drawsWithinHops = view !== "lanes";
+  const entry = flow.entries.find((e) => e.id === flow.entry);
+  const picture = drawsWithinHops
+    ? flow.nodes.length > 0
+    : flow.calls.length > 0;
+  return {
+    hops: drawsWithinHops,
+    undrawn: drawsWithinHops ? flow.undrawn : 0,
+    ...(drawsWithinHops &&
+      input.showAll &&
+      flow.overCap && { showingAll: flow.nodes.length }),
+    tryHop:
+      drawsWithinHops &&
+      input.hops === 0 &&
+      flow.nodes.length > 0 &&
+      flow.edges.length === 0 &&
+      answered,
+    picture,
+    ...(!picture && { empty: emptyText() }),
+  };
+
+  function emptyText(): string | undefined {
+    if (!input.showTests && flow.testsHidden > 0 && flow.entries.length === 0) {
+      return "Every symbol this Change touches is test code, which is hidden.";
+    }
+    if (flow.nodes.length === 0 && flow.entries.length === 0) {
+      return answered && !input.problem
+        ? "This Change touches no functions or methods Code Flow can draw."
+        : undefined;
+    }
+    if (!drawsWithinHops && entry) {
+      return answered
+        ? `${entry.name} calls nothing.`
+        : `No calls from ${entry.name} are known.`;
+    }
+    return undefined;
+  }
 }

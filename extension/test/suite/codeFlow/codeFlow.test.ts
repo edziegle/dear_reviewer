@@ -243,6 +243,82 @@ describe("Code Flow", () => {
     });
   });
 
+  it("draws what the cap left out around one symbol, or all of it, and goes back to the cap", async () => {
+    const callees = Array.from({ length: 100 }, (_, i) => `callee_${i}`);
+    const { title } = await start({ callees: { helper: callees } });
+    const state = await settled(title);
+    const helper = state.flow.nodes.find((n) => n.name === "helper")!;
+    const sent = async () => (await codeFlowPanel(title))!.sent;
+    assert.deepStrictEqual(
+      [state.flow.nodes.length, helper.hidden, state.offers.undrawn],
+      [80, 21, 21]
+    );
+    const panel = (await codeFlowPanel(title))!;
+    /** The webview drew the state it was sent, notices and details and all. */
+    const drawn = () =>
+      eventually(async () => {
+        const current = (await codeFlowPanel(title))!;
+        assert.deepStrictEqual(current.rendered, current.sent);
+      });
+    // Its details offer to draw the 21 around it.
+    panel.receive({ type: "select", id: helper.id });
+    await drawn();
+
+    panel.receive({ type: "setShowAll", show: true });
+    await eventually(async () =>
+      assert.deepStrictEqual(
+        [(await sent()).offers.showingAll, (await sent()).offers.undrawn],
+        [101, 0]
+      )
+    );
+    await drawn();
+    panel.receive({ type: "setShowAll", show: false });
+    await eventually(async () =>
+      assert.deepStrictEqual(
+        [(await sent()).offers.showingAll, (await sent()).offers.undrawn],
+        [undefined, 21]
+      )
+    );
+
+    panel.receive({ type: "expand", id: helper.id });
+    await eventually(async () => {
+      const { flow, offers } = await sent();
+      assert.strictEqual(flow.nodes.length, 101);
+      assert.strictEqual(offers.undrawn, 0);
+    });
+    await drawn();
+  });
+
+  it("says what is true when no call is drawn: a hop to try, or what the entry calls", async () => {
+    const { title } = await start({ callees: { helper: ["run_main"] } });
+    await settled(title);
+    const panel = (await codeFlowPanel(title))!;
+    panel.receive({ type: "setHops", hops: 0 });
+    await eventually(async () =>
+      assert.strictEqual((await codeFlowPanel(title))!.sent.offers.tryHop, true)
+    );
+    panel.receive({ type: "setHops", hops: 1 });
+    await eventually(async () =>
+      assert.strictEqual(
+        (await codeFlowPanel(title))!.sent.offers.tryHop,
+        false
+      )
+    );
+
+    const { title: quiet } = await start({ callees: {} });
+    await settled(quiet);
+    (await codeFlowPanel(quiet))!.receive({ type: "setView", view: "lanes" });
+    await eventually(async () => {
+      const { offers } = (await codeFlowPanel(quiet))!.sent;
+      assert.deepStrictEqual(
+        [offers.hops, offers.picture, offers.empty],
+        [false, false, "helper calls nothing."]
+      );
+      const current = (await codeFlowPanel(quiet))!;
+      assert.deepStrictEqual(current.rendered, current.sent);
+    });
+  });
+
   it("jumps the diff to a selected symbol", async () => {
     const { title } = await start({ callees: { helper: ["run_main"] } });
     const state = await settled(title);

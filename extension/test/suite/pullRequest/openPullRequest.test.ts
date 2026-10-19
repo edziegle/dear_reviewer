@@ -3,7 +3,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 import {
-  activeDiff,
+  shownDiff,
   changeFiles,
   entryAt,
   markViewed,
@@ -175,7 +175,7 @@ describe("Opening a pull request from the Inbox", () => {
     const tree = await changeFiles();
     await select(entryAt(tree, title, "pkg", "core.py"));
     await eventually(() => {
-      const diff = activeDiff();
+      const diff = shownDiff();
       assert.strictEqual(diff.original.fsPath, path.join(base, "pkg/core.py"));
       assert.strictEqual(diff.modified.fsPath, path.join(head, "pkg/core.py"));
     });

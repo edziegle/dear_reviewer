@@ -1,7 +1,7 @@
 import * as assert from "assert";
 import * as path from "path";
 import * as vscode from "vscode";
-import { activeDiff, changeFiles, entryAt, select } from "../changeFiles";
+import { shownDiff, changeFiles, entryAt, select } from "../changeFiles";
 import { buildPullRequestFixture, pushToPullRequest } from "../fixtures";
 import {
   configure,
@@ -204,7 +204,7 @@ describe("Refreshing a pull request's Change as its remote changes", () => {
     )!;
     await eventually(() =>
       assert.strictEqual(
-        activeDiff().modified.fsPath,
+        shownDiff().modified.fsPath,
         path.join(newFolder.path, "pkg", "core.py"),
         "the file the Reviewer was on is open again, under the new head's folder"
       )

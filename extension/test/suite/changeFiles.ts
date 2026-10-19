@@ -169,6 +169,22 @@ export function activeDiff(): { original: vscode.Uri; modified: vscode.Uri } {
   return { original: input.original, modified: input.modified };
 }
 
+/**
+ * The diff in front of any editor group. VS Code can hand the focus back to the
+ * overview a moment after a diff opens, so wait for this rather than for the
+ * active tab when all you need is the file being shown. The code column is
+ * whichever the overview isn't in, so no column is named here.
+ */
+export function shownDiff(): { original: vscode.Uri; modified: vscode.Uri } {
+  const inputs = vscode.window.tabGroups.all.map(
+    (group) => group.activeTab?.input
+  );
+  const input = inputs.find((i) => i instanceof vscode.TabInputTextDiff);
+  if (!(input instanceof vscode.TabInputTextDiff))
+    throw new Error(`no group shows a diff: ${JSON.stringify(inputs)}`);
+  return { original: input.original, modified: input.modified };
+}
+
 /** The file the active tab shows in a plain editor, rather than a diff. */
 export function activeText(): vscode.Uri {
   const input = vscode.window.tabGroups.activeTabGroup.activeTab?.input;

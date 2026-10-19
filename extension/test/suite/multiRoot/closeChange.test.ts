@@ -12,7 +12,7 @@ import {
   worktreesOf,
 } from "../reviewer";
 
-describe("Close Change", () => {
+describe("Stop Reviewing", () => {
   it("removes that Change's worktrees and workspace folders", async () => {
     const repo = buildFixtureRepo("close");
     const request = {

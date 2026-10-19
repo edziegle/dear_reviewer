@@ -538,7 +538,7 @@ function html(cspSource: string): string {
       setText(byId("place"), next.place || "");
       byId("place").title = next.place || "";
       setText(byId("next"), next.label);
-      byId("next").title = next.kind === "open" ? "Open it as a Change in the review window" : next.kind === "resume" ? "Show its overview in the review window" : next.kind === "close" ? "Nothing needs changing, so close this Change" : (next.label.startsWith("Write") ? "Write a Brief of your Comments for an agent, in the review window" : "Submit your Review from its overview, in the review window");
+      byId("next").title = next.kind === "open" ? "Open it as a Change in the review window" : next.kind === "resume" ? "Show its overview in the review window" : next.kind === "close" ? "Nothing needs changing, so stop reviewing this Change. Nothing changes on GitHub." : (next.label.startsWith("Write") ? "Write a Brief of your Comments for an agent, in the review window" : "Submit your Review from its overview, in the review window");
     }
     section("inProgress", state.inProgress, "inProgressCount");
     list("changes", state.inProgress, change);

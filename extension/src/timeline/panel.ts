@@ -1063,7 +1063,7 @@ ${catSymbol}
       const mark = el("span", "mark", "✓");
       mark.setAttribute("aria-hidden", "true");
       text.append(mark, "Nothing to brief. You found nothing to change.");
-      actions.append(button("primary", "Close Change", { type: "closeChange" }, "Close this Change and its worktrees; closes this window too if it was the last Change", "closeChange"));
+      actions.append(button("primary", "Stop Reviewing", { type: "closeChange" }, "Stop reviewing this Change: its worktrees and folders go, and this window closes if it was the last Change. Nothing changes on GitHub.", "closeChange"));
     } else if (kind === "ended") {
       const review = state.review;
       const done = state.submitted;
@@ -1072,7 +1072,9 @@ ${catSymbol}
       const mark = el("span", "mark", reviewMarks[verdict] || "✓");
       mark.setAttribute("aria-hidden", "true");
       text.append(mark, done ? done.text.replace(/\.$/, "") : review ? review.text : "Your Review is submitted");
-      actions.append(button("primary", "Close Change", { type: "closeChange" }, "Close this Change and its worktrees; closes this window too if it was the last Change", "closeChange"));
+      actions.append(button("primary", "Back to Dashboard", { type: "closeChange" }, "Back to the Dashboard: this Change's worktrees and folders go, and this window closes if it was the last Change. Nothing changes on GitHub.", "closeChange"));
+      // The Review so far may not be the last word: approve after requesting changes.
+      if (!isLocal(state)) actions.append(button("secondary", "Submit Another Review…", { type: "finish" }, "Open the Submit step on this head, for a new verdict", "submitAnother"));
       if (done && done.url) actions.append(button("secondary", "View on GitHub", { type: "openLink", url: done.url }, "Open your Review on GitHub", "viewSubmitted"));
       if (brief && brief.canShow) actions.append(button("secondary", "Show Brief", { type: "showBrief" }, "Open the Brief in the editor"));
     } else if (kind === "problem") {

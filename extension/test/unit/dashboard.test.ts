@@ -198,7 +198,7 @@ describe("The Dashboard's next step", () => {
         [],
         now
       ),
-      { kind: "close", id: "api-7", label: "Close fix-retry" }
+      { kind: "close", id: "api-7", label: "Stop Reviewing fix-retry" }
     );
   });
 

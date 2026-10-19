@@ -32,6 +32,10 @@ _Avoid_: Diff (that's the rendering), Change Set, Review Target, PR (only one so
 The one Change the review window holds, from opening it until the Reviewer stops reviewing it, opens another, or its pull request or branch is over. Change Files, Findings, the Assistant and the review keys follow it. It stays active while the review window is closed, and the Dashboard shows it.
 _Avoid_: Change in front, open Change, Change in progress
 
+**Stop Reviewing**:
+Removing a Change from Dear Reviewer: its worktrees and folders go, and the review window closes if it was the last Change. Nothing changes on GitHub, and the pull request stays under Reviewed by you in the Dashboard. After a submitted Review or a copied Brief, the result block calls it Back to Dashboard.
+_Avoid_: Close Change (it suggests closing the pull request on GitHub)
+
 **Reading Order**:
 The order the Assistant suggests for reading a Change's files, in a few labeled steps, starting where its summary says to start. A suggestion the Reviewer can follow or set aside for tree order.
 _Avoid_: File order, review plan, story

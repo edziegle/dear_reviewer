@@ -50,7 +50,7 @@
       },
       {
         "command": "dearReviewer.closeChange",
-        "title": "Close Change",
+        "title": "Stop Reviewing",
         "category": "Dear Reviewer",
         "icon": "$(close)"
       },

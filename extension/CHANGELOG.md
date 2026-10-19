@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.5.0](https://github.com/edziegle/dear_reviewer/compare/v0.4.0...v0.5.0) (2026-10-19)
+
+
+### Features
+
+* **assistant:** give the Assistant a plain tone in Simplified Technical English ([0d5a441](https://github.com/edziegle/dear_reviewer/commit/0d5a441e9cfdc4a789c61a3b4afd0a492c0f96e4))
+* **code-flow:** hide test code unless the Reviewer shows it ([#118](https://github.com/edziegle/dear_reviewer/issues/118)) ([f8e077e](https://github.com/edziegle/dear_reviewer/commit/f8e077e94ce9556b5ab981ebbc89fb478707df8d))
+* **dashboard:** reload the Inbox when another window closes a Change ([#94](https://github.com/edziegle/dear_reviewer/issues/94)) ([7ec2ea0](https://github.com/edziegle/dear_reviewer/commit/7ec2ea00d613d5775027dcd4938d4aaebe5e3b8d)), closes [#79](https://github.com/edziegle/dear_reviewer/issues/79)
+* **review-window:** hold one Active Change, in the review window ([#111](https://github.com/edziegle/dear_reviewer/issues/111)) ([72b2329](https://github.com/edziegle/dear_reviewer/commit/72b2329812876166ccfec9effd818a53fe4022cf))
+
+
+### Bug Fixes
+
+* **assistant:** keep the Assistant's view in every window and offer Open Assistant when empty ([#110](https://github.com/edziegle/dear_reviewer/issues/110)) ([eaa1c1c](https://github.com/edziegle/dear_reviewer/commit/eaa1c1c6e113ab8be725efa4924e4720025cd76a))
+* **code-flow:** fit a call map symbol's name beside its status label ([#123](https://github.com/edziegle/dear_reviewer/issues/123)) ([2f9c3e8](https://github.com/edziegle/dear_reviewer/commit/2f9c3e86a9e182b4da64f31e6558f6c00723acaf)), closes [#91](https://github.com/edziegle/dear_reviewer/issues/91)
+* **code-flow:** keep the canvas scrolled where it was when the Reviewer selects a symbol ([#129](https://github.com/edziegle/dear_reviewer/issues/129)) ([0a50854](https://github.com/edziegle/dear_reviewer/commit/0a50854dd6bef86ef18ec172529e3401c85a858b))
+* **code-flow:** mark a Swimlanes call with its status and location ([#130](https://github.com/edziegle/dear_reviewer/issues/130)) ([befc71b](https://github.com/edziegle/dear_reviewer/commit/befc71b680f46d5b32a807cd8442e6f8fdb3a846))
+* **code-flow:** tell a language server with no call hierarchy from one that timed out ([#125](https://github.com/edziegle/dear_reviewer/issues/125)) ([c32f40a](https://github.com/edziegle/dear_reviewer/commit/c32f40a09866c3cf26f4966b36421f2c01bddd8f)), closes [#90](https://github.com/edziegle/dear_reviewer/issues/90)
+* **refresh:** keep a Change's place when a swap brings its new head ([#103](https://github.com/edziegle/dear_reviewer/issues/103)) ([20a9e68](https://github.com/edziegle/dear_reviewer/commit/20a9e685230485912292878090adb7b157f2cbd7)), closes [#101](https://github.com/edziegle/dear_reviewer/issues/101)
+* **refresh:** reopen the file beside the overview, wherever the focus is ([#131](https://github.com/edziegle/dear_reviewer/issues/131)) ([55ff76c](https://github.com/edziegle/dear_reviewer/commit/55ff76c0ede25c9e26ba7f4383eedc32a47d3790))
+* **review-window:** close the review window when the Reviewer closes its last Change ([#99](https://github.com/edziegle/dear_reviewer/issues/99)) ([a1ca6e1](https://github.com/edziegle/dear_reviewer/commit/a1ca6e14d66356de8e33c7a34d3c7023c74d288c)), closes [#77](https://github.com/edziegle/dear_reviewer/issues/77)
+
 ## [0.4.0](https://github.com/edziegle/dear_reviewer/compare/v0.3.0...v0.4.0) (2026-10-17)
 
 

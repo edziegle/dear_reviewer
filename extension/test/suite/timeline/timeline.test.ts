@@ -916,7 +916,33 @@ describe("A pull request's timeline", () => {
     await approveInSubmitStep(before);
   });
 
-  it("closes with the Change, from the Close Change that ends its Review", async () => {
+  it("submits another Review on the same head from the result block", async () => {
+    const before = await submittedReviews();
+    await clickOverview(title, "finish");
+    await approveInSubmitStep(before);
+    await eventually(async () =>
+      assert.ok((await sentTimeline(title)).submitted, "the result shows")
+    );
+
+    // The result block's Submit Another Review… sends what Submit Review does.
+    await clickOverview(title, "finish");
+    await eventually(async () =>
+      assert.ok((await sentTimeline(title)).submit, "the Submit step is open")
+    );
+    await submitInOverview(title, "requestChanges", "On second thought.");
+
+    await eventually(async () => {
+      assert.strictEqual(await submittedReviews(), before + 2);
+      const timeline = await sentTimeline(title);
+      assert.strictEqual(timeline.submit, undefined);
+      assert.strictEqual(
+        timeline.submitted?.text,
+        "Requested changes on acme/api #21."
+      );
+    }, 20_000);
+  });
+
+  it("stops reviewing the Change, from the button that ends its Review", async () => {
     await clickOverview(title, "closeChange");
 
     await eventually(() =>

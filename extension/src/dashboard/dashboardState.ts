@@ -113,9 +113,13 @@ export function nextStep(
     const viewedAll =
       change.viewed !== undefined && change.viewed >= change.total;
     // A local Change with every file viewed and no Comments has no Brief to
-    // write: nothing needs changing, so closing it is the next step.
+    // write: nothing needs changing, so stopping is the next step.
     if (viewedAll && change.finish === "brief" && change.pending === 0)
-      return { kind: "close", id: change.id, label: `Close ${change.name}` };
+      return {
+        kind: "close",
+        id: change.id,
+        label: `Stop Reviewing ${change.name}`,
+      };
     if (viewedAll)
       return {
         kind: "finish",

@@ -3,9 +3,11 @@ status: accepted
 date: 2026-10-16
 ---
 
-# End every Review on a result in its overview, with Close Change as the next step
+# End every Review on a result in its overview, with one filled next step
 
 Amends [ADR 0033](0033-end-a-review-in-its-overview.md), [ADR 0018](0018-finish-a-review-from-the-change.md) and [ADR 0016](0016-local-comments-and-briefs.md).
+
+Amended by issue #76: Close Change is now Back to Dashboard in the result block of a submitted Review or a copied Brief, and Stop Reviewing everywhere else. Both say in their tooltip that nothing changes on GitHub. A pull request's block also offers Submit Another Review…, secondary, which opens the Submit step on the same head.
 
 ## Context and Problem Statement
 
@@ -22,10 +24,10 @@ A third design critique (2026-10-16) found that the end of a Review is the quiet
 Chosen option: a result block for both, because the Review then ends in one place and one way, on the page where it began, and the Brief stays a file the Reviewer reads and edits in the editor, which a webview can't offer (ADR 0012). A step for Write Brief would rebuild a Markdown editor into the overview.
 
 - **The result block.** Under the header, in place of the muted standing line, a block says what happened in the body size and `foreground`, with a mark: `✓ You approved at 14:32 · 3 Comments published` for a pull request, `✓ You copied a Brief at 14:32 · 3 Comments` for a local Change. Below it are its buttons. Exactly one is filled, under the Next Step Rule.
-- **Pull request.** View on GitHub, secondary, and Close Change, filled.
+- **Pull request.** Back to Dashboard, filled, Submit Another Review… and View on GitHub, secondary.
 - **Local Change, while the Brief is written.** The block reads `A Brief of 3 Comments is open in the editor. Read and edit it, then copy it for your agent.` Copy Brief is filled and Show Brief is secondary. Copying it, here or from the editor's title bar, ends the Review.
-- **Local Change, once the Brief is copied.** The block says so, with Close Change filled and Show Brief secondary.
-- **Nothing to brief.** A local Change with every file viewed and no Comments has no Brief to write, since the Assistant found nothing to change either. Its block says `Nothing to brief. You found nothing to change.` with Close Change filled, and Write Brief… is offered only once a Comment exists. The Dashboard's next step is Close for such a Change.
+- **Local Change, once the Brief is copied.** The block says so, with Back to Dashboard filled and Show Brief secondary.
+- **Nothing to brief.** A local Change with every file viewed and no Comments has no Brief to write, since the Assistant found nothing to change either. Its block says `Nothing to brief. You found nothing to change.` with Stop Reviewing filled, and Write Brief… is offered only once a Comment exists. The Dashboard's next step is Stop Reviewing for such a Change.
 - **Writing.** While the Assistant writes the Brief, the overview shows its working line and progress bar, and a failure says why in the block, with Write Brief… to try again. The progress and result toasts are gone.
 - **What steps back.** While the result block shows, Start at, Next unviewed file and the highlighting prompt hide, and the header's finishing button hides, since there is nothing left to finish. The facts line and checks stay as reference, and the Assistant's take and Reading Order fold behind one link, so the page no longer reads as the start of a Review. A 2px rule in the result's state color marks the block, which is the one rule in the overview that isn't the Assistant's. New commits since the Review clear the block, and the Review begins again.
 - **After the last file.** Stepping past the last unviewed file no longer shows a toast. It brings the overview forward, with the focus on the filled Submit Review… or Write Brief… button, which is the next step.

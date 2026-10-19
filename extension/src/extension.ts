@@ -1272,7 +1272,7 @@ export function activate(context: vscode.ExtensionContext) {
             activeChange() ??
             (await pickChange(
               changes.list(),
-              "Close Change",
+              "Stop Reviewing",
               "No Change is open."
             ));
           request = change && requestOf(change);
@@ -1456,7 +1456,7 @@ export function activate(context: vscode.ExtensionContext) {
           return;
         }
         // A Change fully viewed with no Comments has nothing to brief: its
-        // overview says so, with Close Change as the next step.
+        // overview says so, with Stop Reviewing as the next step.
         if (review.pendingCount(change) === 0) {
           const { viewed, total } = await changeFiles.viewedCount(change);
           if (total > 0 && viewed >= total) {

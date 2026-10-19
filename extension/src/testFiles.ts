@@ -13,6 +13,15 @@ const TEST_FILE_NAMES: readonly RegExp[] = [
   /^.+\.(test|spec)\.[^.]+$/,
   // Go
   /^.+_test\.go$/,
+  // Java, Kotlin, Scala, C#, PHP and Swift: FooTest.java, FooTests.kt, TestFoo.java
+  /^.+Tests?\.(java|kt|kts|scala|cs|php|swift)$/,
+  /^Test[A-Z].*\.(java|kt|kts|scala)$/,
+  // Ruby
+  /^.+_(test|spec)\.rb$/,
+  // C and C++
+  /^.+_test\.(c|cc|cpp|cxx)$/,
+  // Terraform and OpenTofu
+  /^.+\.tftest\.(hcl|json)$/,
 ];
 
 /** Whether the file, by its path from the repository root, is test code. */

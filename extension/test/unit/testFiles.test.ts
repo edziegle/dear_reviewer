@@ -29,6 +29,24 @@ describe("Test files", () => {
     assert.strictEqual(isTestPath("pay/pay_test.go"), true);
   });
 
+  it("knows the conventions of Java, Kotlin, Rust, Terraform and other languages", () => {
+    for (const path of [
+      "src/main/java/PayTest.java",
+      "src/PayTests.kt",
+      "src/TestPay.java",
+      "Pay.Tests/PayTests.cs",
+      "spec/pay_spec.rb",
+      "lib/pay_test.rb",
+      "src/pay_test.cc",
+      "modules/vpc/vpc.tftest.hcl",
+      "modules/vpc/main.tftest.json",
+      "src/test/java/com/acme/Pay.java",
+      "crates/pay/tests/integration.rs",
+    ]) {
+      assert.strictEqual(isTestPath(path), true, path);
+    }
+  });
+
   it("counts everything under a test or tests directory", () => {
     for (const path of [
       "test/helpers.rb",
@@ -51,6 +69,11 @@ describe("Test files", () => {
       "src/test.ts",
       "src/protest/pay.go",
       "pay_testing.go",
+      "src/Contest.java",
+      "src/Attest.kt",
+      "src/Testimony.java",
+      "src/Protest.cs",
+      "modules/vpc/main.tf",
     ]) {
       assert.strictEqual(isTestPath(path), false, path);
     }

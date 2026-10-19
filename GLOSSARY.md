@@ -37,7 +37,7 @@ The order the Assistant suggests for reading a Change's files, in a few labeled 
 _Avoid_: File order, review plan, story
 
 **Code Flow**:
-A picture of how the code a Change touches calls and is called by the code around it, drawn from the language server's call hierarchy: the changed symbols and their neighbours a hop or two out, each marked changed, new, removed (a function of a deleted file, drawn as the base worktree had it) or unchanged. Shown as a call map, as a trace down swimlanes, or as a list for a screen reader. Symbols of test files are left out unless the Reviewer shows them, and the view says how many it left out. Where no language server answers, there is no Code Flow, and the view says so.
+A picture of how the code a Change touches calls and is called by the code around it, drawn from the language server's call hierarchy: the changed symbols and their neighbours a hop or two out, each marked changed, new, removed (a function of a deleted file, drawn as the base worktree had it) or unchanged. Shown as a call map, as a trace down swimlanes, or as a list for a screen reader. Symbols of test files are left out unless the Reviewer shows them, and the view says how many it left out. Where no language server answers, there is no Code Flow, and the view says so; where the server knows the symbols but gives no calls, because it has no call hierarchy, the view says that instead of drawing calls, and where it timed out it offers Try again.
 _Avoid_: Diagram, call graph (that's the whole codebase; a Code Flow is scoped to a Change), data flow (a Code Flow shows calls, not where a value ends up)
 
 **Inbox**:

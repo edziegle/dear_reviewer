@@ -286,6 +286,9 @@ function html(): string {
         out.push(el("div", { class: "notice" },
           "No language server for " + language + ", so its calls can't be drawn.",
           el("button", { type: "button", onclick: () => post({ type: "findExtensions", language }), text: "Search extensions for " + language })));
+      } else if (outcome === "noCalls") {
+        out.push(el("div", { class: "notice" },
+          "The language server for " + language + " gave no calls, and may not support call hierarchies. Install a language server for " + language + " that does." + (language === "python" ? " Pyright-based servers support them; Jedi, the one VS Code falls back to, does not." : "")));
       } else if (outcome === "silent") {
         out.push(el("div", { class: "notice" },
           "The language server for " + language + " did not answer.",

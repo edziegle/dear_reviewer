@@ -1,6 +1,7 @@
 import * as assert from "assert";
 import {
   capNodes,
+  flowOffers,
   shownFlow,
   fileChangeFromDiff,
   layerLayout,
@@ -12,6 +13,7 @@ import {
   type FlowGraph,
   type FlowNode,
 } from "../../src/codeFlow";
+import type { LanguageOutcome } from "../../src/codeFlowGather";
 
 function node(id: string, status: FlowNode["status"]): FlowNode {
   return { id, name: id, path: `src/${id}.py`, line: 1, status };
@@ -337,6 +339,74 @@ describe("Code Flow as the panel shows it", () => {
     );
   });
 
+  it("tells entry points of one name apart by where they are", () => {
+    const twins: FlowGraph = {
+      nodes: [
+        {
+          ...node("s1", "changed"),
+          name: "save",
+          path: "pkg/store.py",
+          line: 12,
+        },
+        {
+          ...node("s2", "changed"),
+          name: "save",
+          path: "pkg/cache.py",
+          line: 3,
+        },
+        {
+          ...node("s3", "removed"),
+          name: "save",
+          path: "old.py",
+          line: 7,
+          side: "base",
+        },
+        { ...node("load", "changed"), name: "load" },
+      ],
+      edges: [],
+    };
+    assert.deepStrictEqual(
+      shownFlow(twins, controls).entries.map((e) => e.label),
+      [
+        "save · pkg/store.py:12",
+        "save · pkg/cache.py:3",
+        "save · before: old.py:7",
+        "load",
+      ]
+    );
+  });
+
+  const hub: FlowGraph = {
+    nodes: [
+      node("hub", "changed"),
+      node("side", "changed"),
+      ...[1, 2, 3].map((i) => node(`n${i}`, "unchanged")),
+    ],
+    edges: [1, 2, 3].map((i) => ({ from: "hub", to: `n${i}` })),
+  };
+
+  it("counts the symbols within the hops the cap left out, none once all are drawn", () => {
+    const capped = shownFlow(hub, { ...controls, cap: 3 });
+    assert.deepStrictEqual([capped.undrawn, capped.overCap], [2, true]);
+    const all = shownFlow(hub, { ...controls, cap: 3, showAll: true });
+    assert.deepStrictEqual([all.undrawn, all.overCap], [0, true]);
+    const fits = shownFlow(hub, controls);
+    assert.deepStrictEqual([fits.undrawn, fits.overCap], [0, false]);
+  });
+
+  it("draws every neighbour of a symbol the Reviewer expanded, past the cap", () => {
+    const shown = shownFlow(hub, { ...controls, cap: 3, expanded: ["hub"] });
+    assert.deepStrictEqual(shown.nodes.map((n) => n.id).sort(), [
+      "hub",
+      "n1",
+      "n2",
+      "n3",
+      "side",
+    ]);
+    assert.strictEqual(shown.nodes.find((n) => n.id === "hub")!.hidden, 0);
+    assert.strictEqual(shown.undrawn, 0);
+  });
+
   it("has no entry point when nothing changed", () => {
     const quiet: FlowGraph = { nodes: [node("a", "unchanged")], edges: [] };
     const shown = shownFlow(quiet, controls);
@@ -452,5 +522,105 @@ describe("Code Flow with test code hidden", () => {
       withoutTests(graph).nodes.map((n) => n.id),
       ["prod", "shared", "only_via_test", "helper"]
     );
+  });
+});
+
+describe("What the Code Flow tab offers around its picture", () => {
+  const answered = [{ outcome: "answered" as const }];
+  const offered = (
+    graph: FlowGraph,
+    view: "map" | "lanes" | "list",
+    controls: Partial<Parameters<typeof shownFlow>[1]> = {},
+    languages: { outcome: LanguageOutcome }[] = answered
+  ) => {
+    const all = { hops: 1 as const, showAll: false, ...controls };
+    return flowOffers({
+      view,
+      flow: shownFlow(graph, all),
+      hops: all.hops,
+      showAll: all.showAll,
+      showTests: false,
+      languages,
+      problem: false,
+    });
+  };
+  const hub: FlowGraph = {
+    nodes: [
+      node("hub", "changed"),
+      ...[1, 2, 3].map((i) => node(`n${i}`, "unchanged")),
+    ],
+    edges: [1, 2, 3].map((i) => ({ from: "hub", to: `n${i}` })),
+  };
+
+  it("offers the hops and the cap's notice in the call map and the list, which draw within them, not in the swimlanes", () => {
+    for (const view of ["map", "list"] as const) {
+      const offers = offered(hub, view, { cap: 2 });
+      assert.deepStrictEqual([offers.hops, offers.undrawn], [true, 2], view);
+    }
+    const lanes = offered(hub, "lanes", { cap: 2 });
+    assert.deepStrictEqual([lanes.hops, lanes.undrawn], [false, 0]);
+  });
+
+  it("offers a way back once Show all drew past the cap, and none when everything fits", () => {
+    assert.strictEqual(
+      offered(hub, "map", { cap: 2, showAll: true }).showingAll,
+      4
+    );
+    assert.strictEqual(
+      offered(hub, "lanes", { cap: 2, showAll: true }).showingAll,
+      undefined
+    );
+    assert.strictEqual(
+      offered(hub, "map", { showAll: true }).showingAll,
+      undefined
+    );
+  });
+
+  it("suggests a hop when no changed symbol calls another at zero hops", () => {
+    assert.strictEqual(offered(hub, "map", { hops: 0 }).tryHop, true);
+    assert.strictEqual(offered(hub, "list", { hops: 0 }).tryHop, true);
+    assert.strictEqual(offered(hub, "map", { hops: 1 }).tryHop, false);
+    const pair: FlowGraph = {
+      nodes: [node("a", "changed"), node("b", "changed")],
+      edges: [{ from: "a", to: "b" }],
+    };
+    assert.strictEqual(offered(pair, "map", { hops: 0 }).tryHop, false);
+    assert.strictEqual(
+      offered(hub, "map", { hops: 0 }, [{ outcome: "noCalls" }]).tryHop,
+      false,
+      "no hop brings calls a server doesn't give"
+    );
+  });
+
+  it("draws the swimlanes of the entry's calls, and says so when it calls nothing", () => {
+    assert.deepStrictEqual(
+      [offered(hub, "lanes").picture, offered(hub, "lanes").empty],
+      [true, undefined]
+    );
+    const lone: FlowGraph = { nodes: [node("save", "changed")], edges: [] };
+    assert.deepStrictEqual(
+      [offered(lone, "lanes").picture, offered(lone, "lanes").empty],
+      [false, "save calls nothing."]
+    );
+    assert.strictEqual(
+      offered(lone, "lanes", {}, [{ outcome: "noCalls" }]).empty,
+      "No calls from save are known."
+    );
+  });
+
+  it("says nothing of calls in the swimlanes when there is no entry to follow, as when no language server answered", () => {
+    const none: FlowGraph = { nodes: [], edges: [] };
+    const offers = offered(none, "lanes", {}, [{ outcome: "none" }]);
+    assert.deepStrictEqual([offers.picture, offers.empty], [false, undefined]);
+  });
+
+  it("says when the Change touches nothing Code Flow can draw, in every view", () => {
+    const none: FlowGraph = { nodes: [], edges: [] };
+    for (const view of ["map", "lanes", "list"] as const)
+      assert.strictEqual(
+        offered(none, view).empty,
+        "This Change touches no functions or methods Code Flow can draw.",
+        view
+      );
   });
 });

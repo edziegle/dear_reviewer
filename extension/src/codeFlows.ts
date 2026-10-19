@@ -11,12 +11,7 @@ import {
   fileSides,
   type Change,
 } from "./changeWorkspace";
-import {
-  shownFlow,
-  withinHops,
-  withoutTests,
-  type FlowGraph,
-} from "./codeFlow";
+import { flowOffers, shownFlow } from "./codeFlow";
 import { gatherFlow, type GatheredFlow } from "./codeFlowGather";
 import {
   CodeFlowPanel,
@@ -35,9 +30,8 @@ const NO_GRAPH: GatheredFlow = {
   languages: [],
 };
 
-interface Flow {
-  change: Change;
-  panel: CodeFlowPanel;
+/** What the Code Flow tab shows, and how the Reviewer set it. */
+interface FlowSettings {
   gathered: GatheredFlow;
   loading: boolean;
   problem?: string;
@@ -46,11 +40,28 @@ interface Flow {
   showAll: boolean;
   /** Whether the symbols of test files are drawn. */
   showTests: boolean;
+  /** Symbols whose every neighbour the Reviewer asked to draw. */
+  expanded: Set<string>;
   entry?: string;
   selected?: string;
+}
+
+interface Flow extends FlowSettings {
+  change: Change;
+  panel: CodeFlowPanel;
   /** Counts the gatherings, so one that a retry overtook doesn't show. */
   run: number;
 }
+
+/** A new tab, before its first gathering; each takes its own `expanded`. */
+const STARTING: Omit<FlowSettings, "expanded"> = {
+  gathered: NO_GRAPH,
+  loading: true,
+  hops: 1,
+  view: "map",
+  showAll: false,
+  showTests: false,
+};
 
 export class CodeFlows implements vscode.Disposable {
   private readonly byChange = new Map<string, Flow>();
@@ -88,15 +99,11 @@ export class CodeFlows implements vscode.Disposable {
         : vscode.ViewColumn.One;
     const flow: Flow = {
       change,
-      gathered: NO_GRAPH,
-      loading: true,
-      hops: 1,
-      view: "map",
-      showAll: false,
-      showTests: false,
+      ...STARTING,
+      expanded: new Set(),
       run: 0,
       panel: new CodeFlowPanel(
-        this.stateOf(undefined),
+        this.stateOf({ ...STARTING, expanded: new Set() }),
         `Code Flow · ${changeName(change)}`,
         column,
         (action) => void this.act(flow, action)
@@ -167,8 +174,11 @@ export class CodeFlows implements vscode.Disposable {
       case "setEntry":
         flow.entry = action.id;
         break;
-      case "showAll":
-        flow.showAll = true;
+      case "setShowAll":
+        flow.showAll = action.show;
+        break;
+      case "expand":
+        flow.expanded.add(action.id);
         break;
       case "setShowTests":
         flow.showTests = action.show;
@@ -246,36 +256,30 @@ export class CodeFlows implements vscode.Disposable {
     flow.panel.update(this.stateOf(flow));
   }
 
-  private stateOf(flow: Flow | undefined): CodeFlowState {
-    if (!flow) {
-      return {
-        loading: true,
-        hops: 1,
-        view: "map",
-        showTests: false,
-        flow: shownFlow(NO_GRAPH.graph, { hops: 1, showAll: false }),
-        known: [],
-        undrawn: 0,
-        languages: [],
-      };
-    }
-    const graph: FlowGraph = flow.gathered.graph;
-    const shown = shownFlow(graph, {
+  private stateOf(flow: FlowSettings): CodeFlowState {
+    const shown = shownFlow(flow.gathered.graph, {
       hops: flow.hops,
       showAll: flow.showAll,
       showTests: flow.showTests,
+      expanded: [...flow.expanded],
       entry: flow.entry,
     });
-    const drawable = flow.showTests ? graph : withoutTests(graph);
     return {
       loading: flow.loading,
       hops: flow.hops,
       view: flow.view,
       showTests: flow.showTests,
       flow: shown,
-      known: graph.nodes,
-      undrawn:
-        withinHops(drawable, flow.hops).nodes.length - shown.nodes.length,
+      offers: flowOffers({
+        view: flow.view,
+        flow: shown,
+        hops: flow.hops,
+        showAll: flow.showAll,
+        showTests: flow.showTests,
+        languages: flow.gathered.languages,
+        problem: flow.problem !== undefined,
+      }),
+      known: flow.gathered.graph.nodes,
       selected: flow.selected,
       languages: flow.gathered.languages,
       ...(flow.problem === undefined ? {} : { problem: flow.problem }),

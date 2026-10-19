@@ -31,8 +31,10 @@ export interface CodeFlowState {
   flow: {
     nodes: ShownNode[];
     edges: { from: string; to: string; label?: string }[];
-    entries: { id: string; name: string }[];
+    entries: { id: string; name: string; label: string }[];
     testsHidden: number;
+    undrawn: number;
+    overCap: boolean;
     entry?: string;
     lanes: string[];
     calls: {
@@ -43,6 +45,14 @@ export interface CodeFlowState {
       toLane: number;
     }[];
   };
+  offers: {
+    hops: boolean;
+    undrawn: number;
+    showingAll?: number;
+    tryHop: boolean;
+    picture: boolean;
+    empty?: string;
+  };
   known: {
     id: string;
     name: string;
@@ -51,7 +61,6 @@ export interface CodeFlowState {
     status: string;
     side?: "base";
   }[];
-  undrawn: number;
   selected?: string;
   languages: {
     language: string;
@@ -72,7 +81,8 @@ export type FromCodeFlow =
   | { type: "select"; id: string }
   | { type: "openDiff"; id: string }
   | { type: "setEntry"; id: string }
-  | { type: "showAll" }
+  | { type: "expand"; id: string }
+  | { type: "setShowAll"; show: boolean }
   | { type: "setShowTests"; show: boolean }
   | { type: "retry" }
   | { type: "findExtensions"; language: string };

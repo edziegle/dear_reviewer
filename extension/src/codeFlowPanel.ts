@@ -279,6 +279,9 @@ function html(): string {
   .neighbours button.sym, .list button.sym, .walkthrough button.sym { font: inherit; font-family: var(--vscode-editor-font-family); background: none; border: none; color: var(--vscode-textLink-foreground); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; padding: 0; }
   .badge { font-size: 0.85em; margin-left: 6px; padding: 0 6px; border-radius: 8px; color: var(--vscode-badge-foreground); background: var(--vscode-badge-background); }
   .empty { color: var(--vscode-descriptionForeground); margin: 14px 0; }
+  /* Ink that runs once along a call, from caller to callee; hidden unless it is running. */
+  .trace { fill: none; stroke: var(--vscode-editor-foreground); stroke-width: 2; stroke-linecap: round; stroke-dasharray: 1 1; opacity: 0; pointer-events: none; }
+  .ghost { pointer-events: none; }
 </style>
 </head>
 <body>
@@ -453,7 +456,7 @@ function html(): string {
       const a = at(from), b = at(to);
       const x1 = a.x + NODE_W, y1 = a.y + NODE_H / 2, x2 = b.x, y2 = b.y + NODE_H / 2;
       const bend = Math.max(30, Math.abs(x2 - x1) / 2);
-      const group = svg("g", {},
+      const group = svg("g", { "data-from": edge.from, "data-to": edge.to },
         svg("path", { class: "edge", d: "M" + x1 + " " + y1 + " C" + (x1 + bend) + " " + y1 + " " + (x2 - bend) + " " + y2 + " " + x2 + " " + y2, "marker-end": "url(#arrow)" }));
       if (edgeText(edge)) group.append(svg("text", { class: "edge-label", x: (x1 + x2) / 2, y: (y1 + y2) / 2 - 4, "text-anchor": "middle" }, svg("title", { text: edgeTitle(edge) }), clip(edgeText(edge), 22)));
       drawing.append(group);
@@ -649,6 +652,153 @@ function html(): string {
       text: "Draw its " + drawn.hidden + (drawn.hidden === 1 ? " other neighbour" : " other neighbours") });
   }
 
+  /*
+   * Motion says what changed and which way the calls run. When the map draws
+   * other symbols, those it keeps glide to their new places, new ones fade in
+   * where they land, column by column on a first draw, the calls follow them,
+   * and the ones it drops fade out where they were. Selecting a symbol runs ink
+   * along its calls, from it to each callee; a new trace in the swimlanes runs
+   * down the rows, in the order the calls are made. With reduced motion, from
+   * the system or the editor, things only fade: nothing moves or runs.
+   */
+  const EASE_OUT = "cubic-bezier(0.16, 1, 0.3, 1)";
+  const GLIDE = 320, ENTER = 220, EXIT = 140, FADE = 150, TRACE = 640;
+  const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches || document.body.classList.contains("vscode-reduce-motion");
+  /** The animations playing, which the next render stops, and a key, or a test's message, finishes. */
+  const running = new Set();
+  function play(element, keyframes, options, done) {
+    const animation = element.animate(keyframes, options);
+    running.add(animation);
+    const end = () => { running.delete(animation); if (done) done(); };
+    animation.onfinish = end;
+    animation.oncancel = end;
+    return animation;
+  }
+  const settle = () => [...running].forEach((animation) => animation.finish());
+  const stop = () => [...running].forEach((animation) => animation.cancel());
+  const translate = (at) => ({ transform: "translate(" + at.x + "px, " + at.y + "px)" });
+  /** Where a symbol of the map is drawn now, partway through a glide included. */
+  function placeOn(group) {
+    const style = getComputedStyle(group).transform;
+    const matrix = style && style !== "none" ? new DOMMatrixReadOnly(style) : group.transform.baseVal.consolidate()?.matrix;
+    return matrix ? { x: matrix.e, y: matrix.f } : { x: 0, y: 0 };
+  }
+  const edgeKey = (group) => group.getAttribute("data-from") + "\\n" + group.getAttribute("data-to");
+  const traceKey = (state) => state.flow.calls.map((call) => call.from + "\\n" + call.to).join("\\n\\n");
+  /** Takes a dropped symbol or call out of reach of the keyboard, the screen reader and the pointer. */
+  function ghost(group) {
+    for (const name of group.getAttributeNames()) if (name !== "class" && name !== "transform") group.removeAttribute(name);
+    group.classList.add("ghost");
+    group.setAttribute("aria-hidden", "true");
+    return group;
+  }
+
+  /** What the picture showed, taken before a render replaces it. */
+  function snapshot() {
+    const nodes = new Map(), edges = new Map();
+    for (const group of app.querySelectorAll(".canvas .node[data-node]")) nodes.set(group.getAttribute("data-node"), { group, at: placeOn(group) });
+    for (const group of app.querySelectorAll(".canvas [data-from]")) edges.set(edgeKey(group), group);
+    const row = app.querySelector(".call[aria-selected=true]");
+    return {
+      selected: current && current.selected,
+      nodes, edges,
+      trace: current && !current.loading && current.view === "lanes" ? traceKey(current) : null,
+      row: row && row.getAttribute("data-focus"),
+    };
+  }
+
+  /** Runs ink once along a call, from caller to callee. */
+  function trace(drawing, edge, delay) {
+    const d = edge.tagName === "line"
+      ? "M" + edge.getAttribute("x1") + " " + edge.getAttribute("y1") + " L" + edge.getAttribute("x2") + " " + edge.getAttribute("y2")
+      : edge.getAttribute("d");
+    const run = svg("path", { class: "trace", d, pathLength: "1", "aria-hidden": "true" });
+    drawing.append(run);
+    return play(run, [
+      { opacity: 1, strokeDashoffset: "1", easing: "cubic-bezier(0.3, 0, 0.2, 1)" },
+      { opacity: 1, strokeDashoffset: "0", offset: 0.6 },
+      { opacity: 0, strokeDashoffset: "0" },
+    ], { duration: TRACE, delay, fill: "backwards" }, () => run.remove());
+  }
+
+  function mapMotion(before, state, drawing, reduced) {
+    const played = [];
+    const fade = (group, delay) => played.push(play(group, [{ opacity: 0 }, { opacity: 1 }], { duration: reduced ? FADE : ENTER, delay: reduced ? 0 : delay, easing: "ease-out", fill: "backwards" }));
+    const groups = [...drawing.querySelectorAll(".node[data-node]")];
+    const idOf = (group) => group.getAttribute("data-node");
+    // When each symbol that moved or arrived is in place, for the calls that join it.
+    const ready = new Map();
+    for (const group of groups) {
+      const was = before.nodes.get(idOf(group));
+      const at = placeOn(group);
+      if (!was || (was.at.x === at.x && was.at.y === at.y)) continue;
+      ready.set(idOf(group), reduced ? 0 : GLIDE * 0.6);
+      if (!reduced) played.push(play(group, [translate(was.at), translate(at)], { duration: GLIDE, easing: EASE_OUT }));
+    }
+    const firstDraw = before.nodes.size === 0;
+    const enterAfter = ready.size > 0 ? GLIDE * 0.4 : 0;
+    const columns = new Map(state.flow.nodes.map((node) => [node.id, node.column]));
+    for (const group of groups) {
+      if (before.nodes.has(idOf(group))) continue;
+      const delay = enterAfter + (firstDraw ? Math.min((columns.get(idOf(group)) || 0) * 60, 240) : 0);
+      ready.set(idOf(group), reduced ? 0 : delay + ENTER / 2);
+      fade(group, delay);
+    }
+    // When each call is drawn in full, for the ink to run along it.
+    const drawn = new Map();
+    const edges = [...drawing.querySelectorAll("[data-from]")];
+    for (const group of edges) {
+      const ends = [group.getAttribute("data-from"), group.getAttribute("data-to")];
+      if (before.edges.has(edgeKey(group)) && !ends.some((id) => ready.has(id))) continue;
+      const delay = Math.max(0, ...ends.map((id) => ready.get(id) || 0));
+      drawn.set(edgeKey(group), reduced ? 0 : delay + ENTER);
+      fade(group, delay);
+    }
+    if (!firstDraw) {
+      const kept = new Set(groups.map(idOf)), keptEdges = new Set(edges.map(edgeKey));
+      const leaving = [
+        ...[...before.edges].filter(([key]) => !keptEdges.has(key)).map(([, group]) => group),
+        ...[...before.nodes].filter(([id]) => !kept.has(id)).map(([, { group, at }]) => { group.setAttribute("transform", "translate(" + at.x + " " + at.y + ")"); return group; }),
+      ];
+      const under = drawing.querySelector("defs");
+      for (const group of leaving.reverse()) {
+        under.after(ghost(group));
+        played.push(play(group, [{ opacity: 1 }, { opacity: 0 }], { duration: reduced ? FADE : EXIT, easing: "ease-in", fill: "forwards" }, () => group.remove()));
+      }
+    }
+    if (!reduced && state.selected && state.selected !== before.selected) {
+      for (const group of drawing.querySelectorAll('[data-from="' + CSS.escape(state.selected) + '"]'))
+        played.push(trace(drawing, group.querySelector(".edge"), drawn.get(edgeKey(group)) || 0));
+    }
+    return played;
+  }
+
+  function laneMotion(before, state, drawing, reduced) {
+    const rows = [...drawing.querySelectorAll(".call")];
+    if (traceKey(state) !== before.trace) {
+      if (reduced) return [play(drawing, [{ opacity: 0 }, { opacity: 1 }], { duration: FADE, easing: "ease-out" })];
+      const step = Math.min(45, 360 / Math.max(rows.length, 1));
+      return rows.map((row, i) => trace(drawing, row.querySelector(".edge"), i * step));
+    }
+    const row = drawing.querySelector(".call[aria-selected=true]");
+    if (reduced || !row || row.getAttribute("data-focus") === before.row) return [];
+    return [trace(drawing, row.querySelector(".edge"), 0)];
+  }
+
+  /** Plays what changed since the snapshot; settles once it has played. */
+  function motion(before, state) {
+    const drawing = app.querySelector(".canvas svg");
+    if (!drawing || state.loading || document.visibilityState !== "visible") return Promise.resolve();
+    const reduced = reducedMotion();
+    const played = state.view === "map" ? mapMotion(before, state, drawing, reduced)
+      : state.view === "lanes" ? laneMotion(before, state, drawing, reduced)
+      : [];
+    return Promise.all(played.map((animation) => animation.finished.catch(() => {})));
+  }
+  // A key acts on where things end up, and a hidden page draws no frames to finish on.
+  app.addEventListener("keydown", settle, true);
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState !== "visible") settle(); });
+
   let current;
   /** The symbol, and the call row, that hold the one tab stop into the picture. */
   let rovingNode, rovingCall;
@@ -725,21 +875,27 @@ function html(): string {
   window.addEventListener("message", (event) => {
     const message = event.data;
     if (message.type === "scrollCanvas") {
+      settle();
       const canvas = app.querySelector(".canvas");
       if (canvas) { canvas.scrollLeft = message.left; canvas.scrollTop = message.top; }
       reportLayout();
       return;
     }
     if (message.type === "focusNode") {
+      settle();
       const node = document.querySelector('[data-node="' + CSS.escape(message.id) + '"]');
       if (node) node.focus();
       reportLayout();
       return;
     }
     if (message.type !== "state") return;
+    const before = snapshot();
+    stop();
     render(message.state);
+    // The layout is where things end up, so it is reported before they move;
+    // the state counts as rendered once they have.
     reportLayout();
-    post({ type: "rendered", revision: message.revision });
+    motion(before, message.state).then(() => post({ type: "rendered", revision: message.revision }));
   });
   post({ type: "ready" });
 </script>

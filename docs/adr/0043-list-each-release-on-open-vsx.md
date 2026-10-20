@@ -5,6 +5,8 @@ date: 2026-10-19
 
 # List each release on Open VSX, from a job that holds only the Open VSX credential
 
+Amended by [ADR 0044](0044-list-each-release-on-the-vs-code-marketplace.md): each release is listed on the VS Code Marketplace too, by a job of its own beside this one.
+
 ## Context and Problem Statement
 
 A release ends as an attested `dear-reviewer.vsix` on a GitHub Release (ADR 0041), and installing it means downloading the file by hand. VSCodium, the editor the README names first and the integration tests run in, installs from the Open VSX registry. VS Code installs from the VS Code Marketplace, a separate registry with its own account, token and tool. Should a release also go to a registry, and how does the credential that lists it stay out of reach of everything else the release runs?

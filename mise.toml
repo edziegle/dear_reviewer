@@ -233,3 +233,32 @@ run = "npm ci --ignore-scripts"
 description = "List the packaged .vsix on Open VSX"
 dir = "extension"
 run = "../tools/ovsx/node_modules/.bin/ovsx publish dist/dear-reviewer.vsix --skip-duplicate"
+
+# vsce has a package of its own, like ovsx, so the job that can log in to the
+# VS Code Marketplace installs it alone, with no install scripts
+# (docs/adr/0044-list-each-release-on-the-vs-code-marketplace.md).
+[tasks.deps-vsce]
+description = "Install vsce alone, for releasing to the VS Code Marketplace"
+dir = "tools/vsce"
+run = "npm ci --ignore-scripts"
+
+# The ID the Marketplace knows the job's Azure login by, which the publisher's
+# owner adds as a Contributor. 499b84ac-… is Azure DevOps, which the Marketplace
+# is part of.
+[tasks.marketplace-member-id]
+description = "Print the Marketplace member ID of the Azure login"
+run = """
+az rest -u https://app.vssps.visualstudio.com/_apis/profile/profiles/me \
+  --resource 499b84ac-1321-427f-aa17-267ca6975798 --query id -o tsv
+"""
+
+# vsce gets its token from the Azure CLI, which azure/login signed in with the
+# job's OIDC token. A version the Marketplace already has is skipped, so a
+# re-run after a success does nothing. It runs the vsce in tools/vsce, not npx.
+[tasks.list-vs-marketplace]
+description = "List the packaged .vsix on the VS Code Marketplace"
+dir = "extension"
+run = """
+../tools/vsce/node_modules/.bin/vsce publish --packagePath dist/dear-reviewer.vsix \
+  --azure-credential --skip-duplicate
+"""

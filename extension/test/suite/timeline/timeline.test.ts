@@ -29,10 +29,12 @@ import {
 import { comment, commentingLines, submitReview } from "../review";
 import {
   activeTabLabel,
+  catchErrors,
   closeChange,
   eventually,
   foldersAddedSince,
   openChange,
+  releaseErrors,
   short,
   workspaceFolders,
 } from "../reviewer";
@@ -503,6 +505,17 @@ describe("A pull request's timeline", () => {
     }
   });
 
+  it("opens the pull request on GitHub from the palette's View on GitHub", async () => {
+    const opened = await catchLinks();
+    try {
+      await vscode.commands.executeCommand("dearReviewer.viewOnGitHub", change);
+
+      assert.deepStrictEqual(opened, ["https://github.com/acme/api/pull/21"]);
+    } finally {
+      await releaseLinks();
+    }
+  });
+
   it("reloads from GitHub when the Reviewer refreshes it", async () => {
     const later = structuredClone(fakePullRequest);
     later.timeline!.push({
@@ -756,6 +769,30 @@ describe("A pull request's timeline", () => {
     );
   });
 
+  it("offers View on GitHub in the palette and on a pull request's row in Change Files, and not on a local Change's", () => {
+    const menus = vscode.extensions.getExtension("edziegle.dear-reviewer")!
+      .packageJSON.contributes.menus as Record<
+      string,
+      { command: string; when?: string; group?: string }[]
+    >;
+    const entries = (menu: string) =>
+      menus[menu]
+        .filter((m) => m.command === "dearReviewer.viewOnGitHub")
+        .map((m) => [m.when, m.group]);
+    assert.deepStrictEqual(entries("commandPalette"), [
+      [
+        "dearReviewer.hasOpenChange && dearReviewer.frontIsPullRequest",
+        undefined,
+      ],
+    ]);
+    assert.deepStrictEqual(entries("view/item/context"), [
+      [
+        "view == dearReviewer.changeFiles && viewItem =~ /^change\\.pullRequest/",
+        "8_github@1",
+      ],
+    ]);
+  });
+
   it("shows the overview of the Change in front from Change Files' title bar", async () => {
     await inFrontOfOtherChange();
     const tab = timelineTab(other.title);
@@ -959,6 +996,30 @@ describe("A pull request's timeline", () => {
         assert.strictEqual((await sentTimeline(localTitle)).pending, 0)
       );
     } finally {
+      await closeChange(local);
+    }
+  });
+
+  it("has no page on GitHub to view for a local Change", async () => {
+    const local = { repository: pr.clone, base: pr.base, head: pr.head };
+    const localTitle = `${path.basename(pr.clone)} ${short(pr.base)}..${short(pr.head)}`;
+    await openChange(local);
+    const opened = await catchLinks();
+    const errors = await catchErrors();
+    try {
+      await vscode.commands.executeCommand("dearReviewer.viewOnGitHub", local);
+
+      await eventually(async () =>
+        assert.strictEqual((await sentTimeline(localTitle)).url, undefined)
+      );
+      assert.deepStrictEqual(opened, []);
+      assert.deepStrictEqual(
+        errors.map((e) => e.message),
+        ["Only a pull request's Change has a page on GitHub."]
+      );
+    } finally {
+      await releaseErrors();
+      await releaseLinks();
       await closeChange(local);
     }
   });

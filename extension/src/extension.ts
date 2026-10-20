@@ -1406,6 +1406,32 @@ export function activate(context: vscode.ExtensionContext) {
       }
     ),
     vscode.commands.registerCommand(
+      "dearReviewer.viewOnGitHub",
+      async (target?: ChangeTarget) => {
+        const change = await changeFor(
+          target,
+          "View on GitHub",
+          (c) => !!c.pullRequest,
+          "No pull request's Change is in front in this window. A local Change has no page on GitHub."
+        );
+        if (!change) return;
+        if (!change.pullRequest) {
+          void reportProblem(
+            "Only a pull request's Change has a page on GitHub."
+          );
+          return;
+        }
+        const url = timelines.pullRequestUrl(change);
+        if (!url || !/^https?:\/\//i.test(url)) {
+          void reportProblem(
+            `${changeName(change)} hasn't loaded from GitHub yet. Try again once its overview has.`
+          );
+          return;
+        }
+        await openLink(vscode.Uri.parse(url, true));
+      }
+    ),
+    vscode.commands.registerCommand(
       "dearReviewer.discardReview",
       async (target?: ChangeTarget, confirmed?: unknown) => {
         const change = await changeFor(target, "Discard Pending Comments");

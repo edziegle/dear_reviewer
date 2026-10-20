@@ -558,6 +558,7 @@ ${catSymbol}
   <div class="heading"><h1 id="title"></h1><div class="muted" id="byline"></div></div>
   <div class="actions">
     <button class="icon" id="refresh" title="Load the overview again" aria-label="Refresh"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" clip-rule="evenodd" d="M4.681 3H2V2h3.5l.5.5V6H5V4a5 5 0 1 0 4.53-.761l.302-.954A6 6 0 1 1 4.681 3z"/></svg></button>
+    <button class="secondary" id="viewOnGitHub" hidden>View on GitHub</button>
     <button class="secondary" id="finish"></button>
   </div>
 </header>
@@ -664,6 +665,9 @@ ${catSymbol}
   };
   for (const type of ["refresh", "nextFile", "ask"])
     byId(type).addEventListener("click", () => vscode.postMessage({ type }));
+  byId("viewOnGitHub").addEventListener("click", () => {
+    if (lastState && lastState.url) vscode.postMessage({ type: "openLink", url: lastState.url });
+  });
   byId("finish").addEventListener("click", () => {
     if (lastState && notReady(lastState)) return;
     vscode.postMessage({ type: "finish" });
@@ -981,6 +985,17 @@ ${catSymbol}
   // in and the finishing button step back.
   const showing = (state) => resultOf(state) !== undefined;
   const stepsBack = (state) => ["writing", "written", "ended", "clean"].includes(resultOf(state));
+  // The page of the Review just submitted, which the result block links to.
+  const submittedUrl = (state) => resultOf(state) === "ended" && state.submitted ? state.submitted.url : undefined;
+  // The way to the pull request on GitHub, for a pull request once it has
+  // loaded. It steps back while the result block has a View on GitHub of its
+  // own, so the page never has two buttons with the name.
+  function viewOnGitHub(state) {
+    const button = byId("viewOnGitHub");
+    button.hidden = !state.url || !!submittedUrl(state);
+    button.setAttribute("aria-label", "View on GitHub: " + state.title);
+    button.title = "Open the pull request on GitHub";
+  }
   const countOfComments = (n) => n === 1 ? "1 Comment" : n + " Comments";
 
   // Once the Reviewer is brought here to finish, the focus goes to the
@@ -1075,7 +1090,8 @@ ${catSymbol}
       actions.append(button("primary", "Back to Dashboard", { type: "closeChange" }, "Back to the Dashboard: this Change's worktrees and folders go, and this window closes if it was the last Change. Nothing changes on GitHub.", "closeChange"));
       // The Review so far may not be the last word: approve after requesting changes.
       if (!isLocal(state)) actions.append(button("secondary", "Submit Another Review…", { type: "finish" }, "Open the Submit step on this head, for a new verdict", "submitAnother"));
-      if (done && done.url) actions.append(button("secondary", "View on GitHub", { type: "openLink", url: done.url }, "Open your Review on GitHub", "viewSubmitted"));
+      const reviewUrl = submittedUrl(state);
+      if (reviewUrl) actions.append(button("secondary", "View on GitHub", { type: "openLink", url: reviewUrl }, "Open your Review on GitHub", "viewSubmitted"));
       if (brief && brief.canShow) actions.append(button("secondary", "Show Brief", { type: "showBrief" }, "Open the Brief in the editor"));
     } else if (kind === "problem") {
       const mark = el("span", "mark", "✗");
@@ -1346,6 +1362,7 @@ ${catSymbol}
     ways(state);
     submitted(state);
     result(state);
+    viewOnGitHub(state);
     collapse(state);
     submitStep(state);
     finishFocus(state);

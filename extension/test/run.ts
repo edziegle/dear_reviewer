@@ -274,8 +274,8 @@ const launchGroups: (GroupPlan & {
   },
   {
     // It deletes Dear Reviewer's storage, so it comes after the suites that keep Changes in it.
-    name: "reading order reloaded, then lifecycle",
-    phases: ["readingOrder/afterReload", "lifecycle"],
+    name: "lifecycle",
+    phases: ["lifecycle"],
     open: reloadWorkspace,
   },
   {

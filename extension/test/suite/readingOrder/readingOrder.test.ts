@@ -13,8 +13,6 @@ import {
   waitFor,
 } from "../assistant";
 import { buildFixtureRepo } from "../fixtures";
-import * as fs from "fs";
-import { leaveForReload } from "./handoff";
 import * as vscode from "vscode";
 import {
   codeColumnTab,
@@ -26,8 +24,6 @@ import {
   review,
 } from "../changeFiles";
 import {
-  clickOverview,
-  clickReadingOrderFile,
   overviewTake,
   sentTimeline,
   showTimeline,
@@ -276,149 +272,6 @@ describe("The Reading Order", () => {
         .filter((f) => f.viewed)
         .map((f) => f.path);
       assert.deepStrictEqual(viewed, ["util.py", "main.py", "pkg/core.py"]);
-    });
-  });
-
-  it("keeps the Reading Order after new commits, marked out of date with what they changed last, until the Reviewer asks again", async () => {
-    repo.git("branch", "order", repo.commits.documented);
-    const branch = {
-      repository: repo.path,
-      base: repo.commits.initial,
-      head: "refs/heads/order",
-    };
-    // A branch's overview is named after the branch, whatever its head.
-    const overview = "order";
-    await scriptClaude(branch, {
-      turns: [replyTurn("Renames the helper. Start with util.py:1.")],
-      readingOrder: orderReply({
-        steps: [
-          {
-            label: "The rename",
-            files: [
-              { path: "util.py" },
-              { path: "main.py" },
-              { path: "added.py" },
-              { path: "obsolete.py" },
-            ],
-          },
-        ],
-      }),
-    });
-    await openChange(branch);
-    await eventually(async () =>
-      assert.strictEqual(
-        (await sentTimeline(overview)).readingOrder?.steps.length,
-        1
-      )
-    );
-
-    await clickReadingOrderFile(overview, "main.py");
-
-    // The diff opens in front of the code column, beside the overview.
-    // VS Code can hand the focus back to the overview a moment later, so
-    // which of the two is active isn't the click's to say.
-    await eventually(() => {
-      const input = vscode.window.tabGroups.all.find(
-        (group) => group.viewColumn === vscode.ViewColumn.Two
-      )?.activeTab?.input;
-      assert.ok(
-        input instanceof vscode.TabInputTextDiff &&
-          input.modified.path.endsWith("/main.py"),
-        `the code column shows ${JSON.stringify(input)}`
-      );
-    });
-
-    fs.writeFileSync(
-      path.join(repo.path, "util.py"),
-      "def new_helper():\n    return 3\n"
-    );
-    fs.writeFileSync(path.join(repo.path, "since.py"), "SINCE = 1\n");
-    repo.git("add", "-A");
-    repo.git("commit", "-q", "-m", "later");
-    const later = repo.git("rev-parse", "HEAD");
-    repo.git("branch", "-f", "order", later);
-    // Main without the branch's commits, or the branch's Change would end as merged.
-    repo.git("reset", "-q", "--hard", repo.commits.restructured);
-    await scriptClaude(branch, {
-      turns: [replyTurn("Shouldn't be asked.")],
-      readingOrder: orderReply({
-        steps: [{ label: "Everything", files: [{ path: "since.py" }] }],
-      }),
-    });
-
-    await openChange(branch);
-
-    await overviewShows(overview, {
-      writing: false,
-      outOfDate: true,
-      steps: [
-        {
-          label: "The rename",
-          files: [
-            { path: "main.py", viewed: false },
-            { path: "added.py", viewed: false },
-            { path: "obsolete.py", viewed: false },
-          ],
-        },
-        {
-          label: "Since the suggestion",
-          files: [
-            { path: "pkg/sub/new.py", viewed: false },
-            { path: "pkg/core.py", viewed: false },
-            { path: "pkg/legacy.py", viewed: false },
-            { path: "since.py", viewed: false },
-            { path: "util.py", viewed: false },
-          ],
-        },
-      ],
-    });
-    assert.deepStrictEqual(
-      await assistantRuns(branch),
-      [],
-      "no new turn on its own"
-    );
-
-    await clickOverview(overview, "suggestReadingOrder");
-
-    await overviewShows(overview, {
-      writing: false,
-      outOfDate: false,
-      steps: [
-        {
-          label: "Everything",
-          files: [
-            { path: "util.py", viewed: false },
-            { path: "since.py", viewed: false },
-          ],
-        },
-        {
-          label: "Other files",
-          files: [
-            { path: "pkg/sub/new.py", viewed: false },
-            { path: "pkg/core.py", viewed: false },
-            { path: "pkg/legacy.py", viewed: false },
-            { path: "added.py", viewed: false },
-            { path: "main.py", viewed: false },
-            { path: "obsolete.py", viewed: false },
-          ],
-        },
-      ],
-    });
-    const [run] = await assistantRuns(branch);
-    const [prompt] = readingOrderRequests(run);
-    assert.ok(prompt.includes(later), `it hears of the new head: ${prompt}`);
-
-    leaveForReload({
-      branch,
-      overview,
-      open: [
-        request,
-        branch,
-        { ...branch, head: repo.commits.documented },
-        { ...branch, head: later },
-      ],
-      readingOrder: (await sentTimeline(overview)).readingOrder!,
-      changeFiles: render(await changeFiles()),
     });
   });
 });

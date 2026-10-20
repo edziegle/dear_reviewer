@@ -46,7 +46,7 @@ Real navigation on both sides of every diff, for pull requests and local Changes
 ## Evidence on Hand
 
 - The spec (GitHub issue #1), ADRs in `docs/adr/`, and research in `docs/research/`.
-- The base-nav spike (`spikes/base-nav/`) showed go to definition resolving inside each side's own worktree.
+- The base-nav spike (removed from the tree, still in git history) showed go to definition resolving inside each side's own worktree.
 - No users, testimonials, metrics or screenshots exist yet. Do not invent them.
 
 ## Product Principles

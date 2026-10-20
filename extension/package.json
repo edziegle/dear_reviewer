@@ -411,6 +411,11 @@
           "markdownDescription": "The GitHub API base URL. For GitHub Enterprise Server, use `https://<host>/api/v3`.",
           "scope": "application"
         },
+        "dearReviewer.visitSkimOnlyFiles": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Let **Next Unviewed File** and **Previous Unviewed File** stop at skim-only files: lock files, files the base commit marks `linguist-generated`, and renames with no edits. Off, they skip these files until nothing else is left to view."
+        },
         "dearReviewer.claudePath": {
           "type": "string",
           "default": "",

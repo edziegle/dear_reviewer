@@ -23,6 +23,7 @@ Chosen option: with the summary, in steps, in the overview and as a sort mode. A
 - Dear Reviewer trusts nothing in the reply. It keeps only paths that are among the Change's changed files, drops duplicates, caps labels and reasons at a short length, and adds any changed file the Assistant left out in a last step, in tree order. A reply without a usable order leaves the Change in tree order, with no error in the Reviewer's way.
 - The overview lists the Reading Order under the Assistant's take: each step's label, then its files, each linking to its diff with its reason, and viewed files checked off.
 - Change Files gains a sort mode, Reading Order or Tree, switched from its title bar. Reading Order lists a Change's steps with their files flat beneath them. Next unviewed file and Previous unviewed file follow whichever mode is showing. Tree stays the default until a Reading Order exists.
+- ADR 0045 amends this: the first step is the core of the change, with at most five files, and the files Dear Reviewer finds skim-only go in a last step the Assistant does not place.
 - The Reviewer can't reorder the files by hand. Switching to Tree is how they set the order aside.
 - A Reading Order belongs to the head it was written for. After new commits it stays, marked out of date, and files changed since go in a last step, "Since the suggestion". The Assistant writes a new one only when the Reviewer asks.
 

@@ -66,6 +66,7 @@ import {
   type ReadingOrderState,
 } from "../readingOrder";
 import { openReference } from "../references";
+import { skimOnlyOf } from "../skimOnly";
 
 /** Gives the head commit the Reviewer's last Review of the Change covered, if any. */
 export type LastReview = (change: Change) => Promise<string | undefined>;
@@ -906,13 +907,19 @@ class ChangeAssistant {
    */
   private async writeReadingOrder(): Promise<void> {
     const change = this.change;
-    const files = inTreeOrder(change, await changedFiles(change)).map(
-      (f) => f.path
-    );
+    const changed = inTreeOrder(change, await changedFiles(change));
+    const skimOnly = await skimOnlyOf(change, changed);
+    const files = changed.map((f) => f.path);
+    const orderable = files.filter((file) => !skimOnly.has(file));
     const start = findReferences(this.summary ?? "").find((ref) =>
-      files.includes(ref.path)
+      orderable.includes(ref.path)
     )?.path;
-    const prompt = readingOrderPrompt(files, start, this.note);
+    const prompt = readingOrderPrompt(
+      orderable,
+      start,
+      this.note,
+      files.filter((file) => skimOnly.has(file))
+    );
     this.note = undefined;
     this.orderProblem = false;
     this.setWritingOrder(true);
@@ -927,7 +934,9 @@ class ChangeAssistant {
     }
     if (this.disposed) return;
     const steps =
-      reply === undefined ? undefined : parseReadingOrder(reply, files, start);
+      reply === undefined
+        ? undefined
+        : parseReadingOrder(reply, files, start, new Set(skimOnly.keys()));
     if (!steps) {
       // A reply stopped on purpose, with nothing back, isn't a problem.
       if (reply !== undefined && !this.orderProblem) {

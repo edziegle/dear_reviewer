@@ -37,8 +37,12 @@ Removing a Change from Dear Reviewer: its worktrees and folders go, and the revi
 _Avoid_: Close Change (it suggests closing the pull request on GitHub)
 
 **Reading Order**:
-The order the Assistant suggests for reading a Change's files, in a few labeled steps, starting where its summary says to start. A suggestion the Reviewer can follow or set aside for tree order.
+The order the Assistant suggests for reading a Change's files, in a few labeled steps, starting where its summary says to start. Its first step is the core of the change: the few files, at most five, that carry the Change's intent. The skim-only files come last, apart from the Assistant's steps. A suggestion the Reviewer can follow or set aside for tree order.
 _Avoid_: File order, review plan, story
+
+**Skim-only file**:
+A changed file that Dear Reviewer itself judges needs no close reading: a lock file, a file the base marks as generated, or a rename with no edits. The Assistant can't make a file skim-only.
+_Avoid_: Ignored file, hidden file, trivial file
 
 **Code Flow**:
 A picture of how the code a Change touches calls and is called by the code around it, drawn from the language server's call hierarchy: the changed symbols and their neighbours a hop or two out, each marked changed, new, removed (a function of a deleted file, drawn as the base worktree had it) or unchanged. Shown as a call map, as a trace down swimlanes, or as a list for a screen reader. Symbols of test files are left out unless the Reviewer shows them, and the view says how many it left out. Where no language server answers, there is no Code Flow, and the view says so; where the server knows the symbols but gives no calls, because it has no call hierarchy, the view says that instead of drawing calls, and where it timed out it offers Try again.

@@ -33,6 +33,8 @@ import {
   type ReadingStep,
   type ShownReadingOrder,
 } from "./readingOrder";
+import { skimOnlyOf, skimReasonText, type SkimReason } from "./skimOnly";
+import { unviewedAfter } from "./stepping";
 import { ViewedFiles } from "./viewedFiles";
 import { viewedProgress } from "./viewedProgress";
 import { fileTree, type FileTreeNode } from "./fileTree";
@@ -64,6 +66,10 @@ export type ChangeFilesNode =
       /** Counted from 0. */
       index: number;
       label: string;
+      /** Whether it is the core of the change. */
+      core?: boolean;
+      /** Whether it holds the skim-only files, which it starts collapsed. */
+      skimOnly?: boolean;
       files: ChangedFile[];
       children: ChangeFilesNode[];
     }
@@ -76,6 +82,8 @@ export type ChangeFilesNode =
       why?: string;
       /** Whether it is listed flat in a step, rather than in its directory. */
       inStep?: boolean;
+      /** Why the file is skim-only (ADR 0045), if it is. */
+      skim?: SkimReason;
     }
   | {
       kind: "problem";
@@ -85,6 +93,9 @@ export type ChangeFilesNode =
     };
 
 const fileScheme = "dear-reviewer-file";
+
+/** Marks the URI of a skim-only file, which the view mutes. */
+const skimFragment = "skim";
 
 const statuses: Record<
   FileStatus,
@@ -201,12 +212,10 @@ export class ChangeFilesView
       return state?.writing || state?.problem
         ? { ...state, writing: state.writing, outOfDate: false, steps: [] }
         : undefined;
+    const files = await this.filesOf(change);
+    const skim = await skimOnlyOf(change, files);
     const [{ steps, outOfDate }, viewed] = await Promise.all([
-      stepsAt(
-        change,
-        state.order,
-        inTreeOrder(change, await this.filesOf(change))
-      ),
+      stepsAt(change, state.order, inTreeOrder(change, files), skim),
       this.viewedFiles.viewed(change),
     ]);
     return {
@@ -215,10 +224,16 @@ export class ChangeFilesView
       outOfDate,
       steps: steps.map((step) => ({
         label: step.label,
-        files: step.files.map((file) => ({
-          ...file,
-          viewed: viewed.has(file.path),
-        })),
+        ...(step.core && { core: true as const }),
+        ...(step.skimOnly && { skimOnly: true as const }),
+        files: step.files.map((file) => {
+          const reason = skim.get(file.path);
+          return {
+            ...file,
+            viewed: viewed.has(file.path),
+            ...(reason && { skim: skimReasonText[reason] }),
+          };
+        }),
       })),
     };
   }
@@ -267,7 +282,9 @@ export class ChangeFilesView
   /**
    * The Change's next file not yet viewed after this one, or the one before
    * it, in the view's order, going round at the end. From no file, the first
-   * or last. Gives the file and how many the Change has.
+   * or last. Skim-only files are passed over unless the Reviewer's setting
+   * says to visit them, or only they are left. Gives the file and how many
+   * the Change has.
    */
   async unviewedFile(
     change: Change,
@@ -275,26 +292,24 @@ export class ChangeFilesView
     direction: 1 | -1
   ): Promise<{ file?: ChangedFile; total: number }> {
     const all = await this.filesOf(change);
-    const steps = await this.stepsOf(change, all);
+    const skim = await skimOnlyOf(change, all);
+    const steps = await this.stepsOf(change, all, skim);
     const files = steps
       ? filesInSteps(all, steps).flatMap((s) =>
           s.files.map(({ why: _, ...file }) => file)
         )
       : inTreeOrder(change, all);
-    const viewed = await this.viewedFiles.viewed(change);
-    const start = from ? files.findIndex((f) => f.path === from) : -1;
-    for (let step = 1; step <= files.length; step++) {
-      const i =
-        start === -1
-          ? direction === 1
-            ? step - 1
-            : files.length - step
-          : (start + direction * step + files.length * step) % files.length;
-      const file = files[i];
-      if (file.path !== from && !viewed.has(file.path))
-        return { file, total: files.length };
-    }
-    return { total: files.length };
+    return {
+      file: unviewedAfter({
+        files,
+        viewed: await this.viewedFiles.viewed(change),
+        skimOnly: new Set(skim.keys()),
+        from,
+        direction,
+        visitSkimOnly: visitsSkimOnly(),
+      }),
+      total: files.length,
+    };
   }
 
   /** The Change's last Review, if one ended, and whether new commits came since. */
@@ -422,9 +437,12 @@ export class ChangeFilesView
       case "step": {
         const item = new vscode.TreeItem(
           `${node.index + 1}. ${node.label}`,
-          vscode.TreeItemCollapsibleState.Expanded
+          node.skimOnly
+            ? vscode.TreeItemCollapsibleState.Collapsed
+            : vscode.TreeItemCollapsibleState.Expanded
         );
         item.id = `${node.change.id}:step:${node.index}`;
+        if (node.core) item.description = "core of the change";
         item.iconPath = new vscode.ThemeIcon("list-ordered");
         item.contextValue = "step";
         return item;
@@ -444,20 +462,29 @@ export class ChangeFilesView
         const { change, file } = node;
         const item = new vscode.TreeItem(path.posix.basename(file.path));
         item.id = `${change.id}:${file.path}`;
-        item.resourceUri = resourceUri(change, file.path, file.status);
+        item.resourceUri = resourceUri(
+          change,
+          file.path,
+          file.status,
+          node.skim
+        );
         item.iconPath = vscode.ThemeIcon.File;
+        const skimNote = node.skim
+          ? `skim-only: ${skimReasonText[node.skim]}`
+          : "";
         item.tooltip = [
           file.path,
           statuses[file.status].tooltip,
           ...(node.why ? [node.why] : []),
+          ...(skimNote ? [skimNote] : []),
         ].join(" · ");
-        if (node.inStep) {
-          const dir = path.posix.dirname(file.path);
-          item.description = [
-            ...(dir === "." ? [] : [dir]),
-            ...(node.why ? [node.why] : []),
-          ].join(" · ");
-        }
+        const dir = path.posix.dirname(file.path);
+        item.description =
+          [
+            ...(node.inStep && dir !== "." ? [dir] : []),
+            ...(node.inStep && node.why ? [node.why] : []),
+            ...(skimNote ? [skimNote] : []),
+          ].join(" · ") || undefined;
         item.checkboxState = {
           state: node.viewed
             ? vscode.TreeItemCheckboxState.Checked
@@ -478,10 +505,12 @@ export class ChangeFilesView
   provideFileDecoration(uri: vscode.Uri): vscode.FileDecoration | undefined {
     if (uri.scheme !== fileScheme || !(uri.query in statuses)) return;
     const status = statuses[uri.query as FileStatus];
+    // A skim-only file is muted, but keeps its badge.
+    const skim = uri.fragment === skimFragment;
     return new vscode.FileDecoration(
       status.badge,
-      status.tooltip,
-      new vscode.ThemeColor(status.color)
+      skim ? `${status.tooltip}, skim-only` : status.tooltip,
+      new vscode.ThemeColor(skim ? "disabledForeground" : status.color)
     );
   }
 
@@ -508,7 +537,8 @@ export class ChangeFilesView
       };
     }
     const reviewed = await this.reviewedOf(change);
-    const steps = await this.stepsOf(change, files);
+    const skim = await skimOnlyOf(change, files);
+    const steps = await this.stepsOf(change, files, skim);
     const newCommits = reviewed && reviewed.commit !== change.headSha;
     return {
       kind: "change",
@@ -520,19 +550,32 @@ export class ChangeFilesView
         ...(!newCommits && { verdict: reviewed.verdict }),
       }),
       children: steps
-        ? stepNodes(change, files, steps, viewed, this.hidesViewed)
-        : directoryTree(change, files, viewed, this.hidesViewed),
+        ? stepNodes(change, files, steps, viewed, this.hidesViewed, skim)
+        : directoryTree(
+            change,
+            files,
+            viewed,
+            this.hidesViewed,
+            compactFolders(),
+            skim
+          ),
     };
   }
 
   /** The Reading Order's steps, while the view lists the Change by one. */
   private async stepsOf(
     change: Change,
-    files: ChangedFile[]
+    files: ChangedFile[],
+    skim: ReadonlyMap<string, SkimReason>
   ): Promise<ReadingStep[] | undefined> {
     const order = this.readingOrderOf(change)?.order;
     if (this.sortBy !== "readingOrder" || !order) return;
-    const { steps } = await stepsAt(change, order, inTreeOrder(change, files));
+    const { steps } = await stepsAt(
+      change,
+      order,
+      inTreeOrder(change, files),
+      skim
+    );
     return steps;
   }
 
@@ -651,7 +694,8 @@ function stepNodes(
   files: ChangedFile[],
   steps: ReadingStep[],
   viewed: ReadonlySet<string>,
-  hideViewed: boolean
+  hideViewed: boolean,
+  skim: ReadonlyMap<string, SkimReason>
 ): ChangeFilesNode[] {
   return filesInSteps(files, steps).flatMap(
     ({ step, files: inStep }, index) => {
@@ -663,6 +707,7 @@ function stepNodes(
           file,
           viewed: viewed.has(file.path),
           ...(why && { why }),
+          ...(skim.has(file.path) && { skim: skim.get(file.path)! }),
           inStep: true,
         }));
       if (children.length === 0) return [];
@@ -672,6 +717,8 @@ function stepNodes(
           change,
           index,
           label: step.label,
+          ...(step.core && { core: true }),
+          ...(step.skimOnly && { skimOnly: true }),
           files: inStep.map(({ why: _, ...file }) => file),
           children,
         },
@@ -690,7 +737,8 @@ function directoryTree(
   files: ChangedFile[],
   viewed: ReadonlySet<string>,
   hideViewed: boolean,
-  compact = compactFolders()
+  compact = compactFolders(),
+  skim: ReadonlyMap<string, SkimReason> = new Map()
 ): ChangeFilesNode[] {
   const nodes = (tree: FileTreeNode<ChangedFile>[]): ChangeFilesNode[] =>
     tree.map((node) =>
@@ -700,6 +748,9 @@ function directoryTree(
             change,
             file: node.file,
             viewed: viewed.has(node.file.path),
+            ...(skim.has(node.file.path) && {
+              skim: skim.get(node.file.path)!,
+            }),
           }
         : {
             kind: "directory" as const,
@@ -728,12 +779,21 @@ function compactFolders(): boolean {
 function resourceUri(
   change: Change,
   filePath: string,
-  status?: FileStatus
+  status?: FileStatus,
+  skim?: SkimReason
 ): vscode.Uri {
   return vscode.Uri.from({
     scheme: fileScheme,
     authority: change.id,
     path: `/${filePath}`,
     query: status ?? "",
+    ...(skim && { fragment: skimFragment }),
   });
+}
+
+/** Whether Next and Previous Unviewed File visit skim-only files, as the Reviewer's setting says. */
+function visitsSkimOnly(): boolean {
+  return vscode.workspace
+    .getConfiguration("dearReviewer")
+    .get<boolean>("visitSkimOnlyFiles", false);
 }

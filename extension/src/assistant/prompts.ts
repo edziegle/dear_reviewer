@@ -233,11 +233,14 @@ export function summaryText(
  * Asks for a Reading Order, as a JSON object that `parseReadingOrder` reads,
  * after `note` if the conversation has news for the Assistant. It follows
  * the summary in the same conversation, so it starts where the summary does.
+ * `files` are the files to order; `skimOnly` are those Dear Reviewer found to
+ * need no close reading (ADR 0045), which the Assistant is told not to place.
  */
 export function readingOrderPrompt(
   files: string[],
   start: string | undefined,
-  note?: string
+  note?: string,
+  skimOnly: string[] = []
 ): string {
   return [
     ...(note ? [note, ""] : []),
@@ -247,8 +250,14 @@ export function readingOrderPrompt(
       ? `- Start with ${start}, where your summary says to start.`
       : "- Start where your summary says to start.",
     "- Group the files into a few steps, each with a label of a few words.",
+    "- Make the first step the core of the change: the 3 to 5 files that carry its intent. Dear Reviewer keeps at most 5 there.",
     "- Give each file a few words on why it comes there.",
     "- List every changed file once, by its path relative to the repository root.",
+    ...(skimOnly.length > 0
+      ? [
+          "- Leave out the skim-only files listed last: Dear Reviewer found them to be lock files, generated files or renames with no edits, and shows them apart.",
+        ]
+      : []),
     "- Reply with only a JSON object of this shape, with no Markdown fence or prose around it:",
     '{"steps": [{"label": "The API shape", "files": [{"path": "src/api.ts", "why": "the new interface"}]}]}',
     "",
@@ -256,6 +265,15 @@ export function readingOrderPrompt(
       "Changed files",
       files.map((path) => ({ path }))
     ),
+    ...(skimOnly.length > 0
+      ? [
+          "",
+          ...fileList(
+            "Skim-only files",
+            skimOnly.map((path) => ({ path }))
+          ),
+        ]
+      : []),
   ].join("\n");
 }
 

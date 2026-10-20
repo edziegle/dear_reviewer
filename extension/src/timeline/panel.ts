@@ -498,7 +498,9 @@ function html(cspSource: string): string {
   .order ul li { display: flex; flex-wrap: wrap; gap: 0 6px; align-items: baseline; padding: 1px 0; }
   .order .mark { width: 1em; flex: none; }
   .order .file { font-family: var(--vscode-editor-font-family); overflow-wrap: anywhere; }
-  .order .viewed .file { color: var(--vscode-descriptionForeground); }
+  .order .viewed .file, .order .skim .file { color: var(--vscode-descriptionForeground); }
+  .order .tag { font-size: 0.85em; font-weight: 400; margin-left: 4px; padding: 0 6px; border-radius: 8px; color: var(--vscode-badge-foreground); background: var(--vscode-badge-background); }
+  .order summary.step { cursor: pointer; }
   .order .reading { font-style: italic; }
   #checksSummary { margin: 0 0 4px; }
   #checks .more { margin-top: 4px; font-size: 0.9em; }
@@ -890,24 +892,35 @@ ${catSymbol}
       else if (order.problem) note.append("The Assistant couldn't order the files, so they stay as they are in the Change. ", textButton("Try again", () => vscode.postMessage({ type: "suggestReadingOrder" })));
       else if (order.outOfDate) note.append("Suggested before the latest commits, which are in the last step. ", textButton("Suggest again", () => vscode.postMessage({ type: "suggestReadingOrder" })));
     }
+    // The skim-only step starts collapsed, and stays as the Reviewer left it.
+    const skimOpen = byId("orderSteps").querySelector("details")?.open === true;
     byId("orderSteps").replaceChildren(...order.steps.map((step) => {
       const li = el("li");
-      li.append(el("div", "step", step.label));
+      const heading = el("div", "step", step.label);
+      if (step.core) heading.append(" ", el("span", "tag", "Core of the change"));
       const files = el("ul");
       files.append(...step.files.map((file) => {
-        const row = el("li", file.viewed ? "viewed" : "");
+        const row = el("li", [file.viewed ? "viewed" : "", file.skim ? "skim" : ""].join(" ").trim());
         const mark = el("span", "mark", file.viewed ? "✓" : "");
         mark.setAttribute("aria-hidden", "true");
         const open = textButton(file.path, () => vscode.postMessage({ type: "openFile", path: file.path }));
         open.classList.add("file");
         open.title = "Open the diff of " + file.path;
         // The ✓ is hidden from screen readers, so the name says it.
-        open.setAttribute("aria-label", file.path + (file.viewed ? ", viewed" : ", not viewed"));
+        open.setAttribute("aria-label", file.path + (file.skim ? ", skim-only: " + file.skim : "") + (file.viewed ? ", viewed" : ", not viewed"));
         row.append(mark, open);
+        if (file.skim) row.append(el("span", "muted", "skim-only: " + file.skim));
         if (file.why) row.append(el("span", "muted", file.why));
         return row;
       }));
-      li.append(files);
+      if (step.skimOnly) {
+        const details = el("details");
+        details.open = skimOpen;
+        details.append(el("summary", "step", step.label + " (" + step.files.length + ")"), files);
+        li.append(details);
+      } else {
+        li.append(heading, files);
+      }
       return li;
     }));
   }

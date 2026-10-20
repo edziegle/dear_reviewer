@@ -1,0 +1,59 @@
+name: Build the .vsix
+
+# Builds the .vsix and attests it, and leaves it as the run's vsix artifact for
+# the caller to publish. The attestation names this workflow as its signer, not
+# the caller, so a caller can't get its own file attested
+# (docs/adr/0041-build-provenance-at-slsa-build-l3.md). Verify a download with:
+# gh attestation verify dear-reviewer.vsix -R edziegle/dear_reviewer \
+#   --signer-workflow edziegle/dear_reviewer/.github/workflows/build-vsix.yml
+
+on:
+  workflow_call:
+
+permissions: {}
+
+# mise run would otherwise install every tool in mise.toml, VSCodium too, with
+# no GitHub token, since mise-action doesn't pass its own on. Each job installs
+# only what it needs through mise-action's install_args.
+env:
+  MISE_TASK_RUN_AUTO_INSTALL: false
+
+jobs:
+  # Restores no cache, npm's or mise's: CI's runs on main write those, and one
+  # build mustn't be able to change another.
+  vsix:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
+        with:
+          install_args: node
+          cache: false
+      - run: mise run deps
+      - run: mise run package
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: vsix
+          path: extension/dist/dear-reviewer.vsix
+          retention-days: 1
+
+  # Separate from the build, so no dependency's install script can use these
+  # permissions to attest a file of its own.
+  attest:
+    needs: vsix
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: vsix
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dear-reviewer.vsix

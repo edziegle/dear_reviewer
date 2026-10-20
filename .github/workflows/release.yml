@@ -66,12 +66,14 @@ jobs:
           TAG: ${{ needs.release-please.outputs.tag_name }}
 
   # Separate from the GitHub Release upload, so this job holds only what Open
-  # VSX needs: no contents: write, and ovsx installed alone. id-token: write is
+  # VSX needs: no contents: write, and ovsx installed alone. It runs after the
+  # upload, since Open VSX never takes a version number twice: a failed upload
+  # leaves nothing on Open VSX, and re-running the failed jobs recovers. id-token: write is
   # for Open VSX's Trusted Publishing; while the open-vsx environment holds an
   # OVSX_PAT secret, ovsx uses that instead
   # (docs/adr/0043-list-each-release-on-open-vsx.md).
   open-vsx:
-    needs: [release-please, vsix]
+    needs: [release-please, vsix, publish]
     runs-on: ubuntu-latest
     environment: open-vsx
     permissions:
@@ -95,6 +97,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
       - run: mise run deps-ovsx
-      - run: mise run publish-open-vsx
+      - run: mise run list-open-vsx
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}

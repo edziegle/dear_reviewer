@@ -4,7 +4,7 @@
 
 `dear-reviewer-logo.woff` is the same drawing as a one-glyph font, without the thickened strokes, built by `mise run logo-font`.
 
-`icon.png`, the extension's icon on Open VSX, is the same drawing again, cut from `docs/images/logo.png` without the wordmark and in its gradient.
+`icon.png`, the extension's icon on Open VSX, is the same drawing again, cut from `docs/images/logo.png` without the words beside it, in its gradient, by `mise run icon`.
 
 ## Walkthrough images
 

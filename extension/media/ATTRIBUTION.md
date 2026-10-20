@@ -8,4 +8,4 @@
 
 ## Walkthrough images
 
-`walkthrough/*.png` are renders of Dear Reviewer's own overview, Submit step, Assistant panel and Dashboard, with sample data and approximate theme colors. They show the Reading Cat above, as the Assistant's mark, and nothing else from outside the extension.
+`walkthrough/*.png` are renders of Dear Reviewer's own overview, Submit step, Assistant panel and Dashboard, with sample data and the colors of Default Dark Modern and Default Light Modern, at twice the pixel density, drawn by `mise run walkthrough-images`. They show the Reading Cat above, as the Assistant's mark. Their text is set in Inter, used under the SIL Open Font License 1.1, so the images look the same on any machine. Nothing else comes from outside the extension.

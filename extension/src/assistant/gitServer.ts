@@ -47,13 +47,35 @@ export interface GitRun {
 }
 
 /**
- * Git's environment: never prompting, never fetching, never replacing a
- * commit's parents, and never taking a lock or rewriting the index, even for
- * a command that would refresh it.
+ * The variables git gets from the server's own environment: what it needs to
+ * find itself and the Reviewer's git config in its default place, and no credential, `GIT_*` or
+ * other variable, which could point git at another repository, program or
+ * remote (ADR 0042).
  */
-function gitEnvironment(): NodeJS.ProcessEnv {
+const gitPassedVariables = new Set([
+  "PATH",
+  "HOME",
+  "USER",
+  "LOGNAME",
+  "TMPDIR",
+  "LANG",
+]);
+
+/**
+ * Git's environment: only `gitPassedVariables` and the locale's `LC_*`, then
+ * never prompting, never fetching, never replacing a commit's parents, and
+ * never taking a lock or rewriting the index, even for a command that would
+ * refresh it.
+ */
+export function gitEnvironment(
+  env: NodeJS.ProcessEnv = process.env
+): NodeJS.ProcessEnv {
+  const passed: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(env))
+    if (gitPassedVariables.has(key) || key.startsWith("LC_"))
+      passed[key] = value;
   return {
-    ...process.env,
+    ...passed,
     GIT_OPTIONAL_LOCKS: "0",
     GIT_TERMINAL_PROMPT: "0",
     // A partial clone would otherwise fetch missing objects, over the network

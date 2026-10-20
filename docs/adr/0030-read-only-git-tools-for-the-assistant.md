@@ -5,6 +5,8 @@ date: 2026-10-15
 
 # Give the Assistant read-only git through an MCP server Dear Reviewer ships
 
+Amended by [ADR 0042](0042-one-prompt-security-policy.md): the server gives git an allow list of variables, not the environment it was started with.
+
 ## Context and Problem Statement
 
 The Assistant's `claude` has only `Read`, `Grep` and `Glob`, and loads no MCP (Model Context Protocol) server (ADR 0004). It can't read `.git` either: a worktree's `.git` is a file that points into the clone's own git folder, which isn't one of its `--add-dir` folders. The only history it sees is the Change's own commits in its prompts, capped (ADR 0026). It can't say which commit added a function, whether a bug is older than the Change, or what a commit before the Change did (issue #39).

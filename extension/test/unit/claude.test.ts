@@ -1,5 +1,10 @@
 import * as assert from "assert";
-import { claudeEnvironment, describeLogin } from "../../src/assistant/claude";
+import {
+  allowedWithoutAsking,
+  claudeEnvironment,
+  describeLogin,
+  readOnlyTools,
+} from "../../src/assistant/claude";
 
 describe("The environment claude runs in", () => {
   it("leaves out credential variables, which could bill an API key or a cloud provider", () => {
@@ -81,5 +86,21 @@ describe("The login claude auth status reports", () => {
     const out = describeLogin({ loggedIn: false, authMethod: "claude.ai" });
     assert.strictEqual(out.signedIn, false);
     assert.strictEqual(out.label, "not signed in");
+  });
+});
+
+describe("What the Assistant may do without asking", () => {
+  it("is its git tools, and no file tool, which would allow reads anywhere", () => {
+    assert.deepStrictEqual(allowedWithoutAsking, [
+      "mcp__git__log",
+      "mcp__git__show",
+      "mcp__git__blame",
+      "mcp__git__diff",
+    ]);
+    for (const tool of readOnlyTools)
+      assert.ok(
+        !allowedWithoutAsking.some((allowed) => allowed.startsWith(tool)),
+        tool
+      );
   });
 });

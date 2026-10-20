@@ -5,6 +5,8 @@ date: 2026-10-14
 
 # Put the Change's commits and its pull request's description in the summary prompt
 
+Amended by [ADR 0042](0042-one-prompt-security-policy.md): every prompt fences the diff, the changed files and the code too, each introduced as other people's text.
+
 Amended by [ADR 0030](0030-read-only-git-tools-for-the-assistant.md): the Assistant can also read the history its base and head reach with read-only git tools, `log`, `show`, `blame` and `diff`. What the prompts carry is unchanged.
 
 ## Context and Problem Statement

@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.7.0](https://github.com/edziegle/dear_reviewer/compare/v0.6.0...v0.7.0) (2026-10-20)
+
+
+### Features
+
+* **overview:** add a View on GitHub button and command for a pull request ([#150](https://github.com/edziegle/dear_reviewer/issues/150)) ([b2924cb](https://github.com/edziegle/dear_reviewer/commit/b2924cb2e3547500db9d42a9caff289dd4703df7))
+
+
+### Bug Fixes
+
+* **walkthrough:** redraw the walkthrough's images at 2x, with a task that does it ([#152](https://github.com/edziegle/dear_reviewer/issues/152)) ([f4452bf](https://github.com/edziegle/dear_reviewer/commit/f4452bff1e40cae4e896fc76cac89c1158b6194f)), closes [#74](https://github.com/edziegle/dear_reviewer/issues/74)
+
 ## [0.6.0](https://github.com/edziegle/dear_reviewer/compare/v0.5.0...v0.6.0) (2026-10-20)
 
 

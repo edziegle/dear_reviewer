@@ -36,7 +36,7 @@ Real navigation on both sides of every diff, for pull requests and local Changes
 - Changes open as base and head worktrees; Change Files view with viewed tracking.
 - The Assistant runs as one long-lived `claude` process per Change with read-only tools (ADR 0004). It summarises a Change on open, explains what changed since the last Review, chats per Change, raises Findings only when asked, and turns the Reviewer's Comments on a local Change into a Brief. It never writes the Reviewer's Comments, never publishes, never runs commands or edits files.
 - A Finding is never published; the Reviewer dismisses it or turns it into a Comment.
-- Out of scope today: GitLab and other forges, team dashboards, the Assistant drafting Comments, sending a Brief straight into an agent session, and the VS Code Marketplace. Each release is listed on Open VSX (ADR 0043).
+- Out of scope today: GitLab and other forges, team dashboards, the Assistant drafting Comments, and sending a Brief straight into an agent session. Each release is listed on Open VSX (ADR 0043) and the VS Code Marketplace (ADR 0044).
 
 ## Brand Commitments
 

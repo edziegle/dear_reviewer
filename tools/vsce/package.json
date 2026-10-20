@@ -1,0 +1,8 @@
+{
+  "name": "dear-reviewer-vsce",
+  "description": "vsce alone, so the VS Code Marketplace release job installs nothing else.",
+  "private": true,
+  "dependencies": {
+    "@vscode/vsce": "^4.0.0"
+  }
+}

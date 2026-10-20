@@ -100,3 +100,45 @@ jobs:
       - run: mise run list-open-vsx
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
+
+  # Beside open-vsx, and for the same reasons: it holds only what the VS Code
+  # Marketplace needs, and runs after the GitHub Release upload, since the
+  # Marketplace never takes a version number twice either. id-token: write is
+  # for azure/login, which signs in as the Azure managed identity whose federated
+  # credential names this repository and the vs-marketplace environment
+  # (docs/adr/0044-list-each-release-on-the-vs-code-marketplace.md).
+  vs-marketplace:
+    needs: [release-please, vsix, publish]
+    runs-on: ubuntu-latest
+    environment: vs-marketplace
+    permissions:
+      contents: read
+      attestations: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+        with:
+          install_args: node
+          cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: vsix
+          path: extension/dist
+      # Before vsce is even installed: only the file build-vsix.yml attested goes out.
+      - run: mise run verify-vsix
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - run: mise run deps-vsce
+      # After the install, so the Azure login exists only while vsce runs.
+      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+      # The ID to add to the edziegle publisher as a Contributor, printed on
+      # every run so the first run's log shows it.
+      - run: mise run marketplace-member-id
+      - run: mise run list-vs-marketplace

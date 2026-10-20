@@ -41,7 +41,7 @@ Chosen option: the managed identity, because it's the only one that works both n
 The maintainer does this once, outside the repository:
 
 1. Create the publisher `edziegle` at <https://marketplace.visualstudio.com/manage>.
-2. In an Azure subscription (a free one is enough; the identity gets no role in it), create a user-assigned managed identity. Give it a federated credential for the GitHub Actions scenario with organization `edziegle`, repository `dear_reviewer`, entity type Environment and environment `vs-marketplace`.
+2. In an Azure subscription, create a user-assigned managed identity. It costs nothing and gets no role in the subscription. Give it a federated credential for the GitHub Actions scenario with organization `edziegle` (ID 1760988), repository `dear_reviewer` (ID 1416379328), entity type Environment and environment `vs-marketplace`. The repository puts these IDs in its OIDC tokens (`use_immutable_subject`), so the credential's subject is `repo:edziegle@1760988/dear_reviewer@1416379328:environment:vs-marketplace`. One with names alone doesn't match.
 3. In the repository, create the `vs-marketplace` environment with `main` as its only deployment branch, and set the environment variables `AZURE_CLIENT_ID` and `AZURE_TENANT_ID` to the identity's client and tenant IDs. These identify the identity but grant nothing, so they're variables, not secrets.
 4. On the first release, the job prints the identity's Marketplace member ID with `mise run marketplace-member-id`, then fails to publish, since the identity isn't a member of the publisher yet. Add that ID to the `edziegle` publisher as a Contributor and re-run the failed jobs.
 

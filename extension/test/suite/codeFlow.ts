@@ -28,11 +28,14 @@ export interface CodeFlowState {
   hops: 0 | 1 | 2;
   view: "map" | "lanes" | "list";
   showTests: boolean;
+  showRemoved: boolean;
   flow: {
     nodes: ShownNode[];
+    callless: { id: string; name: string }[];
     edges: { from: string; to: string; label?: string }[];
     entries: { id: string; name: string; label: string }[];
     testsHidden: number;
+    removedHidden: number;
     undrawn: number;
     overCap: boolean;
     entry?: string;
@@ -50,6 +53,7 @@ export interface CodeFlowState {
     undrawn: number;
     showingAll?: number;
     tryHop: boolean;
+    callless: number;
     picture: boolean;
     empty?: string;
   };
@@ -84,6 +88,7 @@ export type FromCodeFlow =
   | { type: "expand"; id: string }
   | { type: "setShowAll"; show: boolean }
   | { type: "setShowTests"; show: boolean }
+  | { type: "setShowRemoved"; show: boolean }
   | { type: "retry" }
   | { type: "findExtensions"; language: string };
 

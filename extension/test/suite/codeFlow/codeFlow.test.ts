@@ -77,6 +77,19 @@ function changeWithTests(onlyTests = false) {
   return { request, title: titled(request) };
 }
 
+/** A Change that changes two functions of `lib.sh`, `helper` and `other`. */
+function changeWithTwoFunctions() {
+  const repo = buildFixtureRepo("codeFlowTwo");
+  const base = commitAfter(repo, "add script", (write) =>
+    write("lib.sh", "helper() {\n  echo one\n}\n\nother() {\n  echo one\n}\n")
+  );
+  const head = commitAfter(repo, "change both", (write) =>
+    write("lib.sh", "helper() {\n  echo two\n}\n\nother() {\n  echo two\n}\n")
+  );
+  const request = { repository: repo.path, base, head };
+  return { request, title: titled(request) };
+}
+
 /** A Change that deletes `legacy.sh`, a script with a function that `main.sh` called. */
 function deletingChange() {
   const repo = buildFixtureRepo("codeFlowDeleted");
@@ -180,12 +193,15 @@ describe("Code Flow", () => {
     await settled(title);
     const panel = (await codeFlowPanel(title))!;
     panel.receive({ type: "setHops", hops: 0 });
-    await eventually(async () =>
+    await eventually(async () => {
+      const { flow } = (await codeFlowPanel(title))!.sent;
+      // Alone, helper has no call to another drawn symbol, so the map leaves it out for the list.
+      assert.deepStrictEqual(flow.nodes, []);
       assert.deepStrictEqual(
-        (await codeFlowPanel(title))!.sent.flow.nodes.map((n) => n.name),
+        flow.callless.map((n) => n.name),
         ["helper"]
-      )
-    );
+      );
+    });
     panel.receive({ type: "setHops", hops: 2 });
     await eventually(async () =>
       assert.ok(
@@ -246,7 +262,15 @@ describe("Code Flow", () => {
   it("draws what the cap left out around one symbol, or all of it, and goes back to the cap", async () => {
     const callees = Array.from({ length: 100 }, (_, i) => `callee_${i}`);
     const { title } = await start({ callees: { helper: callees } });
-    const state = await settled(title);
+    await settled(title);
+    // A graph this big starts at Changed only; the Reviewer asks for one hop.
+    (await codeFlowPanel(title))!.receive({ type: "setHops", hops: 1 });
+    let state = (await codeFlowPanel(title))!.sent;
+    await eventually(async () => {
+      state = (await codeFlowPanel(title))!.sent;
+      assert.strictEqual(state.hops, 1);
+      assert.strictEqual(state.flow.nodes.length, 80);
+    });
     const helper = state.flow.nodes.find((n) => n.name === "helper")!;
     const sent = async () => (await codeFlowPanel(title))!.sent;
     assert.deepStrictEqual(
@@ -437,6 +461,99 @@ describe("Code Flow", () => {
     });
   });
 
+  it("hides the symbols of a deleted file until the Reviewer shows them, says how many, and keeps the choice across a change of view", async () => {
+    const { title } = await start(
+      { callers: { legacy: ["run_main"] } },
+      deletingChange
+    );
+    const state = await settled(title);
+    assert.strictEqual(state.showRemoved, false);
+    assert.deepStrictEqual(state.flow.nodes, []);
+    assert.deepStrictEqual(state.flow.entries, []);
+    assert.strictEqual(state.flow.removedHidden, 1);
+    assert.strictEqual(
+      state.offers.empty,
+      "Every symbol this Change touches is in a deleted file, which is hidden."
+    );
+    await eventually(async () =>
+      assert.deepStrictEqual(
+        (await codeFlowPanel(title))!.rendered,
+        (await codeFlowPanel(title))!.sent
+      )
+    );
+
+    const panel = (await codeFlowPanel(title))!;
+    panel.receive({ type: "setShowRemoved", show: true });
+    panel.receive({ type: "setView", view: "list" });
+    await eventually(async () => {
+      const { sent } = (await codeFlowPanel(title))!;
+      assert.strictEqual(sent.view, "list");
+      assert.strictEqual(sent.showRemoved, true);
+      assert.strictEqual(sent.flow.removedHidden, 0);
+      assert.ok(sent.flow.nodes.some((n) => n.name === "legacy"));
+    });
+    panel.receive({ type: "setShowRemoved", show: false });
+    await eventually(async () => {
+      const { sent } = (await codeFlowPanel(title))!;
+      assert.deepStrictEqual(sent.flow.nodes, []);
+      assert.strictEqual(sent.flow.removedHidden, 1);
+    });
+  });
+
+  it("leaves a symbol with no calls out of the map, counts it, and lists it in the list", async () => {
+    const { title } = await start(
+      { callees: { helper: ["run_main"] } },
+      changeWithTwoFunctions
+    );
+    const state = await settled(title);
+    assert.deepStrictEqual(state.flow.nodes.map((n) => n.name).sort(), [
+      "helper",
+      "run_main",
+    ]);
+    assert.deepStrictEqual(
+      state.flow.callless.map((n) => n.name),
+      ["other"]
+    );
+    assert.strictEqual(state.offers.callless, 1);
+    await eventually(async () =>
+      assert.deepStrictEqual(
+        (await codeFlowPanel(title))!.rendered,
+        (await codeFlowPanel(title))!.sent
+      )
+    );
+
+    (await codeFlowPanel(title))!.receive({ type: "setView", view: "list" });
+    await eventually(async () => {
+      const { sent } = (await codeFlowPanel(title))!;
+      assert.strictEqual(sent.view, "list");
+      assert.strictEqual(sent.offers.callless, 0);
+      assert.deepStrictEqual(
+        [...sent.flow.nodes, ...sent.flow.callless].map((n) => n.name).sort(),
+        ["helper", "other", "run_main"]
+      );
+    });
+  });
+
+  it("starts at Changed only when one hop out is more than the map draws, until the Reviewer chooses", async () => {
+    const callees = Array.from({ length: 90 }, (_, i) => `callee_${i}`);
+    const { title } = await start({ callees: { helper: callees } });
+    const state = await settled(title);
+    assert.strictEqual(state.hops, 0);
+
+    const panel = (await codeFlowPanel(title))!;
+    panel.receive({ type: "setHops", hops: 1 });
+    await eventually(async () =>
+      assert.strictEqual((await codeFlowPanel(title))!.sent.hops, 1)
+    );
+    // Asking again keeps the Reviewer's choice.
+    panel.receive({ type: "retry" });
+    await eventually(async () => {
+      const { sent } = (await codeFlowPanel(title))!;
+      assert.strictEqual(sent.loading, false);
+      assert.strictEqual(sent.hops, 1);
+    });
+  });
+
   it("says there is no language server when none answers for the language", async () => {
     const { title } = await start();
     const state = await settled(title);
@@ -468,6 +585,14 @@ describe("Code Flow", () => {
       { callers: { legacy: ["run_main"] } },
       deletingChange
     );
+    await settled(title);
+    (await codeFlowPanel(title))!.receive({
+      type: "setShowRemoved",
+      show: true,
+    });
+    await eventually(async () =>
+      assert.strictEqual((await codeFlowPanel(title))!.sent.showRemoved, true)
+    );
     const state = await settled(title);
     assert.deepStrictEqual(
       state.flow.nodes.map((n) => [n.name, n.status, n.side]),
@@ -490,8 +615,9 @@ describe("Code Flow", () => {
 
   it("opens a removed function in the base worktree, where the file still is", async () => {
     const { title } = await start({}, deletingChange);
+    // The symbols of a deleted file are known, drawn or not.
     const state = await settled(title);
-    const legacy = state.flow.nodes.find((n) => n.name === "legacy")!;
+    const legacy = state.known.find((n) => n.name === "legacy")!;
     (await codeFlowPanel(title))!.receive({ type: "select", id: legacy.id });
     await eventually(() => {
       const editor = vscode.window.visibleTextEditors.find((e) =>
@@ -506,6 +632,10 @@ describe("Code Flow", () => {
     this.timeout(180_000);
     await waitForLanguageServer(8_000);
     const { title } = await start(undefined, deletingPythonChange);
+    (await codeFlowPanel(title))!.receive({
+      type: "setShowRemoved",
+      show: true,
+    });
     // The server starts lazily and indexes before it answers, so ask again until it does.
     await eventually(async () => {
       const panel = (await codeFlowPanel(title))!;

@@ -130,6 +130,18 @@ export function withoutTests(graph: FlowGraph): FlowGraph {
 }
 
 /**
+ * The graph without the symbols of deleted files, drawn as removed, and
+ * their edges. What only a removed symbol reaches is left out by
+ * `withinHops`, as with test symbols.
+ */
+export function withoutRemoved(graph: FlowGraph): FlowGraph {
+  return keeping(
+    graph,
+    new Set(graph.nodes.filter((n) => n.status !== "removed").map((n) => n.id))
+  );
+}
+
+/**
  * The symbols within `hops` calls, in either direction, of a changed or new
  * symbol, and the edges between them.
  */
@@ -286,15 +298,47 @@ export function layerLayout(
       }
     }
   }
-  const rows = new Map<number, number>();
-  const placed = new Map<string, { column: number; row: number }>();
+  // In a column, the symbol that makes the most calls leads, then the one
+  // that receives the most, then the graph's own order.
+  const makes = distinctEnds(graph, ids, "from", "to");
+  const receives = distinctEnds(graph, ids, "to", "from");
+  const inColumn = new Map<number, FlowNode[]>();
   for (const node of graph.nodes) {
     const c = column.get(node.id)!;
-    const row = rows.get(c) ?? 0;
-    rows.set(c, row + 1);
-    placed.set(node.id, { column: c, row });
+    inColumn.set(c, [...(inColumn.get(c) ?? []), node]);
+  }
+  const placed = new Map<string, { column: number; row: number }>();
+  for (const [c, members] of inColumn) {
+    const ordered = members
+      .map((node, index) => ({ node, index }))
+      .sort(
+        (a, b) =>
+          (makes.get(b.node.id) ?? 0) - (makes.get(a.node.id) ?? 0) ||
+          (receives.get(b.node.id) ?? 0) - (receives.get(a.node.id) ?? 0) ||
+          a.index - b.index
+      );
+    ordered.forEach(({ node }, row) => placed.set(node.id, { column: c, row }));
   }
   return placed;
+}
+
+/** For each symbol, how many other symbols it has a call with, in the direction given. */
+function distinctEnds(
+  graph: FlowGraph,
+  ids: ReadonlySet<string>,
+  own: "from" | "to",
+  other: "from" | "to"
+): Map<string, number> {
+  const ends = new Map<string, Set<string>>();
+  for (const edge of graph.edges) {
+    if (edge.from === edge.to || !ids.has(edge.from) || !ids.has(edge.to)) {
+      continue;
+    }
+    const set = ends.get(edge[own]) ?? new Set<string>();
+    set.add(edge[other]);
+    ends.set(edge[own], set);
+  }
+  return new Map([...ends].map(([id, set]) => [id, set.size]));
 }
 
 /**
@@ -342,8 +386,16 @@ export interface FlowControls {
   entry?: string;
   /** Draw the symbols of test files too. */
   showTests?: boolean;
+  /** Draw the symbols of deleted files too. */
+  showRemoved?: boolean;
   /** Symbols whose every neighbour is drawn, whatever the cap. */
   expanded?: readonly string[];
+}
+
+/** Where Code Flow starts: one hop out, or Changed only when one hop is more than the cap draws. */
+export function initialHops(full: FlowGraph, cap = NODE_CAP): 0 | 1 {
+  const graph = withoutRemoved(withoutTests(full));
+  return withinHops(graph, 1).nodes.length > cap ? 0 : 1;
 }
 
 export interface ShownNode extends FlowNode {
@@ -355,7 +407,10 @@ export interface ShownNode extends FlowNode {
 
 /** What the panel draws for a gathered graph under the Reviewer's controls. */
 export interface ShownFlow {
+  /** The symbols with a call to or from another symbol drawn, which the call map places. */
   nodes: ShownNode[];
+  /** The symbols within the hops with no call to another drawn symbol: the call map leaves them out, the list has them. */
+  callless: FlowNode[];
   edges: FlowEdge[];
   /**
    * The swimlanes' entry points: the changed, new and removed symbols that
@@ -366,6 +421,8 @@ export interface ShownFlow {
   changed: number;
   /** How many test symbols within the hops are left out. */
   testsHidden: number;
+  /** How many symbols of deleted files within the hops are left out. */
+  removedHidden: number;
   /** How many symbols within the hops the cap left out. */
   undrawn: number;
   /** Whether the cap leaves symbols out, so Show all draws past it. */
@@ -376,7 +433,15 @@ export interface ShownFlow {
 }
 
 export function shownFlow(full: FlowGraph, controls: FlowControls): ShownFlow {
-  const graph = controls.showTests ? full : withoutTests(full);
+  const withTestsOff = controls.showTests ? full : withoutTests(full);
+  const graph = controls.showRemoved
+    ? withTestsOff
+    : withoutRemoved(withTestsOff);
+  const removedHidden = controls.showRemoved
+    ? 0
+    : withinHops(withTestsOff, controls.hops).nodes.filter(
+        (n) => n.status === "removed"
+      ).length;
   const testsHidden = controls.showTests
     ? 0
     : withinHops(full, controls.hops).nodes.filter((n) => isTestPath(n.path))
@@ -390,7 +455,18 @@ export function shownFlow(full: FlowGraph, controls: FlowControls): ShownFlow {
   const { graph: capped, hidden } = controls.showAll
     ? { graph: within, hidden: new Map<string, number>() }
     : limited;
-  const placed = layerLayout(capped);
+  // A symbol with no call to another drawn symbol is no box in the map,
+  // unless the cap left out a neighbour it calls or is called by.
+  const connected = new Set(
+    capped.edges
+      .filter((edge) => edge.from !== edge.to)
+      .flatMap((edge) => [edge.from, edge.to])
+  );
+  const isDrawn = (node: FlowNode) =>
+    connected.has(node.id) || (hidden.get(node.id) ?? 0) > 0;
+  const drawn = { nodes: capped.nodes.filter(isDrawn), edges: capped.edges };
+  const callless = capped.nodes.filter((node) => !isDrawn(node));
+  const placed = layerLayout(drawn);
   const changed = graph.nodes.filter((node) => node.status !== "unchanged");
   const named = (name: string) => changed.filter((n) => n.name === name);
   const ids = new Set(graph.nodes.map((node) => node.id));
@@ -407,18 +483,34 @@ export function shownFlow(full: FlowGraph, controls: FlowControls): ShownFlow {
           ? `${name} · ${side === "base" ? "before: " : ""}${path}:${line}`
           : name,
     }));
+  // The run that opens the most of the picture leads, unless the Reviewer chose one.
+  const callsMade = distinctEnds(
+    graph,
+    new Set(graph.nodes.map((n) => n.id)),
+    "from",
+    "to"
+  );
+  const mostCalls = entries.reduce<(typeof entries)[number] | undefined>(
+    (best, e) =>
+      !best || (callsMade.get(e.id) ?? 0) > (callsMade.get(best.id) ?? 0)
+        ? e
+        : best,
+    undefined
+  );
   const entry =
-    entries.find((e) => e.id === controls.entry)?.id ?? entries[0]?.id;
+    entries.find((e) => e.id === controls.entry)?.id ?? mostCalls?.id;
   return {
-    nodes: capped.nodes.map((node) => ({
+    nodes: drawn.nodes.map((node) => ({
       ...node,
       ...placed.get(node.id)!,
       hidden: hidden.get(node.id) ?? 0,
     })),
+    callless,
     edges: capped.edges,
     entries,
     changed: changed.length,
     testsHidden,
+    removedHidden,
     undrawn: within.nodes.length - capped.nodes.length,
     overCap: limited.graph.nodes.length < within.nodes.length,
     entry,
@@ -444,6 +536,8 @@ export interface FlowOffers {
   showingAll?: number;
   /** Changed only, and no changed symbol calls another: a hop shows their calls. */
   tryHop: boolean;
+  /** How many symbols with no calls the call map leaves out, listed in the List view. */
+  callless: number;
   /** Whether the view has a picture to draw. */
   picture: boolean;
   /** What the view says instead of a picture. */
@@ -456,6 +550,7 @@ export function flowOffers(input: {
   hops: 0 | 1 | 2;
   showAll: boolean;
   showTests: boolean;
+  showRemoved?: boolean;
   languages: readonly { outcome: LanguageOutcome }[];
   /** Whether gathering the Code Flow failed. */
   problem: boolean;
@@ -463,9 +558,13 @@ export function flowOffers(input: {
   const { view, flow } = input;
   const answered = input.languages.every((l) => l.outcome === "answered");
   const drawsWithinHops = view !== "lanes";
-  const picture = drawsWithinHops
-    ? flow.nodes.length > 0
-    : flow.calls.length > 0;
+  const symbols = flow.nodes.length + flow.callless.length;
+  const picture =
+    view === "lanes"
+      ? flow.calls.length > 0
+      : view === "list"
+        ? symbols > 0
+        : flow.nodes.length > 0;
   return {
     hops: drawsWithinHops,
     undrawn: drawsWithinHops ? flow.undrawn : 0,
@@ -475,9 +574,11 @@ export function flowOffers(input: {
     tryHop:
       drawsWithinHops &&
       input.hops === 0 &&
-      flow.nodes.length > 0 &&
+      symbols > 0 &&
       flow.edges.length === 0 &&
       answered,
+    callless:
+      view === "map" && flow.nodes.length > 0 ? flow.callless.length : 0,
     picture,
     ...(!picture && { empty: emptyText() }),
   };
@@ -486,7 +587,17 @@ export function flowOffers(input: {
     if (!input.showTests && flow.testsHidden > 0 && flow.changed === 0) {
       return "Every symbol this Change touches is test code, which is hidden.";
     }
-    if (flow.nodes.length === 0 && flow.changed === 0) {
+    if (!input.showRemoved && flow.removedHidden > 0 && flow.changed === 0) {
+      return "Every symbol this Change touches is in a deleted file, which is hidden.";
+    }
+    if (view === "map" && flow.nodes.length === 0 && flow.callless.length > 0) {
+      return `${flow.callless.length} ${
+        flow.callless.length === 1 ? "symbol has" : "symbols have"
+      } no calls to draw. The List view lists ${
+        flow.callless.length === 1 ? "it" : "them"
+      }.`;
+    }
+    if (symbols === 0 && flow.changed === 0) {
       return answered && !input.problem
         ? "This Change touches no functions or methods Code Flow can draw."
         : undefined;

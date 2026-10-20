@@ -20,6 +20,8 @@ export interface CodeFlowState {
   view: FlowView;
   /** Whether the symbols of test files are drawn. */
   showTests: boolean;
+  /** Whether the symbols of deleted files are drawn. */
+  showRemoved: boolean;
   flow: ShownFlow;
   /** The controls and notices that act on the view shown, and what it says with nothing to draw. */
   offers: FlowOffers;
@@ -40,6 +42,7 @@ export type FromCodeFlow =
   | { type: "expand"; id: string }
   | { type: "setShowAll"; show: boolean }
   | { type: "setShowTests"; show: boolean }
+  | { type: "setShowRemoved"; show: boolean }
   | { type: "retry" }
   | { type: "findExtensions"; language: string }
   | { type: "layout"; canvas: CanvasScroll | null; focusInView: boolean | null }
@@ -165,6 +168,7 @@ export class CodeFlowPanel {
         }
         break;
       case "setShowTests":
+      case "setShowRemoved":
       case "setShowAll":
         if (typeof message.show === "boolean") {
           this.onAction(message);
@@ -352,6 +356,10 @@ function html(): string {
     }
     bar.append(el("span", { class: "seg" },
       el("button", { type: "button", "aria-pressed": String(state.showTests), "data-focus": "showTests", onclick: () => post({ type: "setShowTests", show: !state.showTests }), text: "Show tests" })));
+    if (state.showRemoved || state.flow.removedHidden > 0) {
+      bar.append(el("span", { class: "seg" },
+        el("button", { type: "button", "aria-pressed": String(state.showRemoved), "data-focus": "showRemoved", onclick: () => post({ type: "setShowRemoved", show: !state.showRemoved }), text: "Show removed" })));
+    }
     // The key explains only the marks the picture draws: the list names each status in a badge.
     const known = new Map(state.known.map((n) => [n.id, n]));
     const drawn = state.view === "map" ? state.flow.nodes
@@ -385,7 +393,15 @@ function html(): string {
       out.push(el("div", { class: "notice" }, state.flow.testsHidden + (state.flow.testsHidden === 1 ? " test symbol hidden." : " test symbols hidden."),
         el("button", { type: "button", onclick: () => post({ type: "setShowTests", show: true }), text: "Show tests" })));
     }
+    if (!state.showRemoved && state.flow.removedHidden > 0) {
+      out.push(el("div", { class: "notice" }, state.flow.removedHidden + (state.flow.removedHidden === 1 ? " removed symbol hidden." : " removed symbols hidden."),
+        el("button", { type: "button", onclick: () => post({ type: "setShowRemoved", show: true }), text: "Show removed" })));
+    }
     const offers = state.offers;
+    if (offers.callless > 0) {
+      out.push(el("div", { class: "notice" }, offers.callless + (offers.callless === 1 ? " symbol with no calls." : " symbols with no calls.") + " The List view lists them.",
+        el("button", { type: "button", onclick: () => post({ type: "setView", view: "list" }), text: "Show the list" })));
+    }
     if (offers.undrawn > 0) {
       out.push(el("div", { class: "notice" }, offers.undrawn + (offers.undrawn === 1 ? " more symbol is" : " more symbols are") + " left out to keep the view readable.",
         el("button", { type: "button", onclick: () => post({ type: "setShowAll", show: true }), text: "Show all" })));
@@ -553,7 +569,7 @@ function html(): string {
     const calleesOf = (id) => state.flow.edges.filter((e) => e.from === id).map((e) => known.get(e.to)).filter(Boolean);
     const link = (node) => el("button", { type: "button", class: "sym", onclick: () => post({ type: "select", id: node.id }), text: node.name });
     const names = (nodes) => nodes.length ? nodes.flatMap((n, i) => (i ? [", ", link(n)] : [link(n)])) : ["none"];
-    return el("ul", { class: "list" }, state.flow.nodes.map((node) =>
+    return el("ul", { class: "list" }, [...state.flow.nodes, ...state.flow.callless].map((node) =>
       el("li", {},
         link(node), el("span", { class: "badge", text: node.status }), " ",
         el("span", { class: "where", text: before(node) + node.path + ":" + node.line }),

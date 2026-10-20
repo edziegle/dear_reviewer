@@ -36,6 +36,7 @@ run = [
   "npx tsc --noEmit",
   "npx tsc -p test --noEmit",
   "npx tsc -p test/unit --noEmit",
+  "npx tsc -p test/walkthrough --noEmit",
 ]
 
 # No vscode:prepublish script: the package task builds first, so vsce has nothing to run.
@@ -176,6 +177,16 @@ magick ../docs/images/logo.png -alpha set \
   -trim +repage -background none -gravity center -extent 720x720 \
   -resize 256x256 -strip PNG32:media/icon.png
 '''
+
+# The setup walkthrough's images (contributes.walkthroughs in package.json) are
+# the real Dashboard, Assistant and overview webviews drawn in headless
+# Chromium, at 2x so they stay sharp on a high-density display, in Default Dark
+# Modern and Default Light Modern. Needs VSCodium's install for the themes'
+# colors; the UI font comes from npm, so the images look the same on any machine.
+[tasks.walkthrough-images]
+description = "Redraw the setup walkthrough's images in media/walkthrough"
+dir = "extension"
+run = ["npx playwright install chromium", "node test/walkthrough/capture.mjs"]
 
 # Installs the build into VSCodium rather than launching an Extension Development
 # Host: Dear Reviewer opens Changes in a separate review window, and only an

@@ -11,5 +11,5 @@
     "outDir": "../out/test"
   },
   "include": ["."],
-  "exclude": ["unit"]
+  "exclude": ["unit", "walkthrough"]
 }

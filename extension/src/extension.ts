@@ -248,7 +248,10 @@ export function activate(context: vscode.ExtensionContext) {
     () => reviewWindow.isThisWindow(),
     () => changes.showReviewWindow()
   );
-  const codeFlows = new CodeFlows((change) => codeColumnOf(change));
+  const codeFlows = new CodeFlows(
+    (change) => codeColumnOf(change),
+    (change, calls) => assistants.walkThroughCodeFlow(change, calls)
+  );
   context.subscriptions.push(codeFlows);
   const languageOffer = new LanguageOffer(context.globalState);
   context.subscriptions.push(languageOffer);

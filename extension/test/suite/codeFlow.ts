@@ -23,16 +23,31 @@ export interface ShownNode {
   hidden: number;
 }
 
+/** A step of the Assistant's walkthrough, with the steps under it. */
+export interface ShownStep {
+  number: string;
+  id: string;
+  name: string;
+  path: string;
+  line: number;
+  status: "changed" | "new" | "removed" | "unchanged";
+  when?: string;
+  takes?: string;
+  gives?: string;
+  note?: string;
+  calls: ShownStep[];
+}
+
 export interface CodeFlowState {
   loading: boolean;
   hops: 0 | 1 | 2;
-  view: "map" | "lanes" | "list";
+  view: "map" | "lanes" | "list" | "walkthrough";
   showTests: boolean;
   showRemoved: boolean;
   flow: {
     nodes: ShownNode[];
     callless: { id: string; name: string }[];
-    edges: { from: string; to: string; label?: string }[];
+    edges: { from: string; to: string; label?: string; data?: string }[];
     entries: { id: string; name: string; label: string }[];
     testsHidden: number;
     removedHidden: number;
@@ -44,9 +59,15 @@ export interface CodeFlowState {
       from: string;
       to: string;
       label?: string;
+      data?: string;
       fromLane: number;
       toLane: number;
     }[];
+  };
+  walkthrough: {
+    offered: boolean;
+    status: "idle" | "writing" | "ready" | "problem";
+    steps: ShownStep[];
   };
   offers: {
     hops: boolean;
@@ -90,6 +111,7 @@ export type FromCodeFlow =
   | { type: "setShowTests"; show: boolean }
   | { type: "setShowRemoved"; show: boolean }
   | { type: "retry" }
+  | { type: "writeWalkthrough" }
   | { type: "findExtensions"; language: string };
 
 interface CodeFlowApi {

@@ -47,6 +47,7 @@ import {
   assistantRole,
   briefPrompt,
   chatPrompt,
+  codeFlowWalkthroughPrompt,
   findingsPrompt,
   newHeadNote,
   readingOrderPrompt,
@@ -55,6 +56,7 @@ import {
   summaryPrompt,
 } from "./prompts";
 import { threadsOnLines, type ThreadInChange } from "./threads";
+import type { FlowGraph } from "../codeFlow";
 import { messageOf } from "../errors";
 import type { PullRequestDescription } from "../github/client";
 import { findReferences } from "../markdown";
@@ -339,6 +341,17 @@ export class Assistants implements vscode.Disposable {
    */
   findIssues(change: Change): Promise<string> {
     return this.started(change).aside(findingsPrompt);
+  }
+
+  /**
+   * Asks the Change's Assistant to walk through the calls of its Code Flow,
+   * starting it if it hasn't started, and gives its reply, which the view
+   * doesn't show.
+   */
+  walkThroughCodeFlow(change: Change, graph: FlowGraph): Promise<string> {
+    return this.started(change).aside(async (_, note) =>
+      codeFlowWalkthroughPrompt(graph, note)
+    );
   }
 
   /** Has each Assistant's heading show its Change's title, such as once its pull request has loaded. */

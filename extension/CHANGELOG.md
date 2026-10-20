@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.6.0](https://github.com/edziegle/dear_reviewer/compare/v0.5.0...v0.6.0) (2026-10-20)
+
+
+### Features
+
+* **code-flow:** give the call map and swimlanes a keyboard and screen reader model ([#136](https://github.com/edziegle/dear_reviewer/issues/136)) ([0461967](https://github.com/edziegle/dear_reviewer/commit/0461967814339139e20ad5a42998c12444cb268f)), closes [#121](https://github.com/edziegle/dear_reviewer/issues/121)
+* **code-flow:** lead with the symbols that make calls ([#139](https://github.com/edziegle/dear_reviewer/issues/139)) ([309800c](https://github.com/edziegle/dear_reviewer/commit/309800c6d245b47f4f6e51dca2471a84bdbf9900))
+* **release:** list every release on Open VSX ([#146](https://github.com/edziegle/dear_reviewer/issues/146)) ([ef02f35](https://github.com/edziegle/dear_reviewer/commit/ef02f35d0ec4c1c15e44ee0488a82ed25c6ed3d6))
+* **review-window:** name the Change under review by its pull request's title ([#132](https://github.com/edziegle/dear_reviewer/issues/132)) ([cf5ab89](https://github.com/edziegle/dear_reviewer/commit/cf5ab89188dbbd47f4fb3b3d37c3fb5f7ece2ffd))
+
+
+### Bug Fixes
+
+* **assistant:** confine the Assistant's reads to the Change and fence all other people's text ([#144](https://github.com/edziegle/dear_reviewer/issues/144)) ([0d7055d](https://github.com/edziegle/dear_reviewer/commit/0d7055dc9d99fabdfb18084d1958cc0a66594d32)), closes [#112](https://github.com/edziegle/dear_reviewer/issues/112)
+* **code-flow:** list only the swimlane entries that make calls ([#140](https://github.com/edziegle/dear_reviewer/issues/140)) ([c56bb6a](https://github.com/edziegle/dear_reviewer/commit/c56bb6a9838c364f46c5be77f7d3ff416b3e59c1)), closes [#113](https://github.com/edziegle/dear_reviewer/issues/113)
+* **code-flow:** offer each control and notice only in the view it acts on ([#133](https://github.com/edziegle/dear_reviewer/issues/133)) ([d630d84](https://github.com/edziegle/dear_reviewer/commit/d630d845d3e1451dc97230306368c62b75694b04)), closes [#122](https://github.com/edziegle/dear_reviewer/issues/122)
+* **overview:** offer Submit Another Review… and rename Close Change ([#137](https://github.com/edziegle/dear_reviewer/issues/137)) ([d805443](https://github.com/edziegle/dear_reviewer/commit/d805443912a5967686c06a6e6d5be822aaaf7907)), closes [#76](https://github.com/edziegle/dear_reviewer/issues/76)
+* **webviews:** give code in rendered Markdown the theme's foreground ([#145](https://github.com/edziegle/dear_reviewer/issues/145)) ([b7f2bf8](https://github.com/edziegle/dear_reviewer/commit/b7f2bf81e5e9ec1e6180a4442079bee22f94d6c0)), closes [#89](https://github.com/edziegle/dear_reviewer/issues/89)
+
 ## [0.5.0](https://github.com/edziegle/dear_reviewer/compare/v0.4.0...v0.5.0) (2026-10-19)
 
 

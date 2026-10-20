@@ -1,0 +1,3 @@
+{
+  "require": ["out/unit/test/unit/hermeticGit.js"]
+}

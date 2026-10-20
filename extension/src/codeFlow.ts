@@ -338,7 +338,7 @@ export interface FlowControls {
   showAll: boolean;
   /** Lowers the cap, for tests. */
   cap?: number;
-  /** The changed or new symbol the swimlanes follow; the first one if absent. */
+  /** The changed or new symbol the swimlanes follow; the first one that makes calls if absent or no longer one. */
   entry?: string;
   /** Draw the symbols of test files too. */
   showTests?: boolean;
@@ -357,8 +357,13 @@ export interface ShownNode extends FlowNode {
 export interface ShownFlow {
   nodes: ShownNode[];
   edges: FlowEdge[];
-  /** The swimlanes' entry points; `label` adds where one is when another has its name. */
+  /**
+   * The swimlanes' entry points: the changed, new and removed symbols that
+   * make a call; `label` adds where one is when another has its name.
+   */
   entries: { id: string; name: string; label: string }[];
+  /** How many changed, new and removed symbols the graph has, whether or not they call. */
+  changed: number;
   /** How many test symbols within the hops are left out. */
   testsHidden: number;
   /** How many symbols within the hops the cap left out. */
@@ -388,14 +393,20 @@ export function shownFlow(full: FlowGraph, controls: FlowControls): ShownFlow {
   const placed = layerLayout(capped);
   const changed = graph.nodes.filter((node) => node.status !== "unchanged");
   const named = (name: string) => changed.filter((n) => n.name === name);
-  const entries = changed.map(({ id, name, path, line, side }) => ({
-    id,
-    name,
-    label:
-      named(name).length > 1
-        ? `${name} · ${side === "base" ? "before: " : ""}${path}:${line}`
-        : name,
-  }));
+  const ids = new Set(graph.nodes.map((node) => node.id));
+  const callers = new Set(
+    graph.edges.filter((edge) => ids.has(edge.to)).map((edge) => edge.from)
+  );
+  const entries = changed
+    .filter((node) => callers.has(node.id))
+    .map(({ id, name, path, line, side }) => ({
+      id,
+      name,
+      label:
+        named(name).length > 1
+          ? `${name} · ${side === "base" ? "before: " : ""}${path}:${line}`
+          : name,
+    }));
   const entry =
     entries.find((e) => e.id === controls.entry)?.id ?? entries[0]?.id;
   return {
@@ -406,6 +417,7 @@ export function shownFlow(full: FlowGraph, controls: FlowControls): ShownFlow {
     })),
     edges: capped.edges,
     entries,
+    changed: changed.length,
     testsHidden,
     undrawn: within.nodes.length - capped.nodes.length,
     overCap: limited.graph.nodes.length < within.nodes.length,
@@ -451,7 +463,6 @@ export function flowOffers(input: {
   const { view, flow } = input;
   const answered = input.languages.every((l) => l.outcome === "answered");
   const drawsWithinHops = view !== "lanes";
-  const entry = flow.entries.find((e) => e.id === flow.entry);
   const picture = drawsWithinHops
     ? flow.nodes.length > 0
     : flow.calls.length > 0;
@@ -472,18 +483,18 @@ export function flowOffers(input: {
   };
 
   function emptyText(): string | undefined {
-    if (!input.showTests && flow.testsHidden > 0 && flow.entries.length === 0) {
+    if (!input.showTests && flow.testsHidden > 0 && flow.changed === 0) {
       return "Every symbol this Change touches is test code, which is hidden.";
     }
-    if (flow.nodes.length === 0 && flow.entries.length === 0) {
+    if (flow.nodes.length === 0 && flow.changed === 0) {
       return answered && !input.problem
         ? "This Change touches no functions or methods Code Flow can draw."
         : undefined;
     }
-    if (!drawsWithinHops && entry) {
+    if (!drawsWithinHops && flow.changed > 0) {
       return answered
-        ? `${entry.name} calls nothing.`
-        : `No calls from ${entry.name} are known.`;
+        ? "No symbol this Change touches calls anything."
+        : "No calls from the symbols this Change touches are known.";
     }
     return undefined;
   }

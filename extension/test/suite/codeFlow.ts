@@ -104,6 +104,7 @@ export type FromCodeFlow =
   | { type: "setHops"; hops: number }
   | { type: "setView"; view: string }
   | { type: "select"; id: string }
+  | { type: "show"; id: string }
   | { type: "openDiff"; id: string }
   | { type: "setEntry"; id: string }
   | { type: "expand"; id: string }

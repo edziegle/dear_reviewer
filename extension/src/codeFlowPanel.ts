@@ -39,7 +39,11 @@ export interface CodeFlowState {
 export type FromCodeFlow =
   | { type: "setHops"; hops: number }
   | { type: "setView"; view: string }
+  /** Selects a symbol, and nothing more. */
   | { type: "select"; id: string }
+  /** Selects a symbol and shows it in the diff, keeping the focus in the Code Flow. */
+  | { type: "show"; id: string }
+  /** Selects a symbol and moves the focus to it in the diff. */
   | { type: "openDiff"; id: string }
   | { type: "setEntry"; id: string }
   | { type: "expand"; id: string }
@@ -164,6 +168,7 @@ export class CodeFlowPanel {
         }
         break;
       case "select":
+      case "show":
       case "openDiff":
       case "setEntry":
       case "expand":
@@ -245,6 +250,9 @@ function html(): string {
   .call:focus-visible .hit { stroke: var(--vscode-focusBorder); stroke-width: 3; }
   .node text, .lane text, .call text { fill: var(--vscode-editor-foreground); font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); }
   .node .name { font-family: var(--vscode-editor-font-family); font-weight: 600; }
+  /* A symbol's name shows it in the diff; the rest of its box only selects it. */
+  .node .name, .call .name { cursor: pointer; }
+  .node .name:hover, .call .name:hover { text-decoration: underline; }
   .node .where, .edge-label, .more { fill: var(--vscode-descriptionForeground); font-size: calc(var(--vscode-font-size) * 0.9); }
   .node.unchanged .name { font-weight: 400; }
   .edge { fill: none; stroke: var(--vscode-descriptionForeground); stroke-width: 1.2; }
@@ -332,16 +340,18 @@ function html(): string {
 
   const arrowDefs = () => svg("defs", {}, svg("marker", { id: "arrow", viewBox: "0 0 10 10", refX: "9", refY: "5", markerWidth: "7", markerHeight: "7", orient: "auto-start-reverse" }, svg("path", { class: "arrow", d: "M0 0 L10 5 L0 10 z" })));
 
-  /** A second Enter on the selected symbol opens its diff; anything else selects it. */
+  /** A second Enter on the selected symbol opens its diff; anything else shows it in the diff. */
   function activate(event, id) {
     event.preventDefault();
     if (current.selected === id && event.key === "Enter") post({ type: "openDiff", id });
-    else post({ type: "select", id });
+    else post({ type: "show", id });
   }
+  /** Shows a symbol in the diff from a click on its name, which its box or row would only select. */
+  const showOnClick = (id, before) => (event) => { event.stopPropagation(); if (before) before(); post({ type: "show", id }); };
 
   /** Says how to move through the picture, since the keys are not otherwise visible. */
   const hint = (view) => el("p", { class: "hint", id: "hint",
-    text: (view === "lanes" ? "Up and Down move between calls. " : "Arrow keys move between symbols; Right and Left follow calls. ") + "Enter shows a symbol in the diff; Enter again moves to the diff." });
+    text: (view === "lanes" ? "Up and Down move between calls. " : "Arrow keys move between symbols; Right and Left follow calls. ") + "Enter, or clicking a name, shows a symbol in the diff; Enter again moves to the diff." });
 
   /** Makes the symbol the one tab stop into the call map. */
   function setRoving(id) {
@@ -467,7 +477,7 @@ function html(): string {
         svg("title", { text: describe(node) }),
         svg("rect", { class: "ring", x: -4, y: -4, width: NODE_W + 8, height: NODE_H + 8, rx: 5 }),
         svg("rect", { class: "box", width: NODE_W, height: NODE_H, rx: 3 }),
-        svg("text", { class: "name", x: 8, y: 19 }, node.name),
+        svg("text", { class: "name", x: 8, y: 19, onclick: showOnClick(node.id) }, node.name),
         svg("text", { class: "where loc", x: 8, y: 36 }, placeOf(node)));
       if (node.status !== "unchanged") group.append(svg("text", { class: "where status", x: NODE_W - 8, y: 19, "text-anchor": "end" }, statusMark(node)));
       if (node.hidden) group.append(svg("text", { class: "more", x: NODE_W - 8, y: 36, "text-anchor": "end" }, node.hidden + " not drawn"));
@@ -560,13 +570,17 @@ function html(): string {
       const same = call.fromLane === call.toLane;
       // What marks the callee marks the call; the caller's mark is named in the row's second line.
       const calleeMark = target ? statusMark(target) : "", callerMark = source ? statusMark(source) : "";
+      const callee = target ? target.name : call.to;
+      const heading = clip(callee + (edgeText(call) ? "  " + edgeText(call) : ""), 40);
       const detail = [calleeMark, target ? placeOf(target) : "", callerMark && source ? "called from " + callerMark + " " + source.name : ""].filter(Boolean).join("  \u00b7  ");
       const group = svg("g", { class: "call " + (target ? target.status : "unchanged"), tabindex: i === stopRow ? "0" : "-1", role: "option", "aria-selected": String(i === selectedRow), "aria-label": (i + 1) + ". " + (source ? source.name + (callerMark ? " (" + STATUS[source.status] + ")" : "") : call.from) + " calls " + (target ? target.name + ", " + STATUS[target.status] + ", " + before(target) + target.path + " line " + target.line : call.to) + (call.data ? ", carrying " + call.data : "") + (call.label ? ", " + call.label : ""), "data-focus": "call:" + i },
         svg("rect", { class: "hit", x: PAD, y: y - ROW_H / 2 + 2, width: width - PAD * 2, height: ROW_H - 4, rx: 3 }),
         same
           ? svg("path", { class: "edge", d: "M" + x1 + " " + (y - 6) + " h28 v12 h-26", "marker-end": "url(#arrow)" })
           : svg("line", { class: "edge", x1, x2: x2 + (x2 > x1 ? -2 : 2), y1: y, y2: y, "marker-end": "url(#arrow)" }),
-        svg("text", { x: Math.min(x1, x2) + 8, y: y - 8 }, (i + 1) + ". " + clip((target ? target.name : call.to) + (edgeText(call) ? "  " + edgeText(call) : ""), 40)),
+        svg("text", { x: Math.min(x1, x2) + 8, y: y - 8 }, (i + 1) + ". ",
+          svg("tspan", { class: "name", onclick: showOnClick(call.to, () => { selectedCall = i; }) }, heading.slice(0, callee.length)),
+          heading.slice(callee.length)),
         detail && svg("text", { class: "where", x: Math.min(x1, x2) + 8, y: y + 14 }, clip(detail, 70)));
       group.addEventListener("click", () => { selectedCall = i; post({ type: "select", id: call.to }); });
       group.addEventListener("focus", () => setRovingCall(i));
@@ -588,7 +602,7 @@ function html(): string {
     const known = new Map(state.known.map((n) => [n.id, n]));
     const callersOf = (id) => state.flow.edges.filter((e) => e.to === id).map((e) => known.get(e.from)).filter(Boolean);
     const calleesOf = (id) => state.flow.edges.filter((e) => e.from === id).map((e) => known.get(e.to)).filter(Boolean);
-    const link = (node) => el("button", { type: "button", class: "sym", onclick: () => post({ type: "select", id: node.id }), text: node.name });
+    const link = (node) => el("button", { type: "button", class: "sym", onclick: () => post({ type: "show", id: node.id }), text: node.name });
     const names = (nodes) => nodes.length ? nodes.flatMap((n, i) => (i ? [", ", link(n)] : [link(n)])) : ["none"];
     return el("ul", { class: "list" }, [...state.flow.nodes, ...state.flow.callless].map((node) =>
       el("li", {},
@@ -608,7 +622,7 @@ function html(): string {
     }
     const item = (step) => el("li", {},
       el("span", { class: "num", text: step.number + "." }), " ",
-      el("button", { type: "button", class: "sym", "data-focus": "step:" + step.number, onclick: () => post({ type: "select", id: step.id }), text: step.name }),
+      el("button", { type: "button", class: "sym", "data-focus": "step:" + step.number, onclick: () => post({ type: "show", id: step.id }), text: step.name }),
       step.status !== "unchanged" ? el("span", { class: "badge", text: step.status }) : null, " ",
       el("span", { class: "where", text: before(step) + step.path + ":" + step.line }),
       step.when ? el("div", { class: "detail", text: "When " + step.when }) : null,
@@ -622,7 +636,7 @@ function html(): string {
 
   function details(state) {
     const node = state.selected && state.known.find((n) => n.id === state.selected);
-    if (!node) return el("div", { class: "details" }, el("span", { class: "empty", text: "Select a symbol to see where it is and to jump the diff to it." }));
+    if (!node) return el("div", { class: "details" }, el("span", { class: "empty", text: "Select a symbol to see where it is and what it calls. Click its name to show it in the diff." }));
     return el("div", { class: "details", id: "details" },
       el("strong", { text: node.name }), el("span", { class: "badge", text: node.status }), " ",
       el("div", { class: "where", text: before(node) + node.path + ":" + node.line }),

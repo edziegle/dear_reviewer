@@ -275,6 +275,9 @@ export class CodeFlows implements vscode.Disposable {
         break;
       case "select":
         flow.selected = action.id;
+        break;
+      case "show":
+        flow.selected = action.id;
         this.send(flow);
         await this.openDiff(flow, action.id, true);
         return;

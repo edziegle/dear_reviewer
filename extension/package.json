@@ -6,6 +6,28 @@
   "license": "MIT",
   "version": "0.5.0",
   "publisher": "edziegle",
+  "icon": "media/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/edziegle/dear_reviewer.git",
+    "directory": "extension"
+  },
+  "bugs": {
+    "url": "https://github.com/edziegle/dear_reviewer/issues"
+  },
+  "homepage": "https://github.com/edziegle/dear_reviewer#readme",
+  "categories": [
+    "SCM Providers",
+    "Other"
+  ],
+  "keywords": [
+    "code review",
+    "pull request",
+    "github",
+    "diff",
+    "claude",
+    "ai"
+  ],
   "engines": {
     "vscode": "^1.135.0"
   },

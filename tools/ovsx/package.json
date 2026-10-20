@@ -1,0 +1,8 @@
+{
+  "name": "dear-reviewer-ovsx",
+  "description": "ovsx alone, so the Open VSX release job installs nothing else.",
+  "private": true,
+  "dependencies": {
+    "ovsx": "^1.3.0"
+  }
+}

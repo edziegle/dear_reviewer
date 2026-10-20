@@ -5,6 +5,8 @@ date: 2026-10-19
 
 # Build and attest the .vsix in a reusable workflow, for SLSA Build L3
 
+Amended by [ADR 0043](0043-list-each-release-on-open-vsx.md): the Open VSX job holds `id-token: write`, for Open VSX's Trusted Publishing, and `attestations: read`, to verify the .vsix before it lists it. It still holds no `contents: write` or `attestations: write`.
+
 ## Context and Problem Statement
 
 ADR 0027 attests `dear-reviewer.vsix` with GitHub's `actions/attest`, which gives Supply-chain Levels for Software Artifacts (SLSA) Build L2. Two things keep the release from Build L3. The `attest` step runs in `release.yml`, so the certificate names that workflow as the signer, and a verifier can't tell from it that the job that built the .vsix had no `id-token: write`: a tampered `release.yml` could sign anything. And the build restores `~/.npm` and the tools mise installs from caches that the CI workflow writes on `main`, so one build can change another. The integrity hashes in `package-lock.json` limit the damage, but that isn't isolation.

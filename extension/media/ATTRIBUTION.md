@@ -4,6 +4,8 @@
 
 `dear-reviewer-logo.woff` is the same drawing as a one-glyph font, without the thickened strokes, built by `mise run logo-font`.
 
+`icon.png`, the extension's icon on Open VSX, is the same drawing again, cut from `docs/images/logo.png` without the words beside it, in its gradient, by `mise run icon`.
+
 ## Walkthrough images
 
 `walkthrough/*.png` are renders of Dear Reviewer's own overview, Submit step, Assistant panel and Dashboard, with sample data and approximate theme colors. They show the Reading Cat above, as the Assistant's mark, and nothing else from outside the extension.

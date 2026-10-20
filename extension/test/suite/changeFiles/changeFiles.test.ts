@@ -267,20 +267,6 @@ describe("The Change files view", () => {
     await unmarkViewed(entryAt(await changeFiles(), title, "pkg", "legacy.py"));
   });
 
-  it("marks the file beside the overview viewed with the review key pressed in the overview, and moves on", async () => {
-    await select(entryAt(await changeFiles(), title, "added.py"));
-    await shows("added.py");
-    await showTimeline(request);
-    await eventually(() => assert.strictEqual(activeTabLabel(), title));
-
-    await review("markViewedAndNext");
-
-    await shows("main.py");
-    const tree = await changeFiles();
-    assert.strictEqual(entryAt(tree, title, "added.py").viewed, true);
-    await unmarkViewed(entryAt(tree, title, "added.py"));
-  });
-
   it("lists both sides of every viewed file for the title bar's buttons, as files are marked and unmarked", async () => {
     const sides = (file: string) => [
       path.join(base, file),

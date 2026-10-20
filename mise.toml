@@ -150,11 +150,29 @@ run = 'echo "week=$(date -u +%G-W%V)" >> "${GITHUB_OUTPUT:-/dev/stdout}"'
 description = "Format Markdown with Prettier"
 run = "npx prettier --write '**/*.md'"
 
+# The root README and LICENSE are the only copies. The listing needs them next
+# to package.json, so they're copied in, and git-ignored there, each time.
 [tasks.package]
 description = "Package the extension as a .vsix"
 dir = "extension"
 depends = ["typecheck", "build"]
-run = "npx vsce package --allow-missing-repository --skip-license -o dist/dear-reviewer.vsix"
+run = [
+  "cp ../README.md ../LICENSE .",
+  "npx vsce package -o dist/dear-reviewer.vsix",
+]
+
+# The Open VSX icon: the cat from the logo, with the words beside it blanked
+# out by the transparent rectangle. Needs ImageMagick. The icon is committed,
+# so packaging doesn't need this task; run it after changing the logo.
+[tasks.icon]
+description = "Render media/icon.png from docs/images/logo.png"
+dir = "extension"
+run = '''
+magick ../docs/images/logo.png -alpha set \
+  \( -size 485x201 xc:none \) -geometry +515+165 -compose Copy -composite +compose \
+  -trim +repage -background none -gravity center -extent 720x720 \
+  -resize 256x256 -strip PNG32:media/icon.png
+'''
 
 # Installs the build into VSCodium rather than launching an Extension Development
 # Host: Dear Reviewer opens Changes in a separate review window, and only an
@@ -173,3 +191,31 @@ description = "Attach the packaged .vsix to a GitHub Release"
 dir = "extension"
 usage = 'arg "<tag>" help="The release tag, like v0.1.0"'
 run = 'gh release upload "$usage_tag" dist/dear-reviewer.vsix --clobber'
+
+# Fails on a .vsix that build-vsix.yml didn't build and attest, such as a local build.
+[tasks.verify-vsix]
+description = "Check the packaged .vsix against its build provenance attestation"
+dir = "extension"
+run = """
+gh attestation verify dist/dear-reviewer.vsix -R edziegle/dear_reviewer \
+  --signer-workflow edziegle/dear_reviewer/.github/workflows/build-vsix.yml \
+  --source-ref refs/heads/main
+"""
+
+# ovsx has a package of its own, so the job that holds the Open VSX token
+# installs it alone, with no install scripts
+# (docs/adr/0043-list-each-release-on-open-vsx.md).
+[tasks.deps-ovsx]
+description = "Install ovsx alone, for releasing to Open VSX"
+dir = "tools/ovsx"
+run = "npm ci --ignore-scripts"
+
+# ovsx uses OVSX_PAT when it's set, and otherwise exchanges the CI's OIDC token
+# for a short-lived one through Open VSX's Trusted Publishing. A version Open VSX
+# already has is skipped, so a re-run after a success does nothing. It runs the
+# ovsx in tools/ovsx, not npx, which would download the latest ovsx if that
+# isn't installed.
+[tasks.list-open-vsx]
+description = "List the packaged .vsix on Open VSX"
+dir = "extension"
+run = "../tools/ovsx/node_modules/.bin/ovsx publish dist/dear-reviewer.vsix --skip-duplicate"

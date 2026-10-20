@@ -2,3 +2,6 @@ node_modules/
 .vscode-test/
 dist/
 out/
+# Copied from the repository root by `mise run package`, for the listing
+README.md
+LICENSE

@@ -72,7 +72,17 @@ export interface ShownReadingOrder {
   problem?: boolean;
   steps: {
     label: string;
-    files: { path: string; why?: string; viewed: boolean }[];
+    /** Set for the first step, the core of the change. */
+    core?: true;
+    /** Set for the last step, of the skim-only files. */
+    skimOnly?: true;
+    files: {
+      path: string;
+      why?: string;
+      viewed: boolean;
+      /** Why the file is skim-only. */
+      skim?: string;
+    }[];
   }[];
 }
 

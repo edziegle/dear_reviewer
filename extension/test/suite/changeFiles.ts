@@ -21,6 +21,10 @@ export interface FileEntry {
   status?: string;
   /** The viewed checkbox, on files only. */
   viewed?: boolean;
+  /** Whether the row starts collapsed, on rows with children. */
+  collapsed?: boolean;
+  /** Whether the file is drawn muted, as a skim-only file is. */
+  muted?: boolean;
   children: FileEntry[];
   command?: vscode.Command;
   /** What picks the element's menus, such as a Change's finishing actions. */
@@ -58,6 +62,8 @@ export async function changeFiles(): Promise<FileEntry[]> {
             new vscode.CancellationTokenSource().token
           );
           if (decoration?.badge) entry.status = decoration.badge;
+          if (decoration?.color?.id === "disabledForeground")
+            entry.muted = true;
         }
         if (item.checkboxState !== undefined) {
           const state =
@@ -66,6 +72,8 @@ export async function changeFiles(): Promise<FileEntry[]> {
               : item.checkboxState;
           entry.viewed = state === vscode.TreeItemCheckboxState.Checked;
         }
+        if (item.collapsibleState === vscode.TreeItemCollapsibleState.Collapsed)
+          entry.collapsed = true;
         if (item.command) entry.command = item.command;
         if (item.contextValue) entry.contextValue = item.contextValue;
         return entry;

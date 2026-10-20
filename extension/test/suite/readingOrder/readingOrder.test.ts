@@ -113,6 +113,7 @@ describe("The Reading Order", () => {
       steps: [
         {
           label: "The rename",
+          core: true,
           files: [
             { path: "util.py", why: "defines it", viewed: false },
             { path: "main.py", why: "calls the new name", viewed: false },
@@ -197,7 +198,7 @@ describe("The Reading Order", () => {
     const cutWhy = `${longWhy.slice(0, 79)}…`;
     const inReadingOrder = [
       `${title} — □□□□□□□ 0/7`,
-      "  1. The rename",
+      "  1. The rename — core of the change",
       "    util.py [M] — defines it",
       "    main.py [M] — calls the new name",
       `  2. ${cutLabel}`,

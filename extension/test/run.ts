@@ -444,6 +444,9 @@ async function launch({
       extensionDevelopmentPath: root,
       extensionTestsPath: path.join(__dirname, "suite", "index.js"),
       extensionTestsEnv: {
+        // The git of a test, and of the extension under test, reads none of the machine's config.
+        GIT_CONFIG_GLOBAL: os.devNull,
+        GIT_CONFIG_SYSTEM: os.devNull,
         DEAR_REVIEWER_PLAN: JSON.stringify(phases),
         DEAR_REVIEWER_GREP: process.env.DEAR_REVIEWER_GREP,
         DEAR_REVIEWER_FIXTURES_ROOT: path.join(work, "fixtures"),

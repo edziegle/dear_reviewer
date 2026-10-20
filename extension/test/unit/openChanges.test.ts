@@ -196,16 +196,29 @@ describe("The open Changes shared by several windows", () => {
 
   afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
 
-  /** Runs `body` in its own Node process, as another window's extension host would. */
-  function inOtherWindow(body: string): Promise<void> {
+  /**
+   * Runs `body` in its own Node process, as another window's extension host would.
+   * The module path, data directory and `data` reach it as environment variables,
+   * never spliced into the script.
+   */
+  function inOtherWindow(
+    body: string,
+    data: Record<string, string> = {}
+  ): Promise<void> {
     const script = `
-      const { OpenChanges } = require(${JSON.stringify(modulePath)});
-      const open = new OpenChanges(${JSON.stringify(dir)});
+      const { OpenChanges } = require(process.env.OPEN_CHANGES_MODULE);
+      const open = new OpenChanges(process.env.OPEN_CHANGES_DIR);
       const change = (id) => (${changeNamed.toString()})(id);
       ${body}`;
     return new Promise((resolve, reject) => {
       const child = spawn(process.execPath, ["-e", script], {
         stdio: ["ignore", "inherit", "inherit"],
+        env: {
+          ...process.env,
+          ...data,
+          OPEN_CHANGES_MODULE: modulePath,
+          OPEN_CHANGES_DIR: dir,
+        },
       });
       child.on("exit", (code) =>
         code === 0 ? resolve() : reject(new Error(`window exited ${code}`))
@@ -337,7 +350,8 @@ describe("The open Changes shared by several windows", () => {
         fs.writeFileSync(lockFile(), `${holder.pid}:token`);
         await Promise.all([
           inOtherWindow(
-            `setTimeout(() => require("fs").unlinkSync(${JSON.stringify(lockFile())}), 300)`
+            `setTimeout(() => require("fs").unlinkSync(process.env.LOCK_FILE), 300)`,
+            { LOCK_FILE: lockFile() }
           ),
           inOtherWindow(`open.put(change("abc"))`),
         ]);

@@ -39,7 +39,8 @@ jobs:
         with:
           name: vsix
           path: extension/dist/dear-reviewer.vsix
-          retention-days: 1
+          # Long enough to re-run a caller's failed job that downloads it.
+          retention-days: 7
 
   # Separate from the build, so no dependency's install script can use these
   # permissions to attest a file of its own.

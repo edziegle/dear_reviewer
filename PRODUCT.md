@@ -10,7 +10,7 @@ Dear Reviewer is a VS Code extension (ADR 0001), developed and tested in VSCodiu
 
 ## Users
 
-Developers who review code: teammates' GitHub pull requests, and code their own AI agents wrote. The first user is the author, a tech lead on a large polyglot monorepo at work (Python, OpenTofu, TypeScript, JavaScript, YAML, Bash) with home projects in Python and Rust, who spends most of the day reviewing. Design decisions should hold for any developer in that situation, even though publishing to a marketplace is out of scope today (see the spec, issue #1).
+Developers who review code: teammates' GitHub pull requests, and code their own AI agents wrote. The first user is the author, a tech lead on a large polyglot monorepo at work (Python, OpenTofu, TypeScript, JavaScript, YAML, Bash) with home projects in Python and Rust, who spends most of the day reviewing. Design decisions should hold for any developer in that situation.
 
 Terms follow `GLOSSARY.md`: the human is the Reviewer, the AI is the Assistant, the code under review is a Change.
 
@@ -36,7 +36,7 @@ Real navigation on both sides of every diff, for pull requests and local Changes
 - Changes open as base and head worktrees; Change Files view with viewed tracking.
 - The Assistant runs as one long-lived `claude` process per Change with read-only tools (ADR 0004). It summarises a Change on open, explains what changed since the last Review, chats per Change, raises Findings only when asked, and turns the Reviewer's Comments on a local Change into a Brief. It never writes the Reviewer's Comments, never publishes, never runs commands or edits files.
 - A Finding is never published; the Reviewer dismisses it or turns it into a Comment.
-- Out of scope today: GitLab and other forges, team dashboards, the Assistant drafting Comments, sending a Brief straight into an agent session, and marketplace publishing.
+- Out of scope today: GitLab and other forges, team dashboards, the Assistant drafting Comments, sending a Brief straight into an agent session, and the VS Code Marketplace. Each release is listed on Open VSX (ADR 0043).
 
 ## Brand Commitments
 

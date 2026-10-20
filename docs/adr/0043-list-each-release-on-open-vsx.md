@@ -30,7 +30,7 @@ Chosen option: a job of its own in `release.yml`, because merging the `release-p
 - `ovsx` lives in `tools/ovsx/`, a package of its own with its own `package-lock.json`, installed with `npm ci --ignore-scripts`. The job never installs the extension's build and test tools, so none of those packages run beside the credential.
 - The job holds `contents: read`, `attestations: read` and `id-token: write`, and runs in the `open-vsx` environment, which only `main` can deploy to. It holds no `contents: write` or `attestations: write`, so it can't change the GitHub Release or attest a file.
 - The job runs after the `publish` job attaches the .vsix to the GitHub Release, so a version on Open VSX, which can never be listed again, is always on GitHub too. The `vsix` artifact is kept for 7 days, not 1, so re-running the failed jobs is the recovery from a failure in either. `ovsx publish --skip-duplicate` makes a re-run after a success do nothing.
-- The listing shows the root `README.md` and `LICENSE`, copied into `extension/` by `mise run package` and git-ignored there, so the root files stay the only copies. `extension/media/icon.png` is the Reading Cat from the logo.
+- The listing shows the root `README.md`, up to its Development section, and `LICENSE`, copied into `extension/` by `mise run package` and git-ignored there, so the root files stay the only copies. `extension/media/icon.png` is the Reading Cat from the logo.
 
 <!-- vale RedHat.Slash = YES -->
 

@@ -151,13 +151,16 @@ description = "Format Markdown with Prettier"
 run = "npx prettier --write '**/*.md'"
 
 # The root README and LICENSE are the only copies. The listing needs them next
-# to package.json, so they're copied in, and git-ignored there, each time.
+# to package.json, so they're copied in, and git-ignored there, each time. The
+# README's Development section and everything after it is for contributors,
+# not for someone installing the extension, so the listing leaves it out.
 [tasks.package]
 description = "Package the extension as a .vsix"
 dir = "extension"
 depends = ["typecheck", "build"]
 run = [
-  "cp ../README.md ../LICENSE .",
+  "sed '/^## Development$/,$d' ../README.md > README.md",
+  "cp ../LICENSE .",
   "npx vsce package -o dist/dear-reviewer.vsix",
 ]
 

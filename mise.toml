@@ -150,11 +150,16 @@ run = 'echo "week=$(date -u +%G-W%V)" >> "${GITHUB_OUTPUT:-/dev/stdout}"'
 description = "Format Markdown with Prettier"
 run = "npx prettier --write '**/*.md'"
 
+# The root README and LICENSE are the only copies. The listing needs them next
+# to package.json, so they're copied in, and git-ignored there, each time.
 [tasks.package]
 description = "Package the extension as a .vsix"
 dir = "extension"
 depends = ["typecheck", "build"]
-run = "npx vsce package --allow-missing-repository --skip-license -o dist/dear-reviewer.vsix"
+run = [
+  "cp ../README.md ../LICENSE .",
+  "npx vsce package -o dist/dear-reviewer.vsix",
+]
 
 # Installs the build into VSCodium rather than launching an Extension Development
 # Host: Dear Reviewer opens Changes in a separate review window, and only an

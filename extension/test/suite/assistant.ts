@@ -134,6 +134,15 @@ export async function assistantRuns(
   return callsIn(path.join(await conversationDir(change), "calls"));
 }
 
+/**
+ * What a run may do without asking, from its `--allowedTools`: its git tools
+ * only. No `Read`, `Grep` or `Glob`, which would allow every file the
+ * Reviewer's user can read (ADR 0042).
+ */
+export function allowedTools(call: RecordedClaudeCall): string[] {
+  return (flag(call, "--allowedTools") ?? "").split(",").filter(Boolean);
+}
+
 /** The value after a flag, such as `--tools`. */
 export function flag(
   call: RecordedClaudeCall,

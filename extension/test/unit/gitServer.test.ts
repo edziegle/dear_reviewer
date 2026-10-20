@@ -7,7 +7,12 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import { PassThrough } from "stream";
-import { GitHistory, runCapped, serve } from "../../src/assistant/gitServer";
+import {
+  gitEnvironment,
+  GitHistory,
+  runCapped,
+  serve,
+} from "../../src/assistant/gitServer";
 import type { ChangeHistory } from "../../src/assistant/gitTools";
 
 interface Fixture {
@@ -748,5 +753,43 @@ describe("The git tools on a repository", function () {
     assert.strictEqual(shown.result?.isError, undefined);
     assert.strictEqual(refused.result?.isError, true);
     assert.strictEqual(unknown.error?.code, -32601);
+  });
+});
+
+describe("The environment the git tools run git in", () => {
+  it("keeps what git needs to find itself and the Reviewer's config, and drops credentials and GIT_* variables", () => {
+    const environment = gitEnvironment({
+      PATH: "/usr/bin",
+      HOME: "/home/reviewer",
+      USER: "reviewer",
+      LOGNAME: "reviewer",
+      TMPDIR: "/tmp",
+      LANG: "en_US.UTF-8",
+      LC_ALL: "en_US.UTF-8",
+      XDG_CONFIG_HOME: "/home/reviewer/.config",
+      GITHUB_TOKEN: "ghp_dropped",
+      GH_TOKEN: "dropped",
+      ANTHROPIC_API_KEY: "dropped",
+      SSH_AUTH_SOCK: "/tmp/agent",
+      GIT_DIR: "/elsewhere/.git",
+      GIT_SSH_COMMAND: "sh -c dropped",
+      GIT_EXTERNAL_DIFF: "dropped",
+      GIT_PAGER: "dropped",
+    });
+
+    assert.deepStrictEqual(environment, {
+      PATH: "/usr/bin",
+      HOME: "/home/reviewer",
+      USER: "reviewer",
+      LOGNAME: "reviewer",
+      TMPDIR: "/tmp",
+      LANG: "en_US.UTF-8",
+      LC_ALL: "en_US.UTF-8",
+      GIT_OPTIONAL_LOCKS: "0",
+      GIT_TERMINAL_PROMPT: "0",
+      GIT_NO_LAZY_FETCH: "1",
+      GIT_NO_REPLACE_OBJECTS: "1",
+      GIT_GRAFT_FILE: "/dev/null",
+    });
   });
 });

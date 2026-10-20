@@ -4,6 +4,7 @@ import * as path from "path";
 import * as vscode from "vscode";
 import {
   assistantInSight,
+  allowedTools,
   assistantRuns,
   fakeClaudePath,
   flag,
@@ -325,11 +326,18 @@ describe("The Assistant's summary when a Change opens", () => {
       }
       const [run] = await assistantRuns(request);
       assert.strictEqual(flag(run, "--tools"), "Read,Grep,Glob");
-      assert.strictEqual(
-        flag(run, "--allowedTools"),
-        "Read,Grep,Glob,mcp__git__log,mcp__git__show,mcp__git__blame,mcp__git__diff"
-      );
+      assert.deepStrictEqual(allowedTools(run), [
+        "mcp__git__log",
+        "mcp__git__show",
+        "mcp__git__blame",
+        "mcp__git__diff",
+      ]);
       assert.ok(run.args.includes("--strict-mcp-config"));
+      assert.strictEqual(
+        flag(run, "--setting-sources"),
+        "",
+        "no user, project or local settings file loads, not even the Reviewer's own"
+      );
       assert.strictEqual(flag(run, "--permission-mode"), "dontAsk");
       assert.deepStrictEqual(
         // The system prompt is prose, which may say "Write like…".

@@ -19,6 +19,18 @@ import {
 export const readOnlyTools = ["Read", "Grep", "Glob"];
 
 /**
+ * What `--allowedTools` lets the Assistant do without asking: its git tools,
+ * and none of `readOnlyTools` (ADR 0042). In `dontAsk` mode, Claude Code lets
+ * `Read`, `Grep` and `Glob` work inside the working folder and the `--add-dir`
+ * folders and refuses every other path, a symbolic link whose target is
+ * outside them included, as long as no `allow` rule from a flag or a settings
+ * file says otherwise. A bare `Read` here would allow every file the
+ * Reviewer's user can read, as `--add-dir` only widens what is allowed
+ * without asking.
+ */
+export const allowedWithoutAsking = [...allowedGitTools];
+
+/**
  * The git tools' MCP server, which esbuild bundles beside the extension's
  * own dist/extension.js (ADR 0030).
  */
@@ -259,14 +271,16 @@ export class ClaudeConversation {
       "--tools",
       readOnlyTools.join(","),
       "--allowedTools",
-      [...readOnlyTools, ...allowedGitTools].join(","),
+      allowedWithoutAsking.join(","),
       "--permission-mode",
       "dontAsk",
       // A Change's worktrees are someone else's code: don't run its hooks or
-      // connect its MCP servers. Only Dear Reviewer's git server connects,
-      // on VS Code's own binary run as Node.
+      // connect its MCP servers. No user, project or local settings file loads: a user-level
+      // `allow` rule such as a bare `Read`, common in the Reviewer's own
+      // settings, would let the Assistant read any file (ADR 0042). Only Dear
+      // Reviewer's git server connects, on VS Code's own binary run as Node.
       "--setting-sources",
-      "user",
+      "",
       "--strict-mcp-config",
       "--mcp-config",
       JSON.stringify(

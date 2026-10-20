@@ -199,6 +199,11 @@ export class Timelines implements vscode.Disposable {
     this.byChange.get(change.id)?.askFinish();
   }
 
+  /** The pull request's page on GitHub, once the Change's overview has loaded it. */
+  pullRequestUrl(change: Change): string | undefined {
+    return this.byChange.get(change.id)?.url;
+  }
+
   /** Reloads the Change's overview, if it has one. */
   async refresh(change: Change): Promise<void> {
     await this.byChange.get(change.id)?.load();
@@ -279,6 +284,11 @@ class ChangeTimeline {
       loading: true,
       items: [],
     };
+  }
+
+  /** The pull request's page on GitHub, once the overview has loaded it. */
+  get url(): string | undefined {
+    return this.state.url;
   }
 
   show(focus = false): void {

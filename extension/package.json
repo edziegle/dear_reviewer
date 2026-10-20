@@ -307,6 +307,11 @@
         "icon": "$(check-all)"
       },
       {
+        "command": "dearReviewer.viewOnGitHub",
+        "title": "View on GitHub",
+        "category": "Dear Reviewer"
+      },
+      {
         "command": "dearReviewer.discardReview",
         "title": "Discard Pending Comments…",
         "category": "Dear Reviewer"
@@ -662,6 +667,10 @@
           "when": "dearReviewer.hasOpenChange && dearReviewer.frontIsPullRequest"
         },
         {
+          "command": "dearReviewer.viewOnGitHub",
+          "when": "dearReviewer.hasOpenChange && dearReviewer.frontIsPullRequest"
+        },
+        {
           "command": "dearReviewer.writeBrief",
           "when": "dearReviewer.hasOpenChange && !dearReviewer.frontIsPullRequest && dearReviewer.frontHasComments"
         },
@@ -848,6 +857,11 @@
           "command": "dearReviewer.showAssistant",
           "when": "view == dearReviewer.changeFiles && viewItem =~ /^change\\./",
           "group": "3_panels@2"
+        },
+        {
+          "command": "dearReviewer.viewOnGitHub",
+          "when": "view == dearReviewer.changeFiles && viewItem =~ /^change\\.pullRequest/",
+          "group": "8_github@1"
         },
         {
           "command": "dearReviewer.closeChange",

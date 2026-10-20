@@ -182,7 +182,7 @@ The palette is borrowed whole from the active theme; Dear Reviewer chooses roles
 - **Pencil** (`muted-foreground`): dates, the pull-request reference, the Claude login, loading lines, notes from Dear Reviewer itself and the Assistant's working status.
 - **Hairline** (`hairline`): every divider: header and footer rules, timeline rows, Markdown table cells.
 - **Quiet Tint** (`quiet-tint`): the Reviewer's own messages and the empty avatar disc.
-- **Code Ground** (`code-block`, `quote-block`): backgrounds for inline code, fenced blocks and quotes in rendered Markdown.
+- **Code Ground** (`code-block`, `quote-block`): backgrounds for inline code, fenced blocks and quotes in rendered Markdown. Inline and fenced code take `foreground` on `code-block`, not the theme's preformatted-text color, which is designed for the ground that goes with it (in High Contrast Light, white on dark blue) and is nearly invisible on `code-block`. Code in a link keeps the link's color.
 - **Badge** (`badge-background` on `badge-foreground`): selection chips that go with a message to the Assistant.
 
 ### Named Rules

@@ -2,12 +2,15 @@ import * as assert from "assert";
 import {
   capNodes,
   flowOffers,
+  initialHops,
+  NODE_CAP,
   shownFlow,
   fileChangeFromDiff,
   layerLayout,
   swimlanes,
   symbolStatus,
   withinHops,
+  withoutRemoved,
   withoutTests,
   type FileChange,
   type FlowGraph,
@@ -236,6 +239,360 @@ describe("Code Flow layout", () => {
   });
 });
 
+describe("Code Flow row order in a column", () => {
+  /** hub calls m1, m2 and m3; m2 calls leaf; m3 calls leaf; caller calls m3. */
+  const graph: FlowGraph = {
+    nodes: [
+      node("hub", "changed"),
+      node("caller", "unchanged"),
+      node("m1", "unchanged"),
+      node("m2", "unchanged"),
+      node("m3", "unchanged"),
+      node("leaf", "unchanged"),
+    ],
+    edges: [
+      { from: "hub", to: "m1" },
+      { from: "hub", to: "m2" },
+      { from: "hub", to: "m3" },
+      { from: "caller", to: "m3" },
+      { from: "m2", to: "leaf" },
+      { from: "m3", to: "leaf" },
+    ],
+  };
+  const rowsOf = (g: FlowGraph, column: number) => {
+    const placed = layerLayout(g);
+    return g.nodes
+      .filter((n) => placed.get(n.id)!.column === column)
+      .sort((a, b) => placed.get(a.id)!.row - placed.get(b.id)!.row)
+      .map((n) => n.id);
+  };
+
+  it("puts the symbol that makes the most calls first", () => {
+    assert.deepStrictEqual(rowsOf(graph, 0), ["hub", "caller"]);
+  });
+
+  it("orders by calls received when calls made are equal", () => {
+    // Column 1: m2 and m3 each make one call; m3 receives two, m2 one; m1 makes none.
+    assert.deepStrictEqual(rowsOf(graph, 1), ["m3", "m2", "m1"]);
+  });
+
+  it("keeps the graph's order when both counts are equal", () => {
+    const tied: FlowGraph = {
+      nodes: [
+        node("p", "changed"),
+        node("q", "changed"),
+        node("r", "unchanged"),
+      ],
+      edges: [
+        { from: "p", to: "r" },
+        { from: "q", to: "r" },
+      ],
+    };
+    assert.deepStrictEqual(rowsOf(tied, 0), ["p", "q"]);
+  });
+
+  it("counts a symbol it calls twice, or itself, once or not at all", () => {
+    const twice: FlowGraph = {
+      nodes: [
+        node("a", "changed"),
+        node("b", "changed"),
+        node("c", "unchanged"),
+      ],
+      edges: [
+        { from: "a", to: "c" },
+        { from: "a", to: "c" },
+        { from: "b", to: "b" },
+        { from: "b", to: "c" },
+        { from: "b", to: "a" },
+      ],
+    };
+    // b makes two distinct calls (c and a), a makes one.
+    assert.strictEqual(rowsOf(twice, 0)[0], "b");
+  });
+});
+
+describe("Code Flow with no-call symbols collapsed", () => {
+  const controls = { hops: 1 as const, showAll: false };
+  /** a (changed) calls b; lone1 and lone2 (changed) touch no call. */
+  const graph: FlowGraph = {
+    nodes: [
+      node("a", "changed"),
+      node("b", "unchanged"),
+      node("lone1", "changed"),
+      node("lone2", "changed"),
+    ],
+    edges: [{ from: "a", to: "b" }],
+  };
+
+  it("leaves a symbol with no call to a drawn symbol out of the map, and counts it", () => {
+    const shown = shownFlow(graph, controls);
+    assert.deepStrictEqual(shown.nodes.map((n) => n.id).sort(), ["a", "b"]);
+    assert.deepStrictEqual(
+      shown.callless.map((n) => n.id),
+      ["lone1", "lone2"]
+    );
+  });
+
+  it("counts none when every symbol has a call", () => {
+    const pair: FlowGraph = {
+      nodes: [node("a", "changed"), node("b", "unchanged")],
+      edges: [{ from: "a", to: "b" }],
+    };
+    assert.strictEqual(shownFlow(pair, controls).callless.length, 0);
+  });
+
+  it("does not count a call to itself as a call", () => {
+    const self: FlowGraph = {
+      nodes: [node("a", "changed")],
+      edges: [{ from: "a", to: "a" }],
+    };
+    assert.deepStrictEqual(
+      shownFlow(self, controls).callless.map((n) => n.id),
+      ["a"]
+    );
+  });
+
+  it("keeps a symbol the cap cut off from its neighbours in the map, with its count of what is left out", () => {
+    const hub: FlowGraph = {
+      nodes: [
+        node("hub", "changed"),
+        ...[1, 2, 3].map((i) => node(`n${i}`, "unchanged")),
+      ],
+      edges: [1, 2, 3].map((i) => ({ from: "hub", to: `n${i}` })),
+    };
+    const shown = shownFlow(hub, { ...controls, cap: 1 });
+    assert.deepStrictEqual(
+      shown.nodes.map((n) => [n.id, n.hidden]),
+      [["hub", 3]]
+    );
+    assert.deepStrictEqual(shown.callless, []);
+  });
+
+  it("keeps them for the list: the list view has a picture when only they are left", () => {
+    const lone: FlowGraph = {
+      nodes: [node("x", "changed"), node("y", "changed")],
+      edges: [],
+    };
+    const offers = (view: "map" | "list") =>
+      flowOffers({
+        view,
+        flow: shownFlow(lone, controls),
+        hops: 1,
+        showAll: false,
+        showTests: false,
+        languages: [{ outcome: "answered" }],
+        problem: false,
+      });
+    assert.strictEqual(offers("list").picture, true);
+    assert.strictEqual(offers("map").picture, false);
+    assert.match(
+      offers("map").empty!,
+      /^2 symbols have no calls to draw\. The List view lists them\.$/
+    );
+  });
+
+  it("says how many the map leaves out while it draws others", () => {
+    const offers = flowOffers({
+      view: "map",
+      flow: shownFlow(graph, controls),
+      hops: 1,
+      showAll: false,
+      showTests: false,
+      languages: [{ outcome: "answered" }],
+      problem: false,
+    });
+    assert.strictEqual(offers.callless, 2);
+  });
+});
+
+describe("Code Flow with removed symbols hidden", () => {
+  const removed = (id: string): FlowNode => ({
+    id,
+    name: id,
+    path: `old/${id}.py`,
+    line: 1,
+    status: "removed",
+    side: "base",
+  });
+  /**
+   * kept (changed) calls dropped (removed) and shared (unchanged);
+   * dropped calls only_via_removed; gone (removed) calls shared.
+   */
+  const graph: FlowGraph = {
+    nodes: [
+      node("kept", "changed"),
+      removed("dropped"),
+      node("shared", "unchanged"),
+      node("only_via_removed", "unchanged"),
+      removed("gone"),
+    ],
+    edges: [
+      { from: "kept", to: "dropped" },
+      { from: "kept", to: "shared" },
+      { from: "dropped", to: "only_via_removed" },
+      { from: "gone", to: "shared" },
+    ],
+  };
+  const shown = (showRemoved: boolean, hops: 0 | 1 | 2 = 2) =>
+    shownFlow(graph, { hops, showAll: true, showRemoved });
+
+  it("leaves out removed symbols and every edge to or from them", () => {
+    const flow = shown(false);
+    const drawn = [...flow.nodes, ...flow.callless].map((n) => n.id).sort();
+    assert.deepStrictEqual(drawn, ["kept", "shared"]);
+    assert.deepStrictEqual(flow.edges, [{ from: "kept", to: "shared" }]);
+  });
+
+  it("leaves out a symbol reached only through a removed one", () => {
+    const drawn = shown(false).nodes.map((n) => n.id);
+    assert.ok(!drawn.includes("only_via_removed"));
+  });
+
+  it("counts the removed symbols within the hops it left out", () => {
+    assert.strictEqual(shown(false).removedHidden, 2);
+    assert.strictEqual(shown(false, 0).removedHidden, 2);
+  });
+
+  it("brings them back, with what only they reach, once shown, and counts none hidden", () => {
+    const flow = shown(true);
+    assert.deepStrictEqual(
+      [...flow.nodes, ...flow.callless].map((n) => n.id).sort(),
+      ["dropped", "gone", "kept", "only_via_removed", "shared"]
+    );
+    assert.strictEqual(flow.removedHidden, 0);
+  });
+
+  it("offers no removed symbol as an entry point while they are hidden", () => {
+    assert.deepStrictEqual(
+      shown(false).entries.map((e) => e.id),
+      ["kept"]
+    );
+    assert.deepStrictEqual(
+      shown(true).entries.map((e) => e.id),
+      ["kept", "dropped", "gone"]
+    );
+  });
+
+  it("gives the graph without removed symbols", () => {
+    assert.deepStrictEqual(ids(withoutRemoved(graph)), [
+      "kept",
+      "only_via_removed",
+      "shared",
+    ]);
+  });
+
+  it("says so when a Change only deletes code", () => {
+    const deletes: FlowGraph = {
+      nodes: [removed("a"), removed("b")],
+      edges: [{ from: "a", to: "b" }],
+    };
+    const flow = shownFlow(deletes, { hops: 1, showAll: false });
+    const offers = flowOffers({
+      view: "map",
+      flow,
+      hops: 1,
+      showAll: false,
+      showTests: false,
+      showRemoved: false,
+      languages: [{ outcome: "answered" }],
+      problem: false,
+    });
+    assert.deepStrictEqual(
+      [offers.picture, offers.empty],
+      [
+        false,
+        "Every symbol this Change touches is in a deleted file, which is hidden.",
+      ]
+    );
+  });
+});
+
+describe("Where Code Flow starts", () => {
+  const wide = (count: number): FlowGraph => ({
+    nodes: [
+      node("hub", "changed"),
+      ...Array.from({ length: count }, (_, i) => node(`n${i}`, "unchanged")),
+    ],
+    edges: Array.from({ length: count }, (_, i) => ({
+      from: "hub",
+      to: `n${i}`,
+    })),
+  });
+
+  it("starts one hop out when that fits the cap", () => {
+    assert.strictEqual(initialHops(wide(NODE_CAP - 1)), 1);
+    assert.strictEqual(initialHops(wide(NODE_CAP - 1), NODE_CAP), 1);
+  });
+
+  it("starts at Changed only when one hop is over the cap", () => {
+    assert.strictEqual(initialHops(wide(NODE_CAP)), 0);
+    assert.strictEqual(initialHops(wide(5), 3), 0);
+  });
+
+  it("does not count test or removed symbols, which start hidden", () => {
+    const tests: FlowGraph = {
+      nodes: [
+        node("hub", "changed"),
+        ...Array.from({ length: 10 }, (_, i) => ({
+          ...node(`t${i}`, "unchanged"),
+          path: `tests/test_${i}.py`,
+        })),
+      ],
+      edges: Array.from({ length: 10 }, (_, i) => ({
+        from: `t${i}`,
+        to: "hub",
+      })),
+    };
+    assert.strictEqual(initialHops(tests, 3), 1);
+  });
+});
+
+describe("The default entry point of the swimlanes", () => {
+  it("is the changed symbol that makes the most calls", () => {
+    const graph: FlowGraph = {
+      nodes: [
+        node("quiet", "changed"),
+        node("busy", "changed"),
+        node("x", "unchanged"),
+        node("y", "unchanged"),
+      ],
+      edges: [
+        { from: "quiet", to: "x" },
+        { from: "busy", to: "x" },
+        { from: "busy", to: "y" },
+      ],
+    };
+    const shown = shownFlow(graph, { hops: 1, showAll: false });
+    assert.strictEqual(shown.entry, "busy");
+    assert.deepStrictEqual(
+      shown.entries.map((e) => e.id),
+      ["quiet", "busy"]
+    );
+  });
+
+  it("is the first when they make as many, and a chosen one wins", () => {
+    const graph: FlowGraph = {
+      nodes: [
+        node("a", "changed"),
+        node("b", "changed"),
+        node("x", "unchanged"),
+      ],
+      edges: [
+        { from: "a", to: "x" },
+        { from: "b", to: "x" },
+      ],
+    };
+    assert.strictEqual(
+      shownFlow(graph, { hops: 1, showAll: false }).entry,
+      "a"
+    );
+    assert.strictEqual(
+      shownFlow(graph, { hops: 1, showAll: false, entry: "b" }).entry,
+      "b"
+    );
+  });
+});
+
 describe("Code Flow file changes from a diff", () => {
   const diff = [
     "diff --git a/pay.py b/pay.py",
@@ -432,7 +789,9 @@ describe("Code Flow as the panel shows it", () => {
       edges: ["s1", "s2", "s3", "load"].map((from) => ({ from, to: "sink" })),
     };
     assert.deepStrictEqual(
-      shownFlow(twins, controls).entries.map((e) => e.label),
+      shownFlow(twins, { ...controls, showRemoved: true }).entries.map(
+        (e) => e.label
+      ),
       [
         "save · pkg/store.py:12",
         "save · pkg/cache.py:3",
@@ -467,8 +826,11 @@ describe("Code Flow as the panel shows it", () => {
       "n1",
       "n2",
       "n3",
-      "side",
     ]);
+    assert.deepStrictEqual(
+      shown.callless.map((n) => n.id),
+      ["side"]
+    );
     assert.strictEqual(shown.nodes.find((n) => n.id === "hub")!.hidden, 0);
     assert.strictEqual(shown.undrawn, 0);
   });
@@ -606,6 +968,7 @@ describe("What the Code Flow tab offers around its picture", () => {
       hops: all.hops,
       showAll: all.showAll,
       showTests: false,
+      showRemoved: false,
       languages,
       problem: false,
     });
@@ -674,8 +1037,13 @@ describe("What the Code Flow tab offers around its picture", () => {
     );
     assert.strictEqual(
       offered(lone, "map").empty,
+      "1 symbol has no calls to draw. The List view lists it.",
+      "the call map leaves the symbol out and says so"
+    );
+    assert.strictEqual(
+      offered(lone, "list").empty,
       undefined,
-      "the call map still draws the symbol"
+      "the list still lists the symbol"
     );
   });
 

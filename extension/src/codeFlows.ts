@@ -11,7 +11,7 @@ import {
   fileSides,
   type Change,
 } from "./changeWorkspace";
-import { flowOffers, shownFlow } from "./codeFlow";
+import { flowOffers, initialHops, shownFlow } from "./codeFlow";
 import { gatherFlow, type GatheredFlow } from "./codeFlowGather";
 import {
   CodeFlowPanel,
@@ -40,6 +40,10 @@ interface FlowSettings {
   showAll: boolean;
   /** Whether the symbols of test files are drawn. */
   showTests: boolean;
+  /** Whether the symbols of deleted files are drawn. */
+  showRemoved: boolean;
+  /** Whether the Reviewer chose the hops, which ends the start at Changed only for a big graph. */
+  hopsChosen: boolean;
   /** Symbols whose every neighbour the Reviewer asked to draw. */
   expanded: Set<string>;
   entry?: string;
@@ -61,6 +65,8 @@ const STARTING: Omit<FlowSettings, "expanded"> = {
   view: "map",
   showAll: false,
   showTests: false,
+  showRemoved: false,
+  hopsChosen: false,
 };
 
 export class CodeFlows implements vscode.Disposable {
@@ -152,6 +158,10 @@ export class CodeFlows implements vscode.Disposable {
         return;
       }
       flow.gathered = gathered;
+      // A big graph starts at Changed only; the Reviewer's own choice wins once made.
+      if (!flow.hopsChosen) {
+        flow.hops = initialHops(gathered.graph);
+      }
     } catch (err) {
       if (run !== flow.run) {
         return;
@@ -167,6 +177,7 @@ export class CodeFlows implements vscode.Disposable {
     switch (action.type) {
       case "setHops":
         flow.hops = action.hops as 0 | 1 | 2;
+        flow.hopsChosen = true;
         break;
       case "setView":
         flow.view = action.view as FlowView;
@@ -182,6 +193,9 @@ export class CodeFlows implements vscode.Disposable {
         break;
       case "setShowTests":
         flow.showTests = action.show;
+        break;
+      case "setShowRemoved":
+        flow.showRemoved = action.show;
         break;
       case "select":
         flow.selected = action.id;
@@ -261,6 +275,7 @@ export class CodeFlows implements vscode.Disposable {
       hops: flow.hops,
       showAll: flow.showAll,
       showTests: flow.showTests,
+      showRemoved: flow.showRemoved,
       expanded: [...flow.expanded],
       entry: flow.entry,
     });
@@ -269,6 +284,7 @@ export class CodeFlows implements vscode.Disposable {
       hops: flow.hops,
       view: flow.view,
       showTests: flow.showTests,
+      showRemoved: flow.showRemoved,
       flow: shown,
       offers: flowOffers({
         view: flow.view,
@@ -276,6 +292,7 @@ export class CodeFlows implements vscode.Disposable {
         hops: flow.hops,
         showAll: flow.showAll,
         showTests: flow.showTests,
+        showRemoved: flow.showRemoved,
         languages: flow.gathered.languages,
         problem: flow.problem !== undefined,
       }),

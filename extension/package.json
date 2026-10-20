@@ -1143,7 +1143,7 @@
     "typescript": "^7.0.2"
   },
   "dependencies": {
-    "markdown-it": "^15.0.2",
-    "sanitize-html": "^2.18.0"
+    "markdown-it": "^15.0.3",
+    "sanitize-html": "^2.18.1"
   }
 }

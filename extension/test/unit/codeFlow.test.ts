@@ -311,6 +311,71 @@ describe("Code Flow as the panel shows it", () => {
     );
   });
 
+  it("offers no symbol that calls nothing as an entry point", () => {
+    const quiet: FlowGraph = {
+      nodes: [
+        node("idle", "changed"),
+        node("caller", "new"),
+        node("callee", "unchanged"),
+        node("gone", "removed"),
+      ],
+      edges: [{ from: "caller", to: "callee" }],
+    };
+    assert.deepStrictEqual(
+      shownFlow(quiet, controls).entries.map((e) => e.id),
+      ["caller"]
+    );
+  });
+
+  it("chooses the first symbol that makes calls by default, and falls back to it from an entry that no longer qualifies", () => {
+    const later: FlowGraph = {
+      nodes: [
+        node("idle", "changed"),
+        node("caller", "changed"),
+        node("callee", "unchanged"),
+      ],
+      edges: [{ from: "caller", to: "callee" }],
+    };
+    assert.strictEqual(shownFlow(later, controls).entry, "caller");
+    assert.strictEqual(
+      shownFlow(later, { ...controls, entry: "idle" }).entry,
+      "caller"
+    );
+    assert.strictEqual(
+      shownFlow(later, { ...controls, entry: "nowhere" }).entry,
+      "caller"
+    );
+    assert.deepStrictEqual(shownFlow(later, controls).lanes, [
+      "src/caller.py",
+      "src/callee.py",
+    ]);
+  });
+
+  it("decides on the whole graph, so the call map's hops and cap change no entry", () => {
+    const many = shownFlow(chain, { ...controls, hops: 0 });
+    assert.deepStrictEqual(
+      many.entries.map((e) => e.id),
+      ["a", "x"]
+    );
+    const capped = shownFlow(chain, { ...controls, cap: 1 });
+    assert.deepStrictEqual(
+      capped.entries.map((e) => e.id),
+      ["a", "x"]
+    );
+  });
+
+  it("has no entry point when no symbol calls anything", () => {
+    const idle: FlowGraph = {
+      nodes: [node("a", "changed"), node("b", "new")],
+      edges: [],
+    };
+    const shown = shownFlow(idle, controls);
+    assert.deepStrictEqual(
+      [shown.entries, shown.entry, shown.lanes, shown.calls, shown.changed],
+      [[], undefined, [], [], 2]
+    );
+  });
+
   it("draws the lanes from the entry point", () => {
     const shown = shownFlow(chain, { ...controls, entry: "a" });
     assert.deepStrictEqual(shown.lanes, [
@@ -362,8 +427,9 @@ describe("Code Flow as the panel shows it", () => {
           side: "base",
         },
         { ...node("load", "changed"), name: "load" },
+        node("sink", "unchanged"),
       ],
-      edges: [],
+      edges: ["s1", "s2", "s3", "load"].map((from) => ({ from, to: "sink" })),
     };
     assert.deepStrictEqual(
       shownFlow(twins, controls).entries.map((e) => e.label),
@@ -592,7 +658,7 @@ describe("What the Code Flow tab offers around its picture", () => {
     );
   });
 
-  it("draws the swimlanes of the entry's calls, and says so when it calls nothing", () => {
+  it("draws the swimlanes of the entry's calls, and says so when no symbol calls anything", () => {
     assert.deepStrictEqual(
       [offered(hub, "lanes").picture, offered(hub, "lanes").empty],
       [true, undefined]
@@ -600,11 +666,16 @@ describe("What the Code Flow tab offers around its picture", () => {
     const lone: FlowGraph = { nodes: [node("save", "changed")], edges: [] };
     assert.deepStrictEqual(
       [offered(lone, "lanes").picture, offered(lone, "lanes").empty],
-      [false, "save calls nothing."]
+      [false, "No symbol this Change touches calls anything."]
     );
     assert.strictEqual(
       offered(lone, "lanes", {}, [{ outcome: "noCalls" }]).empty,
-      "No calls from save are known."
+      "No calls from the symbols this Change touches are known."
+    );
+    assert.strictEqual(
+      offered(lone, "map").empty,
+      undefined,
+      "the call map still draws the symbol"
     );
   });
 

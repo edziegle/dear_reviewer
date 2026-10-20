@@ -289,7 +289,7 @@ describe("Code Flow", () => {
     await drawn();
   });
 
-  it("says what is true when no call is drawn: a hop to try, or what the entry calls", async () => {
+  it("says what is true when no call is drawn: a hop to try, or that no symbol calls anything", async () => {
     const { title } = await start({ callees: { helper: ["run_main"] } });
     await settled(title);
     const panel = (await codeFlowPanel(title))!;
@@ -312,7 +312,7 @@ describe("Code Flow", () => {
       const { offers } = (await codeFlowPanel(quiet))!.sent;
       assert.deepStrictEqual(
         [offers.hops, offers.picture, offers.empty],
-        [false, false, "helper calls nothing."]
+        [false, false, "No symbol this Change touches calls anything."]
       );
       const current = (await codeFlowPanel(quiet))!;
       assert.deepStrictEqual(current.rendered, current.sent);
@@ -369,8 +369,8 @@ describe("Code Flow", () => {
       assert.deepStrictEqual(await names(title), ["helper", "run_main"]);
       assert.deepStrictEqual(
         state.flow.entries.map((e) => e.name),
-        ["helper"],
-        "the entry-point picker offers no test function"
+        [],
+        "the entry-point picker offers no test function, and not helper, which calls nothing"
       );
       assert.strictEqual(state.flow.testsHidden, 2);
       await eventually(async () =>
@@ -400,7 +400,7 @@ describe("Code Flow", () => {
         (await codeFlowPanel(title))!.sent.flow.entries
           .map((e) => e.name)
           .sort(),
-        ["check", "helper"]
+        ["check"]
       );
     });
 

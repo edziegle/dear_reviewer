@@ -199,6 +199,18 @@ describe("Code Flow swimlanes", () => {
     });
   });
 
+  it("carries the data a call has, as the Assistant's walkthrough gave it", () => {
+    const withData: FlowGraph = {
+      ...graph,
+      edges: graph.edges.map((edge) =>
+        edge.to === "check" ? { ...edge, data: "pr, verdict" } : edge
+      ),
+    };
+    const calls = swimlanes(withData, "approve").calls;
+    assert.strictEqual(calls[0].data, "pr, verdict");
+    assert.strictEqual("data" in calls[1], false);
+  });
+
   it("follows a call back to a symbol already seen without looping", () => {
     assert.strictEqual(swimlanes(graph, "approve").calls.length, 4);
   });

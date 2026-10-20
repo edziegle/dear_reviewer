@@ -22,6 +22,8 @@ export interface FlowEdge {
   to: string;
   /** The call or signature the language server gave for the edge. */
   label?: string;
+  /** The data that crosses the call, such as "verdict, body", as the Assistant's walkthrough gave it. */
+  data?: string;
 }
 
 export interface FlowGraph {
@@ -193,6 +195,7 @@ export interface SwimlaneCall {
   from: string;
   to: string;
   label?: string;
+  data?: string;
   /** Indexes into the lanes. */
   fromLane: number;
   toLane: number;
@@ -238,6 +241,7 @@ export function swimlanes(
         from: edge.from,
         to: edge.to,
         ...(edge.label === undefined ? {} : { label: edge.label }),
+        ...(edge.data === undefined ? {} : { data: edge.data }),
         fromLane: laneOf(edge.from),
         toLane: laneOf(edge.to),
       };

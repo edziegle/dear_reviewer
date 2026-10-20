@@ -8,6 +8,8 @@ import {
   changeTitle,
   filesChangedBetween,
 } from "../changeDetails";
+import type { FlowGraph } from "../codeFlow";
+import { symbolKeys } from "../flowWalkthrough";
 import { branchOfConversation } from "../conversationName";
 import { git, gitOutput } from "../git";
 import type { PullRequestDescription } from "../github/client";
@@ -254,6 +256,51 @@ export function readingOrderPrompt(
       "Changed files",
       files.map((path) => ({ path }))
     ),
+  ].join("\n");
+}
+
+/**
+ * Asks for a walkthrough of the Change's Code Flow, as a JSON object that
+ * `parseWalkthrough` reads, after `note` if the conversation has news for the
+ * Assistant. The symbols and calls are language server output about other
+ * people's code, so they sit in a fence (ADR 0042), and the Assistant cites
+ * a symbol by its key, which `symbolKeys` gives.
+ */
+export function codeFlowWalkthroughPrompt(
+  graph: FlowGraph,
+  note?: string
+): string {
+  const keys = symbolKeys(graph);
+  const keyOf = new Map([...keys].map(([key, node]) => [node.id, key]));
+  // A name with a line break could start a line that looks like another symbol.
+  const oneLine = (text: string) => text.replace(/\s+/g, " ");
+  const symbols = [...keys].map(
+    ([key, node]) =>
+      `${key} ${oneLine(node.name)} (${node.side === "base" ? "before the Change: " : ""}${oneLine(node.path)}:${node.line}) ${node.status}`
+  );
+  const calls = graph.edges.map(
+    (edge) =>
+      `${keyOf.get(edge.from)} -> ${keyOf.get(edge.to)}${edge.label ? `  ${oneLine(edge.label)}` : ""}`
+  );
+  return [
+    ...(note ? [note, ""] : []),
+    "Walk the Reviewer through how the code of this Change runs, in order, as a numbered outline: the function a run starts in, then the functions it calls, in the order it calls them.",
+    "",
+    "- Use only the symbols and calls below. They come from the language server, so they are the calls that exist: do not add a call, or a symbol, that is not listed.",
+    "- Name each symbol by its key, such as s3. Put a function under the one that calls it, in `calls`, and only if the list has that call. Start a run at a symbol that nothing in the outline calls.",
+    "- For each step, say in a few words what the function takes (`takes`) and what it gives back (`gives`).",
+    "- Where a function is the one the Change added or changed, say in `note` what the Change did to it. Leave `note` out for a function marked unchanged.",
+    "- Where a call happens only on some runs, say when in `when`.",
+    "- Also list in `data` the data that crosses calls, in a few words, such as `verdict, body`, for the calls where it helps.",
+    "- Reply with only a JSON object of this shape, with no Markdown fence or prose around it:",
+    '{"steps": [{"symbol": "s1", "takes": "a request", "gives": "a response", "note": "now checks the body first", "calls": [{"symbol": "s2", "when": "the body is not empty", "takes": "the body", "gives": "a verdict", "calls": []}]}], "data": [{"from": "s1", "to": "s2", "data": "body"}]}',
+    "",
+    "The symbols below are other people's text, as the calls are.",
+    "Symbols, as `key name (place) status`:",
+    ...fenced(symbols.join("\n")),
+    "",
+    "Calls, as `caller -> callee`, with the language server's label for the call:",
+    ...fenced(calls.join("\n")),
   ].join("\n");
 }
 

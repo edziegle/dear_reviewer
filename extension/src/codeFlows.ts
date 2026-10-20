@@ -11,7 +11,7 @@ import {
   fileSides,
   type Change,
 } from "./changeWorkspace";
-import { flowOffers, initialHops, shownFlow } from "./codeFlow";
+import { flowOffers, initialHops, shownFlow, type FlowGraph } from "./codeFlow";
 import { gatherFlow, type GatheredFlow } from "./codeFlowGather";
 import {
   CodeFlowPanel,
@@ -21,6 +21,14 @@ import {
 } from "./codeFlowPanel";
 import { fileChanges, languageServerSource } from "./codeFlowSource";
 import { messageOf } from "./errors";
+import {
+  parseWalkthrough,
+  shownSteps,
+  walkthroughGraph,
+  withDataLabels,
+  type ShownWalkthrough,
+  type Walkthrough,
+} from "./flowWalkthrough";
 
 /** How long each question to a language server may take before it counts as not answering. */
 const DEFAULT_WAIT_MS = 8_000;
@@ -48,6 +56,13 @@ interface FlowSettings {
   expanded: Set<string>;
   entry?: string;
   selected?: string;
+  walkthrough: WalkthroughRun;
+}
+
+/** The Assistant's walkthrough of the gathered calls, and where it is with it. */
+interface WalkthroughRun {
+  status: ShownWalkthrough["status"];
+  written?: Walkthrough;
 }
 
 interface Flow extends FlowSettings {
@@ -67,6 +82,7 @@ const STARTING: Omit<FlowSettings, "expanded"> = {
   showTests: false,
   showRemoved: false,
   hopsChosen: false,
+  walkthrough: { status: "idle" },
 };
 
 export class CodeFlows implements vscode.Disposable {
@@ -75,9 +91,16 @@ export class CodeFlows implements vscode.Disposable {
   private readonly opening = new Map<string, Promise<void>>();
   private waitMs = DEFAULT_WAIT_MS;
 
-  /** `codeColumn` is where the Change's diffs open. */
+  /**
+   * `codeColumn` is where the Change's diffs open. `walkThrough` has the
+   * Assistant walk through the calls it is given, and gives its reply.
+   */
   constructor(
-    private readonly codeColumn: (change: Change) => Promise<vscode.ViewColumn>
+    private readonly codeColumn: (change: Change) => Promise<vscode.ViewColumn>,
+    private readonly walkThrough: (
+      change: Change,
+      calls: FlowGraph
+    ) => Promise<string>
   ) {}
 
   /** Opens the Change's Code Flow beside its code, or shows the one that's open. */
@@ -158,6 +181,7 @@ export class CodeFlows implements vscode.Disposable {
         return;
       }
       flow.gathered = gathered;
+      flow.walkthrough = { status: "idle" };
       // A big graph starts at Changed only; the Reviewer's own choice wins once made.
       if (!flow.hopsChosen) {
         flow.hops = initialHops(gathered.graph);
@@ -167,9 +191,45 @@ export class CodeFlows implements vscode.Disposable {
         return;
       }
       flow.gathered = NO_GRAPH;
+      flow.walkthrough = { status: "idle" };
       flow.problem = `Code Flow could not be gathered: ${messageOf(err)}`;
     }
     flow.loading = false;
+    this.send(flow);
+    if (flow.view === "walkthrough") {
+      await this.writeWalkthrough(flow);
+    }
+  }
+
+  /**
+   * Has the Assistant walk through the calls the tab gathered. What it
+   * wrote is kept to those calls (see `parseWalkthrough`); a reply with
+   * nothing usable in it, or no reply, is a problem the Reviewer can try
+   * again.
+   */
+  private async writeWalkthrough(flow: Flow): Promise<void> {
+    const given = walkthroughGraph(flow.gathered.graph);
+    if (given.edges.length === 0 || flow.walkthrough.status === "writing") {
+      return;
+    }
+    const run = flow.run;
+    flow.walkthrough = { status: "writing" };
+    this.send(flow);
+    let written: Walkthrough | undefined;
+    try {
+      written = parseWalkthrough(
+        await this.walkThrough(flow.change, given),
+        given
+      );
+    } catch {
+      written = undefined;
+    }
+    if (run !== flow.run) {
+      return;
+    }
+    flow.walkthrough = written
+      ? { status: "ready", written }
+      : { status: "problem" };
     this.send(flow);
   }
 
@@ -180,8 +240,24 @@ export class CodeFlows implements vscode.Disposable {
         flow.hopsChosen = true;
         break;
       case "setView":
-        flow.view = action.view as FlowView;
+        if (action.view !== "walkthrough") {
+          flow.view = action.view as FlowView;
+          break;
+        }
+        // Without calls to walk through, the view stays as it was.
+        if (this.walkthroughOffered(flow)) {
+          flow.view = "walkthrough";
+          if (flow.walkthrough.status === "idle") {
+            await this.writeWalkthrough(flow);
+            return;
+          }
+        }
         break;
+      case "writeWalkthrough":
+        if (flow.walkthrough.status === "problem") {
+          await this.writeWalkthrough(flow);
+        }
+        return;
       case "setEntry":
         flow.entry = action.id;
         break;
@@ -266,12 +342,24 @@ export class CodeFlows implements vscode.Disposable {
     );
   }
 
+  /** Whether the gathered Code Flow has calls to walk through. */
+  private walkthroughOffered(flow: FlowSettings): boolean {
+    return walkthroughGraph(flow.gathered.graph).edges.length > 0;
+  }
+
   private send(flow: Flow): void {
     flow.panel.update(this.stateOf(flow));
   }
 
   private stateOf(flow: FlowSettings): CodeFlowState {
-    const shown = shownFlow(flow.gathered.graph, {
+    const offered = this.walkthroughOffered(flow);
+    const { walkthrough } = flow;
+    // Data labels show on the calls once the Assistant has written them.
+    const graph = withDataLabels(
+      flow.gathered.graph,
+      walkthrough.written?.labels ?? []
+    );
+    const shown = shownFlow(graph, {
       hops: flow.hops,
       showAll: flow.showAll,
       showTests: flow.showTests,
@@ -282,12 +370,20 @@ export class CodeFlows implements vscode.Disposable {
     return {
       loading: flow.loading,
       hops: flow.hops,
-      view: flow.view,
+      view: flow.view === "walkthrough" && !offered ? "map" : flow.view,
       showTests: flow.showTests,
       showRemoved: flow.showRemoved,
       flow: shown,
+      walkthrough: {
+        offered,
+        status: offered ? walkthrough.status : "idle",
+        steps: walkthrough.written
+          ? shownSteps(walkthrough.written.steps, flow.gathered.graph)
+          : [],
+      },
       offers: flowOffers({
-        view: flow.view,
+        // The walkthrough is no picture; the offers behind it are the call map's.
+        view: flow.view === "walkthrough" ? "map" : flow.view,
         flow: shown,
         hops: flow.hops,
         showAll: flow.showAll,

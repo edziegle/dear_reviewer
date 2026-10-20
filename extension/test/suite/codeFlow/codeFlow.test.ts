@@ -3,6 +3,14 @@ import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 import {
+  assistantRuns,
+  replyTurn,
+  scriptClaude,
+  summaryWritten,
+  userMessages,
+  type FakeClaudeScript,
+} from "../assistant";
+import {
   codeFlowPanel,
   fakeShellServer,
   showCodeFlow,
@@ -139,12 +147,17 @@ describe("Code Flow", () => {
 
   async function start(
     over?: Parameters<typeof fakeShellServer>[0],
-    make: typeof newChange = newChange
+    make: typeof newChange = newChange,
+    /** What the Change's Assistant answers, scripted before the Change opens. */
+    script?: FakeClaudeScript
   ) {
     const change = make();
     open.push(change);
     if (over) {
       disposables.push(fakeShellServer(over));
+    }
+    if (script) {
+      await scriptClaude(change.request, script);
     }
     await openChange(change.request);
     await showCodeFlow(change.request);
@@ -657,5 +670,229 @@ describe("Code Flow", () => {
         `base-side call hierarchy answered: ${JSON.stringify(seen)}`
       );
     }, 150_000);
+  });
+  describe("walkthrough", () => {
+    /** The Assistant's requests for a walkthrough, in the conversation of the Change. */
+    async function walkthroughRequests(request: {
+      repository: string;
+      base: string;
+      head: string;
+    }) {
+      return (await assistantRuns(request))
+        .flatMap(userMessages)
+        .filter((m) => m.includes("Walk the Reviewer through"));
+    }
+
+    /** The key the prompt gives a symbol of the Code Flow, by its place in what the tab gathered. */
+    const keyOf = (state: CodeFlowState, name: string) =>
+      `s${state.known.findIndex((n) => n.name === name) + 1}`;
+
+    const walkthrough = (
+      state: CodeFlowState,
+      over: Record<string, unknown> = {}
+    ) =>
+      JSON.stringify({
+        steps: [
+          {
+            symbol: keyOf(state, "helper"),
+            takes: "nothing",
+            gives: "a line",
+            note: "prints two now",
+            calls: [
+              {
+                symbol: keyOf(state, "run_main"),
+                when: "it is called",
+                takes: "a line",
+                note: "a change the Assistant made up",
+              },
+              { symbol: "s99", takes: "a call nobody has" },
+            ],
+          },
+          { symbol: "s98", takes: "a symbol nobody has" },
+        ],
+        data: [
+          {
+            from: keyOf(state, "helper"),
+            to: keyOf(state, "run_main"),
+            data: "a line",
+          },
+        ],
+        ...over,
+      });
+
+    it("walks through the calls in order, keeps to the calls it was given, and shows the data on the call map and swimlanes", async () => {
+      const { request, title } = await start(
+        { callees: { helper: ["run_main"] } },
+        newChange,
+        { turns: [replyTurn("A summary.")] }
+      );
+      const state = await settled(title);
+      assert.strictEqual(state.walkthrough.offered, true);
+      assert.strictEqual(state.walkthrough.status, "idle");
+      await summaryWritten(title);
+      await scriptClaude(request, {
+        turns: [replyTurn(walkthrough(state))],
+      });
+
+      const panel = (await codeFlowPanel(title))!;
+      panel.receive({ type: "setView", view: "walkthrough" });
+
+      await eventually(async () =>
+        assert.strictEqual(
+          (await codeFlowPanel(title))!.sent.walkthrough.status,
+          "ready"
+        )
+      );
+      const sent = (await codeFlowPanel(title))!.sent;
+      assert.strictEqual(sent.view, "walkthrough");
+      // Only steps of symbols and calls the Code Flow has: the made-up ones are gone, and so is a note on a symbol the Change left alone.
+      assert.deepStrictEqual(sent.walkthrough.steps, [
+        {
+          number: "1",
+          id: sent.known.find((n) => n.name === "helper")!.id,
+          name: "helper",
+          path: "lib.sh",
+          line: 1,
+          status: "changed",
+          takes: "nothing",
+          gives: "a line",
+          note: "prints two now",
+          calls: [
+            {
+              number: "1.1",
+              id: sent.known.find((n) => n.name === "run_main")!.id,
+              name: "run_main",
+              path: "main.sh",
+              line: 3,
+              status: "unchanged",
+              when: "it is called",
+              takes: "a line",
+              calls: [],
+            },
+          ],
+        },
+      ]);
+      await eventually(async () => {
+        const current = (await codeFlowPanel(title))!;
+        assert.deepStrictEqual(current.rendered, current.sent);
+      });
+
+      // It was asked once, with the calls and the symbols' places.
+      const [request1] = await walkthroughRequests(request);
+      assert.ok(request1.includes("helper (lib.sh:1) changed"), request1);
+      assert.ok(request1.includes("run_main (main.sh:3) unchanged"), request1);
+      assert.ok(
+        request1.includes(
+          `${keyOf(sent, "helper")} -> ${keyOf(sent, "run_main")}  run_main()`
+        ),
+        request1
+      );
+
+      // The data shows on the call in the call map and in the swimlanes.
+      panel.receive({ type: "setView", view: "map" });
+      await eventually(async () => {
+        const { view, flow } = (await codeFlowPanel(title))!.sent;
+        assert.strictEqual(view, "map");
+        assert.deepStrictEqual(
+          flow.edges.map((e) => [e.label, e.data]),
+          [["run_main()", "a line"]]
+        );
+      });
+      panel.receive({ type: "setView", view: "lanes" });
+      await eventually(async () => {
+        const { view, flow } = (await codeFlowPanel(title))!.sent;
+        assert.strictEqual(view, "lanes");
+        assert.deepStrictEqual(
+          flow.calls.map((c) => [c.label, c.data]),
+          [["run_main()", "a line"]]
+        );
+      });
+
+      // Coming back to the walkthrough doesn't ask again.
+      panel.receive({ type: "setView", view: "walkthrough" });
+      await eventually(async () =>
+        assert.strictEqual(
+          (await codeFlowPanel(title))!.sent.view,
+          "walkthrough"
+        )
+      );
+      assert.strictEqual(
+        (await codeFlowPanel(title))!.sent.walkthrough.steps.length,
+        1
+      );
+      assert.strictEqual((await walkthroughRequests(request)).length, 1);
+    });
+
+    it("is not offered when the Change has no calls to walk through", async () => {
+      // No language server answers for shell scripts here.
+      const { request, title } = await start(undefined, newChange, {
+        turns: [replyTurn("A summary.")],
+      });
+      const state = await settled(title);
+      assert.deepStrictEqual(state.flow.edges, []);
+      assert.strictEqual(state.walkthrough.offered, false);
+
+      const panel = (await codeFlowPanel(title))!;
+      panel.receive({ type: "setView", view: "walkthrough" });
+      // Another message, which the tab answers after the first.
+      panel.receive({ type: "setView", view: "list" });
+      await eventually(async () =>
+        assert.strictEqual((await codeFlowPanel(title))!.sent.view, "list")
+      );
+      panel.receive({ type: "setView", view: "walkthrough" });
+      panel.receive({ type: "setHops", hops: 0 });
+      await eventually(async () => {
+        const current = (await codeFlowPanel(title))!.sent;
+        assert.strictEqual(current.hops, 0);
+        assert.strictEqual(current.view, "list");
+        assert.strictEqual(current.walkthrough.status, "idle");
+      });
+      await summaryWritten(title);
+      assert.deepStrictEqual(await walkthroughRequests(request), []);
+    });
+
+    it("offers to try again when the Assistant's reply holds no walkthrough, and shows the next one", async () => {
+      const { request, title } = await start(
+        { callees: { helper: ["run_main"] } },
+        newChange,
+        { turns: [replyTurn("A summary.")] }
+      );
+      const state = await settled(title);
+      await summaryWritten(title);
+      await scriptClaude(request, {
+        turns: [
+          replyTurn("I would rather not."),
+          replyTurn(walkthrough(state)),
+        ],
+      });
+
+      const panel = (await codeFlowPanel(title))!;
+      panel.receive({ type: "setView", view: "walkthrough" });
+      await eventually(async () =>
+        assert.strictEqual(
+          (await codeFlowPanel(title))!.sent.walkthrough.status,
+          "problem"
+        )
+      );
+      assert.deepStrictEqual(
+        (await codeFlowPanel(title))!.sent.walkthrough.steps,
+        []
+      );
+      await eventually(async () => {
+        const current = (await codeFlowPanel(title))!;
+        assert.deepStrictEqual(current.rendered, current.sent);
+      });
+
+      panel.receive({ type: "writeWalkthrough" });
+      await eventually(async () => {
+        const current = (await codeFlowPanel(title))!.sent.walkthrough;
+        assert.strictEqual(current.status, "ready");
+        assert.deepStrictEqual(
+          current.steps.map((s) => s.name),
+          ["helper"]
+        );
+      });
+      assert.strictEqual((await walkthroughRequests(request)).length, 2);
+    });
   });
 });

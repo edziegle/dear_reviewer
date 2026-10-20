@@ -8,9 +8,10 @@ import * as crypto from "crypto";
 import * as vscode from "vscode";
 import type { FlowNode, FlowOffers, ShownFlow } from "./codeFlow";
 import type { LanguageOutcome } from "./codeFlowGather";
+import type { ShownWalkthrough } from "./flowWalkthrough";
 import { MarkdownPanel, sharedScript, sharedStyles } from "./markdownPanel";
 
-export type FlowView = "map" | "lanes" | "list";
+export type FlowView = "map" | "lanes" | "list" | "walkthrough";
 
 /** What the extension sends the webview. */
 export interface CodeFlowState {
@@ -23,6 +24,8 @@ export interface CodeFlowState {
   /** Whether the symbols of deleted files are drawn. */
   showRemoved: boolean;
   flow: ShownFlow;
+  /** The Assistant's account of how the calls run, in order. */
+  walkthrough: ShownWalkthrough;
   /** The controls and notices that act on the view shown, and what it says with nothing to draw. */
   offers: FlowOffers;
   /** Every symbol gathered, for the details of one the picture doesn't draw. */
@@ -44,6 +47,7 @@ export type FromCodeFlow =
   | { type: "setShowTests"; show: boolean }
   | { type: "setShowRemoved"; show: boolean }
   | { type: "retry" }
+  | { type: "writeWalkthrough" }
   | { type: "findExtensions"; language: string }
   | { type: "layout"; canvas: CanvasScroll | null; focusInView: boolean | null }
   | { type: "ready" }
@@ -155,7 +159,7 @@ export class CodeFlowPanel {
         }
         break;
       case "setView":
-        if (["map", "lanes", "list"].includes(message.view)) {
+        if (["map", "lanes", "list", "walkthrough"].includes(message.view)) {
           this.onAction(message);
         }
         break;
@@ -180,6 +184,7 @@ export class CodeFlowPanel {
         }
         break;
       case "retry":
+      case "writeWalkthrough":
         this.onAction(message);
         break;
       case "layout":
@@ -263,9 +268,15 @@ function html(): string {
   .details .actions button { margin-top: 0; }
   .list { margin: 0; padding-left: 1.2em; }
   .list li { margin: 6px 0; }
+  .walkthrough, .walkthrough ol { list-style: none; margin: 0; padding-left: 0; }
+  .walkthrough ol { padding-left: 1.6em; }
+  .walkthrough li { margin: 8px 0; }
+  .walkthrough .num { font-variant-numeric: tabular-nums; color: var(--vscode-descriptionForeground); }
+  .walkthrough .detail { margin-left: 2.2em; color: var(--vscode-descriptionForeground); }
+  .walkthrough .note { margin-left: 2.2em; }
   .hint { margin: 0 0 6px; color: var(--vscode-descriptionForeground); font-size: 0.9em; }
   .neighbours { margin-top: 6px; }
-  .neighbours button.sym, .list button.sym { font: inherit; font-family: var(--vscode-editor-font-family); background: none; border: none; color: var(--vscode-textLink-foreground); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; padding: 0; }
+  .neighbours button.sym, .list button.sym, .walkthrough button.sym { font: inherit; font-family: var(--vscode-editor-font-family); background: none; border: none; color: var(--vscode-textLink-foreground); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; padding: 0; }
   .badge { font-size: 0.85em; margin-left: 6px; padding: 0 6px; border-radius: 8px; color: var(--vscode-badge-foreground); background: var(--vscode-badge-background); }
   .empty { color: var(--vscode-descriptionForeground); margin: 14px 0; }
 </style>
@@ -310,6 +321,10 @@ function html(): string {
   const post = (message) => vscode.postMessage(message);
   const baseName = (path) => path.split("/").pop();
   const clip = (text, max) => (text.length > max ? text.slice(0, max - 1) + "\\u2026" : text);
+  /** What a call is labelled with: the data it carries if the Assistant said, else the language server's label. */
+  const edgeText = (edge) => edge.data || edge.label;
+  /** The label's tooltip, which keeps both when there are two. */
+  const edgeTitle = (edge) => edge.data && edge.label ? edge.data + " \u2014 " + edge.label : edgeText(edge);
   const describe = (node) => node.name + ", " + STATUS[node.status] + ", " + before(node) + node.path + " line " + node.line;
 
   const arrowDefs = () => svg("defs", {}, svg("marker", { id: "arrow", viewBox: "0 0 10 10", refX: "9", refY: "5", markerWidth: "7", markerHeight: "7", orient: "auto-start-reverse" }, svg("path", { class: "arrow", d: "M0 0 L10 5 L0 10 z" })));
@@ -346,7 +361,9 @@ function html(): string {
           items.map(([value, text]) =>
             el("button", { type: "button", "aria-pressed": String(current === value), onclick: () => onPick(value) , text }))));
     const bar = el("div", { class: "toolbar" },
-      seg("View", [["map", "Call map"], ["lanes", "Swimlanes"], ["list", "List"]], state.view, (view) => post({ type: "setView", view })));
+      seg("View", [["map", "Call map"], ["lanes", "Swimlanes"], ["list", "List"], ...(state.walkthrough.offered ? [["walkthrough", "Walkthrough"]] : [])], state.view, (view) => post({ type: "setView", view })));
+    // The walkthrough follows the calls the Assistant was given, so the picture's controls don't act on it.
+    if (state.view === "walkthrough") return bar;
     if (state.offers.hops) {
       bar.append(seg("Show", [[0, "Changed only"], [1, "+1 hop"], [2, "+2 hops"]], state.hops, (hops) => post({ type: "setHops", hops })));
     } else if (state.flow.entries.length > 0) {
@@ -389,6 +406,7 @@ function html(): string {
           el("button", { type: "button", onclick: () => post({ type: "retry" }), text: "Try again" })));
       }
     }
+    if (state.view === "walkthrough") return out;
     if (!state.showTests && state.flow.testsHidden > 0) {
       out.push(el("div", { class: "notice" }, state.flow.testsHidden + (state.flow.testsHidden === 1 ? " test symbol hidden." : " test symbols hidden."),
         el("button", { type: "button", onclick: () => post({ type: "setShowTests", show: true }), text: "Show tests" })));
@@ -437,7 +455,7 @@ function html(): string {
       const bend = Math.max(30, Math.abs(x2 - x1) / 2);
       const group = svg("g", {},
         svg("path", { class: "edge", d: "M" + x1 + " " + y1 + " C" + (x1 + bend) + " " + y1 + " " + (x2 - bend) + " " + y2 + " " + x2 + " " + y2, "marker-end": "url(#arrow)" }));
-      if (edge.label) group.append(svg("text", { class: "edge-label", x: (x1 + x2) / 2, y: (y1 + y2) / 2 - 4, "text-anchor": "middle" }, svg("title", { text: edge.label }), clip(edge.label, 22)));
+      if (edgeText(edge)) group.append(svg("text", { class: "edge-label", x: (x1 + x2) / 2, y: (y1 + y2) / 2 - 4, "text-anchor": "middle" }, svg("title", { text: edgeTitle(edge) }), clip(edgeText(edge), 22)));
       drawing.append(group);
     }
     for (const node of nodes) {
@@ -540,12 +558,12 @@ function html(): string {
       // What marks the callee marks the call; the caller's mark is named in the row's second line.
       const calleeMark = target ? statusMark(target) : "", callerMark = source ? statusMark(source) : "";
       const detail = [calleeMark, target ? placeOf(target) : "", callerMark && source ? "called from " + callerMark + " " + source.name : ""].filter(Boolean).join("  \u00b7  ");
-      const group = svg("g", { class: "call " + (target ? target.status : "unchanged"), tabindex: i === stopRow ? "0" : "-1", role: "option", "aria-selected": String(i === selectedRow), "aria-label": (i + 1) + ". " + (source ? source.name + (callerMark ? " (" + STATUS[source.status] + ")" : "") : call.from) + " calls " + (target ? target.name + ", " + STATUS[target.status] + ", " + before(target) + target.path + " line " + target.line : call.to) + (call.label ? ", " + call.label : ""), "data-focus": "call:" + i },
+      const group = svg("g", { class: "call " + (target ? target.status : "unchanged"), tabindex: i === stopRow ? "0" : "-1", role: "option", "aria-selected": String(i === selectedRow), "aria-label": (i + 1) + ". " + (source ? source.name + (callerMark ? " (" + STATUS[source.status] + ")" : "") : call.from) + " calls " + (target ? target.name + ", " + STATUS[target.status] + ", " + before(target) + target.path + " line " + target.line : call.to) + (call.data ? ", carrying " + call.data : "") + (call.label ? ", " + call.label : ""), "data-focus": "call:" + i },
         svg("rect", { class: "hit", x: PAD, y: y - ROW_H / 2 + 2, width: width - PAD * 2, height: ROW_H - 4, rx: 3 }),
         same
           ? svg("path", { class: "edge", d: "M" + x1 + " " + (y - 6) + " h28 v12 h-26", "marker-end": "url(#arrow)" })
           : svg("line", { class: "edge", x1, x2: x2 + (x2 > x1 ? -2 : 2), y1: y, y2: y, "marker-end": "url(#arrow)" }),
-        svg("text", { x: Math.min(x1, x2) + 8, y: y - 8 }, (i + 1) + ". " + clip((target ? target.name : call.to) + (call.label ? "  " + call.label : ""), 40)),
+        svg("text", { x: Math.min(x1, x2) + 8, y: y - 8 }, (i + 1) + ". " + clip((target ? target.name : call.to) + (edgeText(call) ? "  " + edgeText(call) : ""), 40)),
         detail && svg("text", { class: "where", x: Math.min(x1, x2) + 8, y: y + 14 }, clip(detail, 70)));
       group.addEventListener("click", () => { selectedCall = i; post({ type: "select", id: call.to }); });
       group.addEventListener("focus", () => setRovingCall(i));
@@ -575,6 +593,28 @@ function html(): string {
         el("span", { class: "where", text: before(node) + node.path + ":" + node.line }),
         el("div", {}, "Called by: ", ...names(callersOf(node.id))),
         el("div", {}, "Calls: ", ...names(calleesOf(node.id))))));
+  }
+
+  /** The Assistant's outline of how the calls run: a suggestion the Reviewer can read or ignore. */
+  function walkthrough(state) {
+    const { status, steps } = state.walkthrough;
+    if (status === "writing" || status === "idle") return el("p", { class: "empty", text: "The Assistant is walking through the calls\u2026" });
+    if (status === "problem") {
+      return el("div", { class: "notice problem", role: "alert" }, "The Assistant could not walk through the calls.",
+        el("button", { type: "button", "data-focus": "writeWalkthrough", onclick: () => post({ type: "writeWalkthrough" }), text: "Try again" }));
+    }
+    const item = (step) => el("li", {},
+      el("span", { class: "num", text: step.number + "." }), " ",
+      el("button", { type: "button", class: "sym", "data-focus": "step:" + step.number, onclick: () => post({ type: "select", id: step.id }), text: step.name }),
+      step.status !== "unchanged" ? el("span", { class: "badge", text: step.status }) : null, " ",
+      el("span", { class: "where", text: before(step) + step.path + ":" + step.line }),
+      step.when ? el("div", { class: "detail", text: "When " + step.when }) : null,
+      step.takes || step.gives ? el("div", { class: "detail", text: [step.takes && "Takes " + step.takes, step.gives && "Gives " + step.gives].filter(Boolean).join("  \u00b7  ") }) : null,
+      step.note ? el("div", { class: "note", text: "The Change: " + step.note }) : null,
+      step.calls.length > 0 ? el("ol", {}, step.calls.map(item)) : null);
+    return el("div", {},
+      el("p", { class: "hint", text: "The Assistant's account of how the calls run, in order. It is a suggestion made from the calls the language servers gave; the call map and swimlanes show the data it says crosses them." }),
+      el("ol", { class: "list walkthrough", "aria-label": "Walkthrough: " + steps.length + " steps" }, steps.map(item)));
   }
 
   function details(state) {
@@ -634,6 +674,8 @@ function html(): string {
       app.replaceChildren(toolbar(state), ...notices(state));
       if (state.loading) {
         app.append(el("p", { class: "empty", text: "Asking the language servers\\u2026" }));
+      } else if (state.view === "walkthrough") {
+        app.append(walkthrough(state));
       } else if (state.offers.picture) {
         if (state.view !== "list") app.append(hint(state.view));
         app.append(state.view === "lanes" ? lanes(state) : state.view === "list" ? list(state) : callMap(state));

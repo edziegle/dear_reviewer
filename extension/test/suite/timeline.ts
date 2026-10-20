@@ -271,14 +271,6 @@ export async function clickTakeReference(
   (await panel(title)).receive({ type: "openReference", ...reference });
 }
 
-/** Clicks a file in the overview's Reading Order. */
-export async function clickReadingOrderFile(
-  title: string,
-  file: string
-): Promise<void> {
-  (await panel(title)).receive({ type: "openFile", path: file });
-}
-
 /** What the overview with this title shows from the Assistant, as last sent. */
 export async function overviewTake(
   title: string

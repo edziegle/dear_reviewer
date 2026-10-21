@@ -44,8 +44,14 @@ run = [
 description = "Bundle the extension"
 dir = "extension"
 run = "node esbuild.mjs"
-sources = ["src/**/*.ts", "esbuild.mjs", "package.json", "package-lock.json"]
-outputs = ["dist/extension.js", "dist/gitServer.js"]
+sources = [
+  "src/**/*.ts",
+  "src/grammars.json",
+  "esbuild.mjs",
+  "package.json",
+  "package-lock.json",
+]
+outputs = ["dist/extension.js", "dist/gitServer.js", "dist/formattingWorker.js"]
 
 # A status bar item can show only an icon font's glyph, not an SVG, so the
 # logo is also built as a one-glyph font. The font is committed, so
@@ -163,6 +169,7 @@ run = [
   "sed '/^## Development$/,$d' ../README.md > README.md",
   "cp ../LICENSE .",
   "npx vsce package -o dist/dear-reviewer.vsix",
+  "node check-vsix.mjs dist/dear-reviewer.vsix",
 ]
 
 # The Open VSX icon: the cat from the logo, with the words beside it blanked

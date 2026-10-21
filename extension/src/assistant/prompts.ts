@@ -299,7 +299,7 @@ export function readingOrderPrompt(
     "- List every changed file once, by its path relative to the repository root.",
     ...(skimOnly.length > 0
       ? [
-          "- Leave out the skim-only files listed last: Dear Reviewer found them to be lock files, generated files or renames with no edits, and shows them apart.",
+          "- Leave out the skim-only files listed last: Dear Reviewer found them to be lock files, generated files, renames with no edits or files that only changed in formatting, and shows them apart.",
         ]
       : []),
     "- Reply with only a JSON object of this shape, with no Markdown fence or prose around it:",

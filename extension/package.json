@@ -431,7 +431,7 @@
         "dearReviewer.visitSkimOnlyFiles": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "Let **Next Unviewed File** and **Previous Unviewed File** stop at skim-only files: lock files, files the base commit marks `linguist-generated`, and renames with no edits. Off, they skip these files until nothing else is left to view."
+          "markdownDescription": "Let **Next Unviewed File** and **Previous Unviewed File** stop at skim-only files: lock files, files the base commit marks `linguist-generated`, renames with no edits, and files that were only reformatted. Off, they skip these files until nothing else is left to view."
         },
         "dearReviewer.claudePath": {
           "type": "string",
@@ -1256,7 +1256,7 @@
           {
             "id": "skim",
             "title": "Skim lock files and generated code",
-            "description": "Lock files, generated files and renames with no edits are skim-only: the Reading Order puts them last, and Next unviewed file skips them until nothing else is left to view. Turn on Visit Skim Only Files to step through them with the rest.\n[Open the Setting](command:workbench.action.openSettings?%5B%22dearReviewer.visitSkimOnlyFiles%22%5D)",
+            "description": "Lock files, generated files, renames with no edits and files that were only reformatted are skim-only: the Reading Order puts them last, and Next unviewed file skips them until nothing else is left to view. Turn on Visit Skim Only Files to step through them with the rest.\n[Open the Setting](command:workbench.action.openSettings?%5B%22dearReviewer.visitSkimOnlyFiles%22%5D)",
             "media": {
               "image": {
                 "dark": "media/walkthrough/skim-dark.png",
@@ -1287,6 +1287,8 @@
   },
   "devDependencies": {
     "@fontsource-variable/inter": "^5.3.0",
+    "@tree-sitter-grammars/tree-sitter-kotlin": "1.1.0",
+    "@tree-sitter-grammars/tree-sitter-yaml": "0.7.1",
     "@types/mocha": "^10.0.10",
     "@types/node": "^24.19.2",
     "@types/sanitize-html": "^2.16.2",
@@ -1297,7 +1299,21 @@
     "fantasticon": "^4.1.0",
     "mocha": "^12.0.3",
     "playwright": "^1.64.1",
-    "typescript": "^7.0.2"
+    "tree-sitter-bash": "0.25.1",
+    "tree-sitter-c": "0.24.1",
+    "tree-sitter-c-sharp": "0.23.5",
+    "tree-sitter-cpp": "0.23.4",
+    "tree-sitter-css": "0.25.0",
+    "tree-sitter-go": "0.25.0",
+    "tree-sitter-java": "0.23.5",
+    "tree-sitter-javascript": "0.25.0",
+    "tree-sitter-json": "0.24.8",
+    "tree-sitter-python": "0.25.0",
+    "tree-sitter-ruby": "0.23.1",
+    "tree-sitter-rust": "0.24.0",
+    "tree-sitter-typescript": "0.23.2",
+    "typescript": "^7.0.2",
+    "web-tree-sitter": "0.27.1"
   },
   "dependencies": {
     "markdown-it": "^15.0.3",

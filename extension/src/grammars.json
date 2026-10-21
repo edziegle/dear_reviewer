@@ -1,0 +1,88 @@
+{
+  "typescript": {
+    "package": "tree-sitter-typescript",
+    "wasm": "tree-sitter-typescript.wasm",
+    "extensions": [".ts", ".mts", ".cts"]
+  },
+  "tsx": {
+    "package": "tree-sitter-typescript",
+    "wasm": "tree-sitter-tsx.wasm",
+    "extensions": [".tsx"]
+  },
+  "javascript": {
+    "package": "tree-sitter-javascript",
+    "wasm": "tree-sitter-javascript.wasm",
+    "extensions": [".js", ".jsx", ".mjs", ".cjs"]
+  },
+  "python": {
+    "package": "tree-sitter-python",
+    "wasm": "tree-sitter-python.wasm",
+    "extensions": [".py", ".pyi"],
+    "indentation": true
+  },
+  "go": {
+    "package": "tree-sitter-go",
+    "wasm": "tree-sitter-go.wasm",
+    "extensions": [".go"]
+  },
+  "rust": {
+    "package": "tree-sitter-rust",
+    "wasm": "tree-sitter-rust.wasm",
+    "extensions": [".rs"]
+  },
+  "java": {
+    "package": "tree-sitter-java",
+    "wasm": "tree-sitter-java.wasm",
+    "extensions": [".java"]
+  },
+  "c": {
+    "package": "tree-sitter-c",
+    "wasm": "tree-sitter-c.wasm",
+    "extensions": [".c", ".h"],
+    "directives": true
+  },
+  "cpp": {
+    "package": "tree-sitter-cpp",
+    "wasm": "tree-sitter-cpp.wasm",
+    "extensions": [".cc", ".cpp", ".cxx", ".hh", ".hpp", ".hxx"],
+    "directives": true
+  },
+  "csharp": {
+    "package": "tree-sitter-c-sharp",
+    "wasm": "tree-sitter-c_sharp.wasm",
+    "extensions": [".cs"],
+    "directives": true
+  },
+  "ruby": {
+    "package": "tree-sitter-ruby",
+    "wasm": "tree-sitter-ruby.wasm",
+    "extensions": [".rb"]
+  },
+  "bash": {
+    "package": "tree-sitter-bash",
+    "wasm": "tree-sitter-bash.wasm",
+    "extensions": [".sh", ".bash"],
+    "gapShape": true
+  },
+  "json": {
+    "package": "tree-sitter-json",
+    "wasm": "tree-sitter-json.wasm",
+    "extensions": [".json"]
+  },
+  "yaml": {
+    "package": "@tree-sitter-grammars/tree-sitter-yaml",
+    "wasm": "tree-sitter-yaml.wasm",
+    "extensions": [".yml", ".yaml"]
+  },
+  "css": {
+    "package": "tree-sitter-css",
+    "wasm": "tree-sitter-css.wasm",
+    "extensions": [".css"]
+  },
+  "kotlin": {
+    "package": "@tree-sitter-grammars/tree-sitter-kotlin",
+    "wasm": "tree-sitter-kotlin.wasm",
+    "extensions": [".kt", ".kts"],
+    "gapShape": true
+  }
+}

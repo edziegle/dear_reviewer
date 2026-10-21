@@ -75,6 +75,8 @@ import {
   type Ref,
 } from "./commitRange";
 import { git } from "./git";
+import { FormattingMarks, FormattingWorker } from "./formattingMarks";
+import { useFormattingMarks } from "./skimOnly";
 import { Dashboard } from "./dashboard/dashboard";
 import { IgnoredPullRequests } from "./dashboard/ignored";
 import type { FromDashboard } from "./dashboard/view";
@@ -118,6 +120,24 @@ export function activate(context: vscode.ExtensionContext) {
       changeFiles.refresh();
       assistants.retitle();
     }),
+  });
+  // Formatting-only files are marked skim-only as a worker thread parses them,
+  // beside the extension's own files (ADR 0048).
+  const formattingWorker = new FormattingWorker({
+    file: path.join(__dirname, "formattingWorker.js"),
+    wasmDir: path.join(__dirname, "tree-sitter"),
+  });
+  const formattingMarks = new FormattingMarks({
+    compare: formattingWorker.compare,
+    changed: () => changeFiles.refresh(),
+  });
+  useFormattingMarks(formattingMarks);
+  context.subscriptions.push({
+    dispose: () => {
+      useFormattingMarks(undefined);
+      formattingMarks.dispose();
+      formattingWorker.dispose();
+    },
   });
   const avatars = new Avatars(
     github,

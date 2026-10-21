@@ -109,6 +109,11 @@
         "category": "Dear Reviewer"
       },
       {
+        "command": "dearReviewer.openReviewTools",
+        "title": "Show Review Tools",
+        "category": "Dear Reviewer"
+      },
+      {
         "command": "dearReviewer.trustReviewWindow",
         "title": "Trust the Review Window…",
         "category": "Dear Reviewer"
@@ -512,6 +517,16 @@
           "command": "dearReviewer.openSetup",
           "when": "view == dearReviewer.dashboard",
           "group": "setup@1"
+        },
+        {
+          "command": "dearReviewer.openReviewTools",
+          "when": "view == dearReviewer.dashboard",
+          "group": "setup@2"
+        },
+        {
+          "command": "dearReviewer.openReviewTools",
+          "when": "view == dearReviewer.changeFiles",
+          "group": "help@1"
         },
         {
           "command": "dearReviewer.showTimeline",
@@ -956,11 +971,6 @@
     },
     "keybindings": [
       {
-        "command": "dearReviewer.showChangesSinceLastReview",
-        "key": "ctrl+alt+r c",
-        "when": "dearReviewer.hasOpenChange"
-      },
-      {
         "command": "dearReviewer.nextUnviewedFile",
         "key": "ctrl+alt+r n",
         "when": "dearReviewer.hasOpenChange"
@@ -1018,6 +1028,11 @@
       {
         "command": "dearReviewer.openAllChanges",
         "key": "ctrl+alt+r d",
+        "when": "dearReviewer.hasOpenChange"
+      },
+      {
+        "command": "dearReviewer.showChangesSinceLastReview",
+        "key": "ctrl+alt+r c",
         "when": "dearReviewer.hasOpenChange"
       }
     ],
@@ -1151,7 +1166,7 @@
           {
             "id": "finish",
             "title": "Finish your Review",
-            "description": "When every file is viewed, the overview offers Submit Review…: your verdict, a summary, and every Comment that publishes with it. A local Change ends with Write Brief… instead, and a Brief you copy for your agent. Ctrl+Alt+R S does either.\nEvery key is in Keyboard Shortcuts, where you can rebind it; the hints beside the overview's buttons show the defaults.\n[Show the Review Keys](command:dearReviewer.showReviewKeys)",
+            "description": "When every file is viewed, the overview offers Submit Review…: your verdict, a summary, and every Comment that publishes with it. A local Change ends with Write Brief… instead, and a Brief you copy for your agent. Ctrl+Alt+R S does either.\nEvery key is in Keyboard Shortcuts, where you can rebind it; the hints beside the overview's buttons show the defaults.\n[Show the Review Keys](command:dearReviewer.showReviewKeys)\nFor a hard Change, Dear Reviewer's review tools help: Findings, Code Flow and what changed since your Review.\n[Show Review Tools](command:dearReviewer.openReviewTools)",
             "media": {
               "image": {
                 "dark": "media/walkthrough/finish-dark.png",
@@ -1164,6 +1179,86 @@
             "completionEvents": [
               "onCommand:dearReviewer.submitReview",
               "onCommand:dearReviewer.writeBrief"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "review",
+        "title": "Dear Reviewer's Review Tools",
+        "description": "The tools for a hard Change: Findings, Code Flow, what changed since your Review, skim-only files and the review keys.",
+        "steps": [
+          {
+            "id": "findings",
+            "title": "Ask for Findings",
+            "description": "The Assistant points at spots that deserve your attention only when you ask: bugs, missed edge cases, security problems or code that misleads. Each Finding shows in the gutter of the diff and in the Findings view. Turn one into a Comment, or dismiss it: a Finding is never published. Ctrl+Alt+R F steps through them, and Ctrl+Alt+R Shift+F goes back.\n[Ask for Findings](command:dearReviewer.findIssues)",
+            "media": {
+              "markdown": "media/walkthrough/findings.md"
+            },
+            "completionEvents": [
+              "onCommand:dearReviewer.findIssues"
+            ]
+          },
+          {
+            "id": "codeFlow",
+            "title": "Follow the calls with Code Flow",
+            "description": "Code Flow maps which of the changed functions call which, from the language servers you have. Open it from the Code Flow button in the overview, or with Ctrl+Alt+R G. In its Walkthrough view, the Assistant takes you through those calls in the order they run.\n[Show Code Flow](command:dearReviewer.showCodeFlow)",
+            "media": {
+              "image": {
+                "dark": "media/walkthrough/codeflow-dark.png",
+                "light": "media/walkthrough/codeflow-light.png",
+                "hc": "media/walkthrough/codeflow-dark.png",
+                "hcLight": "media/walkthrough/codeflow-light.png"
+              },
+              "altText": "Code Flow's call map of a Change, with the changed functions and the functions they call"
+            },
+            "completionEvents": [
+              "onCommand:dearReviewer.showCodeFlow"
+            ]
+          },
+          {
+            "id": "since",
+            "title": "See what changed since your Review",
+            "description": "When new commits arrive after your Review, the overview says so, and the Assistant explains them. Click New commits since your Review, or press Ctrl+Alt+R C, for a diff of only those commits.\n[Show Changes Since Your Last Review](command:dearReviewer.showChangesSinceLastReview)",
+            "media": {
+              "image": {
+                "dark": "media/walkthrough/since-dark.png",
+                "light": "media/walkthrough/since-light.png",
+                "hc": "media/walkthrough/since-dark.png",
+                "hcLight": "media/walkthrough/since-light.png"
+              },
+              "altText": "A Change's overview with New commits since your Review as a link, and the Assistant's explanation of the new commits"
+            },
+            "completionEvents": [
+              "onCommand:dearReviewer.showChangesSinceLastReview"
+            ]
+          },
+          {
+            "id": "skim",
+            "title": "Skim lock files and generated code",
+            "description": "Lock files, generated files and renames with no edits are skim-only: the Reading Order puts them last, and Next unviewed file skips them until nothing else is left to view. Turn on Visit Skim-Only Files to step through them with the rest.\n[Open the Setting](command:workbench.action.openSettings?%5B%22dearReviewer.visitSkimOnlyFiles%22%5D)",
+            "media": {
+              "image": {
+                "dark": "media/walkthrough/skim-dark.png",
+                "light": "media/walkthrough/skim-light.png",
+                "hc": "media/walkthrough/skim-dark.png",
+                "hcLight": "media/walkthrough/skim-light.png"
+              },
+              "altText": "A Change's Reading Order, with lock files and generated files in its last step, Skim-only"
+            },
+            "completionEvents": [
+              "onSettingChanged:dearReviewer.visitSkimOnlyFiles"
+            ]
+          },
+          {
+            "id": "keys",
+            "title": "Learn the review keys",
+            "description": "Every review key starts with Ctrl+Alt+R, or ⌃⌥R on a Mac. You can change any of them in Keyboard Shortcuts.\n[Show the Review Keys](command:dearReviewer.showReviewKeys)",
+            "media": {
+              "markdown": "media/walkthrough/keys.md"
+            },
+            "completionEvents": [
+              "onCommand:dearReviewer.showReviewKeys"
             ]
           }
         ]

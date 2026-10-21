@@ -1129,7 +1129,7 @@ class ChangeAssistant {
 
 /** The note a conversation starts with, before the summary is written, which may still fail. */
 const summaryNote =
-  "The Assistant's summary of this Change is in its overview.";
+  "The Assistant's summary of this Change is in its overview. Ask here about anything in the Change. Ask for Findings marks spots that deserve attention, Show Code Flow maps which changed functions call which, and Show Review Keys lists every key.";
 
 /**
  * What the view shows of the Change: with the pull request's title, the

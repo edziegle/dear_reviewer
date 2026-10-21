@@ -1,10 +1,13 @@
-// The screens of the setup walkthrough's images (package.json,
+// The screens of the walkthroughs' images (package.json,
 // contributes.walkthroughs): each is a real webview, the Dashboard, the
-// Assistant's view or a Change's overview, given a state for the story of
-// "Retry failed webhooks with exponential backoff". `capture.mjs` draws them.
+// Assistant's view, a Change's overview or its Code Flow, given a state for
+// the story of "Retry failed webhooks with exponential backoff".
+// `capture.mjs` draws them.
 
 import type * as vscode from "vscode";
 import { AssistantView } from "../../src/assistant/panel";
+import { flowOffers, shownFlow, type FlowGraph } from "../../src/codeFlow";
+import { CodeFlowPanel } from "../../src/codeFlowPanel";
 import { DashboardView, type DashboardState } from "../../src/dashboard/view";
 import { TimelinePanel, type TimelineState } from "../../src/timeline/panel";
 import { latestWebview, stubView, type StubWebview } from "./vscodeStub";
@@ -20,6 +23,8 @@ export interface Scene {
   height: number;
   /** Makes the webview, which then waits for its page to say it is ready. */
   open(): StubWebview;
+  /** What to click once the page has drawn, such as a step to open, as a CSS selector. */
+  click?: string;
 }
 
 const noop = () => undefined;
@@ -47,6 +52,25 @@ function dashboard(state: Partial<DashboardState>): StubWebview {
 const take =
   "This change moves webhook retries from a fixed 3-attempt loop to an exponential backoff queue backed by Redis. The core is the new `RetryScheduler` in `src/webhooks/retry.py:42`, which replaces the inline loop in the dispatcher. Start there, then check the migration that adds the `attempts` column.";
 
+/** What calls what in the Change, as a language server tells it. */
+const calls: FlowGraph = {
+  nodes: [
+    { id: "dispatch", name: "dispatch", path: "src/webhooks/dispatcher.py", line: 20, status: "changed" },
+    { id: "schedule", name: "RetryScheduler.schedule", path: "src/webhooks/retry.py", line: 42, status: "new" },
+    { id: "delay", name: "backoff_delay", path: "src/webhooks/retry.py", line: 61, status: "new" },
+    { id: "record", name: "record_attempt", path: "src/webhooks/retry.py", line: 80, status: "new" },
+    { id: "push", name: "RedisQueue.push", path: "src/queue/redis.py", line: 15, status: "unchanged" },
+    { id: "send", name: "send_webhook", path: "src/webhooks/http.py", line: 8, status: "unchanged" },
+  ],
+  edges: [
+    { from: "dispatch", to: "send", label: "send_webhook(event)" },
+    { from: "dispatch", to: "schedule", label: "schedule(event, attempt)" },
+    { from: "schedule", to: "delay" },
+    { from: "schedule", to: "push" },
+    { from: "schedule", to: "record" },
+  ],
+};
+
 const changedFiles = new Set([
   "src/webhooks/retry.py",
   "src/webhooks/dispatcher.py",
@@ -68,6 +92,7 @@ const overview: TimelineState = {
     steps: [
       {
         label: "The scheduler",
+        core: true,
         files: [
           {
             path: "src/webhooks/retry.py",
@@ -280,6 +305,104 @@ export const scenes: Scene[] = [
             },
           ],
           submitting: false,
+        },
+      }),
+  },
+  {
+    name: "codeflow",
+    surface: "editor",
+    width: 900,
+    height: 470,
+    open: () => {
+      const flow = shownFlow(calls, {
+        hops: 1,
+        showAll: false,
+        showTests: false,
+        showRemoved: false,
+      });
+      const languages = [{ language: "python", outcome: "answered" as const }];
+      new CodeFlowPanel(
+        {
+          loading: false,
+          hops: 1,
+          view: "map",
+          showTests: false,
+          showRemoved: false,
+          flow,
+          walkthrough: { offered: true, status: "idle", steps: [] },
+          offers: flowOffers({
+            view: "map",
+            flow,
+            hops: 1,
+            showAll: false,
+            showTests: false,
+            languages,
+            problem: false,
+          }),
+          known: calls.nodes,
+          languages,
+        },
+        "Code Flow · acme/api #482",
+        1 as vscode.ViewColumn,
+        noop
+      );
+      return latestWebview();
+    },
+  },
+  {
+    name: "since",
+    surface: "editor",
+    width: 900,
+    height: 330,
+    open: () =>
+      change({
+        standing: [
+          "1 new commit arrived",
+          {
+            text: "New commits since your Review",
+            action: "showChangesSince",
+          },
+          "12 of 12 viewed",
+        ],
+        progress: { viewed: 12, total: 12 },
+        take: {
+          label: "Since your Review at 3f9c2a1",
+          since: true,
+          reading: false,
+          text: "The new commit caps `backoff_delay` at five minutes in `src/webhooks/retry.py:61`, and adds a test for the cap.",
+        },
+        readingOrder: undefined,
+      }),
+  },
+  {
+    name: "skim",
+    surface: "editor",
+    width: 900,
+    height: 560,
+    click: "#orderSteps details summary",
+    open: () =>
+      change({
+        readingOrder: {
+          ...overview.readingOrder!,
+          steps: [
+            ...overview.readingOrder!.steps,
+            {
+              label: "Skim-only",
+              skimOnly: true,
+              files: [
+                {
+                  path: "poetry.lock",
+                  skim: "lock file",
+                  viewed: false,
+                },
+                {
+                  path: "src/webhooks/schema_pb2.py",
+                  skim: "generated",
+                  viewed: false,
+                },
+              ],
+            },
+          ],
         },
       }),
   },

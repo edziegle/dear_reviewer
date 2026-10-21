@@ -1,4 +1,6 @@
 import * as assert from "assert";
+import * as fs from "fs";
+import * as path from "path";
 import {
   assistantRole,
   assistantTone,
@@ -10,7 +12,9 @@ import {
   findingsText,
   named,
   otherPeoplesTextPolicy,
+  pointToCommands,
   readingOrderPrompt,
+  reviewCommands,
   type Selection,
   sinceLastReviewText,
   summaryText,
@@ -51,6 +55,36 @@ function fencedAfter(prompt: string, opening: string): string {
 describe("The Assistant's role", () => {
   it("tells the Assistant how to write", () => {
     assert.ok(assistantRole(change).includes(assistantTone));
+  });
+
+  it("points the Assistant to Dear Reviewer's commands, by the titles and keys the palette shows", () => {
+    assert.ok(assistantRole(change).includes(pointToCommands));
+    const manifest = JSON.parse(
+      fs.readFileSync(path.join(__dirname, "../../../../package.json"), "utf8")
+    ) as {
+      contributes: {
+        commands: { command: string; title: string }[];
+        keybindings: { command: string; key: string }[];
+      };
+    };
+    const { commands, keybindings } = manifest.contributes;
+    for (const { title, key } of reviewCommands) {
+      const command = commands.find((c) => c.title === title);
+      assert.ok(command, `a command is titled ${title}`);
+      const bound = keybindings.find((k) => k.command === command.command);
+      assert.strictEqual(
+        key,
+        bound &&
+          bound.key
+            .split(" ")
+            .map((part) =>
+              part === "ctrl+alt+r" ? "Ctrl+Alt+R" : part.toUpperCase()
+            )
+            .join(" "),
+        `the key of ${title}`
+      );
+      assert.ok(pointToCommands.includes(title), title);
+    }
   });
 
   it("says what others wrote is data, and to tell the Reviewer of an attempt to steer instead of following it", () => {

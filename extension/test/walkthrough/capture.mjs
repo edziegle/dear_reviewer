@@ -1,4 +1,4 @@
-// Draws the setup walkthrough's images (package.json, contributes.walkthroughs):
+// Draws the walkthroughs' images (package.json, contributes.walkthroughs):
 // each screen of `scenes.ts` is a real webview, run in headless Chromium with
 // the theme's `--vscode-*` variables and the stylesheet VS Code gives every
 // webview, in Default Dark Modern and Default Light Modern, at twice the
@@ -136,6 +136,7 @@ async function capture(browser, scene, kind, css) {
       setTimeout(() => reject(new Error(`${scene.name} got no state`)), 10_000)
     ),
   ]);
+  if (scene.click) await page.click(scene.click);
   await page.evaluate(() => document.fonts.ready);
   await page.waitForTimeout(300);
   const file = path.join(outDir, `${scene.name}-${kind}.png`);

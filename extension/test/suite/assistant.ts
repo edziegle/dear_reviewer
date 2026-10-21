@@ -440,7 +440,7 @@ export function showAssistant(change: ChangeRequest): Thenable<unknown> {
 /** The note a conversation starts with: the summary itself is in the Change's overview. */
 export const summaryNote = {
   from: "note",
-  text: "The Assistant's summary of this Change is in its overview.",
+  text: "The Assistant's summary of this Change is in its overview. Ask here about anything in the Change. Ask for Findings marks spots that deserve attention, Show Code Flow maps which changed functions call which, and Show Review Keys lists every key.",
 } as const;
 
 /** The editor tabs that hold a webview, such as a Change's overview, by label. */

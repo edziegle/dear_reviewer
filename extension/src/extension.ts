@@ -1806,6 +1806,13 @@ export function activate(context: vscode.ExtensionContext) {
         false
       )
     ),
+    vscode.commands.registerCommand("dearReviewer.openReviewTools", () =>
+      vscode.commands.executeCommand(
+        "workbench.action.openWalkthrough",
+        `${context.extension.id}#review`,
+        false
+      )
+    ),
     repositories.onDidChange(() => inbox.refresh()),
     vscode.workspace.onDidGrantWorkspaceTrust(() => repositories.scanWindow()),
     // Refreshing is also when merged and closed pull requests' Changes go.

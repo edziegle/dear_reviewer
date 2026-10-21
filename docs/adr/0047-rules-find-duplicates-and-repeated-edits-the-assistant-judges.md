@@ -1,0 +1,34 @@
+---
+status: accepted
+date: 2026-10-21
+---
+
+# Rules find Duplicate code and Repeated edits, and the Assistant judges them
+
+## Context and Problem Statement
+
+Agent-written Changes repeat themselves. They copy a block into a third place instead of reusing it, or sweep one edit across dozens of files and miss or vary a site (issue #165). Neither shows in a file-by-file diff. Duplicate-code checks are noisy, because imports, boilerplate and test setup repeat by nature. An Assistant asked to find duplication misses what it never reads, since a Change's diff is capped and the originals often sit outside it. Who finds the repetition, and who decides that it matters?
+
+## Considered Options
+
+- The Assistant finds and judges duplication, as Findings, with no help
+- A deterministic check finds and reports duplication on its own
+- A deterministic check finds candidates, and the Assistant judges them
+
+## Decision Outcome
+
+Chosen option: a deterministic check finds candidates, and the Assistant judges them. Rules are thorough and cheap: they read the whole repository, which no prompt can hold. The Assistant judges by meaning: it can tell a copied function from shared boilerplate, and a mistake from an intended difference. Each covers the other's weakness, so the check can be generous and needs no tuning to stay quiet.
+
+- **Duplicate code.** Dear Reviewer indexes every tracked file at the head, leaving out skim-only files (ADR 0045), binary files and files over a size cap, within a time budget. It compares windows of lines, normalized the same way for every language: blank and comment-only lines dropped, whitespace stripped, and identifiers, numbers and strings replaced by placeholders. Added code that matches 6 or more normalized lines found elsewhere is a candidate. Up to 20 candidates, largest first, go into the Findings prompt (ADR 0017), fenced as other people's text. The Assistant raises a Finding only for the ones it judges real, naming the original's `path:line`, and can raise duplicates the check missed. If the budget runs out, the check covers the Change alone, and the prompt says so.
+- **Repeated edits.** Dear Reviewer groups the Change's hunks by their normalized removed lines. A group of at least 3 sites with real content is a Repeated edit. Its differing sites got other added lines than the majority. Its missed sites, found through the same index, still hold the removed lines at the head. The overview always shows Repeated edits with links to each site, with no Assistant turn, because these are facts. When the Reviewer asks for Findings, differing sites and missed sites go into the prompt as candidates, and the Assistant raises a Finding where one looks like a mistake.
+
+Neither one hides a file, groups files, or changes what Next unviewed file visits. A steered Assistant can at worst leave a real duplicate unraised, and the Repeated edits in the overview don't depend on it.
+
+### Consequences
+
+- Good, because the originals of a copy are found wherever they are in the repository, and a sweep's missed sites are found at all.
+- Good, because the Assistant filters the noise, so no thresholds need tuning per language or repository.
+- Good, because the check works on every language and needs no parser, so it doesn't wait on a syntax-tree layer.
+- Bad, because indexing the repository costs time on every Change, bounded by the budget, and a large repository can fall back to the Change alone.
+- Bad, because Duplicate code shows only when the Reviewer asks for Findings, and is only as good as the Assistant's judgment.
+- Bad, because normalized lines miss a copy whose statements were reordered or split across other lines.

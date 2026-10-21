@@ -20,9 +20,21 @@ _Avoid_: AI reviewer, bot, copilot
 Something the Reviewer writes about a Change, meant to be published to GitHub or included in a Brief.
 _Avoid_: Note, remark
 
+**Agent note**:
+The Assistant's short addition, written when the Reviewer asks for it, under their own text in a Comment on a pull request, for an agent that will act on it: the reason behind the Comment and what to do instead. Part of the Comment, published with it once the Reviewer has read it. The Assistant writes none when the Comment already says it all or it can't tell the reason.
+_Avoid_: Brief (that's a whole local Review), note on its own, AI comment
+
 **Finding**:
 A spot in a Change the Assistant thinks deserves attention. It is never published as it stands; the Reviewer dismisses it or turns it into a Comment.
 _Avoid_: AI comment, flag, suggestion (GitHub uses that for proposed code edits)
+
+**Duplicate code**:
+Code a Change adds that repeats a block found elsewhere in the Change or the repository, instead of reusing it. Dear Reviewer finds possible duplicate code by rules, and the Assistant judges which is real and raises it as a Finding.
+_Avoid_: Copy-paste, clone, pattern (vague, and it blurs into Repeated edit)
+
+**Repeated edit**:
+The same change made at three or more sites in a Change, such as one call renamed everywhere it's used. Dear Reviewer finds it by rules and names its **differing sites**, where the change differs from the rest, and its **missed sites**, where the old code survives.
+_Avoid_: Duplicate code (a clean sweep is not a smell), sweep, pattern
 
 **Change**:
 The code under review: the difference between two points in a repository's history. A GitHub pull request is one source of a Change; a local range of commits is another. Its conversation with the Assistant lasts until its pull request or branch is over, through any number of Reviews and stops.
@@ -41,7 +53,7 @@ The order the Assistant suggests for reading a Change's files, in a few labeled 
 _Avoid_: File order, review plan, story
 
 **Skim-only file**:
-A changed file that Dear Reviewer itself judges needs no close reading: a lock file, a file the base marks as generated, or a rename with no edits. The Assistant can't make a file skim-only.
+A changed file that Dear Reviewer itself judges needs no close reading: a lock file, a file the base marks as generated, a rename with no edits, or a file, moved or not, whose change is formatting only. The Assistant can't make a file skim-only.
 _Avoid_: Ignored file, hidden file, trivial file
 
 **Code Flow**:

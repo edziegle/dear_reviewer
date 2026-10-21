@@ -8,6 +8,7 @@ import {
   shownText,
   changeFiles,
   entryAt,
+  type FileEntry,
   filesIn,
   hideViewedFiles,
   markViewed,
@@ -26,7 +27,8 @@ import {
   comment,
   deleteComment,
 } from "../review";
-import { clickOverview, showTimeline } from "../timeline";
+import { codeFlowPanel } from "../codeFlow";
+import { clickOverview, openedWithFocus, showTimeline } from "../timeline";
 import {
   activeTabLabel,
   eventually,
@@ -427,6 +429,49 @@ describe("The Change files view", () => {
     assert.strictEqual(shown.length, 10);
     assert.deepStrictEqual(render(await changeFiles()), hidden);
   });
+
+  /** Closes the tabs with this label, so a command has to open them again. */
+  const closeTabs = (label: string) =>
+    vscode.window.tabGroups.close(
+      vscode.window.tabGroups.all
+        .flatMap((group) => group.tabs)
+        .filter((tab) => tab.label === label)
+    );
+
+  /** Runs the command as a Change Files title-bar button does, with the focused row. */
+  const fromTitleBar = (command: string, row: FileEntry) =>
+    vscode.commands.executeCommand(command, row.node);
+
+  for (const [what, row] of [
+    ["file", () => ["pkg", "legacy.py"]],
+    ["folder", () => ["pkg"]],
+  ] as const) {
+    it(`shows the overview from the title bar while a ${what} row has the focus`, async () => {
+      await closeTabs(title);
+      const focused = entryAt(await changeFiles(), title, ...row());
+      if (focused.command) await select(focused);
+
+      await fromTitleBar("dearReviewer.showTimeline", focused);
+
+      await eventually(async () =>
+        assert.ok(await openedWithFocus(title), "the overview opens in front")
+      );
+    });
+
+    it(`shows Code Flow from the title bar while a ${what} row has the focus`, async () => {
+      const codeFlowTitle = `Code Flow · ${title}`;
+      await closeTabs(codeFlowTitle);
+      const focused = entryAt(await changeFiles(), title, ...row());
+      if (focused.command) await select(focused);
+
+      await fromTitleBar("dearReviewer.showCodeFlow", focused);
+
+      await eventually(async () =>
+        assert.ok(await codeFlowPanel(title), "the Code Flow tab opens")
+      );
+      await closeTabs(codeFlowTitle);
+    });
+  }
 
   it("leaves another Change stopped before this one for the reload", async () => {
     const stopped = {

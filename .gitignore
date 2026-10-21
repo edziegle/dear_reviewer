@@ -28,6 +28,12 @@ node_modules/
 extension/.impeccable/
 # Impeccable critique snapshots, kept for later runs on this machine
 **/.impeccable/critique/
+# Impeccable live mode's runtime state: the helper server's pid, port and token
+**/.impeccable/live/server.json
+**/.impeccable/live/sessions/
+**/.impeccable/live/previews/
+**/.impeccable/live/annotations/
+**/.impeccable/live/cache/
 !.vale/styles/House/
 
 # macOS

@@ -33,6 +33,7 @@ import {
   type OverviewAction,
   type OverviewTake,
   type ReviewStanding,
+  type StandingNote,
   type TimelineItem,
   type TimelineState,
 } from "./panel";
@@ -58,7 +59,7 @@ export interface Standing {
   /** Their last Review's verdict, while no new commits came since. */
   review?: ReviewStanding;
   /** New commits since their Review, pending Comments, files viewed, in words. */
-  notes: string[];
+  notes: StandingNote[];
   viewed: number;
   total: number;
   /** Whether their last Review covers the Change's head, so nothing is new since. */
@@ -111,6 +112,9 @@ export interface OverviewSources {
       | "finish"
       | "nextFile"
       | "ask"
+      | "codeFlow"
+      | "showChangesSince"
+      | "skimSetting"
       | "takeAction"
       | "takeRetry"
       | "trust"

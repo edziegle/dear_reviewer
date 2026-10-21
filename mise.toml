@@ -184,7 +184,7 @@ magick ../docs/images/logo.png -alpha set \
 # Modern and Default Light Modern. Needs VSCodium's install for the themes'
 # colors; the UI font comes from npm, so the images look the same on any machine.
 [tasks.walkthrough-images]
-description = "Redraw the setup walkthrough's images in media/walkthrough"
+description = "Redraw the walkthroughs' images in media/walkthrough"
 dir = "extension"
 run = ["npx playwright install chromium", "node test/walkthrough/capture.mjs"]
 

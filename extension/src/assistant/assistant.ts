@@ -91,6 +91,8 @@ export interface ReviewerView {
 export interface AssistantOverview {
   /** "Assistant" for the summary, or which Review an explanation is since. */
   label: string;
+  /** Whether it explains the commits since that Review, so its label opens their diff. */
+  since?: boolean;
   /** Whether the Assistant is writing it. */
   reading: boolean;
   /** Markdown, as the Assistant wrote it so far. */
@@ -150,8 +152,8 @@ export class Assistants implements vscode.Disposable {
     this.status.name = "Dear Reviewer: Assistant";
     this.status.command = "dearReviewer.checkClaudeLogin";
     this.view = new AssistantView((action) => {
-      if (action.type === "openAssistant")
-        void vscode.commands.executeCommand("dearReviewer.showAssistant");
+      if (action.type === "openFromList")
+        void vscode.commands.executeCommand("dearReviewer.openFromList");
       else this.inView?.act(action);
     });
     this.subscriptions = [
@@ -568,6 +570,7 @@ class ChangeAssistant {
       explained?.text && explained.to === change.headSha
         ? {
             label: sinceLabel(explained.from),
+            since: true,
             reading: false,
             text: explained.text,
           }
@@ -665,6 +668,7 @@ class ChangeAssistant {
       summary = this.enqueue(async () => {
         this.setOverview({
           label: "Assistant",
+          since: undefined,
           reading: true,
           text: undefined,
         });
@@ -806,7 +810,7 @@ class ChangeAssistant {
   }
 
   /** Does what the Reviewer did in the view while it showed this conversation. */
-  act(action: Exclude<ReviewerAction, { type: "openAssistant" }>): void {
+  act(action: Exclude<ReviewerAction, { type: "openFromList" }>): void {
     if (action.type === "problemAction") this.helpWithProblem();
     else if (action.type === "retry") this.retry();
     else if (action.type === "stop") this.stop();
@@ -880,6 +884,7 @@ class ChangeAssistant {
       this.note = undefined;
       this.setOverview({
         label: sinceLabel(from),
+        since: true,
         reading: true,
         text: undefined,
       });
@@ -1124,7 +1129,7 @@ class ChangeAssistant {
 
 /** The note a conversation starts with, before the summary is written, which may still fail. */
 const summaryNote =
-  "The Assistant's summary of this Change is in its overview.";
+  "The Assistant's summary of this Change is in its overview. Ask here about anything in the Change. Ask for Findings marks spots that deserve attention, Show Code Flow maps which changed functions call which, and Show Review Keys lists every key.";
 
 /**
  * What the view shows of the Change: with the pull request's title, the

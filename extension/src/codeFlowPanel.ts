@@ -468,7 +468,8 @@ function html(): string {
       const bend = Math.max(30, Math.abs(x2 - x1) / 2);
       const group = svg("g", { "data-from": edge.from, "data-to": edge.to },
         svg("path", { class: "edge", d: "M" + x1 + " " + y1 + " C" + (x1 + bend) + " " + y1 + " " + (x2 - bend) + " " + y2 + " " + x2 + " " + y2, "marker-end": "url(#arrow)" }));
-      if (edgeText(edge)) group.append(svg("text", { class: "edge-label", x: (x1 + x2) / 2, y: (y1 + y2) / 2 - 4, "text-anchor": "middle" }, svg("title", { text: edgeTitle(edge) }), clip(edgeText(edge), 22)));
+      // The label keeps to the gap its call crosses, so a symbol drawn over it doesn't hide it.
+      if (edgeText(edge)) group.append(svg("text", { class: "edge-label", x: (x1 + x2) / 2, y: (y1 + y2) / 2 - 4, "text-anchor": "middle", "data-room": Math.max(40, Math.abs(x2 - x1) - 12) }, svg("title", { text: edgeTitle(edge) }), svg("tspan", {}, edgeText(edge))));
       drawing.append(group);
     }
     for (const node of nodes) {
@@ -492,8 +493,9 @@ function html(): string {
 
   /**
    * Cuts each symbol's name and location to the room left beside the text on
-   * its line, the status or the count of neighbours not drawn, measured at
-   * the Reviewer's font size. The whole box's tooltip keeps the full text.
+   * its line, the status or the count of neighbours not drawn, and each
+   * call's label to the gap it crosses, measured at the Reviewer's font size.
+   * The box's tooltip, and the label's, keep the full text.
    */
   function fitNodeTexts() {
     const fit = (text, room) => {
@@ -514,6 +516,8 @@ function html(): string {
       fit(group.querySelector(".name"), room(group.querySelector(".status")));
       fit(group.querySelector(".loc"), room(group.querySelector(".more")));
     }
+    for (const label of document.querySelectorAll(".edge-label"))
+      fit(label.querySelector("tspan"), Number(label.dataset.room));
   }
 
   /**

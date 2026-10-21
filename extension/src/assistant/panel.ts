@@ -71,7 +71,7 @@ export type FromWebview =
   | { type: "problemAction" }
   | { type: "retry" }
   | { type: "stop" }
-  | { type: "openAssistant" }
+  | { type: "openFromList" }
   | { type: "openLink"; url: string }
   | { type: "openReference"; path: string; startLine: number; endLine: number };
 
@@ -169,7 +169,7 @@ export class AssistantView implements vscode.WebviewViewProvider {
       message.type === "problemAction" ||
       message.type === "retry" ||
       message.type === "stop" ||
-      message.type === "openAssistant"
+      message.type === "openFromList"
     ) {
       this.onAction({ type: message.type });
     } else if (message.type === "openLink") {
@@ -269,7 +269,7 @@ function html(): string {
 <header id="header"><h1 id="title"></h1><div class="muted" id="range"></div><div class="muted" id="login"></div></header>
 ${catSymbol}
 <div class="conversation">
-<div class="empty" id="empty" hidden><p>No Change is open, so there is no conversation to show.</p><button class="send" id="openAssistant" type="button">Open Assistant</button></div>
+<div class="empty" id="empty" hidden><p>No Change is open, so there is no conversation to show.</p><button class="send" id="openFromList" type="button">Open Pull Request or Branch…</button></div>
 <main id="messages"></main>
 <div class="busy hand" id="busy" hidden><div class="now" id="now"></div><details id="steps" hidden><summary id="stepCount"></summary><ol id="stepList"></ol></details><button class="stop" id="stop" type="button" title="Stop this reply; the conversation goes on with your next message" hidden>Stop</button></div>
 <div class="problem" id="problem" role="alert" hidden></div>
@@ -400,7 +400,7 @@ ${catSymbol}
   byId("messages").addEventListener("keydown", (event) => {
     if (event.key === "Enter" && event.target instanceof HTMLAnchorElement) event.target.click();
   });
-  byId("openAssistant").addEventListener("click", () => vscode.postMessage({ type: "openAssistant" }));
+  byId("openFromList").addEventListener("click", () => vscode.postMessage({ type: "openFromList" }));
   byId("stop").addEventListener("click", () => vscode.postMessage({ type: "stop" }));
   let busy;
   let unavailable = false;

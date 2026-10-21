@@ -50,7 +50,7 @@ import {
   showChangesSince,
 } from "./reviews";
 import { countOf, reviewStanding } from "./reviewStanding";
-import type { FromWebview } from "./timeline/panel";
+import type { FromWebview, StandingNote } from "./timeline/panel";
 import { CodeFlows } from "./codeFlows";
 import type { FromCodeFlow } from "./codeFlowPanel";
 import { LinkOpener, Standing, Timelines } from "./timeline/timelines";
@@ -277,6 +277,17 @@ export function activate(context: vscode.ExtensionContext) {
       submitReviewOf(change, verdict, summary),
     act: (change, action) => {
       if (action === "ask") void assistants.open(change);
+      else if (action === "codeFlow") void codeFlows.show(change);
+      else if (action === "skimSetting")
+        void vscode.commands.executeCommand(
+          "workbench.action.openSettings",
+          "dearReviewer.visitSkimOnlyFiles"
+        );
+      else if (action === "showChangesSince")
+        void vscode.commands.executeCommand(
+          "dearReviewer.showChangesSinceLastReview",
+          requestOf(change)
+        );
       else if (action === "suggestReadingOrder")
         void assistants.suggestReadingOrder(change);
       else if (action === "takeAction") assistants.helpWithProblem(change);
@@ -538,13 +549,17 @@ export function activate(context: vscode.ExtensionContext) {
 
   /** Where the Reviewer stands on the Change, for its overview. */
   async function standingOf(change: Change): Promise<Standing> {
-    const standing: string[] = [];
+    const standing: StandingNote[] = [];
     const since = await changeFiles.sinceReview(change);
     const lastReview =
       since && !since.newCommits ? reviewStanding(since.review) : undefined;
     const arrived = arrivals.get(change.conversation);
     if (arrived) standing.push(`${arrived} arrived`);
-    if (since?.newCommits) standing.push("New commits since your Review");
+    if (since?.newCommits)
+      standing.push({
+        text: "New commits since your Review",
+        action: "showChangesSince",
+      });
     else if (since && !lastReview)
       standing.push("Nothing new since your Review");
     const pending = await review.pendingCountOf(change);
@@ -905,7 +920,7 @@ export function activate(context: vscode.ExtensionContext) {
     target: ChangeTarget | vscode.Uri | undefined,
     title: string,
     fits: (change: Change) => boolean = () => true,
-    none = "No Change is in front in this window."
+    none = "No Change is active in this window."
   ): Promise<Change | undefined> {
     if (target instanceof vscode.Uri) {
       const ofFile = whereInChange(target, changes.shownHere())?.change;
@@ -1365,7 +1380,7 @@ export function activate(context: vscode.ExtensionContext) {
           target,
           "Submit Review",
           (c) => !!c.pullRequest,
-          "No pull request's Change is in front in this window. A local Change's Review ends with a Brief."
+          "No pull request's Change is active in this window. A local Change's Review ends with a Brief."
         );
         if (!change) return;
         if (!change.pullRequest) {
@@ -1415,7 +1430,7 @@ export function activate(context: vscode.ExtensionContext) {
           target,
           "View on GitHub",
           (c) => !!c.pullRequest,
-          "No pull request's Change is in front in this window. A local Change has no page on GitHub."
+          "No pull request's Change is active in this window. A local Change has no page on GitHub."
         );
         if (!change) return;
         if (!change.pullRequest) {
@@ -1475,7 +1490,7 @@ export function activate(context: vscode.ExtensionContext) {
           target,
           "Write Brief",
           (c) => !c.pullRequest,
-          "No local Change is in front in this window. A pull request's Review ends when you submit it."
+          "No local Change is active in this window. A pull request's Review ends when you submit it."
         );
         if (!change) return;
         if (change.pullRequest) {
@@ -1549,7 +1564,7 @@ export function activate(context: vscode.ExtensionContext) {
     ),
     vscode.commands.registerCommand(
       "dearReviewer.showCodeFlow",
-      async (target?: ChangeTarget) => {
+      async (target?: ChangeTarget | vscode.Uri) => {
         const change = await changeFor(target, "Show Code Flow");
         if (change) await codeFlows.show(change);
       }
@@ -1793,6 +1808,13 @@ export function activate(context: vscode.ExtensionContext) {
       vscode.commands.executeCommand(
         "workbench.action.openWalkthrough",
         `${context.extension.id}#setup`,
+        false
+      )
+    ),
+    vscode.commands.registerCommand("dearReviewer.openReviewTools", () =>
+      vscode.commands.executeCommand(
+        "workbench.action.openWalkthrough",
+        `${context.extension.id}#review`,
         false
       )
     ),

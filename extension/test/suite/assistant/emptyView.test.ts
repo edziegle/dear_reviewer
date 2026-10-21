@@ -2,7 +2,7 @@ import * as assert from "assert";
 import * as vscode from "vscode";
 import {
   closeAssistant,
-  openAssistantFromEmptyView,
+  openFromEmptyView,
   renderedEmptyView,
 } from "../assistant";
 import { eventually } from "../reviewer";
@@ -22,20 +22,30 @@ describe("The Assistant's view with no Change open", () => {
     );
   });
 
-  it("runs Show Assistant from its Open Assistant button", async () => {
-    const shown: string[] = [];
-    const original = vscode.window.showInformationMessage;
-    (vscode.window as any).showInformationMessage = (message: string) => {
-      shown.push(message);
+  it("runs Open Pull Request or Branch… from its button", async () => {
+    const offered: string[] = [];
+    const window = vscode.window as any;
+    const { showInformationMessage, showQuickPick } = window;
+    // With something waiting, the command offers it; with nothing, it says so.
+    window.showInformationMessage = (message: string) => {
+      offered.push(message);
+      return Promise.resolve(undefined);
+    };
+    window.showQuickPick = (_items: unknown, options: { title: string }) => {
+      offered.push(options.title);
       return Promise.resolve(undefined);
     };
     try {
-      await openAssistantFromEmptyView();
+      await openFromEmptyView();
       await eventually(async () =>
-        assert.deepStrictEqual(shown, ["No Change is in front in this window."])
+        assert.match(
+          offered.join("\n"),
+          /^(Open Pull Request or Branch|No pull requests or branches are waiting\.)/
+        )
       );
     } finally {
-      (vscode.window as any).showInformationMessage = original;
+      window.showInformationMessage = showInformationMessage;
+      window.showQuickPick = showQuickPick;
     }
   });
 });

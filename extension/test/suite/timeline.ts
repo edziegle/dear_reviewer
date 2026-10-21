@@ -53,6 +53,8 @@ export type TimelineItem =
 /** What the overview shows from the Change's Assistant. */
 export interface Take {
   label: string;
+  /** Whether the label opens the diff of the commits the take explains. */
+  since?: boolean;
   reading: boolean;
   text?: string;
   /** The text's Markdown, rendered and sanitised. */
@@ -97,7 +99,7 @@ export interface Timeline {
     verdict: "approved" | "changesRequested" | "commented" | "briefed";
     text: string;
   };
-  standing: string[];
+  standing: (string | { text: string; action: "showChangesSince" })[];
   progress?: { viewed: number; total: number };
   /** Whether the last Review covers the head, with no Comments pending. */
   finished?: boolean;
@@ -188,6 +190,13 @@ async function panel(title: string) {
   return found;
 }
 
+/** The words of the overview's standing line, whether or not a note opens something. */
+export function standingWords(state: Timeline): string[] {
+  return state.standing.map((note) =>
+    typeof note === "string" ? note : note.text
+  );
+}
+
 /** The state the extension last sent to the timeline panel with this title. */
 export async function sentTimeline(title: string): Promise<Timeline> {
   return (await panel(title)).sent;
@@ -226,6 +235,8 @@ export async function clickOverview(
     | "finish"
     | "nextFile"
     | "ask"
+    | "codeFlow"
+    | "showChangesSince"
     | "takeAction"
     | "takeRetry"
     | "trust"

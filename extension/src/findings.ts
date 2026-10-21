@@ -17,6 +17,7 @@ import type { ThreadPlace } from "./github/client";
 import { setContext } from "./context";
 import { messageOf } from "./errors";
 import { gutterIcons, type GutterIcon, type IconSpan } from "./findingGutter";
+import { reviewKey } from "./reviewKeys";
 
 /** A spot in a Change the Assistant thinks deserves the Reviewer's attention. */
 export interface Finding {
@@ -169,7 +170,7 @@ export class Findings
       [
         findings.length === 0
           ? "Raised no Findings."
-          : `Raised ${findings.length} Finding${findings.length === 1 ? "" : "s"}, marked in the gutter of the diff and listed in the Findings view.`,
+          : `Raised ${findings.length} Finding${findings.length === 1 ? "" : "s"}, marked in the gutter of the diff and listed in the Findings view. ${reviewKey("F")} steps through them, and ${reviewKey("Shift+F")} back.`,
         ...(left > 0
           ? [
               `Left out ${left} that ${left === 1 ? "wasn't" : "weren't"} on the lines of the diff.`,

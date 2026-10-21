@@ -54,6 +54,12 @@ export type TimelineItem =
       comments: number;
     };
 
+/**
+ * A note in the overview's standing line: words, or words that open what
+ * they name, such as the diff of the commits since the Reviewer's Review.
+ */
+export type StandingNote = string | { text: string; action: "showChangesSince" };
+
 /** The Reviewer's last Review, as the overview's standing line opens with it. */
 export interface ReviewStanding {
   verdict: "approved" | "changesRequested" | "commented" | "briefed";
@@ -65,6 +71,8 @@ export interface ReviewStanding {
 export interface OverviewTake {
   /** "Assistant", or which Review an explanation of new commits is since. */
   label: string;
+  /** Whether the label names a Review the take explains new commits since, so it opens their diff. */
+  since?: boolean;
   /** Whether the Assistant is writing it. */
   reading: boolean;
   /** Markdown, as the Assistant wrote it so far. */
@@ -113,7 +121,7 @@ export interface TimelineState {
   /** The Reviewer's last Review, while no new commits came since. */
   review?: ReviewStanding;
   /** Where the Reviewer stands: new commits since their Review, pending Comments, files viewed. */
-  standing: string[];
+  standing: StandingNote[];
   /** How many of the Change's files the Reviewer has viewed, once counted. */
   progress?: { viewed: number; total: number };
   /** How many Comments are pending, once counted. */
@@ -193,6 +201,9 @@ export type FromWebview =
   | { type: "openPending"; index: number }
   | { type: "nextFile" }
   | { type: "ask" }
+  | { type: "codeFlow" }
+  | { type: "showChangesSince" }
+  | { type: "skimSetting" }
   | { type: "takeAction" }
   | { type: "takeRetry" }
   | { type: "trust" }
@@ -318,6 +329,9 @@ export class TimelinePanel {
         "submitAction",
         "nextFile",
         "ask",
+        "codeFlow",
+        "showChangesSince",
+        "skimSetting",
         "takeAction",
         "takeRetry",
         "trust",
@@ -485,6 +499,7 @@ function html(cspSource: string): string {
   #start code { font-family: var(--vscode-editor-font-family); color: inherit; background: none; padding: 0; }
   .overview .hand { margin-top: 14px; }
   .take .speaker .label { font-weight: 400; color: var(--vscode-descriptionForeground); }
+  .take .speaker .label .link { text-decoration: underline; text-underline-offset: 2px; }
   .take .markdown { line-height: 1.5; max-width: 40em; }
   .take .more { margin-top: 4px; font-size: 0.9em; }
   .take .reading { font-style: italic; }
@@ -501,6 +516,8 @@ function html(cspSource: string): string {
   .order .viewed .file, .order .skim .file { color: var(--vscode-descriptionForeground); }
   .order .tag { font-size: 0.85em; font-weight: 400; margin-left: 4px; padding: 0 6px; border-radius: 8px; color: var(--vscode-badge-foreground); background: var(--vscode-badge-background); }
   .order summary.step { cursor: pointer; }
+  .order .skimNote { margin: 2px 0 4px; }
+  .order .skimNote .link { text-decoration: underline; text-underline-offset: 2px; }
   .order .reading { font-style: italic; }
   #checksSummary { margin: 0 0 4px; }
   #checks .more { margin-top: 4px; font-size: 0.9em; }
@@ -609,6 +626,7 @@ ${catSymbol}
     <button class="primary" id="start" type="button" hidden></button>
     <button class="secondary" id="nextFile" type="button" hidden></button>
     <button class="secondary" id="ask" type="button" title="Open the Assistant's chat about this Change"></button>
+    <button class="secondary" id="codeFlow" type="button" title="Show the calls to and from the changed code"></button>
   </div>
 </section>
 <section id="checks" hidden><h2 id="checksHeading"></h2><p class="muted facts" id="checksSummary"></p><ul class="checks" id="checkRuns"></ul><button class="link more" id="moreChecks" type="button" aria-controls="checkRuns" aria-expanded="false" hidden></button></section>
@@ -665,7 +683,7 @@ ${catSymbol}
     commented: "reviewed",
     dismissed: "reviewed (dismissed)",
   };
-  for (const type of ["refresh", "nextFile", "ask"])
+  for (const type of ["refresh", "nextFile", "ask", "codeFlow"])
     byId(type).addEventListener("click", () => vscode.postMessage({ type }));
   byId("viewOnGitHub").addEventListener("click", () => {
     if (lastState && lastState.url) vscode.postMessage({ type: "openLink", url: lastState.url });
@@ -785,7 +803,7 @@ ${catSymbol}
       span.append(mark, " ", review.text);
       parts.push(span);
     }
-    parts.push(...notes);
+    parts.push(...notes.map((note) => typeof note === "string" ? note : sinceButton(note.text)));
     if (state.navigationOff) {
       const off = el("span", "", "Navigation off: ");
       const trust = textButton("Trust the review window…", () => vscode.postMessage({ type: "trust" }));
@@ -794,6 +812,13 @@ ${catSymbol}
       parts.push(off);
     }
     parts.forEach((part, i) => node.append(...(i ? [" · "] : []), part));
+  }
+
+  // Words about the commits since the Reviewer's Review, which open their diff.
+  function sinceButton(text) {
+    const button = textButton(text, () => vscode.postMessage({ type: "showChangesSince" }));
+    button.title = "Open the diff of what changed since your Review (" + keyOf("C") + ")";
+    return button;
   }
 
   // Offers to search the Extensions view for each file extension no
@@ -841,8 +866,15 @@ ${catSymbol}
   function take(state) {
     lastTake = state;
     const t = state.take;
-    // The heading names the Assistant; a take since a Review says so after.
-    setText(byId("takeLabel"), t.label === "Assistant" ? "" : "· " + t.label);
+    // The heading names the Assistant; a take since a Review says so after,
+    // and opens the diff of what it explains.
+    const label = byId("takeLabel");
+    const labelled = JSON.stringify([t.label, !!t.since]);
+    if (label.dataset.said !== labelled) {
+      label.dataset.said = labelled;
+      if (t.label === "Assistant") label.replaceChildren();
+      else label.replaceChildren("· ", t.since ? sinceButton(t.label) : t.label);
+    }
     const body = byId("take");
     const html = showAll && t.fullHtml !== undefined ? t.fullHtml : t.html;
     if (html === undefined) body.replaceChildren();
@@ -916,7 +948,12 @@ ${catSymbol}
       if (step.skimOnly) {
         const details = el("details");
         details.open = skimOpen;
-        details.append(el("summary", "step", step.label + " (" + step.files.length + ")"), files);
+        // What Next unviewed file does with these is said where they are.
+        const note = el("div", "muted skimNote", "Next unviewed file leaves these until last, unless ");
+        const setting = textButton("Visit Skim Only Files", () => vscode.postMessage({ type: "skimSetting" }));
+        setting.title = "Open the setting in Settings";
+        note.append(setting, " is on.");
+        details.append(el("summary", "step", step.label + " (" + step.files.length + ")"), note, files);
         li.append(details);
       } else {
         li.append(heading, files);
@@ -948,9 +985,11 @@ ${catSymbol}
     const next = byId("nextFile");
     setLabel(next, "Next unviewed file", "N");
     setLabel(byId("ask"), "Ask the Assistant", "A");
+    setLabel(byId("codeFlow"), "Code Flow", "G");
     next.hidden = !progress || progress.viewed >= progress.total || back;
     next.title = "Open the diff of the next file you haven't viewed (" + keyOf("N") + ")";
     byId("ask").title = "Open the Assistant's chat about this Change (" + keyOf("A") + ")";
+    byId("codeFlow").title = "Show the calls to and from the changed code (" + keyOf("G") + ")";
     const first = t.start ? start : next;
     start.className = reading && first === start ? "primary" : "secondary";
     next.className = reading && first === next ? "primary" : "secondary";

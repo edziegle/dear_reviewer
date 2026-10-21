@@ -27,6 +27,7 @@ import {
   changeTitle,
 } from "../changeWorkspace";
 import type { LocalThread } from "../localReviews";
+import type { Repetition } from "../repetitions";
 import { describeToolUse } from "./activity";
 import {
   ClaudeCli,
@@ -145,7 +146,9 @@ export class Assistants implements vscode.Disposable {
     private readonly reviewerView: ReviewerView,
     private readonly descriptionOf: DescriptionOf,
     /** The title of the Change's pull request, once it has loaded. */
-    private readonly titleOf: (change: Change) => string | undefined
+    private readonly titleOf: (change: Change) => string | undefined,
+    /** The Duplicate code and Repeated edits that Dear Reviewer's rules find in a Change. */
+    private readonly repetitionOf: (change: Change) => Promise<Repetition>
   ) {
     this.status = vscode.window.createStatusBarItem(
       "dearReviewer.claudeLogin",
@@ -345,7 +348,9 @@ export class Assistants implements vscode.Disposable {
    * started, and gives its reply, which the view doesn't show.
    */
   findIssues(change: Change): Promise<string> {
-    return this.started(change).aside(findingsPrompt);
+    return this.started(change).aside((current, note) =>
+      findingsPrompt(current, note, this.repetitionOf)
+    );
   }
 
   /**

@@ -268,8 +268,8 @@ const launchGroups: (GroupPlan & {
     open: reloadWorkspace,
   },
   {
-    name: "review reloaded, then reading order",
-    phases: ["review/afterReload", "readingOrder"],
+    name: "review reloaded, then reading order and repetition",
+    phases: ["review/afterReload", "readingOrder", "repetition"],
     open: reloadWorkspace,
   },
   {

@@ -43,6 +43,8 @@ import { GitHubPendingReviews, PendingReviewsBySource } from "./pendingReview";
 import { ReviewComments } from "./reviewComments";
 import { isVerdict, verdicts, type Verdict } from "./reviewSubmission";
 import { ReviewInProgressFiles } from "./reviewInProgress";
+import { openReference } from "./references";
+import { Repetitions } from "./repetitions";
 import {
   CommitFiles,
   commitFileScheme,
@@ -172,6 +174,7 @@ export function activate(context: vscode.ExtensionContext) {
   let notify = showInformation;
   const conversations = new Conversations(context.globalStorageUri.fsPath);
   const reviews = new Reviews(github, localReviews);
+  const repetitions = new Repetitions();
   const assistants = new Assistants(
     () =>
       expandHome(settings().inspect<string>("claudePath")?.globalValue ?? ""),
@@ -189,7 +192,8 @@ export function activate(context: vscode.ExtensionContext) {
         change.pullRequest.repository,
         change.pullRequest.number
       ),
-    (change) => changeTitles.of(change)
+    (change) => changeTitles.of(change),
+    (change) => repetitions.candidates(change)
   );
   // Only the user's own setting counts: a workspace must not be able to
   // choose the repository Dear Reviewer runs git in.
@@ -265,6 +269,13 @@ export function activate(context: vscode.ExtensionContext) {
     navigationOff: () => trust.navigationOff,
     take: (change) => assistants.overviewOf(change),
     readingOrder: (change) => changeFiles.readingOrder(change),
+    repeatedEdits: (change) => repetitions.repeatedEdits(change),
+    openSite: (change, site, missed) =>
+      missed
+        ? void codeColumnOf(change).then((column) =>
+            openReference(change, site.path, site.line, site.endLine, column)
+          )
+        : void changeFiles.openSite(change, site),
     openFile: (change, file) => void changeFiles.openPath(change, file),
     unhighlighted: (files) => languageOffer.unhighlighted(files),
     findExtension: (extension) => languageOffer.find(extension),
@@ -580,6 +591,8 @@ export function activate(context: vscode.ExtensionContext) {
     };
   }
   context.subscriptions.push(trust.onDidChangeNavigation(() => showStanding()));
+  // The overview lists missed sites once the repository's index is built.
+  repetitions.onDidSettle(() => showStanding());
   context.subscriptions.push(
     languageOffer.onDidChange(() => timelines.refreshUnhighlighted())
   );

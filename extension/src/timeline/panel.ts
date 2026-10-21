@@ -21,6 +21,7 @@ import {
   sharedStyles,
 } from "../markdownPanel";
 import type { ShownReadingOrder } from "../readingOrder";
+import type { ShownRepeatedEdits } from "../repetitions";
 import type { PendingCommentLine } from "../reviewComments";
 import type { BriefState } from "../briefs";
 import type {
@@ -58,7 +59,8 @@ export type TimelineItem =
  * A note in the overview's standing line: words, or words that open what
  * they name, such as the diff of the commits since the Reviewer's Review.
  */
-export type StandingNote = string | { text: string; action: "showChangesSince" };
+export type StandingNote =
+  string | { text: string; action: "showChangesSince" };
 
 /** The Reviewer's last Review, as the overview's standing line opens with it. */
 export interface ReviewStanding {
@@ -141,6 +143,8 @@ export interface TimelineState {
   take: OverviewTake;
   /** The order the Assistant suggests for reading the Change's files, while it has one or writes one. */
   readingOrder?: ShownReadingOrder;
+  /** Where the Change makes the same edit at several sites, found by Dear Reviewer's rules (ADR 0047); absent when it makes none. */
+  repeatedEdits?: ShownRepeatedEdits;
   /** The button that finishes the Review: "Submit Review…" or "Write Brief…". */
   finish: string;
   /** The Submit step, while it is open. */
@@ -196,6 +200,15 @@ export type FromWebview =
   | { type: "openLink"; url: string }
   | { type: "openReference"; path: string; startLine: number; endLine: number }
   | { type: "openFile"; path: string }
+  | {
+      type: "openSite";
+      path: string;
+      side: "head" | "base";
+      line: number;
+      endLine: number;
+      /** Whether it is a missed site, which opens as the head file at that line, rather than a hunk's diff. */
+      missed: boolean;
+    }
   | { type: "findExtension"; extension: string }
   | { type: "dismissUnhighlighted" }
   | { type: "suggestReadingOrder" }
@@ -316,6 +329,16 @@ export class TimelinePanel {
     } else if (message.type === "openFile") {
       if (typeof message.path === "string")
         this.onAction({ type: "openFile", path: message.path });
+    } else if (message.type === "openSite") {
+      const { path, side, line, endLine, missed } = message;
+      if (
+        typeof path === "string" &&
+        (side === "head" || side === "base") &&
+        Number.isInteger(line) &&
+        Number.isInteger(endLine) &&
+        typeof missed === "boolean"
+      )
+        this.onAction({ type: "openSite", path, side, line, endLine, missed });
     } else if (message.type === "submit") {
       const { verdict, summary } = message;
       if (isVerdict(verdict) && typeof summary === "string")
@@ -528,6 +551,11 @@ function html(cspSource: string): string {
   .order .skimNote { margin: 2px 0 4px; }
   .order .skimNote .link { text-decoration: underline; text-underline-offset: 2px; }
   .order .reading { font-style: italic; }
+  .repeats { margin-top: 16px; }
+  .repeats summary { cursor: pointer; }
+  .repeats .sample { margin: 2px 0 2px; font-family: var(--vscode-editor-font-family); overflow-wrap: anywhere; white-space: pre-wrap; color: var(--vscode-descriptionForeground); }
+  .repeats .sites { margin-top: 2px; }
+  #repeatsNote { margin: 2px 0 4px; }
   #checksSummary { margin: 0 0 4px; }
   #checks .more { margin-top: 4px; font-size: 0.9em; }
   .checks li { display: flex; flex-wrap: wrap; gap: 0 8px; align-items: baseline; padding: 2px 0; }
@@ -631,6 +659,11 @@ ${catSymbol}
       <div class="muted" id="orderNote" role="status"></div>
       <ol id="orderSteps"></ol>
     </div>
+    <details class="order repeats" id="repeats" hidden>
+      <summary class="step" id="repeatsSummary"></summary>
+      <div class="muted" id="repeatsNote" role="status"></div>
+      <ol id="repeatList"></ol>
+    </details>
   </div>
   <div class="actions" id="ways">
     <button class="primary" id="start" type="button" hidden></button>
@@ -988,6 +1021,54 @@ ${catSymbol}
       } else {
         li.append(heading, files);
       }
+      return li;
+    }));
+  }
+
+  // The Repeated edits section opens when an edit has a differing or a missed
+  // site, and stays as the Reviewer left it once they have opened or closed it.
+  byId("repeatsSummary").addEventListener("click", () => { byId("repeats").dataset.touched = "true"; });
+  function repeatedEdits(state) {
+    const shown = state.repeatedEdits;
+    const node = byId("repeats");
+    node.hidden = !shown;
+    if (!shown) return;
+    const said = JSON.stringify(shown);
+    if (node.dataset.said === said) return;
+    node.dataset.said = said;
+    if (!node.dataset.touched) node.open = shown.open;
+    byId("repeatsSummary").textContent = "Repeated edits (" + shown.edits.length + ")";
+    const note = byId("repeatsNote");
+    note.textContent = shown.checked === "pending" ? "Still checking the rest of the repository for places that missed the edit."
+      : shown.checked === "partial" ? "The repository took too long to read, so places that missed the edit weren't fully checked."
+      : "";
+    note.hidden = !note.textContent;
+    const siteButton = (site, missed) => {
+      const where = site.path + ":" + site.line + (site.endLine > site.line ? "-" + site.endLine : "");
+      const open = textButton(where, () => vscode.postMessage({ type: "openSite", path: site.path, side: site.side, line: site.line, endLine: site.endLine, missed }));
+      open.classList.add("file");
+      open.title = missed ? "Open " + site.path + " at the lines that still hold the old code" : "Open the diff of " + site.path + " at this edit";
+      return open;
+    };
+    byId("repeatList").replaceChildren(...shown.edits.map((edit) => {
+      const li = el("li");
+      li.append(el("div", "step", edit.summary));
+      if (edit.removed.length || edit.added.length) {
+        // A line to each div: a newline in this template would end the script's string.
+        const sample = el("div", "sample");
+        sample.append(...edit.removed.map((l) => el("div", "", "- " + l)), ...edit.added.map((l) => el("div", "", "+ " + l)));
+        li.append(sample);
+      }
+      const sites = el("ul", "sites");
+      const row = (label, buttons, more) => {
+        const item = el("li");
+        item.append(el("span", "muted", label), ...buttons);
+        if (more) item.append(el("span", "muted", "and " + more + " more"));
+        sites.append(item);
+      };
+      if (edit.differing.length) row("Differs here:", edit.differing.map((site) => siteButton(site, false)));
+      if (edit.missed.length) row("Still holds the old code:", edit.missed.map((site) => siteButton(site, true)), edit.moreMissed);
+      li.append(sites);
       return li;
     }));
   }
@@ -1442,6 +1523,7 @@ ${catSymbol}
     highlighting(state);
     take(state);
     readingOrder(state);
+    repeatedEdits(state);
     ways(state);
     submitted(state);
     result(state);

@@ -29,11 +29,11 @@ A spot in a Change the Assistant thinks deserves attention. It is never publishe
 _Avoid_: AI comment, flag, suggestion (GitHub uses that for proposed code edits)
 
 **Duplicate code**:
-Code a Change adds that repeats a block found elsewhere in the Change or the repository, instead of reusing it. Dear Reviewer finds possible duplicate code by rules, and the Assistant judges which is real and raises it as a Finding.
+Code a Change adds that repeats a block found elsewhere in the Change or the repository, instead of reusing it: 6 or more lines that match once names, numbers, strings and spacing are set aside. Dear Reviewer finds possible duplicate code by rules, when the Reviewer asks for Findings, and gives up to 20 candidates to the Assistant, which judges which is real and raises it as a Finding.
 _Avoid_: Copy-paste, clone, pattern (vague, and it blurs into Repeated edit)
 
 **Repeated edit**:
-The same change made at three or more sites in a Change, such as one call renamed everywhere it's used. Dear Reviewer finds it by rules and names its **differing sites**, where the change differs from the rest, and its **missed sites**, where the old code survives.
+The same change made at three or more sites in a Change, such as one call renamed everywhere it's used. Dear Reviewer finds it by rules, with no Assistant, and lists it in the overview, with its **differing sites**, where the change differs from the rest, and its **missed sites**, where the old code survives, each linking to its place. The Assistant gets the differing and missed sites as candidates when the Reviewer asks for Findings.
 _Avoid_: Duplicate code (a clean sweep is not a smell), sweep, pattern
 
 **Change**:

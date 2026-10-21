@@ -9,7 +9,6 @@
 // 0025); a Change behind it keeps its Findings until it comes back.
 
 import * as crypto from "crypto";
-import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 import { Change, changeName } from "./changeWorkspace";
@@ -18,6 +17,7 @@ import { setContext } from "./context";
 import { messageOf } from "./errors";
 import { gutterIcons, type GutterIcon, type IconSpan } from "./findingGutter";
 import { reviewKey } from "./reviewKeys";
+import { countLines, readInWorktree } from "./worktreeFile";
 
 /** A spot in a Change the Assistant thinks deserves the Reviewer's attention. */
 export interface Finding {
@@ -449,23 +449,13 @@ export class Findings
     const first = startLine ?? endLine;
     const last = endLine ?? startLine;
     if (!isLine(first) || !isLine(last) || last < first) return;
-    const dir = side === "head" ? change.headDir : change.baseDir;
-    const file = path.resolve(dir, given);
-    const relative = path.relative(dir, file);
-    if (!isInside(relative)) return;
-    let text: string;
-    try {
-      const real = fs.realpathSync(file);
-      if (!isInside(path.relative(fs.realpathSync(dir), real))) return;
-      text = await fs.promises.readFile(real, "utf8");
-    } catch {
-      return;
-    }
-    const lineCount =
-      text.split("\n").length - (text === "" || text.endsWith("\n") ? 1 : 0);
-    if (last > lineCount) return;
+    const file = await readInWorktree(
+      side === "head" ? change.headDir : change.baseDir,
+      given
+    );
+    if (!file || last > countLines(file.text)) return;
     const place: ThreadPlace = {
-      path: relative.split(path.sep).join("/"),
+      path: file.path,
       side: side === "head" ? "RIGHT" : "LEFT",
       line: last,
       ...(last > first && { startLine: first }),
@@ -544,8 +534,4 @@ function reference(place: ThreadPlace): string {
 
 function isLine(n: unknown): n is number {
   return typeof n === "number" && Number.isInteger(n) && n >= 1;
-}
-
-function isInside(relative: string): boolean {
-  return !!relative && !relative.startsWith("..") && !path.isAbsolute(relative);
 }

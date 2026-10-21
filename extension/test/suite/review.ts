@@ -97,6 +97,24 @@ export async function cancelEdit(
   );
 }
 
+/** Asks the Assistant for an Agent note under the Comment, which opens it for editing. */
+export function addAgentNote(target: vscode.Comment): Thenable<unknown> {
+  return vscode.commands.executeCommand("dearReviewer.addAgentNote", target);
+}
+
+/** Saves the Comment as it stands in its edit box. */
+export function saveComment(target: vscode.Comment): Thenable<unknown> {
+  return vscode.commands.executeCommand("dearReviewer.saveComment", target);
+}
+
+/** Cancels the edit of the Comment. */
+export function cancelEditComment(target: vscode.Comment): Thenable<unknown> {
+  return vscode.commands.executeCommand(
+    "dearReviewer.cancelEditComment",
+    target
+  );
+}
+
 export function deleteComment(target: vscode.Comment): Thenable<unknown> {
   return vscode.commands.executeCommand("dearReviewer.deleteComment", target);
 }
@@ -200,7 +218,9 @@ export async function commentThreads(): Promise<ShownThread[]> {
         number,
       ],
       comments: thread.comments.map((c) => bodyText(c)),
-      editable: thread.comments.map((c) => c.contextValue === "pending"),
+      editable: thread.comments.map(
+        (c) => c.contextValue?.startsWith("pending") === true
+      ),
     }))
     .sort((a, b) => a.file.localeCompare(b.file) || a.lines[0] - b.lines[0]);
 }
@@ -232,7 +252,7 @@ export async function reviewThreads(): Promise<ShownReviewThread[]> {
       comments: thread.comments.map((c) => ({
         author: c.author.name,
         body: bodyText(c),
-        pending: c.contextValue === "pending",
+        pending: c.contextValue?.startsWith("pending") === true,
       })),
       ...(thread.label !== undefined && { label: thread.label }),
       resolved: thread.state === vscode.CommentThreadState.Resolved,

@@ -13,7 +13,7 @@ One pass by a Reviewer over a Change, ending when they submit a verdict or copy 
 _Avoid_: Code review session, audit, round
 
 **Assistant**:
-The AI that helps the Reviewer: it summarises, answers questions, raises Findings and writes Briefs. It never reviews, decides or publishes.
+The AI that helps the Reviewer: it summarises, answers questions, raises Findings, writes Briefs and adds Agent notes. It never reviews, decides or publishes.
 _Avoid_: AI reviewer, bot, copilot
 
 **Comment**:
@@ -83,3 +83,7 @@ _Avoid_: Home, start page, landing page
 **Brief**:
 The Reviewer's comments on a local Change, packaged as instructions for an agent to act on. The local counterpart of posting a review to GitHub.
 _Avoid_: Fix-up prompt, task list
+
+**Agent note**:
+A short paragraph the Assistant writes under the Reviewer's own text in a pending pull request Comment, when the Reviewer asks, for the agent that will act on the Comment: the reason behind it and what to do instead. It starts with the label `**For agents:**`, which Dear Reviewer writes. It is the Reviewer's to read, edit or remove before the Comment is saved, and it is not a Brief, which covers a whole local Review.
+_Avoid_: Brief (that is a whole local Review), AI comment

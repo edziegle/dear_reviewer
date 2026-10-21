@@ -295,6 +295,12 @@
         "icon": "$(edit)"
       },
       {
+        "command": "dearReviewer.addAgentNote",
+        "title": "Add Agent Note",
+        "category": "Dear Reviewer",
+        "icon": "$(sparkle)"
+      },
+      {
         "command": "dearReviewer.saveComment",
         "title": "Save",
         "category": "Dear Reviewer"
@@ -653,6 +659,10 @@
           "when": "false"
         },
         {
+          "command": "dearReviewer.addAgentNote",
+          "when": "false"
+        },
+        {
           "command": "dearReviewer.saveComment",
           "when": "false"
         },
@@ -951,26 +961,31 @@
       ],
       "comments/comment/title": [
         {
+          "command": "dearReviewer.addAgentNote",
+          "group": "inline@0",
+          "when": "commentController == dearReviewer.review && comment == pending"
+        },
+        {
           "command": "dearReviewer.editComment",
           "group": "inline@1",
-          "when": "commentController == dearReviewer.review && comment == pending"
+          "when": "commentController == dearReviewer.review && comment =~ /^pending/"
         },
         {
           "command": "dearReviewer.deleteComment",
           "group": "inline@2",
-          "when": "commentController == dearReviewer.review && comment == pending"
+          "when": "commentController == dearReviewer.review && comment =~ /^pending/"
         }
       ],
       "comments/comment/context": [
         {
           "command": "dearReviewer.cancelEditComment",
           "group": "inline@1",
-          "when": "commentController == dearReviewer.review && comment =~ /^(pending|draft)$/"
+          "when": "commentController == dearReviewer.review && comment =~ /^(pending|draft)/"
         },
         {
           "command": "dearReviewer.saveComment",
           "group": "inline@2",
-          "when": "commentController == dearReviewer.review && comment =~ /^(pending|draft)$/"
+          "when": "commentController == dearReviewer.review && comment =~ /^(pending|draft)/"
         }
       ]
     },

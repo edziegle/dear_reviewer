@@ -222,8 +222,8 @@ describe("Commenting on a local Change", () => {
     assert.deepStrictEqual(
       thread.comments.map((c) => [bodyText(c), c.contextValue]),
       [
-        ["Who used this?", "pending"],
-        ["Check the docs too.", "pending"],
+        ["Who used this?", "pendingLocal"],
+        ["Check the docs too.", "pendingLocal"],
       ]
     );
     assert.deepStrictEqual(await reviewsOnGitHub(), []);

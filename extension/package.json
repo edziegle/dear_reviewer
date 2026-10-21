@@ -761,6 +761,11 @@
           "command": "dearReviewer.showTimeline",
           "when": "resourcePath =~ /edziegle\\.dear-reviewer\\/changes\\// || resourceScheme == dear-reviewer-commit",
           "group": "1_dearReviewer@1"
+        },
+        {
+          "command": "dearReviewer.showCodeFlow",
+          "when": "resourcePath =~ /edziegle\\.dear-reviewer\\/changes\\// || resourceScheme == dear-reviewer-commit",
+          "group": "1_dearReviewer@2"
         }
       ],
       "editor/title/context": [
@@ -862,6 +867,11 @@
           "command": "dearReviewer.showAssistant",
           "when": "view == dearReviewer.changeFiles && viewItem =~ /^change\\./",
           "group": "3_panels@2"
+        },
+        {
+          "command": "dearReviewer.showCodeFlow",
+          "when": "view == dearReviewer.changeFiles && viewItem =~ /^change\\./",
+          "group": "3_panels@3"
         },
         {
           "command": "dearReviewer.viewOnGitHub",
@@ -1112,7 +1122,7 @@
           {
             "id": "read",
             "title": "Read the diff and comment",
-            "description": "Start where the take says, then step through the files with Next unviewed file (Ctrl+Alt+R N, or ⌃⌥R N on a Mac). Comment in the gutter of the diff. Go to definition and find usages work on both sides of the diff once you trust the review window.",
+            "description": "Start where the take says, then step through the files with Next unviewed file (Ctrl+Alt+R N, or ⌃⌥R N on a Mac). Comment in the gutter of the diff. Go to definition and find usages work on both sides of the diff once you trust the review window. Code Flow (Ctrl+Alt+R G), beside Ask the Assistant, maps which of the changed functions call which, and can have the Assistant take you through those calls in order.",
             "media": {
               "image": {
                 "dark": "media/walkthrough/read-dark.png",

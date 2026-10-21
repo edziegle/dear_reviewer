@@ -111,6 +111,7 @@ export interface OverviewSources {
       | "finish"
       | "nextFile"
       | "ask"
+      | "codeFlow"
       | "takeAction"
       | "takeRetry"
       | "trust"

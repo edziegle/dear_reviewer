@@ -193,6 +193,7 @@ export type FromWebview =
   | { type: "openPending"; index: number }
   | { type: "nextFile" }
   | { type: "ask" }
+  | { type: "codeFlow" }
   | { type: "takeAction" }
   | { type: "takeRetry" }
   | { type: "trust" }
@@ -318,6 +319,7 @@ export class TimelinePanel {
         "submitAction",
         "nextFile",
         "ask",
+        "codeFlow",
         "takeAction",
         "takeRetry",
         "trust",
@@ -609,6 +611,7 @@ ${catSymbol}
     <button class="primary" id="start" type="button" hidden></button>
     <button class="secondary" id="nextFile" type="button" hidden></button>
     <button class="secondary" id="ask" type="button" title="Open the Assistant's chat about this Change"></button>
+    <button class="secondary" id="codeFlow" type="button" title="Show the calls to and from the changed code"></button>
   </div>
 </section>
 <section id="checks" hidden><h2 id="checksHeading"></h2><p class="muted facts" id="checksSummary"></p><ul class="checks" id="checkRuns"></ul><button class="link more" id="moreChecks" type="button" aria-controls="checkRuns" aria-expanded="false" hidden></button></section>
@@ -665,7 +668,7 @@ ${catSymbol}
     commented: "reviewed",
     dismissed: "reviewed (dismissed)",
   };
-  for (const type of ["refresh", "nextFile", "ask"])
+  for (const type of ["refresh", "nextFile", "ask", "codeFlow"])
     byId(type).addEventListener("click", () => vscode.postMessage({ type }));
   byId("viewOnGitHub").addEventListener("click", () => {
     if (lastState && lastState.url) vscode.postMessage({ type: "openLink", url: lastState.url });
@@ -948,9 +951,11 @@ ${catSymbol}
     const next = byId("nextFile");
     setLabel(next, "Next unviewed file", "N");
     setLabel(byId("ask"), "Ask the Assistant", "A");
+    setLabel(byId("codeFlow"), "Code Flow", "G");
     next.hidden = !progress || progress.viewed >= progress.total || back;
     next.title = "Open the diff of the next file you haven't viewed (" + keyOf("N") + ")";
     byId("ask").title = "Open the Assistant's chat about this Change (" + keyOf("A") + ")";
+    byId("codeFlow").title = "Show the calls to and from the changed code (" + keyOf("G") + ")";
     const first = t.start ? start : next;
     start.className = reading && first === start ? "primary" : "secondary";
     next.className = reading && first === next ? "primary" : "secondary";

@@ -277,6 +277,7 @@ export function activate(context: vscode.ExtensionContext) {
       submitReviewOf(change, verdict, summary),
     act: (change, action) => {
       if (action === "ask") void assistants.open(change);
+      else if (action === "codeFlow") void codeFlows.show(change);
       else if (action === "suggestReadingOrder")
         void assistants.suggestReadingOrder(change);
       else if (action === "takeAction") assistants.helpWithProblem(change);
@@ -1549,7 +1550,7 @@ export function activate(context: vscode.ExtensionContext) {
     ),
     vscode.commands.registerCommand(
       "dearReviewer.showCodeFlow",
-      async (target?: ChangeTarget) => {
+      async (target?: ChangeTarget | vscode.Uri) => {
         const change = await changeFor(target, "Show Code Flow");
         if (change) await codeFlows.show(change);
       }

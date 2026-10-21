@@ -18,7 +18,15 @@ import {
   type CodeFlowState,
 } from "../codeFlow";
 import { buildFixtureRepo } from "../fixtures";
-import { closeChange, eventually, openChange, short } from "../reviewer";
+import {
+  closeChange,
+  eventually,
+  gitIn,
+  openChange,
+  short,
+  worktreesOf,
+} from "../reviewer";
+import { clickOverview } from "../timeline";
 
 /** The Change's title, as Code Flow names its tab. */
 function titled(request: { repository: string; base: string; head: string }) {
@@ -195,6 +203,43 @@ describe("Code Flow", () => {
       assert.deepStrictEqual(
         (await codeFlowPanel(title))!.rendered,
         (await codeFlowPanel(title))!.sent
+      )
+    );
+  });
+
+  it("opens from the overview's Code Flow button", async () => {
+    const change = newChange();
+    open.push(change);
+    disposables.push(fakeShellServer({ callees: { helper: ["run_main"] } }));
+    await openChange(change.request);
+    await clickOverview(change.title, "codeFlow");
+    await eventually(async () =>
+      assert.ok(
+        (await codeFlowPanel(change.title))?.viewColumn,
+        "Code Flow is shown"
+      )
+    );
+  });
+
+  it("opens for the Change of a file, as the editor's title menu asks", async () => {
+    const change = newChange();
+    open.push(change);
+    disposables.push(fakeShellServer({ callees: { helper: ["run_main"] } }));
+    await openChange(change.request);
+    const head = worktreesOf(change.request.repository).find(
+      (w) =>
+        w.detached &&
+        gitIn(w.path, "rev-parse", "HEAD").trim() === change.request.head
+    );
+    assert.ok(head, "the Change has a head worktree");
+    await vscode.commands.executeCommand(
+      "dearReviewer.showCodeFlow",
+      vscode.Uri.file(path.join(head.path, "lib.sh"))
+    );
+    await eventually(async () =>
+      assert.ok(
+        (await codeFlowPanel(change.title))?.viewColumn,
+        "Code Flow is shown"
       )
     );
   });

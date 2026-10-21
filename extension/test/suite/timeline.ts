@@ -226,6 +226,7 @@ export async function clickOverview(
     | "finish"
     | "nextFile"
     | "ask"
+    | "codeFlow"
     | "takeAction"
     | "takeRetry"
     | "trust"

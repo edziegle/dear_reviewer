@@ -362,9 +362,9 @@ export const scenes: Scene[] = [
             text: "New commits since your Review",
             action: "showChangesSince",
           },
-          "12 of 12 viewed",
+          "10 of 12 viewed",
         ],
-        progress: { viewed: 12, total: 12 },
+        progress: { viewed: 10, total: 12 },
         take: {
           label: "Since your Review at 3f9c2a1",
           since: true,

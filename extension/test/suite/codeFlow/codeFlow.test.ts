@@ -212,7 +212,8 @@ describe("Code Flow", () => {
     open.push(change);
     disposables.push(fakeShellServer({ callees: { helper: ["run_main"] } }));
     await openChange(change.request);
-    await clickOverview(change.title, "codeFlow");
+    // The overview opens once the Change has, a moment after.
+    await eventually(() => clickOverview(change.title, "codeFlow"));
     await eventually(async () =>
       assert.ok(
         (await codeFlowPanel(change.title))?.viewColumn,

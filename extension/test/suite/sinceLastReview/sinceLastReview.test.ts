@@ -42,7 +42,12 @@ import {
   short,
   workspaceFolders,
 } from "../reviewer";
-import { clickOverview, sentTimeline, standingWords } from "../timeline";
+import {
+  clickOverview,
+  sentTimeline,
+  showTimeline,
+  standingWords,
+} from "../timeline";
 
 const viewer = { login: "reviewer", token: "test-token" };
 const settingKeys = ["githubApiUrl", "repositories", "localClones"];
@@ -443,9 +448,9 @@ describe("What changed since your last Review", () => {
   });
 
   it("opens the same diff from the overview's note of new commits", async () => {
-    await vscode.commands.executeCommand("workbench.action.closeAllEditors");
-
-    await clickOverview("acme/since #41", "showChangesSince");
+    // The test before closed every editor, the overview with them.
+    await showTimeline(requestAt(newHead));
+    await eventually(() => clickOverview("acme/since #41", "showChangesSince"));
 
     await eventually(() =>
       assert.strictEqual(

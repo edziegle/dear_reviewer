@@ -1156,7 +1156,7 @@
                 "hc": "media/walkthrough/read-dark.png",
                 "hcLight": "media/walkthrough/read-light.png"
               },
-              "altText": "A Change's overview, with Start at, Next unviewed file and Ask the Assistant, each showing its key"
+              "altText": "A Change's overview, with Start at, Next unviewed file, Ask the Assistant and Code Flow, each but Start at showing its key"
             },
             "completionEvents": [
               "onCommand:dearReviewer.nextUnviewedFile",

@@ -2,6 +2,8 @@
 !package.json
 !dist/extension.js
 !dist/gitServer.js
+!dist/formattingWorker.js
+!dist/tree-sitter/*.wasm
 !media/**
 !README.md
 !CHANGELOG.md

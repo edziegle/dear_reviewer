@@ -25,6 +25,8 @@ A changed file is skim-only when:
 - The `.gitattributes` files of the Change's base commit mark it `linguist-generated`, which `git check-attr --source=<base>` reads from the base's tree alone. The head's `.gitattributes` has no say, because the author of a pull request can edit it to mark their own files.
 - It is an added file with the same blob as a file the Change deletes, or that deleted file. Both paths are skim-only. Change Files keeps listing them as two entries, and a move with any edit marks neither.
 
+ADR 0048 amends this list with a fourth reason, "formatting only": a modified file whose base and head versions have the same syntax tree. It also marks a move that has edits, when git pairs the two files and the same rule holds across the pair, which the last rule above leaves unmarked.
+
 The Reading Order changes in these ways:
 
 - The prompt lists the skim-only files apart and tells the Assistant to leave them out. Dear Reviewer removes them from every step the reply holds, and puts them in a last step, "Skim-only", after "Other files" and "Since the suggestion". The step is built when the Reading Order is shown, so it is right for a later head too.

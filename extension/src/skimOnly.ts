@@ -1,21 +1,27 @@
 // Skim-only files (ADR 0045): changed files that Dear Reviewer itself judges
 // need no close reading, so a Reviewer on a big Change knows what to skim. A
 // file is skim-only when it is a lock file, when the base commit's
-// `.gitattributes` marks it `linguist-generated`, or when it is an exact
-// rename: an added file with the bytes of a deleted one. The Assistant never
-// makes a file skim-only, and neither does the head's `.gitattributes`, which
-// a pull request could edit to hide its own files.
+// `.gitattributes` marks it `linguist-generated`, when it is an exact
+// rename: an added file with the bytes of a deleted one, or when its base and
+// head versions have the same syntax tree (ADR 0048), a file only reformatted
+// or moved and reformatted. The Assistant never makes a file skim-only, and
+// neither does the head's `.gitattributes`, which a pull request could edit to
+// hide its own files.
 
 import type { Change, ChangedFile } from "./changeDetails";
+import type { FormattingMarks, FormattingReason } from "./formattingMarks";
 import { gitOutput } from "./git";
 
-export type SkimReason = "lockFile" | "generated" | "renamed";
+export type SkimReason =
+  "lockFile" | "generated" | "renamed" | FormattingReason;
 
 /** What the views say of why a file is skim-only. */
 export const skimReasonText: Record<SkimReason, string> = {
   lockFile: "lock file",
   generated: "generated",
   renamed: "renamed",
+  formatting: "formatting only",
+  movedFormatting: "moved, formatting only",
 };
 
 /** Lock files by name, in any folder. */
@@ -44,19 +50,23 @@ export function isLockFile(filePath: string): boolean {
 
 /**
  * Each skim-only file of the Change with its reason: a lock file by name, a
- * file in `generated`, which the base's `.gitattributes` marks, or a path in
- * `renamed`, one half of a rename with no edits.
+ * file in `generated`, which the base's `.gitattributes` marks, a path in
+ * `renamed`, one half of a rename with no edits, or one in `formatting`,
+ * whose versions have the same syntax tree.
  */
 export function skimOnlyFiles(input: {
   files: readonly ChangedFile[];
   generated: ReadonlySet<string>;
   renamed: ReadonlySet<string>;
+  formatting?: ReadonlyMap<string, FormattingReason>;
 }): Map<string, SkimReason> {
   const skim = new Map<string, SkimReason>();
   for (const { path } of input.files) {
+    const formatting = input.formatting?.get(path);
     if (isLockFile(path)) skim.set(path, "lockFile");
     else if (input.generated.has(path)) skim.set(path, "generated");
     else if (input.renamed.has(path)) skim.set(path, "renamed");
+    else if (formatting) skim.set(path, formatting);
   }
   return skim;
 }
@@ -121,12 +131,39 @@ export async function generatedAtBase(
 
 const found = new Map<string, Promise<Map<string, SkimReason>>>();
 
+let formattingMarks: FormattingMarks | undefined;
+
+/**
+ * Where the formatting-only marks come from, which the extension sets once
+ * (ADR 0048). Without it only the rules git answers count, as in the tests of
+ * those rules.
+ */
+export function useFormattingMarks(marks: FormattingMarks | undefined): void {
+  formattingMarks = marks;
+}
+
 /**
  * The skim-only files of the Change's files, with their reasons. If git can't
  * say, no file is skim-only: a file the Reviewer should read is never hidden
- * by a failure.
+ * by a failure. The rules git answers come first. Formatting-only marks are
+ * found in the background and are here once ready, so asking again later can
+ * give more files.
  */
-export function skimOnlyOf(
+export async function skimOnlyOf(
+  change: Change,
+  files: readonly ChangedFile[]
+): Promise<Map<string, SkimReason>> {
+  const rules = await rulesOf(change, files);
+  if (!formattingMarks) return rules;
+  void formattingMarks.start(change, files, new Set(rules.keys()));
+  const skim = new Map(rules);
+  for (const [path, reason] of formattingMarks.ready(change)) {
+    if (!skim.has(path)) skim.set(path, reason);
+  }
+  return skim;
+}
+
+function rulesOf(
   change: Change,
   files: readonly ChangedFile[]
 ): Promise<Map<string, SkimReason>> {

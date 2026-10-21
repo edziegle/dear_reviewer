@@ -245,6 +245,16 @@ describe("Reading the Assistant's walkthrough", () => {
     assert.strictEqual("note" in written!.steps[0].calls[0], false);
   });
 
+  it("drops a mark the note starts with, since the panel shows the symbol's mark beside it", () => {
+    const written = parseWalkthrough(
+      reply({
+        steps: [{ symbol: handle, note: "Changed: now checks the body first" }],
+      }),
+      graph
+    );
+    assert.strictEqual(written?.steps[0].note, "now checks the body first");
+  });
+
   it("cuts long text to one line and ignores what isn't text", () => {
     const written = parseWalkthrough(
       reply({

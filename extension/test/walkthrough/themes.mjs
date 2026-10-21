@@ -29,6 +29,7 @@ const defaults = {
     dark: "#c74e39",
     light: "#ad0707",
   },
+  "inputOption.activeForeground": { dark: "#ffffff", light: "#000000" },
   "inputValidation.errorBackground": { dark: "#5a1d1d", light: "#f2dede" },
   "inputValidation.errorBorder": { dark: "#be1100", light: "#be1100" },
   "list.activeSelectionBackground": { dark: "#04395e", light: "#0060c0" },

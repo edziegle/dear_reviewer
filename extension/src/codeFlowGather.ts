@@ -66,6 +66,29 @@ export interface GatheredFlow {
   languages: { language: string; outcome: LanguageOutcome }[];
 }
 
+/** A language an extension contributes, as its `package.json` gives it. */
+export interface LanguageContribution {
+  id?: unknown;
+  aliases?: unknown;
+}
+
+/**
+ * What to call a language in words, such as "Shell Script" for
+ * `shellscript`: the first name an extension that contributes it gives, else
+ * its id.
+ */
+export function languageName(
+  id: string,
+  contributions: readonly LanguageContribution[]
+): string {
+  for (const language of contributions) {
+    if (language.id !== id || !Array.isArray(language.aliases)) continue;
+    const [name] = language.aliases;
+    if (typeof name === "string" && name.trim()) return name.trim();
+  }
+  return id;
+}
+
 const TIMED_OUT = Symbol("timed out");
 
 /** The promise's value, nothing if it fails, or `TIMED_OUT` if it takes longer than `ms`. */

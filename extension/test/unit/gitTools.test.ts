@@ -403,6 +403,23 @@ describe("What the git tools give back", () => {
       /git found nothing/
     );
   });
+
+  it("shows characters the Reviewer can't see as escapes, in the output and in what git said", () => {
+    const hidden = "Fix​‮\u{E0041}\u{E0042}";
+    const shown = "Fix\\u200B\\u202E\\u{E0041}\\u{E0042} [hidden text: AB]";
+    const output = toolText(
+      parseRequest("log", {}),
+      `commit abc\n\n    ${hidden}\n`,
+      false
+    );
+    assert.ok(output.includes(shown), output);
+    const failure = failureText(
+      parseRequest("blame", { path: "x.py" }),
+      `fatal: ${hidden}\n`
+    );
+    assert.ok(failure.includes(shown), failure);
+    assert.ok(!/[​‮\u{E0000}-\u{E007F}]/u.test(output + failure));
+  });
 });
 
 describe("What a failed git run says", () => {

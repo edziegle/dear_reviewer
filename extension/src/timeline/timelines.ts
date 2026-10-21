@@ -19,6 +19,8 @@ import {
 } from "../changeWorkspace";
 import { branchOfConversation } from "../conversationName";
 import { git } from "../git";
+import type { ThreadInChange } from "../assistant/threads";
+import { hiddenTextNotices, showHiddenCharacters } from "../hiddenText";
 import type { CheckedFile } from "../unhighlighted";
 import {
   GitHubClient,
@@ -92,6 +94,8 @@ export interface OverviewSources {
   dismissUnhighlighted(extensions: string[]): void;
   /** The Change's Comments in the Review under way. */
   pendingComments(change: Change): PendingCommentLine[];
+  /** The Change's review threads as they stand, with the text of their Comments. */
+  threads(change: Change): ThreadInChange[];
   /** Where a local Change's Brief stands. */
   brief(change: Change): BriefState | undefined;
   /** Shows one of them in the diff, by its place in that list. */
@@ -270,6 +274,10 @@ class ChangeTimeline {
   private files = new Set<string>();
   /** The Change's files, with which are binary, once counted. */
   private checked: CheckedFile[] = [];
+  /** The pull request's description, once loaded. */
+  private description = "";
+  /** The Change's commit messages, with their short SHAs, once loaded. */
+  private messages: { sha: string; message: string }[] = [];
 
   constructor(
     readonly change: Change,
@@ -322,12 +330,14 @@ class ChangeTimeline {
     if (!panel) return;
     const load = ++this.loads;
     this.update({ loading: true });
-    const [size] = await Promise.all([
+    const [size, messages] = await Promise.all([
       this.size().catch(() => undefined),
+      this.commitMessages().catch(() => undefined),
       this.showStanding(),
     ]);
     if (load !== this.loads) return;
     if (size) this.update({ size });
+    if (messages) this.messages = messages;
     this.showUnhighlighted();
     try {
       const found = this.change.pullRequest
@@ -335,6 +345,7 @@ class ChangeTimeline {
         : await this.localState();
       if (load === this.loads) {
         this.update(found, true);
+        this.showHiddenText();
         if (this.change.pullRequest && found.title)
           this.sources.titleLoaded(this.change, found.title);
         this.panel?.label(this.sources.heading(this.change));
@@ -375,6 +386,55 @@ class ChangeTimeline {
       pending: found?.pending,
       finished: !!found?.reviewed && found.pending === 0,
     });
+    this.showHiddenText();
+  }
+
+  /**
+   * Says where the description, a commit message or a Comment holds text the
+   * Reviewer can't see, as the Assistant reads it too (ADR 0042).
+   */
+  private showHiddenText(): void {
+    const notices = hiddenTextNotices([
+      {
+        where: "The description",
+        text: this.description,
+        htmlComments: true,
+      },
+      ...this.messages.map(({ sha, message }) => ({
+        where: `Commit ${sha}`,
+        text: message,
+      })),
+      ...this.sources.threads(this.change).flatMap((thread) =>
+        thread.comments.map((comment) => ({
+          where: `The Comment by ${comment.author.login} on ${showHiddenCharacters(thread.path)}:${thread.line}`,
+          text: comment.body,
+          htmlComments: true,
+        }))
+      ),
+    ]);
+    const hiddenText = notices.length > 0 ? notices : undefined;
+    if (JSON.stringify(hiddenText) === JSON.stringify(this.state.hiddenText))
+      return;
+    this.update({ hiddenText });
+  }
+
+  /** The Change's commit messages, oldest first, with their short SHAs. */
+  private async commitMessages(): Promise<{ sha: string; message: string }[]> {
+    const log = await git(
+      this.change.repository,
+      "log",
+      "--reverse",
+      "-z",
+      "--format=%h%x1f%B",
+      `${this.change.mergeBase}..${this.change.headSha}`
+    );
+    return log
+      .split("\0")
+      .filter(Boolean)
+      .map((record) => {
+        const [sha, ...message] = record.split("\x1f");
+        return { sha, message: message.join("\x1f") };
+      });
   }
 
   /** Beside the overview while it holds the first column, or else the first. */
@@ -606,6 +666,8 @@ class ChangeTimeline {
     ]);
     const opener = timeline.events.find((e) => e.kind === "description")?.author
       .login;
+    this.description =
+      timeline.events.find((e) => e.kind === "description")?.body ?? "";
     const own = !!viewer && opener === viewer;
     if (own !== this.ownPullRequest) {
       this.ownPullRequest = own;

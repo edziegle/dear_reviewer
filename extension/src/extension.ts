@@ -269,6 +269,7 @@ export function activate(context: vscode.ExtensionContext) {
     dismissUnhighlighted: (extensions) =>
       void languageOffer.dismiss(extensions),
     pendingComments: (change) => review.pendingComments(change),
+    threads: (change) => review.threadsOf(change),
     brief: (change) => briefs.stateOf(change),
     openPending: (change, index) =>
       void review.revealPending(change, index, (file) =>

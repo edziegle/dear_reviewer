@@ -108,6 +108,8 @@ export interface Timeline {
   navigationOff?: boolean;
   /** File extensions, such as `.tofu`, that no installed language highlights, while offered. */
   unhighlighted?: string[];
+  /** Where the Change holds text the Reviewer can't see, a sentence for each place; absent when none does. */
+  hiddenText?: string[];
   take: Take;
   readingOrder?: ShownReadingOrder;
   finish: string;

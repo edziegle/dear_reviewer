@@ -132,6 +132,12 @@ export interface TimelineState {
   navigationOff?: boolean;
   /** File extensions, such as `.tofu`, of changed files no installed language highlights, while any are offered. */
   unhighlighted?: string[];
+  /**
+   * Where the description, a commit message or a Comment holds text the
+   * Reviewer can't see: hidden characters, or an HTML comment, which the
+   * Assistant still gets as escapes or not at all (ADR 0042). One sentence each.
+   */
+  hiddenText?: string[];
   take: OverviewTake;
   /** The order the Assistant suggests for reading the Change's files, while it has one or writes one. */
   readingOrder?: ShownReadingOrder;
@@ -496,6 +502,9 @@ function html(cspSource: string): string {
 <style nonce="${nonce}">${sharedStyles}${pageStyles}
   #highlighting { margin: 0; padding: 10px 0; border-bottom: 1px solid var(--vscode-panel-border); }
   #highlighting code { font-family: var(--vscode-editor-font-family); }
+  #hiddenText { margin: 0; padding: 10px 0; border-bottom: 1px solid var(--vscode-panel-border); }
+  #hiddenText ul { margin: 4px 0 0; padding-left: 1.4em; }
+  #hiddenText li { margin: 2px 0; overflow-wrap: anywhere; }
   #start code { font-family: var(--vscode-editor-font-family); color: inherit; background: none; padding: 0; }
   .overview .hand { margin-top: 14px; }
   .take .speaker .label { font-weight: 400; color: var(--vscode-descriptionForeground); }
@@ -605,6 +614,7 @@ ${catSymbol}
 <section class="overview" aria-label="Overview">
   <p class="facts" id="facts" hidden></p>
   <p class="muted" id="standing" hidden></p>
+  <div id="hiddenText" role="status" hidden></div>
   <button class="link" id="showTake" type="button" aria-controls="take" aria-expanded="false" hidden></button>
   <div class="hand">
     <div class="take">
@@ -819,6 +829,26 @@ ${catSymbol}
     const button = textButton(text, () => vscode.postMessage({ type: "showChangesSince" }));
     button.title = "Open the diff of what changed since your Review (" + keyOf("C") + ")";
     return button;
+  }
+
+  // Says where the Change holds text the Reviewer can't see, which the
+  // Assistant also reads, so both see the same text.
+  function hiddenText(state) {
+    const node = byId("hiddenText");
+    const places = state.hiddenText || [];
+    node.hidden = places.length === 0;
+    const said = JSON.stringify(places);
+    if (node.dataset.said === said) return;
+    node.dataset.said = said;
+    node.replaceChildren();
+    if (places.length === 0) return;
+    const list = el("ul");
+    for (const place of places) list.append(el("li", "", place));
+    node.append(
+      el("strong", "", "Hidden text. "),
+      "This Change holds text that nothing here shows you. The Assistant gets it as escapes, or not at all for an HTML comment, and reads it as data.",
+      list
+    );
   }
 
   // Offers to search the Extensions view for each file extension no
@@ -1408,6 +1438,7 @@ ${catSymbol}
       byId("byline").replaceChildren(...state.byline.split(" · ").filter(Boolean).flatMap((part, i) => (i ? [" · ", el("span", "", part)] : [el("span", "", part)])));
     facts(state);
     standing(state);
+    hiddenText(state);
     highlighting(state);
     take(state);
     readingOrder(state);

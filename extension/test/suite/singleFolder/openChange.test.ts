@@ -49,6 +49,7 @@ describe("Open Change from a single-folder window", () => {
       tabs: string[];
       files: { original?: string; modified?: string }[];
       closed: number;
+      highlightsHiddenInComments?: boolean;
     } = { folders: [], tabs: [], files: [], closed: 0 };
     // The probe rewrites its report as the review window settles.
     await eventually(() => {
@@ -83,6 +84,11 @@ describe("Open Change from a single-folder window", () => {
       report.files,
       [],
       "no diff until the Reviewer starts"
+    );
+    assert.strictEqual(
+      report.highlightsHiddenInComments,
+      true,
+      "the review window is trusted, so it has to ask to highlight invisible characters in code comments"
     );
 
     await closeChange(request);

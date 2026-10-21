@@ -123,6 +123,8 @@ export interface ReviewWindowReport {
   ran: string[];
   /** How many times Dear Reviewer has closed it, which it keeps open. */
   closed: number;
+  /** Whether it highlights invisible characters in code comments, as its workspace file sets. */
+  highlightsHiddenInComments?: boolean;
 }
 
 /**
@@ -173,6 +175,9 @@ export async function observeReviewWindow(): Promise<never> {
           held: await heldState(),
           ran: [...ran],
           closed,
+          highlightsHiddenInComments: vscode.workspace
+            .getConfiguration("editor.unicodeHighlight")
+            .get<boolean>("includeComments"),
         };
         // Renamed into place, so the test never reads a half-written report.
         fs.writeFileSync(`${file}.tmp`, JSON.stringify(report, null, 2));

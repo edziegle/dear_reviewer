@@ -356,13 +356,12 @@ describe("Code Flow", () => {
     });
   });
 
-  it("jumps the diff to a selected symbol", async () => {
+  it("selects a symbol without opening it, and shows it in the diff when the Reviewer clicks its name", async () => {
     const { title } = await start({ callees: { helper: ["run_main"] } });
     const state = await settled(title);
     const helper = state.flow.nodes.find((n) => n.name === "helper")!;
-    (await codeFlowPanel(title))!.receive({ type: "select", id: helper.id });
-    await eventually(() => {
-      const input = vscode.window.tabGroups.all
+    const libDiff = () =>
+      vscode.window.tabGroups.all
         .flatMap((group) => group.tabs)
         .map((tab) => tab.input)
         .find(
@@ -370,6 +369,20 @@ describe("Code Flow", () => {
             input instanceof vscode.TabInputTextDiff &&
             input.modified.fsPath.endsWith("lib.sh")
         );
+
+    // A click on the symbol's box selects it, and opens nothing.
+    (await codeFlowPanel(title))!.receive({ type: "select", id: helper.id });
+    await eventually(async () => {
+      const current = (await codeFlowPanel(title))!;
+      assert.strictEqual(current.sent.selected, helper.id);
+      assert.deepStrictEqual(current.rendered, current.sent);
+    });
+    assert.strictEqual(libDiff(), undefined, "selecting opens no diff");
+
+    // A click on its name shows it in the diff.
+    (await codeFlowPanel(title))!.receive({ type: "show", id: helper.id });
+    await eventually(() => {
+      const input = libDiff();
       assert.ok(input, "lib.sh's diff is open");
       const editor = vscode.window.visibleTextEditors.find(
         (e) => e.document.uri.toString() === input.modified.toString()
@@ -631,7 +644,7 @@ describe("Code Flow", () => {
     // The symbols of a deleted file are known, drawn or not.
     const state = await settled(title);
     const legacy = state.known.find((n) => n.name === "legacy")!;
-    (await codeFlowPanel(title))!.receive({ type: "select", id: legacy.id });
+    (await codeFlowPanel(title))!.receive({ type: "show", id: legacy.id });
     await eventually(() => {
       const editor = vscode.window.visibleTextEditors.find((e) =>
         e.document.uri.fsPath.endsWith("legacy.sh")

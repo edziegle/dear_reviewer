@@ -200,6 +200,13 @@ run = [
   "codium",
 ]
 
+# Undoes preview: a local build has the release's ID and version, so only
+# --force puts the published one back, from Open VSX. VSCodium runs it once
+# its windows reload.
+[tasks.unpreview]
+description = "Replace a preview in VSCodium with the published extension"
+run = "codium --install-extension edziegle.dear-reviewer --force"
+
 [tasks.upload-vsix]
 description = "Attach the packaged .vsix to a GitHub Release"
 dir = "extension"

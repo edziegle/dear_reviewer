@@ -41,4 +41,5 @@ export const sharedStyles = `
   .progress::before { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 2%; background: var(--vscode-progressBar-background); animation: progress 4s linear infinite; }
   @keyframes progress-appear { from { opacity: 0; } to { opacity: 1; } }
   @keyframes progress { from { transform: translateX(0) scaleX(1); } 50% { transform: translateX(2500%) scaleX(3); } to { transform: translateX(4900%) scaleX(1); } }
-  @media (prefers-reduced-motion: reduce) { .progress::before { width: 100%; opacity: 0.6; animation: none; } }`;
+  @media (prefers-reduced-motion: reduce) { .progress::before { width: 100%; opacity: 0.6; animation: none; } }
+  .vscode-reduce-motion .progress::before { width: 100%; opacity: 0.6; animation: none; }`;

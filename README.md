@@ -7,11 +7,11 @@ organize a human code reviewer's workflow.
 
 ## Screenshots
 
-![The Change overview: the Assistant's summary, a Reading Order, the checks and a Start button, beside the Dashboard and the Change's files](https://raw.githubusercontent.com/edziegle/dear_reviewer/main/docs/images/screenshots/overview-light.png)
+![The Change overview: the Assistant's summary, a Reading Order, the checks and a Start button](https://raw.githubusercontent.com/edziegle/dear_reviewer/main/docs/images/listing/overview.png)
 
-![A side-by-side diff of retry.ts, with the Change's files listed in reading order](https://raw.githubusercontent.com/edziegle/dear_reviewer/main/docs/images/screenshots/diff-light.png)
+![A side-by-side diff of retry.ts, with a reviewer's pending Comment](https://raw.githubusercontent.com/edziegle/dear_reviewer/main/docs/images/listing/diff.png)
 
-![A Finding from the Assistant on client.ts, with Convert to Comment and Dismiss](https://raw.githubusercontent.com/edziegle/dear_reviewer/main/docs/images/screenshots/findings-light.png)
+![A Finding from the Assistant on client.ts, with Convert to Comment and Dismiss](https://raw.githubusercontent.com/edziegle/dear_reviewer/main/docs/images/listing/finding.png)
 
 ## Features
 

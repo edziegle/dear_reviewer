@@ -16,9 +16,14 @@
     "url": "https://github.com/edziegle/dear_reviewer/issues"
   },
   "homepage": "https://github.com/edziegle/dear_reviewer#readme",
+  "qna": "https://github.com/edziegle/dear_reviewer/issues",
+  "galleryBanner": {
+    "color": "#0b1e33",
+    "theme": "dark"
+  },
   "categories": [
     "SCM Providers",
-    "Other"
+    "AI"
   ],
   "keywords": [
     "code review",

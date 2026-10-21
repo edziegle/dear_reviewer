@@ -31,8 +31,11 @@ export const formattingLimits = {
 /** Added to a file's time before the worker is given up on, for loading a grammar. */
 const defaultGraceMs = 10_000;
 
-/** Starts of a worker in a row that fail before the worker is given up on for good. */
+/** Failures of the worker in a row before it is left alone for a while. */
 const maxFailures = 3;
+
+/** How long the worker is left alone after that, before it is tried again. */
+const defaultCoolOffMs = 60_000;
 
 /** One file to compare: modified in place, or moved with edits, as git pairs it. */
 export interface FormattingCandidate {
@@ -104,7 +107,8 @@ const readMs = 10_000;
  * UTF-8. Bytes that aren't would decode to the same replacement character
  * whatever they were, which could hide a change. Gives null for blobs that
  * can't be used, which holds whenever they're asked about, and undefined when
- * git couldn't be asked or took too long, which may not hold next time.
+ * git couldn't be asked, took too long or lacks a blob, which may not hold
+ * next time.
  */
 export function readBlobs(
   repository: string,
@@ -155,7 +159,7 @@ function textsIn(
   output: Buffer,
   maxBytes: number,
   count: number
-): [string, string] | null {
+): [string, string] | null | undefined {
   const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
   const texts: string[] = [];
   let at = 0;
@@ -163,9 +167,11 @@ function textsIn(
     for (let n = 0; n < count; n++) {
       const end = output.indexOf("\n", at);
       if (end < 0) return null;
-      const header = /^[0-9a-f]+ blob (\d+)$/.exec(
-        output.toString("utf8", at, end)
-      );
+      const line = output.toString("utf8", at, end);
+      // An object the repository lacks may be there later, such as in a
+      // partial clone, so it is for this time only.
+      if (/^[0-9a-f]+ missing$/.test(line)) return undefined;
+      const header = /^[0-9a-f]+ blob (\d+)$/.exec(line);
       if (!header) return null;
       const size = Number(header[1]);
       if (size > maxBytes || end + 1 + size > output.length) return null;
@@ -187,7 +193,8 @@ export type CompareFormatting = (
  * The worker thread that compares versions, started on the first job and
  * again after it fails. One job runs at a time. A job that outlasts its time
  * by the grace period ends the worker, and so does a crash. A worker that fails
- * `maxFailures` times in a row is given up on.
+ * `maxFailures` times in a row is left alone for a minute, and then tried
+ * again, so a bad spell doesn't end the marks for the rest of the session.
  */
 export class FormattingWorker {
   private worker?: Worker;
@@ -195,6 +202,7 @@ export class FormattingWorker {
   private queue: Promise<unknown> = Promise.resolve();
   private lastId = 0;
   private failures = 0;
+  private leftAloneAt?: number;
   private disposed = false;
 
   constructor(
@@ -205,6 +213,8 @@ export class FormattingWorker {
       wasmDir: string;
       /** How long past a job's time the worker has, for loading what it needs. */
       graceMs?: number;
+      /** How long the worker is left alone after it fails again and again. */
+      coolOffMs?: number;
     }
   ) {}
 
@@ -220,13 +230,19 @@ export class FormattingWorker {
   }
 
   private run(job: Omit<FormattingJob, "id">): Promise<boolean | undefined> {
-    if (this.disposed || this.failures >= maxFailures)
-      return Promise.resolve(undefined);
+    if (this.disposed) return Promise.resolve(undefined);
+    if (this.failures >= maxFailures) {
+      const coolOffMs = this.options.coolOffMs ?? defaultCoolOffMs;
+      if (Date.now() - (this.leftAloneAt ?? 0) < coolOffMs)
+        return Promise.resolve(undefined);
+      // One more failure leaves it alone again.
+      this.failures = maxFailures - 1;
+    }
     let worker: Worker;
     try {
       worker = this.start();
     } catch {
-      this.failures += 1;
+      this.fail();
       return Promise.resolve(undefined);
     }
     const id = ++this.lastId;
@@ -261,7 +277,7 @@ export class FormattingWorker {
     const gone = () => {
       if (this.worker !== worker) return;
       this.worker = undefined;
-      this.failures += 1;
+      this.fail();
       for (const answer of this.waiting.values()) answer(undefined);
       this.waiting.clear();
     };
@@ -269,6 +285,11 @@ export class FormattingWorker {
     worker.on("exit", gone);
     this.worker = worker;
     return worker;
+  }
+
+  private fail(): void {
+    this.failures += 1;
+    if (this.failures >= maxFailures) this.leftAloneAt = Date.now();
   }
 }
 

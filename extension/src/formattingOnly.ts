@@ -83,11 +83,13 @@ export class FormattingComparer {
         if (tree.rootNode.hasError) return false;
         versions.push({ source, tree });
       }
-      const { gapShape, indentation, directives } = grammarTable[name];
+      const grammar = grammarTable[name];
       return sameTrees(versions[0], versions[1], deadline, {
-        gapShape: gapShape === true,
-        indentation: indentation === true,
-        directives: directives === true,
+        gapShape: grammar.gapShape === true,
+        indentation: grammar.indentation === true,
+        directives: grammar.directives === true,
+        semicolons: grammar.semicolons === true,
+        macroArguments: grammar.macroArguments === true,
       });
     } catch {
       return undefined;
@@ -100,7 +102,17 @@ export class FormattingComparer {
 
 /** Nodes that hold text, where whitespace is data, such as a string or a heredoc. */
 const holdsText =
-  /string|char|rune|heredoc|template|scalar|regex|quote|comment|text_block|verbatim|interpolat|substitution/;
+  /string|char|rune|heredoc|template_(string|substitution|literal)|scalar|regex|quote|comment|text_block|verbatim|interpolat|substitution/;
+
+/** Nodes with text inside them, expressions and all, such as an f-string's `{a=}` or a template literal type. */
+const holdsTextInside =
+  /^(interpolation|template_string|template_literal_type)$/;
+
+/** The tokens around an argument of a macro, which stringizing drops the whitespace beside. */
+const argumentEdge = /^[(),]$/;
+
+/** Where Go inserts a semicolon at a line break: after a name, a literal, `)`, `]`, `}`, `++` and `--`. */
+const endsStatement = /[\p{L}\p{N}_"'`)\]}]$|\+\+$|--$/u;
 
 /** Strings that only sit side by side, which hold no text of their own between them. */
 const joinsStrings = /concatenated|chained/;
@@ -140,7 +152,10 @@ interface Ancestor {
 
 /** What the walk knows of the leaf before the gap it is looking at. */
 interface Before {
+  type: string;
   keyword: boolean;
+  /** Whether a line break after it ends a statement in Go. */
+  endsStatement: boolean;
   comment: boolean;
   /** Whether it sits in a node whose text goes on past it, so the gap after it is text. */
   trailsText: boolean;
@@ -186,6 +201,8 @@ interface Rules {
   gapShape: boolean;
   indentation: boolean;
   directives: boolean;
+  semicolons: boolean;
+  macroArguments: boolean;
 }
 
 /**
@@ -218,7 +235,14 @@ interface Rules {
  *   before it, since a preprocessor directive begins its line.
  * - With `indentation`, the indentations of a Python file's statements
  *   stand for each other one for one, and no tab is among them if they
- *   changed.
+ *   changed. A statement that moves on or off a line of its own, such as the
+ *   body of `if x: a`, has no indentation to compare.
+ * - With `semicolons`, for Go, a line break after a name, a literal or a
+ *   closing bracket is in both versions or in neither, since Go ends a
+ *   statement there, and `if x\n{` doesn't compile.
+ * - With `macroArguments`, for C and C++, inside a call's arguments the
+ *   whitespace inside an argument stays whitespace or nothing, since a macro
+ *   that stringizes its argument gives `a+b` and `a + b` as written.
  */
 function sameTrees(
   a: Version,
@@ -275,7 +299,7 @@ function sameTrees(
         if (
           before.trailsText ||
           (holdsText.test(owner) && !joinsStrings.test(owner)) ||
-          ancestors.some((x) => x.type === "interpolation")
+          ancestors.some((x) => holdsTextInside.test(x.type))
         )
           return false;
         if ((before.comment || inComment) && breaks(gapA) !== breaks(gapB))
@@ -297,23 +321,43 @@ function sameTrees(
           !(lineBreak.test(gapA) && lineBreak.test(gapB))
         )
           return false;
+        if (rules.semicolons && lineBreakChanged && before.endsStatement)
+          return false;
+        if (
+          rules.macroArguments &&
+          (gapA === "") !== (gapB === "") &&
+          !argumentEdge.test(before.type) &&
+          !argumentEdge.test(type) &&
+          ancestors.some((x) => x.type === "argument_list")
+        )
+          return false;
       }
       if (
         rules.indentation &&
         !inComment &&
-        startsLine(ancestors, { type, start }) &&
-        (before === undefined || lineBreak.test(gapA)) &&
-        !indentations.agree(
-          gapA.slice(gapA.lastIndexOf("\n") + 1),
-          gapB.slice(gapB.lastIndexOf("\n") + 1)
+        startsLine(ancestors, { type, start })
+      ) {
+        const ownLineA = before === undefined || lineBreak.test(gapA);
+        const ownLineB = before === undefined || lineBreak.test(gapB);
+        if (ownLineA !== ownLineB) return false;
+        if (
+          ownLineA &&
+          !indentations.agree(
+            gapA.slice(gapA.lastIndexOf("\n") + 1),
+            gapB.slice(gapB.lastIndexOf("\n") + 1)
+          )
         )
-      )
-        return false;
+          return false;
+      }
       endA = ca.endIndex;
       endB = cb.endIndex;
       afterLeaf = true;
       before = {
+        type,
         keyword: !ca.nodeIsNamed && keyword.test(type),
+        endsStatement:
+          rules.semicolons &&
+          endsStatement.test(a.source.slice(ca.startIndex, ca.endIndex)),
         comment: inComment,
         trailsText: ancestors.some((x) => trailsText.test(x.type)),
       };

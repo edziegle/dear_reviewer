@@ -208,10 +208,10 @@ describe("Reading the versions of a file", () => {
     );
   });
 
-  it("gives null for a blob the repository doesn't have, and undefined when it can't ask", async () => {
+  it("gives undefined, not null, for a blob the repository doesn't have, since a partial clone may fetch it later, and when it can't ask", async () => {
     assert.strictEqual(
       await readBlobs(repo.dir, [blobOf("a.txt"), "f".repeat(40)], 1000),
-      null
+      undefined
     );
     assert.strictEqual(
       await readBlobs(
@@ -636,6 +636,34 @@ describe("The formatting worker", () => {
         await w.compare(job("a=1;\n", "a = 1;\n", 50)),
         undefined
       );
+  });
+
+  it("leaves a worker that keeps failing alone for a while, and then tries it again", async () => {
+    const marker = path.join(wasmDir, "ready");
+    const flaky = path.join(wasmDir, "flaky.js");
+    fs.writeFileSync(
+      flaky,
+      `if (!require("fs").existsSync(${JSON.stringify(marker)})) throw new Error("not yet");\n` +
+        `require(${JSON.stringify(workerFile)});\n`
+    );
+    const w = new FormattingWorker({
+      file: flaky,
+      wasmDir,
+      coolOffMs: 400,
+    });
+    started.push(w);
+    for (let i = 0; i < 3; i++)
+      assert.strictEqual(await w.compare(job("a=1;\n", "a = 1;\n")), undefined);
+    fs.writeFileSync(marker, "");
+
+    assert.strictEqual(
+      await w.compare(job("a=1;\n", "a = 1;\n")),
+      undefined,
+      "left alone"
+    );
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    assert.strictEqual(await w.compare(job("a=1;\n", "a = 1;\n")), true);
   });
 
   it("starts another worker after one crashes", async () => {

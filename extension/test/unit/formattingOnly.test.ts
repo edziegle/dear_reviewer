@@ -1179,6 +1179,54 @@ const moved: [GrammarName, string, string, string][] = [
     "class A { #region foo\nint a;\n#endregion\n}\n",
   ],
   [
+    "go",
+    "a composite literal wrapped without a trailing comma",
+    "package p\n\nvar a = []int{1, 2}\n",
+    "package p\n\nvar a = []int{\n1,\n2\n}\n",
+  ],
+  [
+    "go",
+    "a comma moved to the next line",
+    "package p\n\nfunc f() { g(1, 2) }\n",
+    "package p\n\nfunc f() { g(1\n, 2) }\n",
+  ],
+  [
+    "go",
+    "a brace moved to the next line after an if",
+    "package p\n\nfunc f() { if x {\n} }\n",
+    "package p\n\nfunc f() { if x\n{\n} }\n",
+  ],
+  [
+    "go",
+    "a closing parenthesis on its own line without a trailing comma",
+    "package p\n\nfunc f() { g(1,\n2) }\n",
+    "package p\n\nfunc f() { g(1,\n2\n) }\n",
+  ],
+  [
+    "c",
+    "spaces in the argument of a macro that may stringize it",
+    "#define S(x) #x\nconst char *s = S(a+b);\n",
+    "#define S(x) #x\nconst char *s = S(a + b);\n",
+  ],
+  [
+    "cpp",
+    "spaces in the argument of a macro that may stringize it",
+    "#define S(x) #x\nauto s = S(a+b);\n",
+    "#define S(x) #x\nauto s = S(a + b);\n",
+  ],
+  [
+    "python",
+    "the body of an if moved onto a line of its own",
+    "if x: a\n",
+    "if x:\n    a\n",
+  ],
+  [
+    "typescript",
+    "a gap inside a template literal type",
+    "type A = `${B} ${C}`;\n",
+    "type A = `${B}  ${C}`;\n",
+  ],
+  [
     "typescript",
     "a line break before an arrow",
     "const f = (a) => a;\n",
@@ -1333,6 +1381,31 @@ describe("Formatting-only files", () => {
           "python",
           "def f(x):\n  return g(x,\n           1,\n           2)\n",
           "def f(x):\n    return g(x,\n        1,\n        2)\n",
+        ],
+        [
+          "cpp",
+          "template<typename T>\nvoid f(T t) {}\n",
+          "template <typename T>\nvoid f(T t) {}\n",
+        ],
+        [
+          "cpp",
+          "template<typename T, typename U>\nclass A {};\nA<int,char> a;\n",
+          "template <typename T, typename U>\nclass A {};\nA<int, char> a;\n",
+        ],
+        [
+          "go",
+          "package p\n\nfunc f() {\n  g(1,\n    2)\n  var a = []int{1,\n    2}\n}\n",
+          "package p\n\nfunc f() {\n\tg(1,\n\t\t2)\n\tvar a = []int{1,\n\t\t2}\n}\n",
+        ],
+        [
+          "c",
+          "#define S(x) #x\nint f(int a, int b);\nint g() { return f(1,\n 2); }\n",
+          "#define S(x) #x\nint f(int a, int b);\nint g() { return f(1, 2); }\n",
+        ],
+        [
+          "c",
+          "int g() { return f( 1 , 2 ); }\n",
+          "int g() { return f(1, 2); }\n",
         ],
         [
           "python",

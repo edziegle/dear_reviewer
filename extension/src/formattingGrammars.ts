@@ -22,6 +22,10 @@ interface Grammar {
   indentation?: boolean;
   /** Whether a token that starts with `#` is a directive that begins its line. */
   directives?: boolean;
+  /** Whether a line break after a name, a literal or a closing bracket ends a statement, as in Go. */
+  semicolons?: boolean;
+  /** Whether a macro can stringize the arguments of a call, as in C and C++. */
+  macroArguments?: boolean;
 }
 
 export const grammarTable: Record<GrammarName, Grammar> = grammars;

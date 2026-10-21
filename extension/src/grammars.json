@@ -23,7 +23,8 @@
   "go": {
     "package": "tree-sitter-go",
     "wasm": "tree-sitter-go.wasm",
-    "extensions": [".go"]
+    "extensions": [".go"],
+    "semicolons": true
   },
   "rust": {
     "package": "tree-sitter-rust",
@@ -39,13 +40,15 @@
     "package": "tree-sitter-c",
     "wasm": "tree-sitter-c.wasm",
     "extensions": [".c", ".h"],
-    "directives": true
+    "directives": true,
+    "macroArguments": true
   },
   "cpp": {
     "package": "tree-sitter-cpp",
     "wasm": "tree-sitter-cpp.wasm",
     "extensions": [".cc", ".cpp", ".cxx", ".hh", ".hpp", ".hxx"],
-    "directives": true
+    "directives": true,
+    "macroArguments": true
   },
   "csharp": {
     "package": "tree-sitter-c-sharp",

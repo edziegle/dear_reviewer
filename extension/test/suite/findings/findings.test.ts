@@ -44,6 +44,8 @@ import {
 
 const viewer = { login: "reviewer", token: "test-token" };
 const settingKeys = ["githubApiUrl", "repositories", "localClones"];
+/** The review chord, as the Reviewer's platform writes it. */
+const chord = process.platform === "darwin" ? "⌃⌥R" : "Ctrl+Alt+R";
 
 // What the Assistant replies when asked for Findings: three on the diff,
 // and four Dear Reviewer must leave out.
@@ -265,7 +267,7 @@ describe("Findings on request", () => {
         summaryNote,
         {
           from: "note",
-          text: "Raised 3 Findings, marked in the gutter of the diff and listed in the Findings view. Left out 4 that weren't on the lines of the diff.",
+          text: `Raised 3 Findings, marked in the gutter of the diff and listed in the Findings view. ${chord} F steps through them, and ${chord} Shift+F back. Left out 4 that weren't on the lines of the diff.`,
         },
       ]);
     });

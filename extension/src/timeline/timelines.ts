@@ -114,6 +114,7 @@ export interface OverviewSources {
       | "ask"
       | "codeFlow"
       | "showChangesSince"
+      | "skimSetting"
       | "takeAction"
       | "takeRetry"
       | "trust"

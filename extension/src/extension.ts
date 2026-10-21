@@ -278,6 +278,11 @@ export function activate(context: vscode.ExtensionContext) {
     act: (change, action) => {
       if (action === "ask") void assistants.open(change);
       else if (action === "codeFlow") void codeFlows.show(change);
+      else if (action === "skimSetting")
+        void vscode.commands.executeCommand(
+          "workbench.action.openSettings",
+          "dearReviewer.visitSkimOnlyFiles"
+        );
       else if (action === "showChangesSince")
         void vscode.commands.executeCommand(
           "dearReviewer.showChangesSinceLastReview",

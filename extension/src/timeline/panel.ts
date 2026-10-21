@@ -203,6 +203,7 @@ export type FromWebview =
   | { type: "ask" }
   | { type: "codeFlow" }
   | { type: "showChangesSince" }
+  | { type: "skimSetting" }
   | { type: "takeAction" }
   | { type: "takeRetry" }
   | { type: "trust" }
@@ -330,6 +331,7 @@ export class TimelinePanel {
         "ask",
         "codeFlow",
         "showChangesSince",
+        "skimSetting",
         "takeAction",
         "takeRetry",
         "trust",
@@ -514,6 +516,8 @@ function html(cspSource: string): string {
   .order .viewed .file, .order .skim .file { color: var(--vscode-descriptionForeground); }
   .order .tag { font-size: 0.85em; font-weight: 400; margin-left: 4px; padding: 0 6px; border-radius: 8px; color: var(--vscode-badge-foreground); background: var(--vscode-badge-background); }
   .order summary.step { cursor: pointer; }
+  .order .skimNote { margin: 2px 0 4px; }
+  .order .skimNote .link { text-decoration: underline; text-underline-offset: 2px; }
   .order .reading { font-style: italic; }
   #checksSummary { margin: 0 0 4px; }
   #checks .more { margin-top: 4px; font-size: 0.9em; }
@@ -944,7 +948,12 @@ ${catSymbol}
       if (step.skimOnly) {
         const details = el("details");
         details.open = skimOpen;
-        details.append(el("summary", "step", step.label + " (" + step.files.length + ")"), files);
+        // What Next unviewed file does with these is said where they are.
+        const note = el("div", "muted skimNote", "Next unviewed file leaves these until last, unless ");
+        const setting = textButton("Visit Skim Only Files", () => vscode.postMessage({ type: "skimSetting" }));
+        setting.title = "Open the setting in Settings";
+        note.append(setting, " is on.");
+        details.append(el("summary", "step", step.label + " (" + step.files.length + ")"), note, files);
         li.append(details);
       } else {
         li.append(heading, files);

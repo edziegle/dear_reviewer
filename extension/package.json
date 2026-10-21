@@ -1039,7 +1039,7 @@
     "viewsWelcome": [
       {
         "view": "dearReviewer.findings",
-        "contents": "The Assistant looks for spots worth a second look, only when you ask. Each shows in the diff's gutter, where you can dismiss it or turn it into a Comment.\n[Ask for Findings](command:dearReviewer.findIssues)",
+        "contents": "The Assistant looks for spots worth a second look, only when you ask. Each shows in the diff's gutter, where you can dismiss it or turn it into a Comment. Ctrl+Alt+R F, or ⌃⌥R F on a Mac, steps through them.\n[Ask for Findings](command:dearReviewer.findIssues)",
         "when": "dearReviewer.hasOpenChange"
       },
       {
@@ -1236,7 +1236,7 @@
           {
             "id": "skim",
             "title": "Skim lock files and generated code",
-            "description": "Lock files, generated files and renames with no edits are skim-only: the Reading Order puts them last, and Next unviewed file skips them until nothing else is left to view. Turn on Visit Skim-Only Files to step through them with the rest.\n[Open the Setting](command:workbench.action.openSettings?%5B%22dearReviewer.visitSkimOnlyFiles%22%5D)",
+            "description": "Lock files, generated files and renames with no edits are skim-only: the Reading Order puts them last, and Next unviewed file skips them until nothing else is left to view. Turn on Visit Skim Only Files to step through them with the rest.\n[Open the Setting](command:workbench.action.openSettings?%5B%22dearReviewer.visitSkimOnlyFiles%22%5D)",
             "media": {
               "image": {
                 "dark": "media/walkthrough/skim-dark.png",

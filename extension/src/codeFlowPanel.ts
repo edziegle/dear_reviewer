@@ -7,7 +7,8 @@
 import * as crypto from "crypto";
 import * as vscode from "vscode";
 import type { FlowNode, FlowOffers, ShownFlow } from "./codeFlow";
-import type { LanguageOutcome } from "./codeFlowGather";
+import { languageName, type LanguageOutcome } from "./codeFlowGather";
+import { codeFlowStyles } from "./codeFlowStyles";
 import type { ShownWalkthrough } from "./flowWalkthrough";
 import { MarkdownPanel, sharedScript, sharedStyles } from "./markdownPanel";
 
@@ -32,6 +33,8 @@ export interface CodeFlowState {
   known: FlowNode[];
   selected?: string;
   languages: { language: string; outcome: LanguageOutcome }[];
+  /** What to call each language in words, which the panel adds as it sends the state. */
+  languageNames?: Record<string, string>;
   /** Why no Code Flow could be gathered at all. */
   problem?: string;
 }
@@ -93,7 +96,10 @@ export class CodeFlowPanel {
       localResourceRoots: [],
       placement: { viewColumn: column, preserveFocus: false },
       html: () => html(),
-      show: (shown) => shown,
+      show: (shown) => ({
+        ...shown,
+        languageNames: languageNames(shown.languages),
+      }),
       receive: (message) => this.receive(message as FromCodeFlow),
     });
     this.onDidDispose = this.view.onDidDispose;
@@ -202,6 +208,21 @@ export class CodeFlowPanel {
   }
 }
 
+/** What to call each language in words, from the extensions that contribute it. */
+function languageNames(
+  languages: CodeFlowState["languages"]
+): Record<string, string> {
+  const contributions = (vscode.extensions?.all ?? []).flatMap(
+    (extension) => extension.packageJSON?.contributes?.languages ?? []
+  );
+  return Object.fromEntries(
+    languages.map(({ language }) => [
+      language,
+      languageName(language, contributions),
+    ])
+  );
+}
+
 function html(): string {
   const nonce = crypto.randomBytes(16).toString("base64");
   return `<!DOCTYPE html>
@@ -210,90 +231,11 @@ function html(): string {
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}';">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<style nonce="${nonce}">${sharedStyles}
-  body { margin: 0; padding: 0 16px 16px; color: var(--vscode-foreground); font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); line-height: 1.5; }
-  h1 { font-size: 1.1em; margin: 14px 0 8px; }
-  .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 0 0 10px; padding: 6px 0; position: sticky; top: 0; z-index: 1; background: var(--vscode-editor-background); }
-  .group { display: inline-flex; align-items: center; gap: 6px; }
-  .seg { display: inline-flex; }
-  .seg button { font: inherit; padding: 2px 10px; color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); border: 1px solid var(--vscode-button-border, var(--vscode-contrastBorder, transparent)); cursor: pointer; }
-  .seg button:first-child { border-radius: 2px 0 0 2px; }
-  .seg button:last-child { border-radius: 0 2px 2px 0; }
-  .seg button:only-child { border-radius: 2px; }
-  .seg button[aria-pressed=true] { color: var(--vscode-button-foreground); background: var(--vscode-button-background); }
-  .seg button::before { content: "\\2713\\00a0"; content: "\\2713\\00a0" / ""; visibility: hidden; }
-  .seg button[aria-pressed=true]::before { visibility: visible; }
-  select { font: inherit; color: var(--vscode-dropdown-foreground); background: var(--vscode-dropdown-background); border: 1px solid var(--vscode-dropdown-border, var(--vscode-contrastBorder, transparent)); padding: 2px 4px; }
-  select:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
-  .legend { display: inline-flex; gap: 12px; color: var(--vscode-descriptionForeground); font-size: 0.9em; }
-  .legend .key { display: inline-block; width: 1.6em; height: 0.9em; vertical-align: middle; margin-right: 4px; background: var(--vscode-editor-background); box-sizing: border-box; }
-  .key.changed { border: 2px solid var(--vscode-gitDecoration-modifiedResourceForeground, var(--vscode-focusBorder)); }
-  .key.new { border: 2px dashed var(--vscode-gitDecoration-addedResourceForeground, var(--vscode-focusBorder)); }
-  .key.removed { border: 2px dotted var(--vscode-gitDecoration-deletedResourceForeground, var(--vscode-focusBorder)); }
-  .key.unchanged { border: 1px solid var(--vscode-panel-border, var(--vscode-contrastBorder)); }
-  .notice { margin: 8px 0; padding: 8px; border: 1px solid var(--vscode-panel-border, var(--vscode-contrastBorder)); background: var(--vscode-textBlockQuote-background); }
-  .notice button { margin-left: 8px; font: inherit; padding: 2px 10px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); border: 1px solid var(--vscode-button-border, var(--vscode-contrastBorder, transparent)); border-radius: 2px; cursor: pointer; }
-  .notice button:hover { background: var(--vscode-button-hoverBackground); }
-  .canvas { overflow: auto; max-height: max(240px, calc(100vh - 200px)); border: 1px solid var(--vscode-panel-border, var(--vscode-contrastBorder)); background: var(--vscode-editor-background); }
-  .canvas svg { display: block; }
-  .node .box { fill: var(--vscode-editor-background); stroke: var(--vscode-descriptionForeground); stroke-width: 1; }
-  .node.changed .box { stroke: var(--vscode-gitDecoration-modifiedResourceForeground, var(--vscode-focusBorder)); stroke-width: 2.5; }
-  .node.new .box { stroke: var(--vscode-gitDecoration-addedResourceForeground, var(--vscode-focusBorder)); stroke-width: 2.5; stroke-dasharray: 10 5; }
-  .node.removed .box { stroke: var(--vscode-gitDecoration-deletedResourceForeground, var(--vscode-focusBorder)); stroke-width: 2.5; stroke-dasharray: 0.1 5; stroke-linecap: round; }
-  .node[aria-selected=true] .box { fill: var(--vscode-list-activeSelectionBackground); }
-  .node[aria-selected=true] text { fill: var(--vscode-list-activeSelectionForeground); }
-  .call[aria-selected=true] .hit { stroke-dasharray: none; }
-  /* The focus ring goes around the box, so the box keeps the stroke and dash that mark its status. */
-  .node .ring { fill: none; stroke: none; }
-  .node:focus { outline: none; }
-  .node:focus-visible .ring { stroke: var(--vscode-focusBorder); stroke-width: 2; }
-  .call:focus-visible .hit { stroke: var(--vscode-focusBorder); stroke-width: 3; }
-  .node text, .lane text, .call text { fill: var(--vscode-editor-foreground); font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); }
-  .node .name { font-family: var(--vscode-editor-font-family); font-weight: 600; }
-  /* A symbol's name shows it in the diff; the rest of its box only selects it. */
-  .node .name, .call .name { cursor: pointer; }
-  .node .name:hover, .call .name:hover { text-decoration: underline; }
-  .node .where, .edge-label, .more { fill: var(--vscode-descriptionForeground); font-size: calc(var(--vscode-font-size) * 0.9); }
-  .node.unchanged .name { font-weight: 400; }
-  .edge { fill: none; stroke: var(--vscode-descriptionForeground); stroke-width: 1.2; }
-  .arrow { fill: var(--vscode-descriptionForeground); }
-  .lane-head { font-weight: 600; }
-  .lane-line { stroke: var(--vscode-panel-border, var(--vscode-descriptionForeground)); stroke-dasharray: 3 4; }
-  .call.changed .edge { stroke: var(--vscode-gitDecoration-modifiedResourceForeground, var(--vscode-focusBorder)); stroke-width: 2.5; }
-  .call.new .edge { stroke: var(--vscode-gitDecoration-addedResourceForeground, var(--vscode-focusBorder)); stroke-width: 2.5; stroke-dasharray: 10 5; }
-  .call.removed .edge { stroke: var(--vscode-gitDecoration-deletedResourceForeground, var(--vscode-focusBorder)); stroke-width: 2.5; stroke-dasharray: 0.1 5; stroke-linecap: round; }
-  .call .where { fill: var(--vscode-descriptionForeground); font-size: calc(var(--vscode-font-size) * 0.9); }
-  .call[aria-selected=true] .where { fill: var(--vscode-list-activeSelectionForeground); }
-  .call .hit { fill: transparent; stroke: transparent; }
-  .call:hover .hit { fill: var(--vscode-list-hoverBackground); }
-  .call[aria-selected=true] .hit { fill: var(--vscode-list-activeSelectionBackground); stroke: var(--vscode-list-activeSelectionForeground); }
-  .call[aria-selected=true] text { fill: var(--vscode-list-activeSelectionForeground); }
-  .details { position: sticky; bottom: 0; background: var(--vscode-editor-background); margin: 10px 0 0; padding: 8px; border: 1px solid var(--vscode-panel-border, var(--vscode-contrastBorder)); min-height: 3em; }
-  .details .where, .list .where { font-family: var(--vscode-editor-font-family); color: var(--vscode-descriptionForeground); overflow-wrap: anywhere; }
-  .details button { margin-top: 6px; font: inherit; padding: 2px 12px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); border: 1px solid var(--vscode-button-border, var(--vscode-contrastBorder, transparent)); border-radius: 2px; cursor: pointer; }
-  .details button:hover { background: var(--vscode-button-hoverBackground); }
-  .details .actions { display: flex; flex-wrap: wrap; gap: 6px 8px; margin-top: 6px; }
-  .details .actions button { margin-top: 0; }
-  .list { margin: 0; padding-left: 1.2em; }
-  .list li { margin: 6px 0; }
-  .walkthrough, .walkthrough ol { list-style: none; margin: 0; padding-left: 0; }
-  .walkthrough ol { padding-left: 1.6em; }
-  .walkthrough li { margin: 8px 0; }
-  .walkthrough .num { font-variant-numeric: tabular-nums; color: var(--vscode-descriptionForeground); }
-  .walkthrough .detail { margin-left: 2.2em; color: var(--vscode-descriptionForeground); }
-  .walkthrough .note { margin-left: 2.2em; }
-  .hint { margin: 0 0 6px; color: var(--vscode-descriptionForeground); font-size: 0.9em; }
-  .neighbours { margin-top: 6px; }
-  .neighbours button.sym, .list button.sym, .walkthrough button.sym { font: inherit; font-family: var(--vscode-editor-font-family); background: none; border: none; color: var(--vscode-textLink-foreground); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; padding: 0; }
-  .badge { font-size: 0.85em; margin-left: 6px; padding: 0 6px; border-radius: 8px; color: var(--vscode-badge-foreground); background: var(--vscode-badge-background); }
-  .empty { color: var(--vscode-descriptionForeground); margin: 14px 0; }
-  /* Ink that runs once along a call, from caller to callee; hidden unless it is running. */
-  .trace { fill: none; stroke: var(--vscode-editor-foreground); stroke-width: 2; stroke-linecap: round; stroke-dasharray: 1 1; opacity: 0; pointer-events: none; }
-  .ghost { pointer-events: none; }
+<style nonce="${nonce}">${sharedStyles}${codeFlowStyles}
 </style>
 </head>
 <body>
-<h1 id="heading">Code Flow</h1>
+<h1 id="heading" class="visually-hidden">Code Flow</h1>
 <div id="live" class="visually-hidden" role="status" aria-live="polite"></div>
 <div id="app"></div>
 <script nonce="${nonce}">${sharedScript}
@@ -331,16 +273,19 @@ function html(): string {
   };
   const post = (message) => vscode.postMessage(message);
   const baseName = (path) => path.split("/").pop();
-  const clip = (text, max) => (text.length > max ? text.slice(0, max - 1) + "\\u2026" : text);
   /** What a call is labelled with: the data it carries if the Assistant said, else the language server's label. */
   const edgeText = (edge) => edge.data || edge.label;
   /** The label's tooltip, which keeps both when there are two. */
   const edgeTitle = (edge) => edge.data && edge.label ? edge.data + " \u2014 " + edge.label : edgeText(edge);
   const describe = (node) => node.name + ", " + STATUS[node.status] + ", " + before(node) + node.path + " line " + node.line;
 
-  const arrowDefs = () => svg("defs", {}, svg("marker", { id: "arrow", viewBox: "0 0 10 10", refX: "9", refY: "5", markerWidth: "7", markerHeight: "7", orient: "auto-start-reverse" }, svg("path", { class: "arrow", d: "M0 0 L10 5 L0 10 z" })));
+  /** Arrowheads of one size whatever the call's weight, in the color of the call they end. */
+  const arrowDefs = () => svg("defs", {}, ["", "changed", "new", "removed", "selected"].map((status) =>
+    svg("marker", { id: "arrow" + (status && "-" + status), viewBox: "0 0 10 10", refX: "9", refY: "5", markerUnits: "userSpaceOnUse", markerWidth: "8", markerHeight: "8", orient: "auto-start-reverse" },
+      svg("path", { class: "arrow " + status, d: "M0 0 L10 5 L0 10 z" }))));
+  const arrowOf = (status) => "url(#arrow" + (["changed", "new", "removed", "selected"].includes(status) ? "-" + status : "") + ")";
 
-  /** A second Enter on the selected symbol opens its diff; anything else shows it in the diff. */
+  /** A second Enter on the selected symbol opens it in the diff; anything else shows it there. */
   function activate(event, id) {
     event.preventDefault();
     if (current.selected === id && event.key === "Enter") post({ type: "openDiff", id });
@@ -349,9 +294,17 @@ function html(): string {
   /** Shows a symbol in the diff from a click on its name, which its box or row would only select. */
   const showOnClick = (id, before) => (event) => { event.stopPropagation(); if (before) before(); post({ type: "show", id }); };
 
-  /** Says how to move through the picture, since the keys are not otherwise visible. */
-  const hint = (view) => el("p", { class: "hint", id: "hint",
-    text: (view === "lanes" ? "Up and Down move between calls. " : "Arrow keys move between symbols; Right and Left follow calls. ") + "Enter, or clicking a name, shows a symbol in the diff; Enter again moves to the diff." });
+  /** Says how to move through the picture, since the keys are not otherwise visible: behind Keys, and always the picture's description. */
+  const hint = (view) => el("p", { class: "hint", id: "hint", hidden: !keysOpen,
+    text: (view === "lanes" ? "Up and Down move between calls. Enter, or clicking a name, shows the symbol in the diff; Enter again opens it there." : "Arrow keys move between symbols; Right and Left follow calls. Enter, or clicking a name, shows the symbol in the diff; Enter again, or a double-click, opens it there.") });
+  /** Opens and closes the hint, without drawing the picture again. */
+  const keysButton = () => el("button", { type: "button", class: "link keys", "aria-expanded": String(keysOpen), "aria-controls": "hint", "data-focus": "keys", text: "Keys",
+    onclick: (event) => {
+      keysOpen = !keysOpen;
+      event.currentTarget.setAttribute("aria-expanded", String(keysOpen));
+      const shown = document.getElementById("hint");
+      if (shown) shown.hidden = !keysOpen;
+    } });
 
   /** Makes the symbol the one tab stop into the call map. */
   function setRoving(id) {
@@ -364,7 +317,35 @@ function html(): string {
     document.querySelectorAll("[data-focus^='call:']").forEach((row, i) => row.setAttribute("tabindex", i === index ? "0" : "-1"));
   }
 
-  const NODE_W = 190, NODE_H = 46, COL_GAP = 90, ROW_GAP = 24, PAD = 20;
+  const PAD = 20;
+  /** The picture's measures, in the Reviewer's font size, so boxes and rows grow with the text. */
+  function metrics() {
+    const em = parseFloat(getComputedStyle(document.body).fontSize) || 13;
+    const of = (n) => Math.round(em * n);
+    // A column takes at most 24em, and less than half of a narrow tab, so a long name doesn't push the rest out of sight.
+    const maxW = Math.max(of(12), Math.min(of(24), Math.round(app.clientWidth * 0.45)));
+    return { nodeH: of(3.5), colGap: of(7), rowGap: of(1.8), minW: of(12), maxW, line1: of(1.45), line2: of(2.75), laneW: of(16), rowH: of(3.4), top: of(3.5) };
+  }
+
+  /**
+   * Cuts a text to the room it has, measured at the Reviewer's font size,
+   * from its end, or from its start to keep the end, as a qualified name's
+   * method. The tooltip of what holds it keeps the full text.
+   */
+  function fitText(text, room, from) {
+    if (!text) return;
+    const full = text.textContent;
+    if (text.getComputedTextLength() <= room) return;
+    const cut = (n) => from === "start" ? "\u2026" + full.slice(full.length - n) : full.slice(0, n) + "\u2026";
+    let low = 0, high = full.length;
+    while (low < high) {
+      const mid = Math.ceil((low + high) / 2);
+      text.textContent = cut(mid);
+      if (text.getComputedTextLength() <= room) low = mid;
+      else high = mid - 1;
+    }
+    text.textContent = cut(low);
+  }
 
   function toolbar(state) {
     const seg = (label, items, current, onPick) =>
@@ -384,12 +365,11 @@ function html(): string {
         state.flow.entries.map((entry) => el("option", { value: entry.id, selected: entry.id === state.flow.entry, text: entry.label })));
       bar.append(el("span", { class: "group" }, el("label", { for: "entry", text: "Calls from" }), select));
     }
-    bar.append(el("span", { class: "seg" },
-      el("button", { type: "button", "aria-pressed": String(state.showTests), "data-focus": "showTests", onclick: () => post({ type: "setShowTests", show: !state.showTests }), text: "Show tests" })));
-    if (state.showRemoved || state.flow.removedHidden > 0) {
-      bar.append(el("span", { class: "seg" },
-        el("button", { type: "button", "aria-pressed": String(state.showRemoved), "data-focus": "showRemoved", onclick: () => post({ type: "setShowRemoved", show: !state.showRemoved }), text: "Show removed" })));
-    }
+    bar.append(el("span", { class: "group toggles" },
+      el("span", { class: "seg" },
+        el("button", { type: "button", "aria-pressed": String(state.showTests), "data-focus": "showTests", onclick: () => post({ type: "setShowTests", show: !state.showTests }), text: "Show tests" })),
+      (state.showRemoved || state.flow.removedHidden > 0) && el("span", { class: "seg" },
+        el("button", { type: "button", "aria-pressed": String(state.showRemoved), "data-focus": "showRemoved", onclick: () => post({ type: "setShowRemoved", show: !state.showRemoved }), text: "Show removed" }))));
     // The key explains only the marks the picture draws: the list names each status in a badge.
     const known = new Map(state.known.map((n) => [n.id, n]));
     const drawn = state.view === "map" ? state.flow.nodes
@@ -402,86 +382,116 @@ function html(): string {
     return bar;
   }
 
+  /** What went wrong, and what a language server did instead of answering, each with what helps. */
   function notices(state) {
     const out = [];
+    const nameOf = (language) => (state.languageNames && state.languageNames[language]) || language;
     if (state.problem) out.push(el("div", { class: "notice problem", role: "alert" }, state.problem, el("button", { type: "button", onclick: () => post({ type: "retry" }), text: "Try again" })));
     for (const { language, outcome } of state.languages) {
+      const name = nameOf(language);
       if (outcome === "none") {
         out.push(el("div", { class: "notice" },
-          "No language server for " + language + ", so its calls can't be drawn.",
-          el("button", { type: "button", onclick: () => post({ type: "findExtensions", language }), text: "Search extensions for " + language })));
+          "No language server for " + name + ", so its calls can't be drawn.",
+          el("button", { type: "button", onclick: () => post({ type: "findExtensions", language }), text: "Search extensions for " + name })));
       } else if (outcome === "noCalls") {
         out.push(el("div", { class: "notice" },
-          "The language server for " + language + " gave no calls, and may not support call hierarchies. Install a language server for " + language + " that does." + (language === "python" ? " Pyright-based servers support them; Jedi, the one VS Code falls back to, does not." : "")));
+          "The language server for " + name + " gave no calls, and may not support call hierarchies. Install a language server for " + name + " that does." + (language === "python" ? " Pyright-based servers support them; Jedi, the one VS Code falls back to, does not." : "")));
       } else if (outcome === "silent") {
         out.push(el("div", { class: "notice" },
-          "The language server for " + language + " did not answer.",
+          "The language server for " + name + " did not answer.",
           el("button", { type: "button", onclick: () => post({ type: "retry" }), text: "Try again" })));
       }
     }
-    if (state.view === "walkthrough") return out;
-    if (!state.showTests && state.flow.testsHidden > 0) {
-      out.push(el("div", { class: "notice" }, state.flow.testsHidden + (state.flow.testsHidden === 1 ? " test symbol hidden." : " test symbols hidden."),
-        el("button", { type: "button", onclick: () => post({ type: "setShowTests", show: true }), text: "Show tests" })));
-    }
-    if (!state.showRemoved && state.flow.removedHidden > 0) {
-      out.push(el("div", { class: "notice" }, state.flow.removedHidden + (state.flow.removedHidden === 1 ? " removed symbol hidden." : " removed symbols hidden."),
-        el("button", { type: "button", onclick: () => post({ type: "setShowRemoved", show: true }), text: "Show removed" })));
-    }
-    const offers = state.offers;
-    if (offers.callless > 0) {
-      out.push(el("div", { class: "notice" }, offers.callless + (offers.callless === 1 ? " symbol with no calls." : " symbols with no calls.") + " The List view lists them.",
-        el("button", { type: "button", onclick: () => post({ type: "setView", view: "list" }), text: "Show the list" })));
-    }
-    if (offers.undrawn > 0) {
-      out.push(el("div", { class: "notice" }, offers.undrawn + (offers.undrawn === 1 ? " more symbol is" : " more symbols are") + " left out to keep the view readable.",
-        el("button", { type: "button", onclick: () => post({ type: "setShowAll", show: true }), text: "Show all" })));
-    }
-    if (offers.showingAll) {
-      out.push(el("div", { class: "notice" }, "All " + offers.showingAll + " symbols are drawn.",
-        el("button", { type: "button", onclick: () => post({ type: "setShowAll", show: false }), text: "Show fewer" })));
-    }
-    if (offers.tryHop) {
+    if (state.view !== "walkthrough" && state.offers.tryHop) {
       out.push(el("div", { class: "notice" }, "No changed symbol calls another. One hop out shows what they call and what calls them.",
         el("button", { type: "button", onclick: () => post({ type: "setHops", hops: 1 }), text: "+1 hop" })));
     }
     return out;
   }
 
+  /**
+   * One quiet line under the toolbar: what the picture leaves out, each with
+   * the link that brings it in, and Keys, which opens the hint.
+   */
+  function meta(state, withKeys) {
+    const items = [];
+    const item = (text, label, name, onclick) => el("span", {}, text + " ", el("button", { type: "button", class: "link", "aria-label": name, onclick, text: label }));
+    const count = (n, one, many) => n + (n === 1 ? one : many);
+    if (!state.showTests && state.flow.testsHidden > 0)
+      items.push(item(count(state.flow.testsHidden, " test symbol hidden.", " test symbols hidden."), "Show", "Show tests", () => post({ type: "setShowTests", show: true })));
+    if (!state.showRemoved && state.flow.removedHidden > 0)
+      items.push(item(count(state.flow.removedHidden, " removed symbol hidden.", " removed symbols hidden."), "Show", "Show removed", () => post({ type: "setShowRemoved", show: true })));
+    const offers = state.offers;
+    if (offers.callless > 0)
+      items.push(item(count(offers.callless, " symbol with no calls is only in the list.", " symbols with no calls are only in the list."), "Show the list", undefined, () => post({ type: "setView", view: "list" })));
+    if (offers.undrawn > 0)
+      items.push(item(count(offers.undrawn, " more symbol is left out to keep the view readable.", " more symbols are left out to keep the view readable."), "Show all", undefined, () => post({ type: "setShowAll", show: true })));
+    if (offers.showingAll)
+      items.push(item("All " + offers.showingAll + " symbols are drawn.", "Show fewer", undefined, () => post({ type: "setShowAll", show: false })));
+    if (items.length === 0 && !withKeys) return null;
+    return el("div", { class: "meta" },
+      el("p", { class: "left-out" }, items.flatMap((it, i) => (i ? [" \u00b7 ", it] : [it]))),
+      withKeys && keysButton());
+  }
+
+  /** The second line's right-hand text: the symbol's mark, and how many of its neighbours the map leaves out. */
+  const sideText = (node) => [statusMark(node), node.hidden ? node.hidden + " not drawn" : ""].filter(Boolean).join("  \u00b7  ");
+
   function callMap(state) {
+    const m = metrics();
     const nodes = state.flow.nodes;
     const columns = Math.max(0, ...nodes.map((n) => n.column)) + 1;
     const rows = Math.max(0, ...nodes.map((n) => n.row)) + 1;
-    const at = (n) => ({ x: PAD + n.column * (NODE_W + COL_GAP), y: PAD + n.row * (NODE_H + ROW_GAP) });
+    // Each column is as wide as its longest name needs, within bounds, so a name keeps the part that tells it apart.
+    const probe = svg("svg", { class: "probe", "aria-hidden": "true" });
+    document.body.append(probe);
+    const texts = nodes.map((node) => {
+      const name = svg("text", { class: "name" }, node.name), loc = svg("text", { class: "where" }, placeOf(node)), side = svg("text", { class: "where" }, sideText(node));
+      probe.append(svg("g", { class: "node " + node.status }, name, loc, side));
+      return { node, name, loc, side };
+    });
+    const colW = Array.from({ length: columns }, () => m.minW);
+    for (const { node, name, loc, side } of texts) {
+      const beside = side.textContent ? side.getComputedTextLength() + 12 : 0;
+      const need = Math.ceil(Math.max(name.getComputedTextLength(), loc.getComputedTextLength() + beside) + 16);
+      colW[node.column] = Math.min(m.maxW, Math.max(colW[node.column], need));
+    }
+    probe.remove();
+    const colX = colW.map((w, c) => PAD + colW.slice(0, c).reduce((sum, before) => sum + before + m.colGap, 0));
+    const at = (n) => ({ x: colX[n.column], y: PAD + n.row * (m.nodeH + m.rowGap) });
     const byId = new Map(nodes.map((n) => [n.id, n]));
-    const width = PAD * 2 + columns * NODE_W + (columns - 1) * COL_GAP;
-    const height = PAD * 2 + rows * NODE_H + (rows - 1) * ROW_GAP;
+    const width = PAD * 2 + colW.reduce((sum, w) => sum + w, 0) + (columns - 1) * m.colGap;
+    const height = PAD * 2 + rows * m.nodeH + (rows - 1) * m.rowGap;
     const drawing = svg("svg", { width, height, viewBox: "0 0 " + width + " " + height, role: "listbox", "aria-label": "Call map: " + nodes.length + " symbols", "aria-describedby": "hint" },
       arrowDefs());
     const inReadingOrder = nodes.slice().sort((a, b) => a.column - b.column || a.row - b.row);
     const stopId = nodes.some((n) => n.id === rovingNode) ? rovingNode : nodes.some((n) => n.id === state.selected) ? state.selected : inReadingOrder[0] && inReadingOrder[0].id;
-    for (const edge of state.flow.edges) {
+    // The selected symbol's calls, in and out, are drawn last, so they cross over the others.
+    const ofSelected = (edge) => Boolean(state.selected) && (edge.from === state.selected || edge.to === state.selected);
+    const edges = [...state.flow.edges.filter((edge) => !ofSelected(edge)), ...state.flow.edges.filter(ofSelected)];
+    for (const edge of edges) {
       const from = byId.get(edge.from), to = byId.get(edge.to);
       if (!from || !to) continue;
       const a = at(from), b = at(to);
-      const x1 = a.x + NODE_W, y1 = a.y + NODE_H / 2, x2 = b.x, y2 = b.y + NODE_H / 2;
+      const x1 = a.x + colW[from.column], y1 = a.y + m.nodeH / 2, x2 = b.x, y2 = b.y + m.nodeH / 2;
       const bend = Math.max(30, Math.abs(x2 - x1) / 2);
-      const group = svg("g", { "data-from": edge.from, "data-to": edge.to },
-        svg("path", { class: "edge", d: "M" + x1 + " " + y1 + " C" + (x1 + bend) + " " + y1 + " " + (x2 - bend) + " " + y2 + " " + x2 + " " + y2, "marker-end": "url(#arrow)" }));
-      // The label keeps to the gap its call crosses, so a symbol drawn over it doesn't hide it.
-      if (edgeText(edge)) group.append(svg("text", { class: "edge-label", x: (x1 + x2) / 2, y: (y1 + y2) / 2 - 4, "text-anchor": "middle", "data-room": Math.max(40, Math.abs(x2 - x1) - 12) }, svg("title", { text: edgeTitle(edge) }), svg("tspan", {}, edgeText(edge))));
+      const selected = ofSelected(edge);
+      const group = svg("g", { class: selected ? "selected-call" : undefined, "data-from": edge.from, "data-to": edge.to },
+        svg("path", { class: "edge", d: "M" + x1 + " " + y1 + " C" + (x1 + bend) + " " + y1 + " " + (x2 - bend) + " " + y2 + " " + x2 + " " + y2, "marker-end": arrowOf(selected ? "selected" : undefined) }));
+      // Only the selected symbol's calls are labelled, so a label can't be taken for its neighbour's; it keeps to the gap its call crosses.
+      if (selected && edgeText(edge)) group.append(svg("text", { class: "edge-label", x: (x1 + x2) / 2, y: (y1 + y2) / 2 - 4, "text-anchor": "middle", "data-room": Math.max(40, Math.abs(x2 - x1) - 12) }, svg("title", { text: edgeTitle(edge) }), svg("tspan", {}, edgeText(edge))));
       drawing.append(group);
     }
     for (const node of nodes) {
       const { x, y } = at(node);
-      const group = svg("g", { class: "node " + node.status, transform: "translate(" + x + " " + y + ")", tabindex: node.id === stopId ? "0" : "-1", role: "option", "aria-selected": String(state.selected === node.id), "aria-label": describe(node) + (node.hidden ? ", " + node.hidden + " more neighbours not drawn" : ""), "data-node": node.id, "data-focus": "node:" + node.id },
+      const w = colW[node.column];
+      const group = svg("g", { class: "node " + node.status, transform: "translate(" + x + " " + y + ")", tabindex: node.id === stopId ? "0" : "-1", role: "option", "aria-selected": String(state.selected === node.id), "aria-label": describe(node) + (node.hidden ? ", " + node.hidden + " more neighbours not drawn" : ""), "data-node": node.id, "data-focus": "node:" + node.id, "data-width": w },
         svg("title", { text: describe(node) }),
-        svg("rect", { class: "ring", x: -4, y: -4, width: NODE_W + 8, height: NODE_H + 8, rx: 5 }),
-        svg("rect", { class: "box", width: NODE_W, height: NODE_H, rx: 3 }),
-        svg("text", { class: "name", x: 8, y: 19, onclick: showOnClick(node.id) }, node.name),
-        svg("text", { class: "where loc", x: 8, y: 36 }, placeOf(node)));
-      if (node.status !== "unchanged") group.append(svg("text", { class: "where status", x: NODE_W - 8, y: 19, "text-anchor": "end" }, statusMark(node)));
-      if (node.hidden) group.append(svg("text", { class: "more", x: NODE_W - 8, y: 36, "text-anchor": "end" }, node.hidden + " not drawn"));
+        svg("rect", { class: "ring", x: -4, y: -4, width: w + 8, height: m.nodeH + 8, rx: 5 }),
+        svg("rect", { class: "box", width: w, height: m.nodeH, rx: 3 }),
+        svg("text", { class: "name", x: 8, y: m.line1, onclick: showOnClick(node.id) }, node.name),
+        svg("text", { class: "where loc", x: 8, y: m.line2 }, placeOf(node)));
+      if (sideText(node)) group.append(svg("text", { class: "where side", x: w - 8, y: m.line2, "text-anchor": "end" }, sideText(node)));
       group.addEventListener("click", () => post({ type: "select", id: node.id }));
       group.addEventListener("focus", () => { rovingNode = node.id; setRoving(node.id); });
       group.addEventListener("dblclick", () => post({ type: "openDiff", id: node.id }));
@@ -492,32 +502,31 @@ function html(): string {
   }
 
   /**
-   * Cuts each symbol's name and location to the room left beside the text on
-   * its line, the status or the count of neighbours not drawn, and each
-   * call's label to the gap it crosses, measured at the Reviewer's font size.
-   * The box's tooltip, and the label's, keep the full text.
+   * Cuts each symbol's name to its box, from the start so the method of a
+   * qualified name stays, and its location to the room left beside its mark;
+   * each call's label to the gap it crosses; and each lane's file to its lane,
+   * from the start so the file name stays. Then widens the swimlanes to their
+   * longest row, which is never cut.
    */
-  function fitNodeTexts() {
-    const fit = (text, room) => {
-      if (!text) return;
-      const full = text.textContent;
-      if (text.getComputedTextLength() <= room) return;
-      let low = 0, high = full.length;
-      while (low < high) {
-        const mid = Math.ceil((low + high) / 2);
-        text.textContent = full.slice(0, mid) + "\\u2026";
-        if (text.getComputedTextLength() <= room) low = mid;
-        else high = mid - 1;
-      }
-      text.textContent = full.slice(0, low) + "\\u2026";
-    };
-    const room = (beside) => NODE_W - 16 - (beside ? beside.getComputedTextLength() + 8 : 0);
-    for (const group of document.querySelectorAll(".node")) {
-      fit(group.querySelector(".name"), room(group.querySelector(".status")));
-      fit(group.querySelector(".loc"), room(group.querySelector(".more")));
+  function fitTexts() {
+    for (const group of app.querySelectorAll(".node[data-width]")) {
+      const w = Number(group.getAttribute("data-width"));
+      const side = group.querySelector(".side");
+      fitText(group.querySelector(".name"), w - 16, "start");
+      fitText(group.querySelector(".loc"), w - 16 - (side ? side.getComputedTextLength() + 12 : 0), "end");
     }
-    for (const label of document.querySelectorAll(".edge-label"))
-      fit(label.querySelector("tspan"), Number(label.dataset.room));
+    for (const label of app.querySelectorAll(".edge-label"))
+      fitText(label.querySelector("tspan"), Number(label.getAttribute("data-room")), "end");
+    const lanes = app.querySelector(".canvas svg.lanes");
+    if (!lanes) return;
+    const laneW = Number(lanes.getAttribute("data-lane-width"));
+    for (const head of lanes.querySelectorAll(".lane-head tspan")) fitText(head, laneW - 8, "start");
+    const right = Math.max(0, ...[...lanes.querySelectorAll(".call text")].map((text) => Number(text.getAttribute("x")) + text.getComputedTextLength()));
+    const width = Math.max(Number(lanes.getAttribute("width")), Math.ceil(right + PAD));
+    const height = lanes.getAttribute("height");
+    lanes.setAttribute("width", width);
+    lanes.setAttribute("viewBox", "0 0 " + width + " " + height);
+    for (const hit of lanes.querySelectorAll(".hit")) hit.setAttribute("width", width - PAD * 2);
   }
 
   /**
@@ -553,19 +562,21 @@ function html(): string {
   function lanes(state) {
     const { lanes: names, calls } = state.flow;
     const known = new Map(state.known.map((n) => [n.id, n]));
-    const LANE_W = 210, ROW_H = 44, TOP = 46;
+    const m = metrics();
+    const LANE_W = m.laneW, ROW_H = m.rowH, TOP = m.top;
+    // As wide as the lanes to start with; fitTexts widens it to the longest row.
     const width = PAD * 2 + names.length * LANE_W;
     const height = TOP + calls.length * ROW_H + PAD;
     const x = (lane) => PAD + lane * LANE_W + LANE_W / 2;
-    const drawing = svg("svg", { width, height, viewBox: "0 0 " + width + " " + height, role: "listbox", "aria-label": "Swimlanes: " + calls.length + " calls", "aria-describedby": "hint" },
+    const drawing = svg("svg", { class: "lanes", width, height, viewBox: "0 0 " + width + " " + height, role: "listbox", "aria-label": "Swimlanes: " + calls.length + " calls", "aria-describedby": "hint", "data-lane-width": LANE_W },
       arrowDefs());
     // Rows that share a callee share the selection; only the one the Reviewer chose reads as selected.
     const selectedRow = calls.some((c, i) => i === selectedCall && c.to === state.selected) ? selectedCall : calls.findIndex((c) => c.to === state.selected);
     const stopRow = rovingCall !== undefined && rovingCall < calls.length ? rovingCall : Math.max(selectedRow, 0);
     names.forEach((name, i) => {
       drawing.append(svg("g", { class: "lane" },
-        svg("text", { class: "lane-head", x: x(i), y: 24, "text-anchor": "middle" }, svg("title", { text: name }), clip(name, 28)),
-        svg("line", { class: "lane-line", x1: x(i), x2: x(i), y1: 34, y2: height - 8 })));
+        svg("text", { class: "lane-head", x: x(i), y: Math.round(TOP * 0.52), "text-anchor": "middle" }, svg("title", { text: name }), svg("tspan", {}, name)),
+        svg("line", { class: "lane-line", x1: x(i), x2: x(i), y1: Math.round(TOP * 0.74), y2: height - 8 })));
     });
     calls.forEach((call, i) => {
       const y = TOP + i * ROW_H + ROW_H / 2;
@@ -575,17 +586,18 @@ function html(): string {
       // What marks the callee marks the call; the caller's mark is named in the row's second line.
       const calleeMark = target ? statusMark(target) : "", callerMark = source ? statusMark(source) : "";
       const callee = target ? target.name : call.to;
-      const heading = clip(callee + (edgeText(call) ? "  " + edgeText(call) : ""), 40);
+      const heading = callee + (edgeText(call) ? "  " + edgeText(call) : "");
       const detail = [calleeMark, target ? placeOf(target) : "", callerMark && source ? "called from " + callerMark + " " + source.name : ""].filter(Boolean).join("  \u00b7  ");
       const group = svg("g", { class: "call " + (target ? target.status : "unchanged"), tabindex: i === stopRow ? "0" : "-1", role: "option", "aria-selected": String(i === selectedRow), "aria-label": (i + 1) + ". " + (source ? source.name + (callerMark ? " (" + STATUS[source.status] + ")" : "") : call.from) + " calls " + (target ? target.name + ", " + STATUS[target.status] + ", " + before(target) + target.path + " line " + target.line : call.to) + (call.data ? ", carrying " + call.data : "") + (call.label ? ", " + call.label : ""), "data-focus": "call:" + i },
         svg("rect", { class: "hit", x: PAD, y: y - ROW_H / 2 + 2, width: width - PAD * 2, height: ROW_H - 4, rx: 3 }),
+        // A call within one file loops out to the left of its lane and back, clear of the row's text on the right.
         same
-          ? svg("path", { class: "edge", d: "M" + x1 + " " + (y - 6) + " h28 v12 h-26", "marker-end": "url(#arrow)" })
-          : svg("line", { class: "edge", x1, x2: x2 + (x2 > x1 ? -2 : 2), y1: y, y2: y, "marker-end": "url(#arrow)" }),
+          ? svg("path", { class: "edge", d: "M" + x1 + " " + (y - 6) + " h-18 v12 h16", "marker-end": arrowOf(target && target.status) })
+          : svg("line", { class: "edge", x1, x2: x2 + (x2 > x1 ? -2 : 2), y1: y, y2: y, "marker-end": arrowOf(target && target.status) }),
         svg("text", { x: Math.min(x1, x2) + 8, y: y - 8 }, (i + 1) + ". ",
           svg("tspan", { class: "name", onclick: showOnClick(call.to, () => { selectedCall = i; }) }, heading.slice(0, callee.length)),
           heading.slice(callee.length)),
-        detail && svg("text", { class: "where", x: Math.min(x1, x2) + 8, y: y + 14 }, clip(detail, 70)));
+        detail && svg("text", { class: "where", x: Math.min(x1, x2) + 8, y: y + 14 }, detail));
       group.addEventListener("click", () => { selectedCall = i; post({ type: "select", id: call.to }); });
       group.addEventListener("focus", () => setRovingCall(i));
       group.addEventListener("keydown", (event) => {
@@ -610,7 +622,7 @@ function html(): string {
     const names = (nodes) => nodes.length ? nodes.flatMap((n, i) => (i ? [", ", link(n)] : [link(n)])) : ["none"];
     return el("ul", { class: "list" }, [...state.flow.nodes, ...state.flow.callless].map((node) =>
       el("li", {},
-        link(node), el("span", { class: "badge", text: node.status }), " ",
+        link(node), node.status !== "unchanged" ? el("span", { class: "badge", text: node.status }) : null, " ",
         el("span", { class: "where", text: before(node) + node.path + ":" + node.line }),
         el("div", {}, "Called by: ", ...names(callersOf(node.id))),
         el("div", {}, "Calls: ", ...names(calleesOf(node.id))))));
@@ -666,7 +678,7 @@ function html(): string {
   function expandButton(state, id) {
     const drawn = state.offers.hops && state.flow.nodes.find((n) => n.id === id);
     if (!drawn || !drawn.hidden) return null;
-    return el("button", { type: "button", "data-focus": "expand", onclick: () => post({ type: "expand", id }),
+    return el("button", { type: "button", class: "secondary", "data-focus": "expand", onclick: () => post({ type: "expand", id }),
       text: "Draw its " + drawn.hidden + (drawn.hidden === 1 ? " other neighbour" : " other neighbours") });
   }
 
@@ -828,6 +840,8 @@ function html(): string {
   let focusAfter;
   /** The symbol whose selection the live region last announced. */
   let announced;
+  /** Whether the Reviewer opened the hint with Keys. */
+  let keysOpen = false;
   /** What identifies the focused control across a render: the shared script only follows buttons and inputs. */
   const focusKey = () => {
     const active = document.activeElement;
@@ -840,19 +854,22 @@ function html(): string {
     const key = focusKey();
     keepFocus(() => {
       app.replaceChildren(toolbar(state), ...notices(state));
+      const keyed = state.offers.picture && state.view !== "list";
+      const line = !state.loading && state.view !== "walkthrough" && meta(state, keyed);
+      if (line) app.append(line);
       if (state.loading) {
         app.append(el("p", { class: "empty", text: "Asking the language servers\\u2026" }));
       } else if (state.view === "walkthrough") {
         app.append(walkthrough(state));
       } else if (state.offers.picture) {
-        if (state.view !== "list") app.append(hint(state.view));
+        if (keyed) app.append(hint(state.view));
         app.append(state.view === "lanes" ? lanes(state) : state.view === "list" ? list(state) : callMap(state));
       } else if (state.offers.empty) {
         app.append(el("p", { class: "empty", text: state.offers.empty }));
       }
       if (!state.loading) app.append(details(state));
     });
-    fitNodeTexts();
+    fitTexts();
     const canvas = app.querySelector(".canvas");
     if (canvas && prior.canvas && prior.view === state.view) { canvas.scrollLeft = prior.canvas.left; canvas.scrollTop = prior.canvas.top; }
     window.scrollTo(window.scrollX, prior.page);
@@ -890,7 +907,9 @@ function html(): string {
     }
     post({ type: "layout", canvas: scrollOf(canvas), focusInView });
   }
-  window.addEventListener("message", (event) => {
+  window.addEventListener("message", function receive(event) {
+    // The picture is laid out from measured text, so it waits for the fonts; messages keep their order behind them.
+    if (document.fonts && document.fonts.status !== "loaded") { document.fonts.ready.then(() => receive(event)); return; }
     const message = event.data;
     if (message.type === "scrollCanvas") {
       settle();

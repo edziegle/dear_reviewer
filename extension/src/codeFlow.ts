@@ -386,7 +386,7 @@ export interface FlowControls {
   showAll: boolean;
   /** Lowers the cap, for tests. */
   cap?: number;
-  /** The changed or new symbol the swimlanes follow; the first one that makes calls if absent or no longer one. */
+  /** The changed or new symbol the swimlanes follow; if absent or no longer one, where a run through the Change starts (see `shownFlow`). */
   entry?: string;
   /** Draw the symbols of test files too. */
   showTests?: boolean;
@@ -487,14 +487,24 @@ export function shownFlow(full: FlowGraph, controls: FlowControls): ShownFlow {
           ? `${name} · ${side === "base" ? "before: " : ""}${path}:${line}`
           : name,
     }));
-  // The run that opens the most of the picture leads, unless the Reviewer chose one.
+  // A run starts where no other changed symbol calls in, and of those the one
+  // that opens the most of the picture leads, unless the Reviewer chose one.
   const callsMade = distinctEnds(
     graph,
     new Set(graph.nodes.map((n) => n.id)),
     "from",
     "to"
   );
-  const mostCalls = entries.reduce<(typeof entries)[number] | undefined>(
+  const changedIds = new Set(changed.map((node) => node.id));
+  const calledByChanged = new Set(
+    graph.edges
+      .filter((edge) => edge.from !== edge.to && changedIds.has(edge.from))
+      .map((edge) => edge.to)
+  );
+  const roots = entries.filter((e) => !calledByChanged.has(e.id));
+  const mostCalls = (roots.length > 0 ? roots : entries).reduce<
+    (typeof entries)[number] | undefined
+  >(
     (best, e) =>
       !best || (callsMade.get(e.id) ?? 0) > (callsMade.get(best.id) ?? 0)
         ? e

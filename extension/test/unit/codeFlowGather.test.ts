@@ -2,6 +2,7 @@ import * as assert from "assert";
 import type { FileChange } from "../../src/codeFlow";
 import {
   gatherFlow,
+  languageName,
   type CallItem,
   type CallLink,
   type FlowSource,
@@ -405,6 +406,36 @@ describe("gathering a Code Flow", () => {
     assert.strictEqual(
       flow.graph.nodes.find((n) => n.id === user.id)!.status,
       "unchanged"
+    );
+  });
+});
+
+describe("A language's name in words", () => {
+  it("is the first name an extension gives it", () => {
+    assert.strictEqual(
+      languageName("shellscript", [
+        { id: "python", aliases: ["Python", "py"] },
+        { id: "shellscript", aliases: ["Shell Script", "shellscript"] },
+      ]),
+      "Shell Script"
+    );
+  });
+
+  it("is the first contribution with a name, when several extensions contribute it", () => {
+    assert.strictEqual(
+      languageName("terraform", [
+        { id: "terraform" },
+        { id: "terraform", aliases: [" ", "x"] },
+        { id: "terraform", aliases: ["Terraform"] },
+      ]),
+      "Terraform"
+    );
+  });
+
+  it("is its id when no extension names it", () => {
+    assert.strictEqual(
+      languageName("opentofu", [{ id: "opentofu", aliases: "OpenTofu" }]),
+      "opentofu"
     );
   });
 });

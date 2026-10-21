@@ -582,6 +582,51 @@ describe("The default entry point of the swimlanes", () => {
     );
   });
 
+  it("starts where a run through the Change begins: a changed symbol no other changed symbol calls", () => {
+    const graph: FlowGraph = {
+      nodes: [
+        node("dispatch", "changed"),
+        node("schedule", "new"),
+        node("send", "unchanged"),
+        node("delay", "new"),
+        node("record", "new"),
+        node("push", "unchanged"),
+      ],
+      edges: [
+        { from: "dispatch", to: "schedule" },
+        { from: "dispatch", to: "send" },
+        { from: "schedule", to: "delay" },
+        { from: "schedule", to: "record" },
+        { from: "schedule", to: "push" },
+      ],
+    };
+    const shown = shownFlow(graph, { hops: 1, showAll: false });
+    assert.strictEqual(shown.entry, "dispatch");
+    assert.deepStrictEqual(
+      shown.calls.map((call) => call.to),
+      ["schedule", "delay", "record", "push", "send"]
+    );
+  });
+
+  it("falls back to the one that makes the most calls when changed symbols call each other round", () => {
+    const graph: FlowGraph = {
+      nodes: [
+        node("ping", "changed"),
+        node("pong", "changed"),
+        node("x", "unchanged"),
+      ],
+      edges: [
+        { from: "ping", to: "pong" },
+        { from: "pong", to: "ping" },
+        { from: "pong", to: "x" },
+      ],
+    };
+    assert.strictEqual(
+      shownFlow(graph, { hops: 1, showAll: false }).entry,
+      "pong"
+    );
+  });
+
   it("is the first when they make as many, and a chosen one wins", () => {
     const graph: FlowGraph = {
       nodes: [

@@ -128,7 +128,15 @@ export function parseWalkthrough(
       lineage.length < maxDepth
         ? raw.calls.flatMap((call) => stepOf(call, node.id, lineage) ?? [])
         : [];
-    const note = node.status === "unchanged" ? "" : text(raw.note, maxNote);
+    // The panel heads a note with "The Change:" beside the symbol's own mark,
+    // so a note that starts by naming the mark again loses it.
+    const note =
+      node.status === "unchanged"
+        ? ""
+        : text(raw.note, maxNote).replace(
+            /^(?:new|changed|removed|added|modified)\s*[:\u2013\u2014-]\s*/i,
+            ""
+          );
     return {
       symbol: node.id,
       ...optional("when", text(raw.when, maxWhen)),

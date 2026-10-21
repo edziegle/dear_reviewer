@@ -25,6 +25,7 @@ import {
   clickTakeReference,
   overviewTake,
   sentTimeline,
+  standingWords,
 } from "../timeline";
 import { codeColumnTab, filesIn } from "../changeFiles";
 import { buildFixtureRepo, buildPullRequestFixture } from "../fixtures";
@@ -157,7 +158,7 @@ describe("The Assistant's summary when a Change opens", () => {
       overview.byline,
       `${path.basename(repo.path)} · ${commits} commit${commits === 1 ? "" : "s"}`
     );
-    assert.match(overview.standing.at(-1) ?? "", /^0 of \d+ viewed$/);
+    assert.match(standingWords(overview).at(-1) ?? "", /^0 of \d+ viewed$/);
     const html = (overview.take as { html?: string }).html ?? "";
     assert.ok(
       html.includes('<a data-path="util.py" data-start="2" data-end="2">'),

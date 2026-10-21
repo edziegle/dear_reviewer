@@ -299,7 +299,10 @@ export class Dashboard implements vscode.Disposable {
           ...(summary && { size: summary.size }),
           ...(summary?.checks && { checks: summary.checks }),
           ...(standing.review && { review: standing.review }),
-          standing: standing.notes,
+          // The Dashboard's row names what is new; the overview opens it.
+          standing: standing.notes.map((note) =>
+            typeof note === "string" ? note : note.text
+          ),
         };
       })
     );

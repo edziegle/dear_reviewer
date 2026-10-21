@@ -42,7 +42,7 @@ import {
   short,
   workspaceFolders,
 } from "../reviewer";
-import { sentTimeline } from "../timeline";
+import { clickOverview, sentTimeline, standingWords } from "../timeline";
 
 const viewer = { login: "reviewer", token: "test-token" };
 const settingKeys = ["githubApiUrl", "repositories", "localClones"];
@@ -230,7 +230,7 @@ describe("What changed since your last Review", () => {
       assert.strictEqual(overview.review?.verdict, "approved");
       assert.match(overview.review?.text ?? "", /^You approved at \d/);
       assert.ok(
-        !overview.standing.some((note) => note.includes("since your Review")),
+        !standingWords(overview).some((note) => note.includes("since your Review")),
         `${JSON.stringify(overview.standing)}`
       );
     });
@@ -338,6 +338,7 @@ describe("What changed since your last Review", () => {
     await eventually(async () =>
       assert.deepStrictEqual(await assistantTake(title), {
         label: `Since your Review at ${short(pr.head)}`,
+        since: true,
         reading: false,
         text: "new_helper now returns 3, and since.py is new.",
       })
@@ -394,7 +395,12 @@ describe("What changed since your last Review", () => {
       const overview = await sentTimeline("acme/since #41");
       assert.strictEqual(overview.review, undefined);
       assert.ok(
-        overview.standing.includes("New commits since your Review"),
+        overview.standing.some(
+          (note) =>
+            typeof note !== "string" &&
+            note.text === "New commits since your Review" &&
+            note.action === "showChangesSince"
+        ),
         JSON.stringify(overview.standing)
       );
     });
@@ -434,6 +440,19 @@ describe("What changed since your last Review", () => {
         ]
       );
     });
+  });
+
+  it("opens the same diff from the overview's note of new commits", async () => {
+    await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+
+    await clickOverview("acme/since #41", "showChangesSince");
+
+    await eventually(() =>
+      assert.strictEqual(
+        codeColumnTab()?.label,
+        `${path.basename(pr.clone)} ${short(pr.head)}..${short(newHead)} since your last Review (2 files)`
+      )
+    );
   });
 
   it("sends lines of the reviewed commit's side to the Assistant, as lines at that commit", async () => {

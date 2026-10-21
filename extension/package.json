@@ -337,7 +337,8 @@
       {
         "command": "dearReviewer.showChangesSinceLastReview",
         "title": "Show Changes Since Your Last Review",
-        "category": "Dear Reviewer"
+        "category": "Dear Reviewer",
+        "icon": "$(git-compare)"
       },
       {
         "command": "dearReviewer.findIssues",
@@ -829,6 +830,11 @@
           "group": "inline@1"
         },
         {
+          "command": "dearReviewer.showChangesSinceLastReview",
+          "when": "view == dearReviewer.changeFiles && viewItem =~ /^change\\..*\\.since$/",
+          "group": "inline@2"
+        },
+        {
           "command": "dearReviewer.showAssistant",
           "when": "view == dearReviewer.changeFiles && viewItem =~ /^change\\./",
           "group": "inline@3"
@@ -949,6 +955,11 @@
       ]
     },
     "keybindings": [
+      {
+        "command": "dearReviewer.showChangesSinceLastReview",
+        "key": "ctrl+alt+r c",
+        "when": "dearReviewer.hasOpenChange"
+      },
       {
         "command": "dearReviewer.nextUnviewedFile",
         "key": "ctrl+alt+r n",

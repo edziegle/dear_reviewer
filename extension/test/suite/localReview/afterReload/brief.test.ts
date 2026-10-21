@@ -314,6 +314,7 @@ describe("Ending a local Review with a Brief", () => {
     await eventually(async () =>
       assert.deepStrictEqual(await assistantTake(newTitle), {
         label: `Since your Review at ${short(change.head)}`,
+        since: true,
         reading: false,
         text: "since.py is new.",
       })

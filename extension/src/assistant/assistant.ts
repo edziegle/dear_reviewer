@@ -91,6 +91,8 @@ export interface ReviewerView {
 export interface AssistantOverview {
   /** "Assistant" for the summary, or which Review an explanation is since. */
   label: string;
+  /** Whether it explains the commits since that Review, so its label opens their diff. */
+  since?: boolean;
   /** Whether the Assistant is writing it. */
   reading: boolean;
   /** Markdown, as the Assistant wrote it so far. */
@@ -568,6 +570,7 @@ class ChangeAssistant {
       explained?.text && explained.to === change.headSha
         ? {
             label: sinceLabel(explained.from),
+            since: true,
             reading: false,
             text: explained.text,
           }
@@ -665,6 +668,7 @@ class ChangeAssistant {
       summary = this.enqueue(async () => {
         this.setOverview({
           label: "Assistant",
+          since: undefined,
           reading: true,
           text: undefined,
         });
@@ -880,6 +884,7 @@ class ChangeAssistant {
       this.note = undefined;
       this.setOverview({
         label: sinceLabel(from),
+        since: true,
         reading: true,
         text: undefined,
       });

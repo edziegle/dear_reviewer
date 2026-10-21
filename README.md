@@ -5,6 +5,14 @@
 Dear Reviewer is an extension for [VSCodium](https://vscodium.com/) and [VS Code](https://code.visualstudio.com/) to
 organize a human code reviewer's workflow.
 
+## Screenshots
+
+![The Change overview: the Assistant's summary, a Reading Order, the checks and a Start button](https://raw.githubusercontent.com/edziegle/dear_reviewer/main/docs/images/listing/overview.png)
+
+![A side-by-side diff of retry.ts, with a reviewer's pending Comment](https://raw.githubusercontent.com/edziegle/dear_reviewer/main/docs/images/listing/diff.png)
+
+![A Finding from the Assistant on client.ts, with Convert to Comment and Dismiss](https://raw.githubusercontent.com/edziegle/dear_reviewer/main/docs/images/listing/finding.png)
+
 ## Features
 
 - All the basics one would expect:
@@ -27,6 +35,10 @@ organize a human code reviewer's workflow.
   - tries to stay out of the way and let you do deep thinking without distractions
 - Briefs for:
   - your local agents, to hand off for fixes to issues you find.
+
+## Getting Started
+
+When you install Dear Reviewer, a setup walkthrough will open. In case you missed it open the Command Palette, run `Welcome: Open Walkthrough...` and pick `Set Up Dear Reviewer`.
 
 ## About AI
 

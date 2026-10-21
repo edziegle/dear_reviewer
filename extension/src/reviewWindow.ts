@@ -64,6 +64,10 @@ export class ReviewWindow {
       settings: {
         "terminal.integrated.enablePersistentSessions": false,
         "terminal.integrated.hideOnStartup": "always",
+        // The default is to highlight invisible characters in comments only in
+        // an untrusted workspace, and the Reviewer trusts this one (ADR 0021),
+        // so a hidden character in a code comment would show as nothing (ADR 0042).
+        "editor.unicodeHighlight.includeComments": true,
       },
     };
     fs.writeFileSync(this.workspaceFile, JSON.stringify(workspace, null, 2));

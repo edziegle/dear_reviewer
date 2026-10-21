@@ -8,6 +8,7 @@ import * as path from "path";
 import type * as vscode from "vscode";
 import { assistantDir, type Change } from "../changeDetails";
 import type { ReviewThread } from "../github/client";
+import { showHiddenCharacters, withoutHtmlComments } from "../hiddenText";
 import type { Selection } from "./prompts";
 
 /** A review thread of the Change as it stands, published, pending or local. */
@@ -43,6 +44,15 @@ export interface ThreadForAssistant {
   comments: { author: string; body: string; pending: boolean }[];
 }
 
+/**
+ * A Comment's text as the Assistant reads it: without the HTML comments that
+ * neither GitHub nor the extension shows the Reviewer, and with the
+ * characters they can't see as escapes (ADR 0042).
+ */
+export function forAssistant(text: string): string {
+  return showHiddenCharacters(withoutHtmlComments(text));
+}
+
 export function threadsForAssistant(
   threads: ThreadInChange[]
 ): ThreadForAssistant[] {
@@ -55,7 +65,7 @@ export function threadsForAssistant(
         }
       : shown;
     return {
-      path: thread.path,
+      path: showHiddenCharacters(thread.path),
       side: thread.side === "LEFT" ? "base" : "head",
       // An outdated thread GitHub didn't move shows where it was written.
       lines: thread.outdated && !thread.original ? null : shown,
@@ -63,8 +73,8 @@ export function threadsForAssistant(
       outdated: thread.outdated,
       resolved: thread.resolved,
       comments: thread.comments.map((c) => ({
-        author: c.author.login,
-        body: c.body,
+        author: showHiddenCharacters(c.author.login),
+        body: forAssistant(c.body),
         pending: c.pending,
       })),
     };

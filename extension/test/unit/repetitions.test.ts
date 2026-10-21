@@ -307,6 +307,17 @@ describe("The repetition of a real Change", () => {
     assert.strictEqual(found.edits.length, 1);
   });
 
+  it("goes on without waiting for an index that is slower than the wait, saying the check was partial", async () => {
+    const found = await new Repetitions({ waitMs: 0 }).candidates(change);
+    assert.strictEqual(found.partial, true);
+    assert.deepStrictEqual(
+      found.duplicates.map((c) => c.path),
+      [],
+      "the original sat in the repository, which was not read in time"
+    );
+    assert.strictEqual(found.edits.length, 1, "the Change's own hunks still");
+  });
+
   it("finds nothing in a Change with no repetition, and gives no section", async () => {
     const quiet = {
       ...change,

@@ -46,12 +46,16 @@ const digit = /[0-9]/;
 /**
  * Splits a line into tokens, leaving out its comments: a `//` or `/* *\/`
  * outside a string, a `#` or `--` that starts a word of its own, and a `*`
- * that starts the line, as in a doc comment. `inBlock` says the line begins
- * inside a block comment; `inBlock` in the answer says it ends inside one.
+ * that starts the line, as in a doc comment. A `/*` opens a block comment
+ * only at the start of a line or after a space or an opening bracket, comma,
+ * semicolon or `=`, so a glob such as `dist/*` is not one, and only when
+ * `blocks` is set. `inBlock` says the line begins inside a block comment;
+ * `inBlock` in the answer says it ends inside one.
  */
 function tokenize(
   line: string,
-  inBlock: boolean
+  inBlock: boolean,
+  blocks = true
 ): { tokens: Token[]; inBlock: boolean } {
   const tokens: Token[] = [];
   let i = 0;
@@ -71,7 +75,12 @@ function tokenize(
         i++;
       } else if (c === "/" && line[i + 1] === "/") {
         return { tokens, inBlock: false };
-      } else if (c === "/" && line[i + 1] === "*") {
+      } else if (
+        c === "/" &&
+        line[i + 1] === "*" &&
+        blocks &&
+        (i === 0 || /[\s(,;{[=]/.test(line[i - 1]))
+      ) {
         inBlock = true;
         i += 2;
         break;
@@ -138,11 +147,29 @@ function normalizedOf(tokens: readonly Token[]): string {
  * a blank or comment-only line, which no comparison counts.
  */
 export function normalizeLines(lines: readonly string[]): string[] {
+  return scanLines(lines).map(normalizedOf);
+}
+
+/** How far on a block comment is looked for the `*\/` that closes it. */
+const blockReach = 2000;
+
+/**
+ * The tokens of each line. A `/*` that no `*\/` within the next
+ * {@link blockReach} lines closes is no comment, so it can't hide the rest of
+ * a file, such as after an unquoted glob in a shell script.
+ */
+function scanLines(lines: readonly string[]): Token[][] {
   let inBlock = false;
-  return lines.map((line) => {
-    const scanned = tokenize(line, inBlock);
+  return lines.map((line, at) => {
+    let scanned = tokenize(line, inBlock);
+    if (
+      scanned.inBlock &&
+      !inBlock &&
+      !lines.slice(at + 1, at + 1 + blockReach).some((l) => l.includes("*/"))
+    )
+      scanned = tokenize(line, false, false);
     inBlock = scanned.inBlock;
-    return normalizedOf(scanned.tokens);
+    return scanned.tokens;
   });
 }
 
@@ -154,13 +181,9 @@ export function hasContent(normalized: string): boolean {
 /** The names in the text, the placeholders' originals. */
 function namesIn(lines: readonly string[]): Set<string> {
   const names = new Set<string>();
-  let inBlock = false;
-  for (const line of lines) {
-    const scanned = tokenize(line, inBlock);
-    inBlock = scanned.inBlock;
-    for (const token of scanned.tokens)
+  for (const tokens of scanLines(lines))
+    for (const token of tokens)
       if (token.kind === "name") names.add(token.text);
-  }
   return names;
 }
 
@@ -408,10 +431,11 @@ const withoutBlanks = (lines: string[]) => lines.filter((l) => l !== "");
 /**
  * The Change's Repeated edits: hunks that removed the same normalized lines
  * at {@link minSites} or more sites, when those lines hold more than
- * punctuation. The index, if given, finds each edit's missed sites. With
- * `lineText`, which gives a file's lines as written, a missed site must also
- * hold the names that all the sites' removed lines share, so a rename's
- * unswept calls are found and other code that merely looks the same is not.
+ * punctuation. The index, if given, finds each edit's missed sites: places
+ * that hold the removed lines and, when `lineText` gives a file's lines as
+ * written, the names that all the sites' removed lines share, so a rename's
+ * callers that kept the old name are found and other code that merely looks
+ * the same is not. An edit whose sites share no name has no missed sites.
  */
 export async function repeatedEdits(
   hunks: readonly Hunk[],
@@ -459,13 +483,15 @@ export async function repeatedEdits(
     const differing = sites.filter((hunk) => !agreeing.includes(hunk));
     const missed: Place[] = [];
     let cutOff = false;
-    if (options.index) {
-      const anchors = sharedNames(sites);
+    const anchors = sharedNames(sites);
+    // With no name in common, lines of the same shape are all there is to go
+    // by, and they are all over a repository: no place is a missed site.
+    if (options.index && anchors.size > 0) {
       const { lineText } = options;
       let checked = 0;
       for (const place of options.index.occurrences(removed)) {
         if (insideHunks(place)) continue;
-        if (anchors.size > 0 && lineText) {
+        if (lineText) {
           // Looks that alike are everywhere, so reading them is bounded.
           if (++checked > maxChecked) {
             cutOff = true;

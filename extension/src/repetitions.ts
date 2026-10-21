@@ -36,14 +36,20 @@ export interface IndexLimits {
   budgetMs: number;
   /** The largest file indexed, in bytes. */
   maxFileBytes: number;
+  /**
+   * How long a request for Findings waits for an index still being built
+   * before it goes on with the Change's own files alone.
+   */
+  waitMs: number;
 }
 
 export const defaultLimits: IndexLimits = {
   budgetMs: 10_000,
   maxFileBytes: 200_000,
+  waitMs: 5_000,
 };
 
-/** How many files are read at a time before the extension host gets a turn. */
+/** How many files are read at a time; each is indexed with the extension host getting a turn between. */
 const batchSize = 16;
 
 /** The bytes at the start of a file that tell a binary file by a NUL. */
@@ -304,21 +310,22 @@ async function buildIndex(
     }
     const files = tracked.filter((file) => !generated.has(file));
     for (let i = 0; i < files.length; i += batchSize) {
-      if (Date.now() >= deadline) {
-        index.partial = true;
-        break;
-      }
       const batch = files.slice(i, i + batchSize);
       const texts = await Promise.all(
         batch.map((file) =>
           readIndexable(change.headDir, file, limits.maxFileBytes)
         )
       );
-      batch.forEach((file, at) => {
+      for (const [at, file] of batch.entries()) {
+        // A file's indexing is the longest the extension host waits.
+        if (Date.now() >= deadline) {
+          index.partial = true;
+          return index;
+        }
         const text = texts[at];
         if (text !== undefined) index.add(file, text);
-      });
-      await yieldToHost();
+        await yieldToHost();
+      }
     }
   } catch {
     index.partial = true;
@@ -468,13 +475,16 @@ export class Repetitions {
 
   /**
    * The candidates for a request for Findings: copied code, and the Repeated
-   * edits with a differing or a missed site. Waits for the index, which the
-   * budget bounds. If git can't say, there are none, and the check is partial.
+   * edits with a differing or a missed site. Waits for the index, but not
+   * past `waitMs`: after that the check is partial and covers the Change's own
+   * files. If git can't say, there are none, and the check is partial.
    */
   async candidates(change: Change): Promise<Repetition> {
     try {
       const prepared = await this.prepare(change);
-      const index = await this.indexOf(change, prepared);
+      const index =
+        (await within(this.indexOf(change, prepared), this.limits.waitMs)) ??
+        Object.assign(new RepositoryIndex(), { partial: true });
       const found = await repeatedEdits(prepared.hunks, {
         index,
         lineText: this.lineTexts(change),

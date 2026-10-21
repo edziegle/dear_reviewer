@@ -83,6 +83,21 @@ describe("Normalizing lines", () => {
     );
   });
 
+  it("takes a glob such as dist/* for no block comment, and keeps the lines after it", () => {
+    const [glob, after] = normalizeLines(["rm -rf dist/*", "x = 1"]);
+    assert.ok(hasContent(glob));
+    assert.strictEqual(after, normalized("x = 1")[0]);
+    const [yaml, rest] = normalizeLines(["paths: [src/*]", "name: build"]);
+    assert.ok(hasContent(yaml));
+    assert.ok(hasContent(rest));
+  });
+
+  it("takes a /* that nothing closes for no comment, so it hides no later line", () => {
+    const [opened, after] = normalizeLines(["run /* never closed", "x = 1"]);
+    assert.ok(hasContent(opened));
+    assert.strictEqual(after, normalized("x = 1")[0]);
+  });
+
   it("says a line has content only when it holds a name, number or string", () => {
     for (const line of ["}", "});", "];", "{"]) {
       assert.ok(!hasContent(normalized(line)[0]), line);
@@ -266,6 +281,19 @@ describe("Repeated edits", () => {
       index: new RepositoryIndex(),
     });
     assert.strictEqual(whole.cutOff, false);
+  });
+
+  it("find no missed site when the sites' removed lines share no name, as shape alone matches everywhere", async () => {
+    const index = new RepositoryIndex();
+    index.add("anywhere.py", "qux(4)\nquux(5)\n");
+    const hunks = [
+      hunk("a.py", 1, ["foo(1)"], ["x"]),
+      hunk("b.py", 1, ["bar(2)"], ["x"]),
+      hunk("c.py", 1, ["baz(3)"], ["x"]),
+    ];
+    const [edit] = await repeatedEdits(hunks, { index });
+    assert.deepStrictEqual(edit.missed, []);
+    assert.strictEqual(edit.cutOff, false);
   });
 
   it("list at most 20 missed sites and count the rest", async () => {

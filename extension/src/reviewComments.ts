@@ -14,7 +14,6 @@ import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 import { changeName, type Change } from "./changeWorkspace";
-import { git } from "./git";
 import {
   NotSignedInError,
   type DiffSide,
@@ -27,6 +26,18 @@ import type { Avatars } from "./inbox";
 import type { PendingReviewsBySource } from "./pendingReview";
 import { hasFolder } from "./reviewWindow";
 import { messageOf, reviewThreadsProblem } from "./errors";
+import {
+  describeRepairs,
+  maxNoteChars,
+  parseNoteReply,
+  referencedPaths,
+  repairNote,
+  splitNote,
+  withNote,
+} from "./agentNote";
+import type { AgentNoteRequest } from "./assistant/prompts";
+import { git, gitOutput } from "./git";
+import { countLines, readInWorktree } from "./worktreeFile";
 import { firstLineOf, type Verdict } from "./reviewSubmission";
 
 export type { Verdict } from "./reviewSubmission";
@@ -48,10 +59,13 @@ const events: Record<Verdict, ReviewEvent> = {
   comment: "COMMENT",
 };
 
-/** A Comment in the Review under way; its context value enables edit and delete. */
+/**
+ * A Comment in the Review under way; its context value enables edit and
+ * delete, and on a pull request's Comment, Add Agent Note (see ADR 0046).
+ */
 class PendingComment implements vscode.Comment {
   mode = vscode.CommentMode.Preview;
-  readonly contextValue = "pending";
+  readonly contextValue: "pending" | "pendingLocal";
   readonly label = "Pending";
   savedBody: string;
 
@@ -60,8 +74,10 @@ class PendingComment implements vscode.Comment {
     readonly id: string,
     public body: string | vscode.MarkdownString,
     public author: vscode.CommentAuthorInformation,
-    readonly thread: vscode.CommentThread
+    readonly thread: vscode.CommentThread,
+    change: Change
   ) {
+    this.contextValue = change.pullRequest ? "pending" : "pendingLocal";
     this.savedBody = textOf(body);
   }
 }
@@ -150,7 +166,14 @@ export class ReviewComments implements vscode.Disposable {
     private readonly report: (
       message: string,
       ...actions: string[]
-    ) => Thenable<string | undefined>
+    ) => Thenable<string | undefined>,
+    /** Has the Change's Assistant reply to a request for an Agent note. */
+    private readonly writeAgentNote: (
+      change: Change,
+      request: AgentNoteRequest
+    ) => Promise<string>,
+    /** Tells the Reviewer something, as a notification. */
+    private readonly notify: (message: string) => Thenable<unknown>
   ) {
     this.controller = vscode.comments.createCommentController(
       "dearReviewer.review",
@@ -353,7 +376,13 @@ export class ReviewComments implements vscode.Disposable {
       return;
     }
     thread.comments = [
-      new PendingComment(saved.commentId, text, this.author(), thread),
+      new PendingComment(
+        saved.commentId,
+        text,
+        this.author(),
+        thread,
+        place.change
+      ),
     ];
     this.track(place.change.id, thread, {
       ...where,
@@ -404,7 +433,13 @@ export class ReviewComments implements vscode.Disposable {
     thread.comments = [
       ...thread.comments,
       saved.pending
-        ? new PendingComment(saved.commentId, text, this.author(), thread)
+        ? new PendingComment(
+            saved.commentId,
+            text,
+            this.author(),
+            thread,
+            place.change
+          )
         : new PublishedComment(
             saved.commentId,
             text,
@@ -501,6 +536,119 @@ export class ReviewComments implements vscode.Disposable {
     this.changed.fire();
   }
 
+  /**
+   * Has the Assistant write an Agent note for a pending Comment on a pull
+   * request, and opens the Comment for editing with the note under the
+   * Reviewer's text. The Comment on GitHub changes only when the Reviewer
+   * saves it (see ADR 0046).
+   */
+  async addAgentNote(comment: vscode.Comment): Promise<void> {
+    if (!(comment instanceof PendingComment)) return;
+    const { thread } = comment;
+    const place = this.placeOf(thread.uri);
+    const state = this.states.get(thread);
+    if (!place?.change.pullRequest || !state) return;
+    const { change } = place;
+    const request = await this.noteRequest(comment, place, state);
+    let reply: string;
+    try {
+      reply = await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: "The Assistant is writing an Agent note…",
+        },
+        () => this.writeAgentNote(change, request)
+      );
+    } catch (err) {
+      void this.report(`Couldn't get an Agent note: ${messageOf(err)}`);
+      return;
+    }
+    const parsed = parseNoteReply(reply);
+    if (!parsed) {
+      void this.report(
+        "The Assistant's reply was not a note or a reason for none. Try again."
+      );
+      return;
+    }
+    if (parsed.warning) void this.notify(`The Assistant: ${parsed.warning}`);
+    if (parsed.kind === "none") {
+      void this.notify(`No Agent note: ${parsed.reason}`);
+      return;
+    }
+    // The Comment may have been deleted, or edited, while the Assistant wrote.
+    if (
+      !this.shown.get(change.id)?.has(thread) ||
+      !thread.comments.includes(comment)
+    )
+      return;
+    const body = textOf(comment.body);
+    const own = splitNote(body).own;
+    const lineCounts = new Map<string, number>();
+    await Promise.all(
+      referencedPaths(parsed.text).map(async (given) => {
+        const file = await readInWorktree(change.headDir, given);
+        if (file)
+          lineCounts.set(given.replace(/^\.\//, ""), countLines(file.text));
+      })
+    );
+    const diff = await gitOutput(
+      change.repository,
+      "diff",
+      change.mergeBase,
+      change.headSha
+    ).catch(() => "");
+    const repaired = repairNote(parsed.text, { own, diff, lineCounts });
+    if (!repaired.ok) {
+      void this.report(
+        repaired.why === "empty"
+          ? "The Assistant's note had nothing left after Dear Reviewer's checks. Try again."
+          : `The Assistant's note is ${repaired.length} characters, over the ${maxNoteChars} the Agent note may have. Try again.`
+      );
+      return;
+    }
+    if (repaired.repairs.length > 0)
+      void this.notify(
+        `Repaired the Agent note: ${describeRepairs(repaired.repairs)}.`
+      );
+    if (!this.shown.get(change.id)?.has(thread)) return;
+    if (!thread.comments.includes(comment)) return;
+    comment.body = withNote(textOf(comment.body), repaired.text);
+    comment.mode = vscode.CommentMode.Editing;
+    refresh(thread);
+  }
+
+  /** What the Assistant is given to write the note for the Comment: its text, the code it is on and the thread before it. */
+  private async noteRequest(
+    comment: PendingComment,
+    place: Place,
+    state: ThreadState
+  ): Promise<AgentNoteRequest> {
+    const dir =
+      place.side === "LEFT" ? place.change.baseDir : place.change.headDir;
+    const first = state.startLine ?? state.line;
+    const file = await readInWorktree(dir, place.path);
+    const code = file?.text
+      .split("\n")
+      .slice(first - 1, state.line)
+      .join("\n");
+    const earlier = comment.thread.comments
+      .slice(0, comment.thread.comments.indexOf(comment))
+      .flatMap((c) =>
+        c instanceof PendingComment || c instanceof PublishedComment
+          ? [{ author: c.author.name, body: textOf(c.body) }]
+          : []
+      );
+    return {
+      comment: splitNote(textOf(comment.body)).own,
+      path: place.path,
+      side: place.side === "LEFT" ? "base" : "head",
+      ...(state.startLine !== undefined && { startLine: state.startLine }),
+      line: state.line,
+      ...(code !== undefined && { code }),
+      earlier,
+    };
+  }
+
   cancelEdit(comment: vscode.Comment): void {
     if (comment instanceof DraftComment) return this.drop(comment.thread);
     if (!(comment instanceof PendingComment)) return;
@@ -541,7 +689,13 @@ export class ReviewComments implements vscode.Disposable {
       return;
     }
     thread.comments = [
-      new PendingComment(saved.commentId, text, this.author(), thread),
+      new PendingComment(
+        saved.commentId,
+        text,
+        this.author(),
+        thread,
+        place.change
+      ),
     ];
     this.track(place.change.id, thread, {
       ...comment.place,
@@ -739,7 +893,7 @@ export class ReviewComments implements vscode.Disposable {
         iconPath: icons.get(c.author.avatarUrl),
       };
       return c.pending
-        ? new PendingComment(c.id, c.body, author, thread)
+        ? new PendingComment(c.id, c.body, author, thread, change)
         : new PublishedComment(c.id, c.body, author, new Date(c.createdAt));
     });
     const { comments: _, ...state } = found;

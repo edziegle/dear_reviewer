@@ -136,7 +136,9 @@ export function activate(context: vscode.ExtensionContext) {
     new PendingReviewsBySource(localReviews, githubReviews),
     avatars,
     () => changes.active(),
-    (message, ...actions) => reportProblem(message, ...actions)
+    (message, ...actions) => reportProblem(message, ...actions),
+    (change, request) => assistants.writeAgentNote(change, request),
+    (message) => notify(message)
   );
   // The Assistant reads the threads from a file, and learns where the Reviewer is reading.
   const threadsFiles = new ThreadsFiles(
@@ -1365,6 +1367,10 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand(
       "dearReviewer.editComment",
       (comment: vscode.Comment) => review.editComment(comment)
+    ),
+    vscode.commands.registerCommand(
+      "dearReviewer.addAgentNote",
+      (comment: vscode.Comment) => review.addAgentNote(comment)
     ),
     vscode.commands.registerCommand(
       "dearReviewer.saveComment",

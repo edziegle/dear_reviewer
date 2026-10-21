@@ -44,6 +44,8 @@ import {
   ReviewerAction,
 } from "./panel";
 import {
+  agentNotePrompt,
+  type AgentNoteRequest,
   assistantRole,
   briefPrompt,
   chatPrompt,
@@ -354,6 +356,17 @@ export class Assistants implements vscode.Disposable {
   walkThroughCodeFlow(change: Change, graph: FlowGraph): Promise<string> {
     return this.started(change).aside(async (_, note) =>
       codeFlowWalkthroughPrompt(graph, note)
+    );
+  }
+
+  /**
+   * Asks the Change's Assistant for the Agent note under a pending Comment,
+   * starting it if it hasn't started, and gives its reply, which the view
+   * doesn't show.
+   */
+  writeAgentNote(change: Change, request: AgentNoteRequest): Promise<string> {
+    return this.started(change).aside(async (current, note) =>
+      agentNotePrompt(current, request, note)
     );
   }
 

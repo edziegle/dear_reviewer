@@ -61,13 +61,20 @@ export function parseNoteReply(reply: string): NoteReply | undefined {
 
 /** What the repairs of a note did, in the order they are told. */
 export type Repair =
-  "invisible" | "images" | "links" | "mentions" | "html" | "references";
+  | "invisible"
+  | "images"
+  | "links"
+  | "mentions"
+  | "crossReferences"
+  | "html"
+  | "references";
 
 const repairOrder: Repair[] = [
   "invisible",
   "images",
   "links",
   "mentions",
+  "crossReferences",
   "html",
   "references",
 ];
@@ -77,6 +84,7 @@ const repairWords: Record<Repair, string> = {
   images: "removed images",
   links: "unlinked URLs that neither the Comment nor the diff holds",
   mentions: "neutralised @mentions",
+  crossReferences: "neutralised issue, pull request and commit references",
   html: "escaped HTML",
   references: "dropped file references outside the Change",
 };
@@ -117,11 +125,17 @@ export function repairNote(note: string, context: NoteContext): RepairedNote {
     .replace(/\s+/g, " ")
     .trim()
     .replace(/^\*\*For agents:?\*\*:?\s*/i, "");
-  const held = new Set([...urlsIn(context.own), ...urlsIn(context.diff)]);
-  const repair = textRepair(held, repairs);
+  const held = new Set([
+    ...linksIn(context.own),
+    ...crossReferencesIn(context.own),
+    ...linksIn(context.diff),
+  ]);
+  const repair = textRepair(held, context, repairs);
   text = codeSpans(text)
     .map((part) =>
-      part.code ? referenceOf(part.text, context, repairs) : repair(part.text)
+      part.code
+        ? referencesInSpan(part.text, context, repairs)
+        : repair(part.text)
     )
     .join("");
   text = text.replace(/ {2,}/g, " ").trim();
@@ -138,8 +152,10 @@ export function repairNote(note: string, context: NoteContext): RepairedNote {
 
 /** The files a note's `path:line` references name, for the caller to count the lines of. */
 export function referencedPaths(note: string): string[] {
-  const paths = codeSpans(note.replace(invisible, "")).flatMap((part) => {
-    const ref = part.code && referenceIn(part.text);
+  const paths = [
+    ...note.replace(invisible, "").matchAll(new RegExp(referenceSyntax, "gu")),
+  ].flatMap((match) => {
+    const ref = referenceOf(match[0]);
     return ref ? [ref.path] : [];
   });
   return [...new Set(paths)];
@@ -183,20 +199,30 @@ const invisible =
 
 const imageSyntax = String.raw`!\[(?:[^\[\]]|\[[^\]]*\])*\](?:\([^)]*\)|\[[^\]]*\])?`;
 const linkSyntax = String.raw`\[((?:[^\[\]]|\[[^\]]*\])*)\]\(\s*<?([^\s)>]*)>?(?:\s+(?:"[^"]*"|'[^']*'))?\s*\)`;
-const urlSyntax = String.raw`(?<!\w)(?:[a-z][a-z0-9+.-]*:\/\/|www\.)[^\s<>\x60]+`;
+// GitHub links a URL that follows `_`, `*`, `~` or `(`, so nothing is required
+// before the scheme: a note that is stricter than GitHub is safe.
+const urlSyntax = String.raw`(?:[a-z][a-z0-9+.-]*:\/\/|www\.)[^\s<>\x60]+`;
+const emailSyntax = String.raw`[\w.+-]+@[\w-]+(?:\.[\w-]+)+`;
 const mentionSyntax = String.raw`(?<![\w@])@[A-Za-z0-9][\w-]*(?:\/[\w.-]*\w)?`;
 const htmlSyntax = String.raw`<(?=[A-Za-z\/!?])|&(?=#?\w+;)`;
+// `#12` and `owner/repo#12`, `GH-12`, and a commit's SHA, alone or as
+// `owner/repo@sha`. A SHA has a digit and a letter, so a word is not one.
+const crossReferenceSyntax = String.raw`(?<![\w&/])(?:[\w.-]+\/[\w.-]+)?#\d+\b|(?<![\w-])GH-\d+\b|(?<![\w/.-])(?:[\w.-]+\/[\w.-]+@)?(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}(?![\w-])`;
+// A path with a dot or a slash in it, a colon and a line or a range of lines.
+const referenceSyntax = String.raw`(?<![\w./@+:-])[\w./@+-]+:\d+(?:-\d+)?(?!\w)`;
 
 /**
- * Repairs text outside code spans: images, links and bare URLs, mentions
- * and HTML, in one pass so that a repair never builds what another forbids.
+ * Repairs text outside code spans: images, links and bare URLs, mentions,
+ * cross-references, HTML and `path:line` references, in one pass so that a
+ * repair never builds what another forbids.
  */
 function textRepair(
   held: ReadonlySet<string>,
+  context: NoteContext,
   repairs: Set<Repair>
 ): (text: string) => string {
   const master = new RegExp(
-    `(${imageSyntax})|(${linkSyntax})|(${urlSyntax})|(${mentionSyntax})|(${htmlSyntax})`,
+    `(${imageSyntax})|(${linkSyntax})|(${urlSyntax})|(${emailSyntax})|(${mentionSyntax})|(${htmlSyntax})|(${crossReferenceSyntax})|(${referenceSyntax})`,
     "giu"
   );
   const repair = (text: string): string =>
@@ -209,7 +235,11 @@ function textRepair(
         inner?: string,
         destination?: string,
         url?: string,
-        mention?: string
+        email?: string,
+        mention?: string,
+        html?: string,
+        crossReference?: string,
+        reference?: string
       ) => {
         if (image) {
           repairs.add("images");
@@ -235,12 +265,26 @@ function textRepair(
           repairs.add("links");
           return `\`${link}\`${after}`;
         }
+        if (email) {
+          if (held.has(email)) return match;
+          repairs.add("links");
+          return `\`${email}\``;
+        }
         if (mention) {
           repairs.add("mentions");
           return `\`${mention}\``;
         }
-        repairs.add("html");
-        return match === "<" ? "&lt;" : "&amp;";
+        if (html) {
+          repairs.add("html");
+          return match === "<" ? "&lt;" : "&amp;";
+        }
+        if (crossReference) {
+          if (held.has(match)) return match;
+          repairs.add("crossReferences");
+          return `\`${match}\``;
+        }
+        if (reference) return keptReference(match, context, repairs);
+        return match;
       }
     );
   return repair;
@@ -256,14 +300,30 @@ function isImageUrl(url: string): boolean {
   );
 }
 
-/** Drops a code span that is a `path:line` reference to a file or line the Change doesn't have. */
-function referenceOf(
+/** The `path:line` references in a code span, with those outside the Change dropped, and the span itself if nothing else is left in it. */
+function referencesInSpan(
   span: string,
   context: NoteContext,
   repairs: Set<Repair>
 ): string {
-  const ref = referenceIn(span);
-  if (!ref) return span;
+  const found = /^(`+)([\s\S]*)\1$/.exec(span);
+  if (!found) return span;
+  const inner = found[2].replace(new RegExp(referenceSyntax, "gu"), (match) =>
+    keptReference(match, context, repairs)
+  );
+  if (inner === found[2]) return span;
+  const rest = inner.replace(/ {2,}/g, " ").trim();
+  return rest === "" ? "" : `${found[1]}${rest}${found[1]}`;
+}
+
+/** A `path:line` reference as it is if the Change has its file and lines, or else nothing; text that only looks like one stays. */
+function keptReference(
+  reference: string,
+  context: NoteContext,
+  repairs: Set<Repair>
+): string {
+  const ref = referenceOf(reference);
+  if (!ref) return reference;
   const lines = context.lineCounts.get(ref.path);
   if (
     lines !== undefined &&
@@ -271,21 +331,20 @@ function referenceOf(
     ref.first <= ref.last &&
     ref.last <= lines
   )
-    return span;
+    return reference;
   repairs.add("references");
   return "";
 }
 
-/** The place a code span names, if it is only a `path:line` or `path:first-last` reference. */
-function referenceIn(
-  span: string
+/** The place a `path:line` or `path:first-last` reference names, if its path has a dot or a slash. */
+function referenceOf(
+  reference: string
 ): { path: string; first: number; last: number } | undefined {
-  const inside = /^(`+) ?([\s\S]*?) ?\1$/.exec(span)?.[2];
-  const found = /^(\S+?):(\d+)(?:-(\d+))?$/.exec(inside ?? "");
+  const found = /^(.+):(\d+)(?:-(\d+))?$/.exec(reference);
   if (!found || !/[./]/.test(found[1])) return;
   const first = Number(found[2]);
   return {
-    path: found[1].replace(/^\.\//, ""),
+    path: found[1].replace(/^(?:\.\/)+/, ""),
     first,
     last: found[3] === undefined ? first : Number(found[3]),
   };
@@ -341,10 +400,20 @@ function escapeBrackets(text: string): string {
     .join("");
 }
 
-/** The URLs in the text, as a link's destination would give them. */
-function urlsIn(text: string): string[] {
-  return [...text.matchAll(new RegExp(urlSyntax, "giu"))].map(
-    (match) => splitUrl(match[0]).link
+/** The URLs and email addresses in the text, as a link's destination would give them. */
+function linksIn(text: string): string[] {
+  return [
+    ...[...text.matchAll(new RegExp(urlSyntax, "giu"))].map(
+      (match) => splitUrl(match[0]).link
+    ),
+    ...text.matchAll(new RegExp(emailSyntax, "giu")),
+  ].map((link) => (typeof link === "string" ? link : link[0]));
+}
+
+/** The issue, pull request and commit references in the text. */
+function crossReferencesIn(text: string): string[] {
+  return [...text.matchAll(new RegExp(crossReferenceSyntax, "giu"))].map(
+    (match) => match[0]
   );
 }
 

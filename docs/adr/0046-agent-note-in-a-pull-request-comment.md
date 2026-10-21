@@ -30,20 +30,20 @@ Chosen option: a command on each pending Comment. The Reviewer decides, one Comm
 - **Checks before insertion** (ADR 0042, rule 4). Dear Reviewer repairs the note before it goes in the Comment, and a notification lists what it repaired:
   - Markdown images and raw image URLs are removed.
   - Invisible Unicode is removed: tag characters U+E0000–U+E007F, zero-width U+200B–U+200D, U+2060 and U+FEFF, and bidirectional controls U+202A–U+202E and U+2066–U+2069.
-  - A link or bare URL is kept as a link only if the Reviewer's own text or the Change's diff holds that exact URL. Any other becomes plain text in a code span, which GitHub doesn't turn into a link.
-  - `@mentions` go in a code span, so GitHub notifies no one. HTML is escaped, so it shows as literal text.
-  - A `path:line` reference to a file outside the Change's worktree, or to a line the file doesn't have, is dropped.
+  - A link, a bare URL or an email address is kept as a link only if the Reviewer's own text or the Change's diff holds that exact one. Any other becomes plain text in a code span, which GitHub doesn't turn into a link. A URL counts wherever it sits, also right after `_`, `*`, `~` or `(`, where GitHub links it too.
+  - `@mentions` go in a code span, so GitHub notifies no one. Cross-references go in one too: `#123`, `owner/repo#123`, `GH-123` and the SHA of a commit, alone or as `owner/repo@sha`. GitHub links these, and a reference to an issue or pull request posts an event on it when the Review is submitted, in another repository too. A cross-reference that the Reviewer's own text holds stays. HTML is escaped, so it shows as literal text.
+  - A `path:line` or `path:first-last` reference to a file outside the Change's worktree, or to a line the file doesn't have, is dropped, wherever it sits in the note, in a code span or in plain text. The prompt asks for the code span form, and the check does not depend on it.
   - A note over **600 characters**, counted after the repairs and without the label, is refused with a message asking the Reviewer to try again. It is never cut short.
 - **Insertion.** The note goes after a blank line under the Reviewer's text, starting with a label that Dear Reviewer writes, never the Assistant: `**For agents:** …`. The Comment then opens for editing with this text. The pending review on GitHub changes only when the Reviewer saves, through the existing Comment edit path. Canceling leaves the Comment as it was. The Assistant never publishes anything (ADR 0042, rule 5).
 - **Asking again.** On a Comment that already holds a `**For agents:**` paragraph, Add Agent Note replaces that paragraph and keeps the rest. The paragraph is the label at the start of a paragraph, so "For agents" inside the Reviewer's sentence is not mistaken for it.
 - **Edits.** After insertion the text is the Reviewer's own: nothing re-checks it, marks it stale, or rewrites it when they edit the Comment.
-- **Races.** If the Comment is deleted while the Assistant writes, the note is dropped. If it was edited meanwhile, the note goes under the body as it stands when the note arrives.
+- **Races.** If the Comment is deleted while the Assistant writes, the note is dropped. If the Reviewer saved an edit meanwhile, the note goes under the body as it stands when the note arrives, and the URLs it can keep come from that body. Text typed into an edit box is not in the extension's copy of the Comment until the Reviewer saves, and putting the note in would replace it. Add Agent Note does nothing while the Comment is open for editing, and a note that arrives after the Reviewer opened the Comment for editing is dropped. A notification says to save or cancel the edit and ask again.
 - **Out of scope.** Notes for every Comment at once, automatic notes, a setting to turn them on, notes on a local Change, Comment severity (#116), and stripping invisible Unicode from text going _into_ the prompt (#163). A Finding becomes a Comment as before.
 
 ### Confirmation
 
-- Unit tests for `agentNote.ts` cover each repair and its list, the cap at 600 and 601 characters, the strict reply, and the splice into a body. A prompt test in `prompts.test.ts` shows an injection payload in the code and in an earlier Comment sitting only inside a fence.
-- The integration suite `agentNote` runs the whole flow against the fake GitHub and the fake `claude`: the note opens the Comment for editing, GitHub is unchanged until Save, Cancel leaves it as it was, and "no note", a refused note and both races behave as above.
+- Unit tests for `agentNote.ts` cover each repair and its list, the cap at 600 and 601 characters, the strict reply, and the splice into a body. They include a URL after `_`, `*`, `~` and `(`, cross-references, and a reference in plain text. A prompt test in `prompts.test.ts` shows an injection payload in the code and in an earlier Comment sitting only inside a fence.
+- The integration suite `agentNote` runs the whole flow against the fake GitHub and the fake `claude`: the note opens the Comment for editing, GitHub is unchanged until Save, Cancel leaves it as it was, and "no note", a refused note and the races, including a Comment open for editing, behave as above.
 
 ### Consequences
 

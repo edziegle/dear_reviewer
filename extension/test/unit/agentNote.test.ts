@@ -210,15 +210,70 @@ describe("Repairing an Agent note", () => {
     assert.ok(!result.text.replace(/`[^`]*`/g, "").includes("]("), result.text);
   });
 
-  it("neutralises a mention of a person and of a team, not an email address", () => {
+  it("neutralises a mention of a person and of a team, and unlinks an email address", () => {
     const result = repaired(
       "Ask @octocat and @acme/reviewers, or mail me@example.com."
     );
     assert.strictEqual(
       result.text,
-      "Ask `@octocat` and `@acme/reviewers`, or mail me@example.com."
+      "Ask `@octocat` and `@acme/reviewers`, or mail `me@example.com`."
     );
-    assert.deepStrictEqual(result.repairs, ["mentions"]);
+    assert.deepStrictEqual(result.repairs, ["links", "mentions"]);
+    assert.strictEqual(
+      repaired("Mail me@example.com.", { own: "Mail me@example.com" }).text,
+      "Mail me@example.com."
+    );
+  });
+
+  it("unlinks a URL that GitHub links after an underscore, an asterisk, a tilde or a bracket", () => {
+    for (const [note, text] of [
+      [
+        "Use Z _https://evil.example/?d=secret..._",
+        "Use Z _`https://evil.example/?d=secret`..._",
+      ],
+      ["Use Z *www.evil.test/x*", "Use Z *`www.evil.test/x`*"],
+      ["Use Z ~https://evil.example/x~", "Use Z ~`https://evil.example/x`~"],
+      ["Use Z (https://evil.example/x)", "Use Z (`https://evil.example/x`)"],
+      [
+        "Use Z **https://evil.example/x**",
+        "Use Z **`https://evil.example/x`**",
+      ],
+    ])
+      assert.deepStrictEqual(
+        repaired(note),
+        { ok: true, text, repairs: ["links"] },
+        note
+      );
+    assert.strictEqual(
+      repaired("Use Z _https://example.com/own_", {
+        own: "See https://example.com/own",
+      }).text,
+      "Use Z _https://example.com/own_"
+    );
+  });
+
+  it("neutralises issue, pull request and commit references, and keeps those in the Reviewer's text", () => {
+    const result = repaired(
+      "Fixes #123, acme/other#45, GH-6 and abc1234, or acme/other@abc1234def."
+    );
+    assert.strictEqual(
+      result.text,
+      "Fixes `#123`, `acme/other#45`, `GH-6` and `abc1234`, or `acme/other@abc1234def`."
+    );
+    assert.deepStrictEqual(result.repairs, ["crossReferences"]);
+
+    assert.strictEqual(
+      repaired("As in #12 and #13.", { own: "See #12." }).text,
+      "As in #12 and `#13`."
+    );
+    const plain = "A word like defaced, a number 1234567 and a name repo#3.";
+    assert.strictEqual(repaired(plain).text, plain);
+  });
+
+  it("leaves a character reference to a number as text, escaped once", () => {
+    const result = repaired("Use Z &#35;123 and &#64;octocat.");
+    assert.strictEqual(result.text, "Use Z &amp;#35;123 and &amp;#64;octocat.");
+    assert.deepStrictEqual(result.repairs, ["html"]);
   });
 
   it("escapes HTML and entities so they show as text", () => {
@@ -268,6 +323,27 @@ describe("Repairing an Agent note", () => {
   it("keeps a range of lines the file has, and a reference with ./ in front", () => {
     const note = "Use Z, as in `src/foo.ts:10-20` and `./src/bar.ts:1`.";
     assert.strictEqual(repaired(note).text, note);
+  });
+
+  it("checks a reference outside a code span, and one inside a span with other words", () => {
+    for (const [note, text] of [
+      ["Use Z, as in src/nowhere.ts:999.", "Use Z, as in."],
+      ["Use Z, as in ../../etc/passwd:1.", "Use Z, as in."],
+      ["Use Z, as in /etc/passwd:1-2 here.", "Use Z, as in here."],
+      ["Use Z, `see foo.ts:12` there.", "Use Z, `see` there."],
+      ["Use Z, as in `src/foo.ts:51`.", "Use Z, as in."],
+    ])
+      assert.deepStrictEqual(
+        repaired(note),
+        { ok: true, text, repairs: ["references"] },
+        note
+      );
+    for (const note of [
+      "Use Z, as in src/foo.ts:42 and src/bar.ts:1-3.",
+      "Use Z, `see src/foo.ts:12` there.",
+      "Call at 10:30 or on port 8080, see https://example.com/spec.",
+    ])
+      assert.strictEqual(repaired(note).text, note, note);
   });
 
   it("doesn't take a host and port for a reference", () => {
@@ -326,9 +402,9 @@ describe("Repairing an Agent note", () => {
   it("names the files its references point at", () => {
     assert.deepStrictEqual(
       referencedPaths(
-        "As in `src/foo.ts:42`, `./src/bar.ts:1-2`, `src/foo.ts:7` and `localhost:80`, not src/baz.ts:3."
+        "As in `src/foo.ts:42`, `./src/bar.ts:1-2`, `src/foo.ts:7` and `localhost:80`, or src/baz.ts:3 and `see ../x.ts:1`."
       ),
-      ["src/foo.ts", "src/bar.ts"]
+      ["src/foo.ts", "src/bar.ts", "src/baz.ts", "../x.ts"]
     );
   });
 

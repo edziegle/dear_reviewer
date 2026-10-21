@@ -549,6 +549,10 @@ export class ReviewComments implements vscode.Disposable {
     const state = this.states.get(thread);
     if (!place?.change.pullRequest || !state) return;
     const { change } = place;
+    if (isEditing(comment)) {
+      void this.notify(openForEditing);
+      return;
+    }
     const request = await this.noteRequest(comment, place, state);
     let reply: string;
     try {
@@ -575,20 +579,13 @@ export class ReviewComments implements vscode.Disposable {
       void this.notify(`No Agent note: ${parsed.reason}`);
       return;
     }
-    // The Comment may have been deleted, or edited, while the Assistant wrote.
-    if (
-      !this.shown.get(change.id)?.has(thread) ||
-      !thread.comments.includes(comment)
-    )
-      return;
-    const body = textOf(comment.body);
-    const own = splitNote(body).own;
+    // What the checks need from the Change comes before the last look at the
+    // Comment, so that nothing awaits between that look and the insertion.
     const lineCounts = new Map<string, number>();
     await Promise.all(
       referencedPaths(parsed.text).map(async (given) => {
         const file = await readInWorktree(change.headDir, given);
-        if (file)
-          lineCounts.set(given.replace(/^\.\//, ""), countLines(file.text));
+        if (file) lineCounts.set(given, countLines(file.text));
       })
     );
     const diff = await gitOutput(
@@ -597,7 +594,24 @@ export class ReviewComments implements vscode.Disposable {
       change.mergeBase,
       change.headSha
     ).catch(() => "");
-    const repaired = repairNote(parsed.text, { own, diff, lineCounts });
+    // The Comment may have been deleted, or edited, while the Assistant wrote.
+    if (
+      !this.shown.get(change.id)?.has(thread) ||
+      !thread.comments.includes(comment)
+    )
+      return;
+    // The text typed into an edit box is not in `comment.body` until the
+    // Reviewer saves, and putting the note in would replace it.
+    if (isEditing(comment)) {
+      void this.notify(openForEditing);
+      return;
+    }
+    const body = textOf(comment.body);
+    const repaired = repairNote(parsed.text, {
+      own: splitNote(body).own,
+      diff,
+      lineCounts,
+    });
     if (!repaired.ok) {
       void this.report(
         repaired.why === "empty"
@@ -606,15 +620,13 @@ export class ReviewComments implements vscode.Disposable {
       );
       return;
     }
+    comment.body = withNote(body, repaired.text);
+    comment.mode = vscode.CommentMode.Editing;
+    refresh(thread);
     if (repaired.repairs.length > 0)
       void this.notify(
         `Repaired the Agent note: ${describeRepairs(repaired.repairs)}.`
       );
-    if (!this.shown.get(change.id)?.has(thread)) return;
-    if (!thread.comments.includes(comment)) return;
-    comment.body = withNote(textOf(comment.body), repaired.text);
-    comment.mode = vscode.CommentMode.Editing;
-    refresh(thread);
   }
 
   /** What the Assistant is given to write the note for the Comment: its text, the code it is on and the thread before it. */
@@ -1087,6 +1099,14 @@ function showSaveFailed(change: Change, err: unknown): void {
       : `Couldn't save the Comment: ${messageOf(err)}`
   );
 }
+
+/** Whether the Comment is open in an edit box. Read afresh, as the Reviewer can open it while the Assistant writes. */
+function isEditing(comment: vscode.Comment): boolean {
+  return comment.mode === vscode.CommentMode.Editing;
+}
+
+const openForEditing =
+  "The Comment is open for editing, so Dear Reviewer added no note. Save or cancel the edit, then ask again.";
 
 function refresh(thread: vscode.CommentThread): void {
   // The comments API redraws a thread when its comments are assigned.

@@ -49,6 +49,9 @@ import {
 const viewer = { login: "reviewer", token: "test-token" };
 const settingKeys = ["githubApiUrl", "repositories", "localClones"];
 
+const openForEditing =
+  "The Comment is open for editing, so Dear Reviewer added no note. Save or cancel the edit, then ask again.";
+
 /** What the Assistant replies with a note. */
 function noteTurn(note: string): Record<string, unknown>[] {
   return replyTurn(JSON.stringify({ note }));
@@ -405,6 +408,61 @@ describe("Agent notes under pending Comments on a pull request", () => {
     assert.strictEqual(
       bodyText(thread.comments[0]),
       "Is NEW used anywhere?\n\n**For agents:** Find the callers of NEW."
+    );
+    await cancelEditComment(thread.comments[0]);
+  });
+
+  it("asks nothing of the Assistant while the Comment is open for editing", async () => {
+    const thread = await threadAt(path.join(head, "util.py"), 0);
+    const notifications = await catchNotifications();
+    await scriptClaude(change, { turns: [noteTurn("Add a docstring.")] });
+    const before = bodyText(thread.comments[0]);
+    await vscode.commands.executeCommand(
+      "dearReviewer.editComment",
+      thread.comments[0]
+    );
+
+    await addAgentNote(thread.comments[0]);
+
+    assert.deepStrictEqual(await assistantRuns(change), []);
+    assert.deepStrictEqual(
+      notifications.map((n) => n.message),
+      [openForEditing]
+    );
+    assert.strictEqual(bodyText(thread.comments[0]), before);
+    await cancelEditComment(thread.comments[0]);
+  });
+
+  it("adds no note if the Reviewer opens the Comment for editing while the Assistant writes, since the note would replace what they typed", async () => {
+    const thread = await threadAt(path.join(head, "util.py"), 0);
+    const notifications = await catchNotifications();
+    await scriptClaude(change, {
+      turns: [
+        [
+          ...noteTurn("Add a docstring.").slice(0, 2),
+          waitFor("note-editing"),
+          ...noteTurn("Add a docstring.").slice(2),
+        ],
+      ],
+    });
+    const before = bodyText(thread.comments[0]);
+
+    const asking = Promise.resolve(addAgentNote(thread.comments[0]));
+    await eventually(async () =>
+      assert.strictEqual((await assistantRuns(change)).length, 1)
+    );
+    await vscode.commands.executeCommand(
+      "dearReviewer.editComment",
+      thread.comments[0]
+    );
+    releaseClaude("note-editing");
+    await asking;
+
+    assert.strictEqual(bodyText(thread.comments[0]), before);
+    assert.strictEqual(thread.comments[0].mode, vscode.CommentMode.Editing);
+    assert.deepStrictEqual(
+      notifications.map((n) => n.message),
+      [openForEditing]
     );
     await cancelEditComment(thread.comments[0]);
   });

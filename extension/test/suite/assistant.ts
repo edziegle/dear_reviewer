@@ -307,10 +307,10 @@ export async function renderedEmptyView(): Promise<Conversation | undefined> {
 }
 
 /** Clicks Open Assistant in the view that shows no conversation. */
-export async function openAssistantFromEmptyView(): Promise<void> {
+export async function openFromEmptyView(): Promise<void> {
   const view = (await assistantApi()).emptyView();
   if (!view) throw new Error("The Assistant's view shows a conversation");
-  view.receive({ type: "openAssistant" });
+  view.receive({ type: "openFromList" });
 }
 
 /** The title of the Change whose conversation the Assistant's view shows, while the view is in sight. */

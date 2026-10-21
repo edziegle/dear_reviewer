@@ -152,8 +152,8 @@ export class Assistants implements vscode.Disposable {
     this.status.name = "Dear Reviewer: Assistant";
     this.status.command = "dearReviewer.checkClaudeLogin";
     this.view = new AssistantView((action) => {
-      if (action.type === "openAssistant")
-        void vscode.commands.executeCommand("dearReviewer.showAssistant");
+      if (action.type === "openFromList")
+        void vscode.commands.executeCommand("dearReviewer.openFromList");
       else this.inView?.act(action);
     });
     this.subscriptions = [
@@ -810,7 +810,7 @@ class ChangeAssistant {
   }
 
   /** Does what the Reviewer did in the view while it showed this conversation. */
-  act(action: Exclude<ReviewerAction, { type: "openAssistant" }>): void {
+  act(action: Exclude<ReviewerAction, { type: "openFromList" }>): void {
     if (action.type === "problemAction") this.helpWithProblem();
     else if (action.type === "retry") this.retry();
     else if (action.type === "stop") this.stop();

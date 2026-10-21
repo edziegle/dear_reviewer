@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.8.0](https://github.com/edziegle/dear_reviewer/compare/v0.7.0...v0.8.0) (2026-10-21)
+
+
+### Features
+
+* **code-flow:** have the Assistant walk through a Change's Code Flow in order ([#155](https://github.com/edziegle/dear_reviewer/issues/155)) ([61374ae](https://github.com/edziegle/dear_reviewer/commit/61374aee2ca9bb38ab759b59dc9b077aca948efa)), closes [#72](https://github.com/edziegle/dear_reviewer/issues/72)
+* **code-flow:** move the call map's symbols to their new places, and run ink along a selected symbol's calls ([#159](https://github.com/edziegle/dear_reviewer/issues/159)) ([fbc7eda](https://github.com/edziegle/dear_reviewer/commit/fbc7eda44a53b650be218c3e90280d99723fdfb1))
+* **comments:** let the Assistant add an Agent note under a pending pull request Comment ([#169](https://github.com/edziegle/dear_reviewer/issues/169)) ([137553c](https://github.com/edziegle/dear_reviewer/commit/137553c3d31973988f47e47049364bca1babd9d5))
+* **reading-order:** mark lock files, generated files and exact renames skim-only, and label the core ([#157](https://github.com/edziegle/dear_reviewer/issues/157)) ([52075b6](https://github.com/edziegle/dear_reviewer/commit/52075b6af86d75d092723f0a658eb91b3f66d933)), closes [#115](https://github.com/edziegle/dear_reviewer/issues/115)
+* **repetition:** tell the Reviewer when a Change repeats an edit, and give Duplicate code candidates to the Assistant ([#172](https://github.com/edziegle/dear_reviewer/issues/172)) ([2474c20](https://github.com/edziegle/dear_reviewer/commit/2474c202a24bda897e11a1567d9a4fee8642d694))
+* **skim-only:** mark a file skim-only when its change is formatting only, by comparing syntax trees ([#173](https://github.com/edziegle/dear_reviewer/issues/173)) ([5e1ab08](https://github.com/edziegle/dear_reviewer/commit/5e1ab088dd9ea984a242c4993dee4e39caf948bf))
+
+
+### Bug Fixes
+
+* **assistant:** show text the Reviewer can't see as escapes, and drop HTML comments, before it reaches a prompt ([#170](https://github.com/edziegle/dear_reviewer/issues/170)) ([1daef7d](https://github.com/edziegle/dear_reviewer/commit/1daef7dc27d1a652a86ff2d96ea7708ff2718d34)), closes [#163](https://github.com/edziegle/dear_reviewer/issues/163)
+* **change-files:** act on the Change of whichever row has focus when a title-bar button is clicked ([#171](https://github.com/edziegle/dear_reviewer/issues/171)) ([ff06ec2](https://github.com/edziegle/dear_reviewer/commit/ff06ec2fbdd9c16c3f01eadac96d9a94d5ce4169)), closes [#138](https://github.com/edziegle/dear_reviewer/issues/138)
+* **listing:** ship the changelog, and give the listings a banner, a Q&A link and matching categories ([#167](https://github.com/edziegle/dear_reviewer/issues/167)) ([e02cf5d](https://github.com/edziegle/dear_reviewer/commit/e02cf5d29c803fff374930cd49d741d3994a6e73))
+
 ## [0.7.0](https://github.com/edziegle/dear_reviewer/compare/v0.6.0...v0.7.0) (2026-10-20)
 
 

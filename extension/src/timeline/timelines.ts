@@ -41,6 +41,7 @@ import {
 } from "./panel";
 import { isUnreachable, messageOf } from "../errors";
 import type { ShownReadingOrder } from "../readingOrder";
+import type { ShownRepeatedEdits, ShownSite } from "../repetitions";
 import type { PendingCommentLine } from "../reviewComments";
 import type { BriefState } from "../briefs";
 import { checksInOrder } from "../checkRuns";
@@ -84,6 +85,13 @@ export interface OverviewSources {
   take(change: Change): OverviewTake | undefined;
   /** The Change's Reading Order, with each file's viewed state. */
   readingOrder(change: Change): Promise<ShownReadingOrder | undefined>;
+  /** The Change's Repeated edits (ADR 0047), once found; without their missed sites until the repository's index is ready. */
+  repeatedEdits(change: Change): Promise<ShownRepeatedEdits | undefined>;
+  /**
+   * Opens a site of a Repeated edit: the diff of its file at the hunk, or,
+   * for a missed site, the head file at those lines.
+   */
+  openSite(change: Change, site: ShownSite, missed: boolean): void;
   /** Opens the diff of one of the Change's files. */
   openFile(change: Change, path: string): void;
   /** The file extensions among these files that no installed language highlights, unless dismissed. */
@@ -369,9 +377,10 @@ class ChangeTimeline {
 
   async showStanding(): Promise<void> {
     if (!this.panel) return;
-    const [found, readingOrder] = await Promise.all([
+    const [found, readingOrder, repeatedEdits] = await Promise.all([
       this.sources.standing(this.change).catch(() => undefined),
       this.sources.readingOrder(this.change).catch(() => undefined),
+      this.sources.repeatedEdits(this.change).catch(() => undefined),
     ]);
     this.update({
       ...(this.state.submit && { submit: this.pendingOf(this.state.submit) }),
@@ -379,6 +388,7 @@ class ChangeTimeline {
       ...(found && !found.reviewed && { submitted: undefined }),
       brief: this.sources.brief(this.change),
       readingOrder,
+      repeatedEdits,
       standing: found?.notes ?? [],
       review: found?.review,
       navigationOff: this.sources.navigationOff(),
@@ -580,6 +590,21 @@ class ChangeTimeline {
         if (this.files.has(action.path))
           this.sources.openFile(this.change, action.path);
         return;
+      case "openSite": {
+        // Only a site the overview listed.
+        const sites = this.state.repeatedEdits?.edits.flatMap((edit) =>
+          action.missed ? edit.missed : edit.differing
+        );
+        const site = sites?.find(
+          (s) =>
+            s.path === action.path &&
+            s.side === action.side &&
+            s.line === action.line &&
+            s.endLine === action.endLine
+        );
+        if (site) this.sources.openSite(this.change, site, action.missed);
+        return;
+      }
       case "findExtension":
         // Only a file extension the overview offered.
         if (this.state.unhighlighted?.includes(action.extension))

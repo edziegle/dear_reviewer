@@ -94,7 +94,7 @@ const attrChunk = 400;
  * `linguist-generated`, set or true. `--source` reads the attributes from the
  * base's tree alone, so the head's `.gitattributes` has no say.
  */
-async function generatedAtBase(
+export async function generatedAtBase(
   repository: string,
   base: string,
   paths: readonly string[]

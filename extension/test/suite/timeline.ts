@@ -88,6 +88,30 @@ export interface ShownReadingOrder {
   }[];
 }
 
+/** A place the overview links to for a Repeated edit: lines on a side of a file. */
+export interface ShownSite {
+  path: string;
+  side: "head" | "base";
+  line: number;
+  endLine: number;
+}
+
+/** The Repeated edits the overview lists. */
+export interface ShownRepeatedEdits {
+  /** Whether the missed sites come from the whole repository, in part of it, or none yet. */
+  checked: "complete" | "partial" | "pending";
+  /** Whether the section opens because an edit has a differing or a missed site. */
+  open: boolean;
+  edits: {
+    summary: string;
+    removed: string[];
+    added: string[];
+    differing: ShownSite[];
+    missed: ShownSite[];
+    moreMissed: number;
+  }[];
+}
+
 export interface Timeline {
   title: string;
   /** Such as `acme/api #7 · alice → main`. */
@@ -112,6 +136,8 @@ export interface Timeline {
   hiddenText?: string[];
   take: Take;
   readingOrder?: ShownReadingOrder;
+  /** Where the Change makes the same edit at several sites (ADR 0047); absent when it makes none. */
+  repeatedEdits?: ShownRepeatedEdits;
   finish: string;
   /** The Submit step that ends a pull request's Review, while it is open. */
   submit?: {
@@ -271,6 +297,19 @@ export async function clickPendingComment(
   index: number
 ): Promise<void> {
   (await panel(title)).receive({ type: "openPending", index });
+}
+
+/**
+ * Clicks a site of a Repeated edit in the overview: a differing site, which
+ * opens the file's diff at the hunk, or a missed site, which opens the head
+ * file at its lines.
+ */
+export async function clickRepeatedSite(
+  title: string,
+  site: ShownSite,
+  missed: boolean
+): Promise<void> {
+  (await panel(title)).receive({ type: "openSite", ...site, missed });
 }
 
 /** Clicks Find an Extension for a file extension in the overview. */

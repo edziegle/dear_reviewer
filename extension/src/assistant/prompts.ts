@@ -15,6 +15,8 @@ import { git, gitOutput } from "../git";
 import type { PullRequestDescription } from "../github/client";
 import type { LocalThread } from "../localReviews";
 import { showHiddenCharacters, withoutHtmlComments } from "../hiddenText";
+import type { Place, Site } from "../repetition";
+import type { Repetition } from "../repetitions";
 import { fenced } from "./fence";
 import {
   forAssistant,
@@ -439,19 +441,21 @@ export const maxFindings = 20;
  * Asks the Assistant for Findings in the Change, as a JSON object that
  * `parseFindings` reads, after `note` if the conversation has news for the
  * Assistant. Each Finding is on lines of one side's diff, where the
- * Reviewer can turn it into a Comment.
+ * Reviewer can turn it into a Comment. `repetitionOf` finds the Duplicate
+ * code and Repeated edits that Dear Reviewer's rules offer the Assistant to
+ * judge (ADR 0047).
  */
 export async function findingsPrompt(
   change: Change,
-  note?: string
+  note: string | undefined,
+  repetitionOf: (change: Change) => Promise<Repetition>
 ): Promise<string> {
-  const files = await changedFiles(change);
-  const { diff, truncated } = await cappedDiff(
-    change.repository,
-    change.mergeBase,
-    change.headSha
-  );
-  return findingsText(change, { files, diff, truncated, note });
+  const [files, { diff, truncated }, repetition] = await Promise.all([
+    changedFiles(change),
+    cappedDiff(change.repository, change.mergeBase, change.headSha),
+    repetitionOf(change),
+  ]);
+  return findingsText(change, { files, diff, truncated, note, repetition });
 }
 
 /** What `findingsPrompt` asks for, with the history it gathered. */
@@ -462,9 +466,11 @@ export function findingsText(
     diff: string;
     truncated: boolean;
     note?: string;
+    repetition?: Repetition;
   }
 ): string {
-  const { files, diff, truncated, note } = gathered;
+  const { files, diff, truncated, note, repetition } = gathered;
+  const repeated = repetition ? repetitionText(repetition) : undefined;
   return [
     ...(note ? [note, ""] : []),
     `The Reviewer asks you to look over the Change ${changeTitle(change)}, from ${change.mergeBase} to ${change.headSha}, and raise Findings: spots in it that deserve their attention, such as bugs, missed edge cases, security problems or code that misleads.`,
@@ -474,11 +480,13 @@ export function findingsText(
     "- Give the file's path relative to the repository root, and its lines counted from 1 in that side's file.",
     "- Say in a sentence or two what deserves attention and why. Address the Reviewer, not the author, and propose no code.",
     "- Read the worktrees' files if you need more context.",
+    ...(repeated?.bullets ?? []),
     "- Reply with only a JSON object of this shape, with no Markdown fence or prose around it:",
     '{"findings": [{"path": "src/app.py", "side": "head", "startLine": 12, "endLine": 14, "message": "What deserves attention, and why."}]}',
     "",
     ...fileList("Changed files", files),
     "",
+    ...(repeated?.sections.flatMap((section) => [...section, ""]) ?? []),
     ...diffSection(
       truncated
         ? `The diff, cut off after ${maxDiffChars} characters; read the files for the rest.`
@@ -486,6 +494,84 @@ export function findingsText(
       diff
     ),
   ].join("\n");
+}
+
+/** A place as `path:line` or `path:first-last`, with the path safe to put on a line. */
+function placeText(place: Place | Site): string {
+  const lines =
+    place.endLine > place.line
+      ? `${place.line}-${place.endLine}`
+      : String(place.line);
+  const side = "side" in place && place.side === "base" ? " (base side)" : "";
+  return `${named(place.path)}:${lines}${side}`;
+}
+
+/**
+ * What Dear Reviewer's rules found of repetition (ADR 0047), for the
+ * Findings prompt: the lines that say what to do with it, and a fenced
+ * section for each kind that has any, as the rules' output about other
+ * people's code. Nothing when the rules found none and covered the
+ * repository.
+ */
+function repetitionText(
+  repetition: Repetition
+): { bullets: string[]; sections: string[][] } | undefined {
+  const { duplicates, edits, partial } = repetition;
+  if (duplicates.length === 0 && edits.length === 0 && !partial)
+    return undefined;
+  const bullets: string[] = [];
+  const sections: string[][] = [];
+  if (duplicates.length > 0 || edits.length > 0)
+    bullets.push(
+      "- Dear Reviewer's rules also checked the Change for repetition, and list below what they found. Raise a Finding for it only where you judge it matters."
+    );
+  if (duplicates.length > 0) {
+    bullets.push(
+      "- For possible duplicate code, raise a Finding on the copy's lines where it is a real copy that should reuse the original, and name the original's `path:line` in the message. Shared boilerplate, a pattern and code that has to repeat are not Findings. You may also raise duplicate code the check missed."
+    );
+    sections.push([
+      `Possible duplicate code (${duplicates.length}), found by Dear Reviewer's rules: each block of added lines repeats lines elsewhere. ${othersText("them")}`,
+      ...fenced(
+        duplicates
+          .map(
+            (block) =>
+              `${placeText({ path: block.path, line: block.startLine, endLine: block.endLine })} repeats ${block.places.map(placeText).join(", ")}`
+          )
+          .join("\n")
+      ),
+    ]);
+  }
+  if (edits.length > 0) {
+    bullets.push(
+      "- For a repeated edit, raise a Finding on a differing site or a missed site where it looks like a mistake rather than an intended difference."
+    );
+    sections.push([
+      `Repeated edits that differ or were missed (${edits.length}), found by Dear Reviewer's rules: each edit was made at several sites, most of them the same. ${othersText("them")}`,
+      ...fenced(
+        edits
+          .map((edit, i) =>
+            [
+              `Edit ${i + 1}, at ${edit.sites.length} sites; most ${edit.majority.added.length > 0 ? "replaced" : "removed"}:`,
+              ...edit.majority.removed.map((line) => `- ${line}`),
+              ...edit.majority.added.map((line) => `+ ${line}`),
+              ...edit.differing.map(
+                (site) => `differing site: ${placeText(site)}`
+              ),
+              ...edit.missed.map((place) => `missed site: ${placeText(place)}`),
+              ...(edit.moreMissed > 0
+                ? [`and ${edit.moreMissed} more missed sites`]
+                : []),
+            ].join("\n")
+          )
+          .join("\n\n")
+      ),
+    ]);
+  }
+  if (partial)
+    bullets.push(
+      "- Dear Reviewer's check of repetition ran out of time before it read the whole repository, so it covered the Change's own files and part of the rest: a copy or a missed site may sit where it didn't look."
+    );
+  return { bullets, sections };
 }
 
 /**

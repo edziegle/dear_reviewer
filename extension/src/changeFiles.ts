@@ -350,11 +350,35 @@ export class ChangeFilesView
   }
 
   /**
+   * Opens the diff of the Change's file at a hunk, with its lines selected:
+   * on the head side, or, for a deleted file, on the base side it has.
+   */
+  async openSite(
+    change: Change,
+    site: { path: string; line: number; endLine: number }
+  ): Promise<void> {
+    const file = (await this.filesOf(change)).find((f) => f.path === site.path);
+    if (!file) return;
+    await this.openDiff(
+      { kind: "file", change, file, viewed: false },
+      new vscode.Range(
+        site.line - 1,
+        0,
+        Math.max(site.endLine, site.line) - 1,
+        0
+      )
+    );
+  }
+
+  /**
    * Opens the file's diff in the Change's code column, or, for an added or
    * deleted file, the one side it has, in a plain editor rather than a diff
-   * with an empty half.
+   * with an empty half. With `selection`, the lines it covers are selected.
    */
-  async openDiff(node: ChangeFilesNode): Promise<void> {
+  async openDiff(
+    node: ChangeFilesNode,
+    selection?: vscode.Range
+  ): Promise<void> {
     if (node.kind !== "file") return;
     const { change, file } = node;
     const { original, modified } = fileSides(change, file);
@@ -363,6 +387,7 @@ export class ChangeFilesView
     const options = {
       viewColumn: await this.codeColumn(change),
       preview: false,
+      ...(selection && { selection }),
     };
     if (original && modified)
       await vscode.commands.executeCommand(

@@ -16,6 +16,7 @@ import {
   showAllChanges,
 } from "./changeWorkspace";
 import { ChangeFilesNode, ChangeFilesView } from "./changeFiles";
+import { changeOfNode } from "./changeOfNode";
 import { ClosedChanges } from "./closedChanges";
 import { Assistants } from "./assistant/assistant";
 import { Briefs } from "./briefs";
@@ -911,10 +912,13 @@ export function activate(context: vscode.ExtensionContext) {
   }
 
   /**
-   * The Change a command acts on: the one given, by a Change Files menu or
-   * a test, or the one of the file given, by an editor's title bar (none if
+   * The Change a command acts on: the one given, by a Change Files menu,
+   * its title bar (which gives the row in focus, of any kind) or a test, if
+   * it fits, or the one of the file given, by an editor's title bar (none if
    * that one isn't open here), or else the one the Reviewer is looking at,
-   * or else the Change in front, if it fits. `none` says why there is none.
+   * or else the Change in front, if it fits. A row in no Change counts as
+   * none given. `none` says why there is none, and it never returns without
+   * the Reviewer having been told why, except when they cancel a pick.
    */
   async function changeFor(
     target: ChangeTarget | vscode.Uri | undefined,
@@ -930,9 +934,13 @@ export function activate(context: vscode.ExtensionContext) {
         );
       return ofFile;
     }
-    if (target && "kind" in target)
-      return target.kind === "change" ? target.change : undefined;
-    if (target) {
+    const ofNode = target && "kind" in target && changeOfNode(target);
+    if (ofNode) {
+      if (fits(ofNode)) return ofNode;
+      void vscode.window.showInformationMessage(none);
+      return;
+    }
+    if (target && !("kind" in target)) {
       const change = await changes.find(target);
       if (!change)
         void vscode.window.showErrorMessage(

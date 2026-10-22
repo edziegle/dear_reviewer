@@ -308,6 +308,7 @@ function html(cspSource: string): string {
   <button class="primary" id="next" type="button" hidden></button>
 </section>
 <div role="status"><div class="muted problem-line" id="loading"></div></div>
+<div class="visually-hidden" role="status" id="setAside"></div>
 <div id="setup" hidden></div>
 <div id="problems"></div>
 <section id="inProgress" aria-labelledby="inProgressHeading" hidden><h2 id="inProgressHeading">Active Change <span class="muted count" id="inProgressCount"></span></h2><div id="changes" role="list"></div></section>
@@ -544,9 +545,27 @@ function html(cspSource: string): string {
     capped("branches", state.branches, branch);
   }
 
+  // Ignore and Restore move a row between lists, and the focus lands on its
+  // neighbour, so the move is said aloud. Only a row that changed lists is
+  // said, so a rebuild for anything else says nothing, and neither does the first.
+  let before;
+  function announceSetAside(state) {
+    const waiting = state.waiting || [];
+    const ignored = state.ignored || [];
+    const now = { waiting: new Set(waiting.map((e) => e.id)), ignored: new Set(ignored.map((e) => e.id)) };
+    const moves = [];
+    if (before) {
+      for (const e of ignored) if (before.waiting.has(e.id)) moves.push("Ignored " + e.name);
+      for (const e of waiting) if (before.ignored.has(e.id)) moves.push("Restored " + e.name);
+    }
+    before = now;
+    if (moves.length) setText(byId("setAside"), moves.join(", "));
+  }
+
   let lastState;
   function render(state) {
     lastState = state;
+    announceSetAside(state);
     byId("facts").hidden = !state.facts;
     setText(byId("facts"), state.facts || "");
     const next = state.next;

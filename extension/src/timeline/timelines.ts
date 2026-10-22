@@ -29,7 +29,6 @@ import {
   type PullRequestTimeline,
 } from "../github/client";
 import type { Avatars } from "../inbox";
-import { openReference } from "../references";
 import {
   TimelinePanel,
   type OverviewAction,
@@ -88,8 +87,9 @@ export interface OverviewSources {
   /** The Change's Repeated edits (ADR 0047), once found; without their missed sites until the repository's index is ready. */
   repeatedEdits(change: Change): Promise<ShownRepeatedEdits | undefined>;
   /**
-   * Opens a site of a Repeated edit: the diff of its file at the hunk, or,
-   * for a missed site, the head file at those lines.
+   * Opens lines of the Change, such as a site of a Repeated edit or where
+   * the take says to start: the diff of its file at those lines, or, for a
+   * missed site, the head file at those lines.
    */
   openSite(change: Change, site: ShownSite, missed: boolean): void;
   /** Opens the diff of one of the Change's files. */
@@ -575,14 +575,17 @@ class ChangeTimeline {
       case "openLink":
         return void this.open(action.url);
       case "openReference":
-        // Only the Change's files, as the take showed them.
+        // Only the Change's files, as the take showed them, in their diff.
         if (!this.files.has(action.path)) return;
-        void openReference(
+        this.sources.openSite(
           this.change,
-          action.path,
-          action.startLine,
-          action.endLine,
-          this.codeColumn()
+          {
+            path: action.path,
+            side: "head",
+            line: action.startLine,
+            endLine: action.endLine,
+          },
+          false
         );
         return;
       case "openFile":

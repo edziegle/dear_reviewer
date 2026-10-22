@@ -497,7 +497,7 @@ export const pageStyles = `
   .status.running { border-color: var(--vscode-testing-iconQueued); }
   .status.skipped, .status.neutral { color: var(--vscode-descriptionForeground); }
   .item { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--vscode-panel-border); }
-  .item img, .item .no-avatar { width: 24px; height: 24px; border-radius: 50%; flex: none; background: var(--vscode-editor-inactiveSelectionBackground); outline: 1px solid var(--vscode-contrastBorder, transparent); outline-offset: -1px; }
+  .item img, .item .no-avatar { width: 24px; height: 24px; border-radius: 50%; flex: none; background: var(--vscode-editor-inactiveSelectionBackground); outline: 1px solid var(--vscode-contrastBorder, var(--vscode-panel-border)); outline-offset: -1px; }
   .item .content { flex: 1; min-width: 0; }
   .item .author { font-weight: 600; }
   #byline span { display: inline-block; max-width: 100%; overflow-wrap: anywhere; }

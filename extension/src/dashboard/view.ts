@@ -274,7 +274,7 @@ ${reviewStyles}
   .overview p { margin: 0 0 2px; }
   #next, .setup button.primary, .setup button.secondary { display: block; width: 100%; max-width: 300px; margin-top: 10px; padding: 4px 12px; text-align: center; overflow-wrap: anywhere; }
   .item { display: flex; gap: 8px; align-items: flex-start; padding: 6px 0; border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border, var(--vscode-panel-border)); }
-  .item img, .item .no-avatar { width: 16px; height: 16px; margin-top: 2px; border-radius: 50%; flex: none; background: var(--vscode-editor-inactiveSelectionBackground); outline: 1px solid var(--vscode-contrastBorder, transparent); outline-offset: -1px; }
+  .item img, .item .no-avatar { width: 16px; height: 16px; margin-top: 2px; border-radius: 50%; flex: none; background: var(--vscode-editor-inactiveSelectionBackground); outline: 1px solid var(--vscode-contrastBorder, var(--vscode-panel-border)); outline-offset: -1px; }
   .item .content { flex: 1; min-width: 0; }
   .item .content > div + div { margin-top: 1px; }
   .item .title { font-weight: 600; overflow-wrap: anywhere; }

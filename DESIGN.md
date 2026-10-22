@@ -180,7 +180,7 @@ The palette is borrowed whole from the active theme; Dear Reviewer chooses roles
 - **Editor Ground** (`editor-background`): the surface behind sticky headers and footers, so they read as part of the editor rather than floating over it.
 - **Ink** (`foreground`): all body text.
 - **Pencil** (`muted-foreground`): dates, the pull-request reference, the Claude login, loading lines, notes from Dear Reviewer itself and the Assistant's working status.
-- **Hairline** (`hairline`): every divider: header and footer rules, timeline rows, Markdown table cells.
+- **Hairline** (`hairline`): every divider: header and footer rules, timeline rows, Markdown table cells, and the edge of every avatar.
 - **Quiet Tint** (`quiet-tint`): the Reviewer's own messages and the empty avatar disc.
 - **Code Ground** (`code-block`, `quote-block`): backgrounds for inline code, fenced blocks and quotes in rendered Markdown. Inline and fenced code take `foreground` on `code-block`, not the theme's preformatted-text color, which is designed for the ground that goes with it (in High Contrast Light, white on dark blue) and is nearly invisible on `code-block`. Code in a link keeps the link's color.
 - **Badge** (`badge-background` on `badge-foreground`): selection chips that go with a message to the Assistant.
@@ -236,9 +236,9 @@ Flat. Nothing has a shadow. Depth comes from three things only: 1px `hairline` r
 
 ## Shapes
 
-Corners are the editor's: nearly square. Buttons and the message box use 2px corners, the editor's control radius. Inline code, fenced blocks, quotes and selection chips use 3px. The Reviewer's message block uses 4px. Two shapes are fully round and mean something: check status pills (8px, outlined in their own state color) and avatars (circles, 24px). Banners and timeline rows have square corners.
+Corners are the editor's: nearly square. Buttons and the message box use 2px corners, the editor's control radius. Inline code, fenced blocks, quotes and selection chips use 3px. The Reviewer's message block uses 4px. Two shapes are fully round and mean something: check status pills (8px, outlined in their own state color) and avatars (circles, 24px, each with a 1px hairline edge, so a pale one doesn't blend into the page). Banners and timeline rows have square corners.
 
-Borders are 1px, used for hairline dividers, status-pill outlines, Markdown table cells and the problem banner. The one exception is the Assistant's rule, 2px so it carries its color, the same weight as a Finding's gutter bar. Icons are codicons in native UI; the extension's own SVGs are the activity-bar reading cat (`extension/media/dear-reviewer.svg`, a monochrome mask the theme colors), which the webviews also draw as the Assistant's mark (`extension/src/assistantMark.ts`, its coordinates rounded), and the Finding lightbulb.
+Borders are 1px, used for hairline dividers, avatar edges, status-pill outlines, Markdown table cells and the problem banner. The one exception is the Assistant's rule, 2px so it carries its color, the same weight as a Finding's gutter bar. Icons are codicons in native UI; the extension's own SVGs are the activity-bar reading cat (`extension/media/dear-reviewer.svg`, a monochrome mask the theme colors), which the webviews also draw as the Assistant's mark (`extension/src/assistantMark.ts`, its coordinates rounded), and the Finding lightbulb.
 
 ## Components
 
@@ -367,7 +367,7 @@ The shared reading style for timeline bodies and Assistant replies: tight margin
 - **Do** show loading with VS Code's progress bar, the only motion in Dear Reviewer outside the Code Flow (see Navigation): 2px of `progressBar-background` sliding along the top, appearing only after 300ms so a quick load doesn't flash. Each webview draws it (`.progress` in `sharedStyles`) along its top edge, right under the view's header: the Dashboard while the Inbox loads, on Refresh too, and the overview while its timeline loads. With reduced motion, from the system or from the editor's own setting, it holds still across the width, with no animation at all. The muted loading line stays beside it, for screen readers and for a first load with nothing else to show.
 - **Do** announce status to screen readers: `role="status"` for loading and working lines, `role="alert"` for the problem banner, and a visually hidden status line for changes that are otherwise only visual, such as a reply finishing. Set a live region's text only when it changes (`setText` in `sharedScript`), or every update speaks it again.
 - **Do** keep the focus through updates with `keepFocus` in `sharedScript`, and build only the parts of a webview that changed.
-- **Do** give every element that has a fill a theme border or outline that high-contrast themes draw: `--vscode-button-border` on buttons, `--vscode-contrastBorder` on tints such as the Reviewer's message and the avatar disc.
+- **Do** give every element that has a fill a theme border or outline that high-contrast themes draw: `--vscode-button-border` on buttons, `--vscode-contrastBorder` on tints such as the Reviewer's message. An avatar's edge is the hairline in every theme and `--vscode-contrastBorder` in a high-contrast one.
 - **Do** color placeholders with `--vscode-input-placeholderForeground`; the browser's default gray fails contrast on dark themes.
 - **Do** check every webview change in a light, a dark and a high-contrast theme in VSCodium.
 - **Do** size type in `em` from the theme size, and use the editor font for SHAs, paths and code.

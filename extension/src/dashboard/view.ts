@@ -10,7 +10,12 @@
 import * as crypto from "crypto";
 import * as vscode from "vscode";
 import type { CheckStatus } from "../github/client";
-import { sharedScript, sharedStyles, type Handshake } from "../markdownPanel";
+import {
+  reviewStyles,
+  sharedScript,
+  sharedStyles,
+  type Handshake,
+} from "../markdownPanel";
 import type { ReviewStanding } from "../timeline/panel";
 import type { NextStep } from "./dashboardState";
 
@@ -264,10 +269,7 @@ function html(cspSource: string): string {
   .status.failed { border-color: var(--vscode-testing-iconFailed); }
   .status.running { border-color: var(--vscode-testing-iconQueued); }
   .status.skipped, .status.neutral { color: var(--vscode-descriptionForeground); }
-  .review { color: var(--vscode-foreground); }
-  .review.approved .mark { color: var(--vscode-testing-iconPassed); }
-  .review.changesRequested .mark { color: var(--vscode-testing-iconFailed); }
-  .review.commented .mark { color: var(--vscode-descriptionForeground); }
+${reviewStyles}
   .overview { padding: 12px 0; border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border, var(--vscode-panel-border)); }
   .overview p { margin: 0 0 2px; }
   #next, .setup button.primary, .setup button.secondary { display: block; width: 100%; max-width: 300px; margin-top: 10px; padding: 4px 12px; text-align: center; overflow-wrap: anywhere; }

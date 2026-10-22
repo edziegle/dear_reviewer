@@ -2,6 +2,20 @@
 // read them under plain Node.
 
 /**
+ * The colors of a review's verdict mark, for the webviews that show a Change's
+ * `ReviewStanding`: the overview and the Dashboard draw the same data, so they
+ * share one copy. The approved and briefed green is mixed toward the
+ * foreground because the bare icon color is too faint for small text in light
+ * themes (DESIGN.md).
+ */
+export const reviewStyles = `
+  .review { color: var(--vscode-foreground); }
+  .review.approved .mark { color: color-mix(in srgb, var(--vscode-testing-iconPassed) 70%, var(--vscode-foreground)); }
+  .review.changesRequested .mark { color: var(--vscode-testing-iconFailed); }
+  .review.commented .mark { color: var(--vscode-descriptionForeground); }
+  .review.briefed .mark { color: color-mix(in srgb, var(--vscode-testing-iconPassed) 70%, var(--vscode-foreground)); }`;
+
+/**
  * The styles the webviews share: rendered Markdown, the problem banner and
  * its button, the Assistant's hand, the message box, the focus outline on
  * every button, link and summary, and the theme's button border, which only

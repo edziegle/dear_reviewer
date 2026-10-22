@@ -8,7 +8,7 @@
 import * as vscode from "vscode";
 import { renderMarkdown, type RenderOptions } from "./markdown";
 
-export { sharedStyles } from "./markdownStyles";
+export { reviewStyles, sharedStyles } from "./markdownStyles";
 
 /**
  * The script the webviews share: `keepFocus` runs a render and, if the

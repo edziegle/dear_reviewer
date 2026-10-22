@@ -24,7 +24,7 @@ jobs:
           path: ~/.npm
           key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json', 'extension/package-lock.json') }}
           restore-keys: npm-${{ runner.os }}-
-      - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
         with:
           install_args: node
       - run: mise run deps
@@ -34,7 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
         with:
           install_args: vale
       - run: mise run vale-sync
@@ -52,7 +52,7 @@ jobs:
           path: ~/.npm
           key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json', 'extension/package-lock.json') }}
           restore-keys: npm-${{ runner.os }}-
-      - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
         with:
           install_args: node
       - run: mise run deps
@@ -71,7 +71,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
         with:
           install: false
       - id: changes
@@ -92,7 +92,7 @@ jobs:
           path: ~/.npm
           key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json', 'extension/package-lock.json') }}
           restore-keys: npm-${{ runner.os }}-
-      - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
         with:
           install_args: node
       - run: mise run deps
@@ -118,7 +118,7 @@ jobs:
           path: ~/.npm
           key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json', 'extension/package-lock.json') }}
           restore-keys: npm-${{ runner.os }}-
-      - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
         with:
           install_args: node github:VSCodium/vscodium
       - id: week

@@ -17,6 +17,7 @@ import {
   Handshake,
   MarkdownPanel,
   RenderInto,
+  reviewStyles,
   sharedScript,
   sharedStyles,
 } from "../markdownPanel";
@@ -504,11 +505,7 @@ export const pageStyles = `
   .overview { padding: 16px 0 14px; border-bottom: 1px solid var(--vscode-panel-border); }
   .overview p { margin: 0 0 4px; }
   .overview .actions { margin-top: 12px; }
-  .review { color: var(--vscode-foreground); }
-  .review.approved .mark { color: color-mix(in srgb, var(--vscode-testing-iconPassed) 70%, var(--vscode-foreground)); }
-  .review.changesRequested .mark { color: var(--vscode-testing-iconFailed); }
-  .review.commented .mark { color: var(--vscode-descriptionForeground); }
-  .review.briefed .mark { color: color-mix(in srgb, var(--vscode-testing-iconPassed) 70%, var(--vscode-foreground)); }
+${reviewStyles}
   /* A link standing alone is a target of its own: give it height to hit. */
   .link.more, .link.file, #showTake { padding-block: 4px; }
   /* In a narrow column, such as beside code, the sticky header shouldn't take the screen. */

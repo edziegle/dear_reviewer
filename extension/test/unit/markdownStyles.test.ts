@@ -1,5 +1,5 @@
 import * as assert from "assert";
-import { sharedStyles } from "../../src/markdownStyles";
+import { reviewStyles, sharedStyles } from "../../src/markdownStyles";
 
 /** The declarations of the first rule whose selector list holds exactly this selector. */
 function declarationsOf(selector: string): Record<string, string> | undefined {
@@ -51,5 +51,39 @@ describe("Code in rendered Markdown", () => {
 
   it("takes a link's color when it is in a link", () => {
     assert.strictEqual(declarationsOf(".markdown a code")?.color, "inherit");
+  });
+});
+
+describe("Review verdict colors", () => {
+  const approvedGreen =
+    "color-mix(in srgb, var(--vscode-testing-iconPassed) 70%, var(--vscode-foreground))";
+
+  function markColor(verdict: string): string | undefined {
+    const rule = new RegExp(
+      `\\.review\\.${verdict} \\.mark \\{ color: (.+); \\}`
+    );
+    return reviewStyles.match(rule)?.[1];
+  }
+
+  it("colors an approved mark with the softened green", () => {
+    assert.strictEqual(markColor("approved"), approvedGreen);
+  });
+
+  it("colors a briefed mark the same green as an approved one", () => {
+    assert.strictEqual(markColor("briefed"), approvedGreen);
+  });
+
+  it("colors a changes-requested mark with the failed icon color", () => {
+    assert.strictEqual(
+      markColor("changesRequested"),
+      "var(--vscode-testing-iconFailed)"
+    );
+  });
+
+  it("mutes a commented mark", () => {
+    assert.strictEqual(
+      markColor("commented"),
+      "var(--vscode-descriptionForeground)"
+    );
   });
 });

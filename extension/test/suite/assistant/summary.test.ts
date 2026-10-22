@@ -342,6 +342,11 @@ describe("The Assistant's summary when a Change opens", () => {
         "",
         "no user, project or local settings file loads, not even the Reviewer's own"
       );
+      assert.deepStrictEqual(
+        JSON.parse(flag(run, "--settings") ?? "null"),
+        { disableAllHooks: true },
+        "no hook runs, not even those of the Reviewer's installed plugins"
+      );
       assert.strictEqual(flag(run, "--permission-mode"), "dontAsk");
       assert.deepStrictEqual(
         // The system prompt is prose, which may say "Write like…".

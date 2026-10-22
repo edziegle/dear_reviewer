@@ -27,7 +27,7 @@ import {
   sentTimeline,
   standingWords,
 } from "../timeline";
-import { codeColumnTab, filesIn } from "../changeFiles";
+import { codeColumnTab, filesIn, shownDiff } from "../changeFiles";
 import { buildFixtureRepo, buildPullRequestFixture } from "../fixtures";
 import { configure, serveGitHub, setToken } from "../github";
 import {
@@ -174,11 +174,14 @@ describe("The Assistant's summary when a Change opens", () => {
       startLine: 2,
       endLine: 2,
     });
-    await eventually(() =>
-      assert.ok(
-        filesIn(codeColumnTab()).includes(path.join(head.path, "util.py"))
-      )
-    );
+    await eventually(() => {
+      const { modified } = shownDiff();
+      assert.strictEqual(modified.fsPath, path.join(head.path, "util.py"));
+      const editor = vscode.window.visibleTextEditors.find(
+        (e) => e.document.uri.toString() === modified.toString()
+      );
+      assert.strictEqual(editor?.selection.start.line, 1, "at the line");
+    });
 
     await clickOverview(title, "nextFile");
     await eventually(() => {

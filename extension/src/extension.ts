@@ -835,8 +835,7 @@ export function activate(context: vscode.ExtensionContext) {
     // Another window may have closed Changes this one still holds state for.
     const closed = closedChanges.leftSince(changes.list());
     for (const gone of closed) void letGo(gone).catch(() => undefined);
-    // Only a Dashboard in sight shows the pull request in its new list.
-    if (closed.length > 0 && dashboard.inSight) inbox.changeClosedElsewhere();
+    if (closed.length > 0) dashboard.changeClosedElsewhere();
     showOpenChanges();
     const front = changes.active();
     carryOutRequests();

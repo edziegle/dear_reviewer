@@ -37,6 +37,11 @@ export interface FakePullRequest {
   /** Teams, as `org/slug`, whose review is requested now: Team requests. */
   reviewRequestedTeams?: string[];
   /**
+   * Logins GitHub's search still finds it requesting a review of, though it
+   * no longer does: the search index lags behind a submitted review.
+   */
+  searchedAsRequested?: string[];
+  /**
    * Review requests made and taken away earlier, on the timeline, oldest
    * first. The pending requests above are on it too, at `reviewRequestedAt`.
    */
@@ -932,6 +937,7 @@ export async function startFakeGitHub(): Promise<{
   function requestedOf(pr: FakePullRequest, user: string): boolean {
     return (
       (pr.reviewRequested ?? []).includes(user) ||
+      (pr.searchedAsRequested ?? []).includes(user) ||
       (pr.reviewRequestedTeams ?? []).some((team) =>
         teamNamesOf(user).has(team)
       )
@@ -1055,13 +1061,21 @@ export async function startFakeGitHub(): Promise<{
       ...(/\breviewRequests: timelineItems\(/.test(query) && {
         reviewRequests: {
           nodes: [
-            ...(pr.reviewRequested ?? []).map((user) => ({ user })),
-            ...(pr.reviewRequestedTeams ?? []).map((team) => ({ team })),
-          ].map((who) => ({
-            createdAt:
-              pr.reviewRequestedAt ?? pr.createdAt ?? "2026-10-01T00:00:00Z",
-            requestedReviewer: requestedReviewer(who),
-          })),
+            ...(pr.requestHistory ?? [])
+              .filter((event) => event.type === "requested")
+              .map((event) => ({
+                createdAt: event.at,
+                requestedReviewer: requestedReviewer(event),
+              })),
+            ...[
+              ...(pr.reviewRequested ?? []).map((user) => ({ user })),
+              ...(pr.reviewRequestedTeams ?? []).map((team) => ({ team })),
+            ].map((who) => ({
+              createdAt:
+                pr.reviewRequestedAt ?? pr.createdAt ?? "2026-10-01T00:00:00Z",
+              requestedReviewer: requestedReviewer(who),
+            })),
+          ],
         },
       }),
       ...(/\bpendingRequests: reviewRequests\(/.test(query) && {

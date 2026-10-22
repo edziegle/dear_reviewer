@@ -3,7 +3,11 @@
 
 import { isCommitId, isSafeBranchName } from "../refreshGate";
 import { GitHubAuth, trustedOrigin } from "./auth";
-import { requestedOfReviewerAt, type ReviewRequest } from "./reviewRequests";
+import {
+  requestAnswered,
+  requestedOfReviewerAt,
+  type ReviewRequest,
+} from "./reviewRequests";
 import { fetchWithin, REQUEST_TIMEOUT_MS } from "./request";
 import {
   answeredByTeam,
@@ -306,17 +310,40 @@ ${INBOX_PULL_REQUEST}${withHistory ? `\n${TEAM_HISTORY}` : ""}`;
         .filter((s) => s.alias.startsWith(prefix))
         .flatMap((s) => data[s.alias]?.nodes ?? [])
         .filter((node) => node.__typename === "PullRequest");
-    const collect = (prefix: string) =>
-      nodesOf(prefix)
-        .map((node) => summaryOf(node, reviewer, myTeams))
-        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    const byUpdated = (a: PullRequestSummary, b: PullRequestSummary) =>
+      b.updatedAt.localeCompare(a.updatedAt);
+    const summariesOf = (nodes: PullRequestNode[]) =>
+      nodes.map((node) => summaryOf(node, reviewer, myTeams)).sort(byUpdated);
+    const collect = (prefix: string) => summariesOf(nodesOf(prefix));
     const keyOf = (pr: PullRequestSummary) => `${pr.repository}#${pr.number}`;
-    const awaitingMyReview = collect("awaiting");
+    // The search lists a pull request as awaiting my review for a while after my Review answered it.
+    const answered = (node: PullRequestNode) =>
+      requestAnswered({
+        pending: pendingReviewersOf(node.pendingRequests),
+        myTeams,
+        login: reviewer,
+        requestedAt: requestedOfReviewerAt(
+          reviewRequestsOf(node.reviewRequests),
+          reviewer
+        ),
+        reviewedAt: node.reviews.nodes.at(-1)?.submittedAt ?? undefined,
+      });
+    const awaitingNodes = nodesOf("awaiting");
+    const awaitingMyReview = summariesOf(
+      awaitingNodes.filter((node) => !answered(node))
+    );
     const awaiting = new Set(awaitingMyReview.map(keyOf));
     const authoredByMe = collect("authored");
-    const reviewedByMe = collect("reviewed").filter(
-      (pr) => !awaiting.has(keyOf(pr))
-    );
+    const reviewedFound = collect("reviewed");
+    const reviewedListed = new Set(reviewedFound.map(keyOf));
+    const reviewedByMe = [
+      ...reviewedFound,
+      ...summariesOf(awaitingNodes.filter(answered)).filter(
+        (pr) => !reviewedListed.has(keyOf(pr))
+      ),
+    ]
+      .filter((pr) => !awaiting.has(keyOf(pr)))
+      .sort(byUpdated);
     const elsewhere = new Set(
       [...awaitingMyReview, ...authoredByMe, ...reviewedByMe].map(keyOf)
     );
@@ -337,9 +364,7 @@ ${INBOX_PULL_REQUEST}${withHistory ? `\n${TEAM_HISTORY}` : ""}`;
       awaitingMyReview,
       authoredByMe,
       reviewedByMe,
-      reviewedByMyTeam: reviewedByMyTeam.sort((a, b) =>
-        b.updatedAt.localeCompare(a.updatedAt)
-      ),
+      reviewedByMyTeam: reviewedByMyTeam.sort(byUpdated),
     };
   }
 
@@ -1259,7 +1284,7 @@ const INBOX_PULL_REQUEST = `fragment InboxPullRequest on PullRequest {
   mergeable
   reviewDecision
   commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
-  reviews(last: 1, author: $reviewer, states: ${SUBMITTED_REVIEWS}) { nodes { commit { oid } } }
+  reviews(last: 1, author: $reviewer, states: ${SUBMITTED_REVIEWS}) { nodes { commit { oid } submittedAt } }
   latestReviews(first: 100) { nodes { ...InboxReview } }
   latestOpinionatedReviews(first: 100) { nodes { ...InboxReview } }
   reviewRequests: timelineItems(last: 50, itemTypes: [REVIEW_REQUESTED_EVENT]) {

@@ -84,6 +84,8 @@ export class Dashboard implements vscode.Disposable {
   private readonly standings = new Map<string, Standing>();
   private readonly asking = new Set<string>();
   private readonly subscriptions: vscode.Disposable[];
+  /** Whether another window closed a Change while the Dashboard was out of sight, so its Inbox is out of date. */
+  private closedOutOfSight = false;
 
   constructor(
     private readonly inbox: InboxTree,
@@ -103,7 +105,13 @@ export class Dashboard implements vscode.Disposable {
         this.view,
         { webviewOptions: { retainContextWhenHidden: true } }
       ),
-      this.view.onDidShow(() => void this.update()),
+      this.view.onDidShow(() => {
+        // Reloading the Inbox updates the Dashboard.
+        if (this.closedOutOfSight) {
+          this.closedOutOfSight = false;
+          void this.inbox.refresh();
+        } else void this.update();
+      }),
       inbox.onDidChangeTreeData(() => this.refresh()),
     ];
   }
@@ -114,9 +122,14 @@ export class Dashboard implements vscode.Disposable {
     this.view.focus();
   }
 
-  /** Whether the Dashboard is in sight in this window. */
-  get inSight(): boolean {
-    return this.view.visible;
+  /**
+   * Lets the Dashboard know another window closed a Change, perhaps by
+   * submitting a Review there: the Inbox loads again shortly while the
+   * Dashboard is in sight, or else once it shows.
+   */
+  changeClosedElsewhere(): void {
+    if (this.view.visible) this.inbox.changeClosedElsewhere();
+    else this.closedOutOfSight = true;
   }
 
   /** Shows the lists afresh soon, while the Dashboard is in sight, once a burst of changes has passed. */

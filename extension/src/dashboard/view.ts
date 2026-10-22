@@ -281,6 +281,12 @@ function html(cspSource: string): string {
   .item .muted { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 1px 0; }
   #place { overflow-wrap: anywhere; }
   .item .muted.notes { white-space: normal; overflow: visible; overflow-wrap: anywhere; }
+  /* The repository/number and the wait are units that never truncate, so
+     the line wraps before one of them rather than cutting it; only the
+     author, last and flex-basis 0, is left to shrink and ellipsize. */
+  .item .muted.byline { display: flex; flex-wrap: wrap; white-space: normal; overflow: visible; text-overflow: initial; }
+  .item .byline .unit { white-space: nowrap; flex: none; }
+  .item .byline .author { flex: 1 1 0%; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .item .notes > span { display: inline-block; max-width: 100%; }
   .problem-line { margin: 6px 0 0; }
   /* A link among words is underlined, so it doesn't rely on color alone. */
@@ -341,6 +347,19 @@ function html(cspSource: string): string {
     const shown = node.cloneNode(true);
     for (const hidden of shown.querySelectorAll(".visually-hidden")) hidden.remove();
     node.title = shown.textContent;
+    return node;
+  };
+  // A pull request's byline: the repository/number and, once it's waiting
+  // on the Reviewer, the wait are units that never truncate, wrapping
+  // instead if they don't fit; only the author afterward is cut short
+  // with an ellipsis, since a long name matters least.
+  const byline = (name, waited, author) => {
+    const node = el("div", "muted byline");
+    node.append(el("span", "unit", name));
+    if (waited !== undefined) {
+      node.append(el("span", "unit", " · waiting " + waited), el("span", "author", " · " + author));
+    }
+    node.title = [name, waited !== undefined && "waiting " + waited, waited !== undefined && author].filter(Boolean).join(" · ");
     return node;
   };
   // Each note keeps whole, so the line breaks between notes, and its " ·"
@@ -432,7 +451,7 @@ function html(cspSource: string): string {
     const title = el("div");
     title.append(button("link title", entry.title, { type: "open", id: entry.id }, "Open " + entry.name + " as a Change", entry.title + ", " + entry.name));
     content.append(
-      line("muted", [entry.name, entry.waited !== undefined && "waiting " + entry.waited, entry.waited !== undefined && entry.author]),
+      byline(entry.name, entry.waited, entry.author),
       title,
       line("muted", [size(entry), entry.checks && el("span", "status " + entry.checks, "checks " + entry.checks)]),
       ...notes(entry.notes)

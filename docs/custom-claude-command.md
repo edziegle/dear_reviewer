@@ -20,7 +20,7 @@ You can also point it at a script of your own:
 
 Leave the list empty to use the first `claude` on your PATH, or else the first one in `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, `~/.npm-global/bin` or `~/.claude/local`.
 
-Dear Reviewer ignores this setting in a workspace's `.vscode/settings.json` or `.code-workspace` file. A repository you review can't make Dear Reviewer run a program it chose, so set the command in your user `settings.json`.
+Dear Reviewer ignores this setting in a `.vscode/settings.json` or `.code-workspace` file. A repository you review can't make Dear Reviewer run a program it chose, so set the command in your user `settings.json`.
 
 Dear Reviewer starts every run through the command: `claude auth status`, which checks your login, and each conversation with the Assistant.
 

@@ -5,6 +5,8 @@ date: 2026-10-13
 
 # Run the Assistant as one long-lived `claude` process per Change
 
+Amended by [ADR 0049](0049-start-claude-through-the-reviewers-own-command.md): `claude` starts through the Claude Command setting, the Reviewer's own program and arguments, which replaces Claude Path, still with the allow-listed environment.
+
 Amended by [ADR 0042](0042-one-prompt-security-policy.md): `--allowedTools` lists the git tools only, not `Read`, `Grep` and `Glob`, and `--setting-sources` is empty, not `user`, so the Assistant reads only in its working folder and the `--add-dir` folders, and no user, project or local Claude Code settings file loads, the Reviewer's own included.
 
 Amended by [ADR 0019](0019-change-overview.md): the summary is one short paragraph shown in the Change's overview, and the Assistant's panel opens only when the Reviewer asks.

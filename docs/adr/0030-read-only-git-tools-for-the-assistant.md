@@ -5,6 +5,8 @@ date: 2026-10-15
 
 # Give the Assistant read-only git through an MCP server Dear Reviewer ships
 
+Amended by [ADR 0049](0049-start-claude-through-the-reviewers-own-command.md): the system prompt promises the tools only if they are among the Assistant's tools, and the Assistant panel says when the server didn't connect, as when `claude` runs in a container or on another machine.
+
 Amended by [ADR 0042](0042-one-prompt-security-policy.md): the server gives git an allow list of variables, not the environment it was started with.
 
 ## Context and Problem Statement

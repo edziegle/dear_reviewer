@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.8.1](https://github.com/edziegle/dear_reviewer/compare/v0.8.0...v0.8.1) (2026-10-22)
+
+
+### Bug Fixes
+
+* **code-flow:** make the Code Flow readable in every theme, and let the picture lead ([#174](https://github.com/edziegle/dear_reviewer/issues/174)) ([ea1820f](https://github.com/edziegle/dear_reviewer/commit/ea1820ff13fee727c4c34625e49008c321280b6d))
+* **dashboard:** announce Ignore and Restore to screen readers ([#187](https://github.com/edziegle/dear_reviewer/issues/187)) ([5bc4415](https://github.com/edziegle/dear_reviewer/commit/5bc44157d22495a8f3b0f24f22e96c6398f40a62)), closes [#180](https://github.com/edziegle/dear_reviewer/issues/180)
+* **dashboard:** keep a reviewed pull request out of Waiting on you ([#189](https://github.com/edziegle/dear_reviewer/issues/189)) ([bf4057f](https://github.com/edziegle/dear_reviewer/commit/bf4057f5f9fb4112fab942e764bbd8f10ff02b6d))
+* **dashboard:** protect a Waiting on you row's wait duration from truncation ([#185](https://github.com/edziegle/dear_reviewer/issues/185)) ([6a139c9](https://github.com/edziegle/dear_reviewer/commit/6a139c9ff315952e884c2d5ded9c01626d4d440b)), closes [#181](https://github.com/edziegle/dear_reviewer/issues/181)
+* open the diff from the overview's Start at line and take links ([#188](https://github.com/edziegle/dear_reviewer/issues/188)) ([1686933](https://github.com/edziegle/dear_reviewer/commit/1686933a22a1335ad3b1ba4acaeced0844ad4697))
+
 ## [0.8.0](https://github.com/edziegle/dear_reviewer/compare/v0.7.0...v0.8.0) (2026-10-21)
 
 

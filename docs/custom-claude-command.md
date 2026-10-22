@@ -10,7 +10,7 @@ Open your user `settings.json` and set `dearReviewer.claudeCommand` to a list of
 "dearReviewer.claudeCommand": ["docker", "exec", "-i", "my-box", "claude"]
 ```
 
-The first item is the program: a path, where a leading `~` is expanded, or a bare name that Dear Reviewer looks up on the PATH. The other items are arguments. Dear Reviewer adds its own arguments after yours and starts the command without a shell, so nothing needs quoting.
+The first item is the program, a path (a leading `~` is expanded) or a name on the PATH, and Dear Reviewer adds its own arguments after the others and runs the command without a shell.
 
 You can also point it at a script of your own:
 
@@ -18,11 +18,9 @@ You can also point it at a script of your own:
 "dearReviewer.claudeCommand": ["~/bin/claude-in-sandbox"]
 ```
 
-Leave the list empty to use the `claude` on your PATH or in a usual install location.
+Leave the list empty to use the first `claude` on your PATH, or else the first one in `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, `~/.npm-global/bin` or `~/.claude/local`.
 
 Only your user settings count. A workspace can't choose what runs.
-
-Claude Path, the older setting, still works. While Claude Command is empty, Claude Path is used as a command of one item. It is deprecated, so use Claude Command instead.
 
 Dear Reviewer starts every run through the command: `claude auth status`, which checks your login, and each conversation with the Assistant.
 

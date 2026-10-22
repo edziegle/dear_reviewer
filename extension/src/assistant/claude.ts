@@ -281,6 +281,11 @@ export class ClaudeConversation {
       // Reviewer's git server connects, on VS Code's own binary run as Node.
       "--setting-sources",
       "",
+      // Installed plugins load outside the setting sources, and their hooks
+      // would run in the Assistant: all hooks are off (ADR 0042). Not
+      // `--safe-mode`, which drops the `--mcp-config` below.
+      "--settings",
+      JSON.stringify({ disableAllHooks: true }),
       "--strict-mcp-config",
       "--mcp-config",
       JSON.stringify(

@@ -45,15 +45,23 @@ describe("Dashboard when another window closes a Change", () => {
       { path: "util.py" },
     ],
   });
-  /** What GitHub lists once the Reviewer approved the pull request. */
+  /**
+   * What GitHub lists once the Reviewer approved the pull request, while its
+   * search still finds it awaiting their review.
+   */
   const approved = (pr: typeof first, title: string): FakePullRequest => ({
     ...waiting(pr, title),
     reviewRequested: [],
+    searchedAsRequested: ["reviewer"],
+    requestHistory: [
+      { type: "requested", user: "reviewer", at: "2026-10-01T09:00:00Z" },
+    ],
     reviews: [
       {
         id: `review-${pr.number}`,
         author: "reviewer",
         state: "APPROVED",
+        submittedAt: "2026-10-02T09:00:00Z",
         threads: [],
       },
     ],
@@ -124,7 +132,7 @@ describe("Dashboard when another window closes a Change", () => {
       60_000
     );
 
-  /** GitHub lists both pull requests as approved from here on, and the requests it saw are forgotten. */
+  /** GitHub lists both pull requests as approved from here on, though its search lags, and the requests it saw are forgotten. */
   const reviewedOnGitHub = () =>
     serveGitHub({
       viewer,
@@ -159,7 +167,7 @@ describe("Dashboard when another window closes a Change", () => {
     assert.strictEqual((await awaitingSearches()).length, 1);
   });
 
-  it("doesn't reload in a window that doesn't show the Dashboard", async () => {
+  it("reloads in a window that doesn't show the Dashboard only once it shows", async () => {
     await openFromDashboard(first);
     await inProgress(["First"]);
     await vscode.commands.executeCommand("workbench.view.explorer");
@@ -173,5 +181,18 @@ describe("Dashboard when another window closes a Change", () => {
     await new Promise((resolve) => setTimeout(resolve, 1500));
     await inboxSettled();
     assert.strictEqual((await awaitingSearches()).length, 0);
+
+    await showDashboard();
+
+    await eventually(async () => {
+      const dashboard = await renderedDashboard();
+      assert.deepStrictEqual(
+        dashboard.reviewed?.map((r) => r.name),
+        ["acme/web #51", "acme/api #52"]
+      );
+      assert.deepStrictEqual(dashboard.waiting, []);
+    });
+    await inboxSettled();
+    assert.strictEqual((await awaitingSearches()).length, 1);
   });
 });

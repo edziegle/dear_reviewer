@@ -113,12 +113,13 @@ export class InboxTree implements vscode.TreeDataProvider<InboxNode> {
   }
 
   /**
-   * Loads the Inbox again once GitHub's search has caught up, as another
-   * window closed a Change, perhaps by submitting a Review there, which this
-   * window's Inbox wasn't told of. Closes close together make one load.
+   * Loads the Inbox again shortly, as another window closed a Change, perhaps
+   * by submitting a Review there, which this window's Inbox wasn't told of.
+   * The pull request itself says whether a Review answered it, however far
+   * GitHub's search lags. Closes close together make one load.
    */
   changeClosedElsewhere(): void {
-    this.refreshIn(refreshAfterReview);
+    this.refreshIn(refreshAfterClose);
   }
 
   /** Loads the Inbox again in this many milliseconds, instead of any later refresh due. */
@@ -510,6 +511,8 @@ interface InboxLoad {
 const refreshAfterReview = 20_000;
 /** How long after GitHub didn't know a pull request's mergeability the Inbox loads again. */
 const refreshForMergeability = 10_000;
+/** How long after a Change closed in another window the Inbox loads again, so closes close together make one load. */
+const refreshAfterClose = 1_000;
 /** How long the Inbox at most shows a reviewed pull request as reviewed against search. */
 const keepReviewed = 120_000;
 

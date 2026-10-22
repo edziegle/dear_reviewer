@@ -8,7 +8,10 @@ import {
   type InProgress,
   type Waiting,
 } from "../../src/dashboard/dashboardState";
-import { requestedOfReviewerAt } from "../../src/github/reviewRequests";
+import {
+  requestAnswered,
+  requestedOfReviewerAt,
+} from "../../src/github/reviewRequests";
 
 const now = Date.parse("2026-10-15T12:00:00Z");
 const ago = (minutes: number) => new Date(now - minutes * 60_000).toISOString();
@@ -337,5 +340,60 @@ describe("When a pull request last asked the Reviewer for a review", () => {
 
   it("is unknown when no request is listed", () => {
     assert.strictEqual(requestedOfReviewerAt([], "reviewer"), undefined);
+  });
+});
+
+describe("Whether the Reviewer answered a request the search still lists", () => {
+  const owners = { name: "acme/api-owners", members: ["reviewer", "hubot"] };
+  const answered = (fields: Partial<Parameters<typeof requestAnswered>[0]>) =>
+    requestAnswered({
+      pending: [],
+      myTeams: [owners],
+      login: "reviewer",
+      requestedAt: "2026-10-01T09:00:00Z",
+      reviewedAt: "2026-10-02T09:00:00Z",
+      ...fields,
+    });
+
+  it("is answered once nothing asks them and they reviewed after the request", () => {
+    assert.strictEqual(answered({}), true);
+  });
+
+  it("is answered while it still asks someone else, or a team they're not on", () => {
+    assert.strictEqual(
+      answered({
+        pending: [
+          { kind: "user", login: "bob" },
+          { kind: "team", team: "acme/docs" },
+        ],
+      }),
+      true
+    );
+  });
+
+  it("isn't answered while it still asks them personally", () => {
+    assert.strictEqual(
+      answered({ pending: [{ kind: "user", login: "Reviewer" }] }),
+      false
+    );
+  });
+
+  it("isn't answered while it still asks a team they're on", () => {
+    assert.strictEqual(
+      answered({ pending: [{ kind: "team", team: "acme/api-owners" }] }),
+      false
+    );
+  });
+
+  it("isn't answered when it asked again after their Review", () => {
+    assert.strictEqual(
+      answered({ requestedAt: "2026-10-03T09:00:00Z" }),
+      false
+    );
+  });
+
+  it("isn't answered without a Review or a known request", () => {
+    assert.strictEqual(answered({ reviewedAt: undefined }), false);
+    assert.strictEqual(answered({ requestedAt: undefined }), false);
   });
 });

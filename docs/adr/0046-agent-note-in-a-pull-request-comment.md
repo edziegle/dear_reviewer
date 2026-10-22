@@ -16,13 +16,15 @@ The note would go to GitHub under the Reviewer's name, where an agent acts on it
 ## Considered Options
 
 - A command on each pending Comment, **Add Agent Note**, that puts one labeled paragraph under the Reviewer's text, for the Reviewer to read, edit and save
+- A follow-up Comment from the Assistant in the same thread
+- The Assistant rewriting the Reviewer's Comment for agents
 - Notes for every Comment at once when the Reviewer submits, or on by default
 - A note hidden from people, such as an HTML comment, or collapsed in a `<details>` block
 - Widen the meaning of Brief to cover one Comment
 
 ## Decision Outcome
 
-Chosen option: a command on each pending Comment. The Reviewer decides, one Comment at a time, whether an agent needs more than they wrote, and reads the note before it is saved. A submit-time pass or a default would put text under the Reviewer's name that they never asked for, and would make them review every note at the worst moment. A hidden note would be instructions an agent follows that a person can't see. A Brief is a whole local Review packaged for an agent, so a note on one Comment gets its own term, **Agent note**.
+Chosen option: a command on each pending Comment. The Reviewer decides, one Comment at a time, whether an agent needs more than they wrote, and reads the note before it is saved. A submit-time pass or a default would put text under the Reviewer's name that they never asked for, and would make them review every note at the worst moment. A follow-up Comment doubles what GitHub shows and notifies, and leaves the reader to connect it to the Comment it explains, where one Comment keeps the reason next to the request. A rewrite would take the Reviewer's words away from them. A hidden note would be instructions an agent follows that a person can't see. A Brief is a whole local Review packaged for an agent, so a note on one Comment gets its own term, **Agent note**.
 
 - **Where it is offered.** Add Agent Note is in the title bar of every _pending_ Comment on a pull request Change: a new thread, a follow-up in the Reviewer's own thread (ADR 0024), and a reply in another person's thread that went into the pending review (ADR 0014). It is not offered on a published Comment, on a draft that hasn't been saved (ADR 0017), or on a local Change's Comments, where the Brief does the work.
 - **Writing.** The Assistant writes the note in a turn the Reviewer doesn't see, in the Change's own conversation, as it does for Findings and the Brief, with progress shown while it runs. The prompt gives it the Reviewer's Comment, the code lines under the thread (the head or the base side, as the thread is placed) and the thread's earlier Comments. Everything but the Reviewer's own text sits in a fence as other people's text (ADR 0042, rule 1). The prompt asks for the reason behind the Comment and what to do instead, concise and specific, with `path:line` references at the head commit where they help. It tells the Assistant to add no request the Comment doesn't make, to take nothing from the code that the Comment doesn't point at, and never to guess the Reviewer's reasons. The Assistant answers with a JSON object that holds either `note` or `noNote` (a one-line reason), and optionally a `warning` when the code or an earlier Comment held instructions. Dear Reviewer reads that object strictly: any other reply is an error, not a note.
@@ -51,4 +53,6 @@ Chosen option: a command on each pending Comment. The Reviewer decides, one Comm
 - Good, because the checks don't depend on the model, and the Reviewer reads every note before it can reach GitHub.
 - Bad, because a note is one more thing for the Reviewer to read, and a careless Reviewer could save one the checks let through. The checks hold the known channels (images, links, mentions, HTML, invisible text, bad references), not every sentence a steered model could write.
 - Bad, because the note stays after the Reviewer edits their text, and can then disagree with it. They own the text from that point.
+- Bad, because text the Assistant wrote goes to GitHub under the Reviewer's name. Path 6 of the threat model widens from a converted Finding to every Agent note.
+- Bad, because the Reviewer's text and the note share one body, so editing one means editing the whole Comment.
 - Bad, because the label and the 600-character cap are fixed. A setting for either waits for someone to ask.

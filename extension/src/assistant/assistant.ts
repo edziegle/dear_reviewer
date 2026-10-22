@@ -34,7 +34,10 @@ import {
   ClaudeConversation,
   ClaudeLogin,
   ClaudeProblem,
-  findClaude,
+  customClaudeCommandGuide,
+  describeCommand,
+  resolveClaude,
+  type ClaudeCommand,
   ToolUse,
 } from "./claude";
 import { Conversations, SavedConversation } from "./conversations";
@@ -133,11 +136,12 @@ export class Assistants implements vscode.Disposable {
   readonly onDidChangeReadingOrder = this.readingOrderChanged.event;
 
   /**
-   * `claudePath` gives the Reviewer's Claude Path setting; empty means find
-   * it. `openLink` opens a web link from a reply outside VS Code.
+   * `claudeSettings` gives the Reviewer's Claude Command and Claude Path
+   * settings; both empty means find `claude`. `openLink` opens a web link
+   * from a reply outside VS Code.
    */
   constructor(
-    private readonly claudePath: () => string,
+    private readonly claudeSettings: () => { command: string[]; path: string },
     private readonly conversations: Conversations,
     private readonly openLink: (uri: vscode.Uri) => Thenable<unknown>,
     private readonly lastReview: LastReview,
@@ -298,7 +302,7 @@ export class Assistants implements vscode.Disposable {
 
   private async boot(assistant: ChangeAssistant): Promise<void> {
     try {
-      const cli = new ClaudeCli(findClaude(this.claudePath()));
+      const cli = new ClaudeCli(this.resolveClaude());
       const login = await this.showLogin(cli);
       assistant.update({ login: login.label });
       if (!login.signedIn) {
@@ -415,10 +419,15 @@ export class Assistants implements vscode.Disposable {
     return assistant;
   }
 
+  private resolveClaude(): ClaudeCommand {
+    const { command, path } = this.claudeSettings();
+    return resolveClaude(command, path);
+  }
+
   /** Runs `claude auth status` and shows the login in the status bar. */
   async checkLogin(): Promise<ClaudeLogin | undefined> {
     try {
-      return await this.showLogin(new ClaudeCli(findClaude(this.claudePath())));
+      return await this.showLogin(new ClaudeCli(this.resolveClaude()));
     } catch (err) {
       const message = messageOf(err);
       this.showStatus("Assistant: Claude not found", message, true);
@@ -503,7 +512,7 @@ export class Assistants implements vscode.Disposable {
         : "Assistant ready";
     this.showStatus(
       text,
-      `Runs on this Claude login: ${login.label} (\`${login.method}\`), as \`claude auth status\` reports it for \`${cli.executable}\`.`,
+      `Runs on this Claude login: ${login.label} (\`${login.method}\`), as \`claude auth status\` reports it for \`${describeCommand(cli.command)}\`.`,
       !login.signedIn || login.billedPerToken
     );
     return login;
@@ -832,6 +841,8 @@ class ChangeAssistant {
     if (action.type === "problemAction") this.helpWithProblem();
     else if (action.type === "retry") this.retry();
     else if (action.type === "stop") this.stop();
+    else if (action.type === "openGitToolsGuide")
+      void this.openLink(vscode.Uri.parse(customClaudeCommandGuide, true));
     else if (action.type === "removeContext") {
       const context = [...(this.state.context ?? [])];
       context.splice(action.index, 1);
@@ -1095,6 +1106,8 @@ class ChangeAssistant {
           base: this.change.mergeBase,
           head: this.change.headSha,
         },
+        onGitTools: (connected) =>
+          this.update({ gitToolsMissing: connected ? undefined : true }),
       });
     }
     return this.conversation;
@@ -1191,9 +1204,9 @@ function sinceLabel(from: string): string {
 function helpWith(problem: ClaudeProblem): vscode.Command | undefined {
   if (problem.kind === "notFound")
     return {
-      title: "Set Claude Path",
+      title: "Set Claude Command",
       command: "workbench.action.openSettings",
-      arguments: ["dearReviewer.claudePath"],
+      arguments: ["dearReviewer.claudeCommand"],
     };
   if (problem.kind === "notSignedIn")
     return {

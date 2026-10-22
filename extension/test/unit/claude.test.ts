@@ -1,9 +1,15 @@
 import * as assert from "assert";
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
 import {
   allowedWithoutAsking,
   claudeEnvironment,
+  ClaudeProblem,
   describeLogin,
+  gitServerConnected,
   readOnlyTools,
+  resolveClaude,
 } from "../../src/assistant/claude";
 
 describe("The environment claude runs in", () => {
@@ -102,5 +108,114 @@ describe("What the Assistant may do without asking", () => {
         !allowedWithoutAsking.some((allowed) => allowed.startsWith(tool)),
         tool
       );
+  });
+});
+
+describe("The command that starts claude", () => {
+  let dir: string;
+  let program: string;
+  const originalPath = process.env.PATH;
+  const executable = (file: string) =>
+    fs.writeFileSync(file, "#!/bin/sh\n", { mode: 0o755 });
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "claude-command-"));
+    program = path.join(dir, "sandbox-claude");
+    executable(program);
+  });
+  afterEach(() => {
+    process.env.PATH = originalPath;
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("finds claude on the PATH when neither setting is given", () => {
+    executable(path.join(dir, "claude"));
+    process.env.PATH = dir;
+
+    assert.deepStrictEqual(resolveClaude([], ""), {
+      program: path.join(dir, "claude"),
+      args: [],
+    });
+  });
+
+  it("takes a one-item command as a path, with ~ expanded", () => {
+    assert.deepStrictEqual(resolveClaude([program], ""), {
+      program,
+      args: [],
+    });
+    assert.deepStrictEqual(resolveClaude(["~/sandbox-claude"], "", dir), {
+      program,
+      args: [],
+    });
+  });
+
+  it("looks a bare first item up on the PATH", () => {
+    process.env.PATH = dir;
+
+    assert.deepStrictEqual(resolveClaude(["sandbox-claude"], ""), {
+      program,
+      args: [],
+    });
+  });
+
+  it("makes the later items arguments, which go before Dear Reviewer's own", () => {
+    assert.deepStrictEqual(
+      resolveClaude([program, "exec", "-i", "box", "claude"], ""),
+      { program, args: ["exec", "-i", "box", "claude"] }
+    );
+  });
+
+  it("uses Claude Path as a one-item command only when Claude Command is empty", () => {
+    assert.deepStrictEqual(resolveClaude([], program), { program, args: [] });
+    const other = path.join(dir, "other");
+    executable(other);
+    assert.deepStrictEqual(resolveClaude([other], program), {
+      program: other,
+      args: [],
+    });
+  });
+
+  it("says the program isn't found when it is missing or can't be run", () => {
+    const plain = path.join(dir, "plain");
+    fs.writeFileSync(plain, "text", { mode: 0o644 });
+    process.env.PATH = dir;
+    for (const command of [
+      [path.join(dir, "nowhere"), "exec"],
+      [plain],
+      ["no-such-program"],
+    ])
+      assert.throws(
+        () => resolveClaude(command, ""),
+        (err: unknown) =>
+          err instanceof ClaudeProblem &&
+          err.kind === "notFound" &&
+          err.message.includes(command.join(" "))
+      );
+  });
+});
+
+describe("Whether claude started the git server", () => {
+  const init = (mcp_servers?: { name: string; status: string }[]) => ({
+    type: "system",
+    subtype: "init",
+    mcp_servers,
+  });
+
+  it("is yes for a connected git server", () => {
+    assert.strictEqual(
+      gitServerConnected(init([{ name: "git", status: "connected" }])),
+      true
+    );
+  });
+
+  it("is no for a failed or otherwise unconnected server, a missing entry or a missing list", () => {
+    for (const event of [
+      init([{ name: "git", status: "failed" }]),
+      init([{ name: "git", status: "pending" }]),
+      init([{ name: "other", status: "connected" }]),
+      init([]),
+      init(undefined),
+    ])
+      assert.strictEqual(gitServerConnected(event), false);
   });
 });

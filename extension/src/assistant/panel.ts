@@ -54,6 +54,8 @@ export interface ConversationState {
   unavailable?: boolean;
   /** Whether the Assistant is taking a turn the Reviewer can stop. */
   stoppable?: boolean;
+  /** Whether the running `claude` started without the git history tools, which the panel says quietly. */
+  gitToolsMissing?: boolean;
 }
 
 /** The conversation as the webview gets it, with each reply's Markdown rendered. */
@@ -70,6 +72,7 @@ export type FromWebview =
   | { type: "removeContext"; index: number }
   | { type: "problemAction" }
   | { type: "retry" }
+  | { type: "openGitToolsGuide" }
   | { type: "stop" }
   | { type: "openFromList" }
   | { type: "openLink"; url: string }
@@ -168,6 +171,7 @@ export class AssistantView implements vscode.WebviewViewProvider {
     } else if (
       message.type === "problemAction" ||
       message.type === "retry" ||
+      message.type === "openGitToolsGuide" ||
       message.type === "stop" ||
       message.type === "openFromList"
     ) {
@@ -249,6 +253,8 @@ function html(): string {
   .busy ol { margin: 4px 0; padding-left: 20px; }
   button.stop { background: none; border: none; padding: 0; margin-top: 2px; color: var(--vscode-textLink-foreground); cursor: pointer; font: inherit; font-size: 0.9em; }
   button.stop:hover { text-decoration: underline; }
+  .notice { margin: 12px 0; }
+  .notice button.stop { margin-top: 0; font-size: inherit; }
   .message.assistant { white-space: normal; max-width: 80ch; }
   .problem .buttons { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
   .problem .buttons button { margin-top: 0; }
@@ -273,6 +279,7 @@ ${catSymbol}
 <main id="messages"></main>
 <div class="busy hand" id="busy" hidden><div class="now" id="now"></div><details id="steps" hidden><summary id="stepCount"></summary><ol id="stepList"></ol></details><button class="stop" id="stop" type="button" title="Stop this reply; the conversation goes on with your next message" hidden>Stop</button></div>
 <div class="problem" id="problem" role="alert" hidden></div>
+<div class="muted notice" id="gitTools" hidden>Git history tools didn't start, so the Assistant can't look up older commits. <button class="stop" id="gitToolsGuide" type="button">Why, and what to do</button></div>
 </div>
 <div class="visually-hidden" id="announce" role="status"></div>
 <footer id="footer">
@@ -402,6 +409,7 @@ ${catSymbol}
   });
   byId("openFromList").addEventListener("click", () => vscode.postMessage({ type: "openFromList" }));
   byId("stop").addEventListener("click", () => vscode.postMessage({ type: "stop" }));
+  byId("gitToolsGuide").addEventListener("click", () => vscode.postMessage({ type: "openGitToolsGuide" }));
   let busy;
   let unavailable = false;
   const text = byId("text");
@@ -483,6 +491,7 @@ ${catSymbol}
         if (buttons.children.length) problem.append(buttons);
       }
     }
+    byId("gitTools").hidden = !state.gitToolsMissing;
     if (following && grew) window.scrollTo(0, document.documentElement.scrollHeight);
   };
   window.addEventListener("message", (event) => {

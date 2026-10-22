@@ -183,6 +183,17 @@ export function setClaudePath(file: string): Thenable<void> {
     .update("claudePath", file, vscode.ConfigurationTarget.Global);
 }
 
+/** Sets Claude Command in the user's settings; an empty list puts the default back. */
+export function setClaudeCommand(command: string[]): Thenable<void> {
+  return vscode.workspace
+    .getConfiguration("dearReviewer")
+    .update(
+      "claudeCommand",
+      command.length ? command : undefined,
+      vscode.ConfigurationTarget.Global
+    );
+}
+
 /** Lines of a file on one side of a Change, counted from 1. */
 export interface Selection {
   /** Relative to the repository root, with forward slashes. */
@@ -231,6 +242,8 @@ export interface Conversation {
   unavailable?: boolean;
   /** Whether Stop shows, for the turn under way. */
   stoppable?: boolean;
+  /** Whether the running `claude` started without the git history tools. */
+  gitToolsMissing?: boolean;
 }
 
 interface AssistantApi {

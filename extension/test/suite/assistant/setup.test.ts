@@ -57,8 +57,8 @@ describe("Setting up the Assistant", () => {
         const panel = await renderedPanel(title);
         assert.ok(panel?.problem, "the panel shows a problem");
         assert.ok(panel.problem.includes(missing), panel.problem);
-        assert.match(panel.problem, /Claude Path/);
-        assert.strictEqual(panel.problemAction, "Set Claude Path");
+        assert.match(panel.problem, /Claude Command/);
+        assert.strictEqual(panel.problemAction, "Set Claude Command");
         assert.strictEqual(panel.busy, false);
         assert.deepStrictEqual(panel.messages, []);
       });
@@ -76,7 +76,7 @@ describe("Setting up the Assistant", () => {
       await eventually(async () => {
         const take = await overviewTake(title);
         assert.ok(take?.problem?.includes(missing), "the overview says so too");
-        assert.strictEqual(take?.problemAction, "Set Claude Path");
+        assert.strictEqual(take?.problemAction, "Set Claude Command");
         assert.strictEqual(take?.reading, false);
       });
     } finally {
@@ -191,6 +191,7 @@ describe("Setting up the Assistant", () => {
         ...JSON.parse(original),
         settings: {
           "dearReviewer.claudePath": planted,
+          "dearReviewer.claudeCommand": [planted],
           // Shows when VS Code has read the file.
           "dearReviewer.repositories": ["acme/planted"],
         },

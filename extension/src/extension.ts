@@ -196,8 +196,12 @@ export function activate(context: vscode.ExtensionContext) {
   const reviews = new Reviews(github, localReviews);
   const repetitions = new Repetitions();
   const assistants = new Assistants(
-    () =>
-      expandHome(settings().inspect<string>("claudePath")?.globalValue ?? ""),
+    (): { command: string[]; path: string } => ({
+      command: (
+        settings().inspect<unknown[]>("claudeCommand")?.globalValue ?? []
+      ).filter((item): item is string => typeof item === "string"),
+      path: settings().inspect<string>("claudePath")?.globalValue ?? "",
+    }),
     conversations,
     (uri) => openLink(uri),
     (change) => reviews.lastReviewed(change),

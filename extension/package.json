@@ -46,6 +46,7 @@
       "description": "The GitHub API base URL, the local clones and the path to claude are only read from user settings, and the repositories of a window's folders are only read once the window is trusted.",
       "restrictedConfigurations": [
         "dearReviewer.githubApiUrl",
+        "dearReviewer.claudeCommand",
         "dearReviewer.claudePath",
         "dearReviewer.localClones"
       ]
@@ -433,10 +434,20 @@
           "default": false,
           "markdownDescription": "Let **Next Unviewed File** and **Previous Unviewed File** stop at skim-only files: lock files, files the base commit marks `linguist-generated`, renames with no edits, and files that were only reformatted. Off, they skip these files until nothing else is left to view."
         },
+        "dearReviewer.claudeCommand": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "The command that starts `claude` for the Assistant: the program, then its arguments, such as `[\"/opt/homebrew/bin/claude\"]` or `[\"docker\", \"exec\", \"-i\", \"my-box\", \"claude\"]`. Dear Reviewer adds its own arguments after yours and runs the command without a shell. Leave empty to use the `claude` on the PATH or in a usual install location. The Assistant uses whichever Claude login this `claude` has; sign in by running `claude` in a terminal. [What a custom command must do](https://github.com/edziegle/dear_reviewer/blob/main/docs/custom-claude-command.md).",
+          "scope": "machine"
+        },
         "dearReviewer.claudePath": {
           "type": "string",
           "default": "",
-          "markdownDescription": "The `claude` executable the Assistant runs, such as `/opt/homebrew/bin/claude`. Leave empty to use the `claude` on the PATH or in a usual install location. The Assistant uses whichever Claude login this `claude` has; sign in by running `claude` in a terminal.",
+          "markdownDescription": "The `claude` executable the Assistant runs, such as `/opt/homebrew/bin/claude`. Used as a command of one item while Claude Command is empty.",
+          "markdownDeprecationMessage": "**Deprecated**: use [Claude Command](command:workbench.action.openSettings?%5B%22dearReviewer.claudeCommand%22%5D) instead. It takes arguments too.",
           "scope": "machine"
         }
       }
@@ -1115,7 +1126,7 @@
           {
             "id": "claude",
             "title": "Check the Assistant's Claude login",
-            "description": "The Assistant runs the claude CLI you already have, with its own login: install Claude Code and sign in by running claude in a terminal. Point the Claude Path setting at it if it isn't on the PATH.\n[Check Claude Login](command:dearReviewer.checkClaudeLogin)",
+            "description": "The Assistant runs the claude CLI you already have, with its own login: install Claude Code and sign in by running claude in a terminal. Point the Claude Command setting at it if it isn't on the PATH.\n[Check Claude Login](command:dearReviewer.checkClaudeLogin)",
             "media": {
               "image": {
                 "dark": "media/walkthrough/claude-dark.png",

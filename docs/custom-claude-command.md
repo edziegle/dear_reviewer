@@ -1,6 +1,6 @@
 # Start the Assistant's `claude` with your own command
 
-The Assistant runs the `claude` command-line program. Many organizations let Claude Code run only inside a sandbox of their own: a container, a virtual machine, a launcher script or a remote host. The Claude Command setting lets you say how `claude` starts. Dear Reviewer learns nothing about your sandbox.
+The Assistant runs the `claude` command-line program. Many organizations let Claude Code run only inside a sandbox of their own: a container, a virtual machine, a launcher script or a remote host. With the Claude Command setting, you say how `claude` starts. Dear Reviewer learns nothing about your sandbox.
 
 ## The setting
 
@@ -28,13 +28,13 @@ Dear Reviewer starts every run through the command: `claude auth status`, which 
 
 ## What your command must do
 
-Dear Reviewer talks to `claude` through its standard input and output, so your command has to stay out of the way.
+Dear Reviewer talks to `claude` through its standard input and standard output, so your command must not change what passes through them. It must do five things:
 
-- **Pass everything through.** Pass the arguments, standard input and standard output through to `claude` unchanged. Write nothing else to standard output: a banner or a log line breaks the conversation. Write notes for yourself to standard error.
-- **Keep the folder.** Run `claude` in the folder your command was started in. Each conversation has a folder of its own, and `--resume` finds a saved session only from the same folder.
-- **Share the storage folder.** Dear Reviewer keeps the conversation folders, the Change's worktrees and the Assistant folders in its global storage folder. `claude` must see that folder at the same path as your machine does, or it can't read the Change. In a container, mount it at the same path.
-- **Let `claude` write its config folder.** `--resume` needs the saved sessions, and signing in needs to save credentials. Both live in `claude`'s config folder, by default `~/.claude`. If it is read-only, or new on every run, the Assistant forgets earlier conversations.
-- **Set your own environment variables.** Dear Reviewer passes your command only a short list of variables: those `claude` needs to find itself, your login and the network, plus `LC_*`. It never passes `ANTHROPIC_*` or `CLAUDE_CODE_*`. If your command needs more, such as `DOCKER_HOST`, set them in the script.
+- Pass the arguments, standard input and standard output to `claude` unchanged. Write nothing else to standard output, because a banner or a log line breaks the conversation. Write notes for yourself to standard error.
+- Run `claude` in the folder your command was started in. Each conversation has a folder of its own, and `--resume` finds a saved session only from that folder.
+- Show `claude` Dear Reviewer's global storage folder at the same path your machine uses. That folder holds the conversation folders, the Change's worktrees and the Assistant folders, and `claude` can't read the Change without it. In a container, mount the folder at the same path.
+- Let `claude` write its config folder, by default `~/.claude`. `--resume` needs the saved sessions there, and signing in saves credentials there. If the folder is read-only, or new on every run, the Assistant forgets earlier conversations.
+- Set any other environment variables in the command itself. Dear Reviewer passes only the variables `claude` needs to find itself, your login and the network, plus `LC_*`, and never `ANTHROPIC_*` or `CLAUDE_CODE_*`. If your command needs more, such as `DOCKER_HOST`, set them in the script.
 
 ## An example script
 

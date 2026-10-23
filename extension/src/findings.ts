@@ -21,6 +21,7 @@ import { setContext } from "./context";
 import { messageOf } from "./errors";
 import { quickFixLabels, selectedLines } from "./findingActions";
 import { gutterIcons, type GutterIcon, type IconSpan } from "./findingGutter";
+import { hoverHeading, plainText, type FindingPlace } from "./findingHover";
 import {
   findingAfter,
   placeAmong,
@@ -77,6 +78,8 @@ export class Findings implements vscode.CodeActionProvider, vscode.Disposable {
   private readonly decoration: vscode.TextEditorDecorationType;
   /** The gutter's icons, one per line. */
   private readonly icons: Record<GutterIcon, vscode.TextEditorDecorationType>;
+  /** The gutter's cat in light themes and in dark ones, which heads each hover. */
+  private readonly cats: { light: vscode.Uri; dark: vscode.Uri };
   /** What each visible editor shows, by document URI, for the tests. */
   private shown = new Map<
     string,
@@ -121,26 +124,23 @@ export class Findings implements vscode.CodeActionProvider, vscode.Disposable {
   ) {
     // A gutter marker and a mark on the scroll bar: nothing in the text. A
     // gutter icon can't take a theme color, so each theme kind gets an icon
-    // in the Assistant color's default, charts.purple's.
-    const icon = (name: string) =>
-      vscode.window.createTextEditorDecorationType({
-        light: {
-          gutterIconPath: vscode.Uri.joinPath(
-            extensionUri,
-            "media",
-            `${name}-light.svg`
-          ),
-        },
-        dark: {
-          gutterIconPath: vscode.Uri.joinPath(
-            extensionUri,
-            "media",
-            `${name}.svg`
-          ),
-        },
+    // in the Assistant color's default, charts.purple's. A light theme's
+    // icon also shows in a high contrast light theme, and a dark theme's in
+    // a high contrast dark one.
+    const themed = (name: string) => ({
+      light: vscode.Uri.joinPath(extensionUri, "media", `${name}-light.svg`),
+      dark: vscode.Uri.joinPath(extensionUri, "media", `${name}.svg`),
+    });
+    const icon = (name: string) => {
+      const { light, dark } = themed(name);
+      return vscode.window.createTextEditorDecorationType({
+        light: { gutterIconPath: light },
+        dark: { gutterIconPath: dark },
         gutterIconSize: "contain",
       });
+    };
     this.icons = { cat: icon("finding-cat"), bar: icon("finding-bar") };
+    this.cats = themed("finding-cat");
     this.decoration = vscode.window.createTextEditorDecorationType({
       overviewRulerColor: new vscode.ThemeColor(
         "dearReviewer.assistantForeground"
@@ -159,6 +159,8 @@ export class Findings implements vscode.CodeActionProvider, vscode.Disposable {
         { webviewOptions: { retainContextWhenHidden: true } }
       ),
       vscode.window.onDidChangeVisibleTextEditors(() => this.render()),
+      // Each hover shows the cat of the theme's kind.
+      vscode.window.onDidChangeActiveColorTheme(() => this.render()),
       // The current Finding is the one under the cursor.
       vscode.window.onDidChangeTextEditorSelection(() => this.followCursor()),
       vscode.window.onDidChangeActiveTextEditor(() => this.followCursor()),
@@ -568,13 +570,14 @@ export class Findings implements vscode.CodeActionProvider, vscode.Disposable {
   /** Puts each Finding's marker in the gutter of every visible editor of its file. */
   private render(): void {
     const ordered = this.inStepOrder();
+    const cat = this.cat().toString();
     const byFile = new Map<string, vscode.DecorationOptions[]>();
     for (const finding of this.all()) {
       const uri = fileOf(finding).toString();
       const options = byFile.get(uri) ?? [];
       options.push({
         range: rangeOf(finding.place),
-        hoverMessage: hoverOf(finding, placeAmong(ordered, finding.id)),
+        hoverMessage: hoverOf(finding, placeAmong(ordered, finding.id), cat),
       });
       byFile.set(uri, options);
     }
@@ -599,6 +602,15 @@ export class Findings implements vscode.CodeActionProvider, vscode.Disposable {
       if (options.length > 0) shown.set(uri, { options, icons });
     }
     this.shown = shown;
+  }
+
+  /** The gutter's cat in the active theme. */
+  private cat(): vscode.Uri {
+    const { kind } = vscode.window.activeColorTheme;
+    return kind === vscode.ColorThemeKind.Light ||
+      kind === vscode.ColorThemeKind.HighContrastLight
+      ? this.cats.light
+      : this.cats.dark;
   }
 
   /** The Finding on the line under the active editor's cursor, if any. */
@@ -689,23 +701,24 @@ export function parseFindings(reply: string): unknown[] {
 }
 
 /**
- * The hover on a Finding's lines: the Assistant's message as plain text,
- * escaped so it can't add links or formatting, and its three actions. A
- * Finding of the Change in front, which has a `place` among its Findings,
- * also gets its count and steps to its neighbours. These are the only
- * commands the hover may run, each given the Finding's id.
+ * The hover on a Finding's lines: a heading of the Assistant's `cat` and
+ * name, the Assistant's message as plain text, escaped so it can't add links
+ * or formatting, and its three actions. A Finding of the Change in front,
+ * which has a `place` among its Findings, also gets its count and steps to
+ * its neighbours. These are the only commands the hover may run, each given
+ * the Finding's id.
  */
 function hoverOf(
   finding: Finding,
-  place: { position: number; total: number } | undefined
+  place: FindingPlace | undefined,
+  cat: string
 ): vscode.MarkdownString {
   const hover = new vscode.MarkdownString();
   hover.isTrusted = { enabledCommands: findingCommands };
   hover.supportHtml = false;
   hover.appendMarkdown(
-    `**Finding${place ? ` ${place.position} of ${place.total}` : ""}** from the Assistant\n\n`
+    `${hoverHeading(cat, place)}\n\n${plainText(finding.message)}`
   );
-  hover.appendText(finding.message);
   const args = encodeURIComponent(JSON.stringify([finding.id]));
   const steps = place
     ? `&emsp;&emsp;[↑ Previous](command:dearReviewer.previousFinding?${args}) · [↓ Next](command:dearReviewer.nextFinding?${args})`

@@ -530,24 +530,75 @@ export function allChangesTitle(change: Change): string {
 }
 
 /**
+ * The files a multi-file diff's tab compares, leaving out those with a side
+ * missing. The API has no type for such a tab's input, but VS Code gives it
+ * the files; undefined for a tab without them.
+ */
+function filesComparedIn(
+  tab: vscode.Tab
+): { original: vscode.Uri; modified: vscode.Uri }[] | undefined {
+  const diffs = (tab.input as { textDiffs?: unknown } | undefined)?.textDiffs;
+  if (!Array.isArray(diffs)) return undefined;
+  return diffs.filter(
+    (diff: { original?: unknown; modified?: unknown }) =>
+      diff.original instanceof vscode.Uri && diff.modified instanceof vscode.Uri
+  );
+}
+
+/**
+ * Whether the tab shows the Change's multi-file diff. Another Change can have
+ * the same name, and so the same title, but its files are in worktrees of
+ * its own.
+ */
+export function isAllChangesTab(change: Change, tab: vscode.Tab): boolean {
+  if (!tab.label.startsWith(allChangesTitle(change))) return false;
+  const inChange = (uri: vscode.Uri) =>
+    [change.baseDir, change.headDir].some((dir) =>
+      uri.fsPath.startsWith(dir + path.sep)
+    );
+  return (filesComparedIn(tab) ?? []).every(
+    (diff) => inChange(diff.original) && inChange(diff.modified)
+  );
+}
+
+/** VS Code's internal command behind `vscode.changes`, which takes a source. */
+const OPEN_MULTI_DIFF = "_workbench.openMultiDiffEditor";
+
+/**
  * Opens the multi-file diff of all the Change's files in the active editor
  * group, or shows it there if it's open already.
  */
 export async function showAllChanges(change: Change): Promise<void> {
   // A side is absent if the file was added or deleted.
-  const resources = (await changedFiles(change)).map((file) => {
-    const { original, modified } = fileSides(change, file);
-    return { originalUri: original, modifiedUri: modified };
-  });
+  const sides = (await changedFiles(change)).map((file) =>
+    fileSides(change, file)
+  );
+  const title = allChangesTitle(change);
   // `vscode.changes` gives each diff it opens a source of its own, so the
   // Change's diff would open again beside one already open. The command it
-  // calls takes the source; the same one each time shows the open diff.
-  await vscode.commands.executeCommand("_workbench.openMultiDiffEditor", {
+  // calls takes the source; the same one each time shows the open diff. A
+  // VS Code without that command still opens the diff.
+  if (!(await vscode.commands.getCommands()).includes(OPEN_MULTI_DIFF)) {
+    await vscode.commands.executeCommand(
+      "vscode.changes",
+      title,
+      sides.map(({ original, modified }) => [
+        (modified ?? original)!,
+        original,
+        modified,
+      ])
+    );
+    return;
+  }
+  await vscode.commands.executeCommand(OPEN_MULTI_DIFF, {
     multiDiffSourceUri: vscode.Uri.from({
       scheme: "dear-reviewer-all-changes",
       path: `/${change.id}`,
     }),
-    title: allChangesTitle(change),
-    resources,
+    title,
+    resources: sides.map(({ original, modified }) => ({
+      originalUri: original,
+      modifiedUri: modified,
+    })),
   });
 }

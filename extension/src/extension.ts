@@ -3,7 +3,7 @@ import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
 import {
-  allChangesTitle,
+  isAllChangesTab,
   Change,
   ChangeRequest,
   OpenDeclined,
@@ -750,26 +750,62 @@ export function activate(context: vscode.ExtensionContext) {
     );
   }
 
+  /** Focuses the editor group in the column, as the "Focus … Editor Group" commands do. */
+  async function focusEditorGroup(column: vscode.ViewColumn): Promise<void> {
+    const nth = [
+      "First",
+      "Second",
+      "Third",
+      "Fourth",
+      "Fifth",
+      "Sixth",
+      "Seventh",
+      "Eighth",
+    ];
+    await vscode.commands.executeCommand(
+      `workbench.action.focus${nth[column - 1] ?? "Last"}EditorGroup`
+    );
+  }
+
   /**
    * Shows the Change's multi-file diff in its code column, beside its
    * overview. The diff opens in the active group, and an overview given the
    * focus can make its own group active again a moment after the code column
-   * got the focus (see `MarkdownPanel.ready`), so a diff that lands outside
-   * the code column closes, and opens again from a code column focused anew.
+   * got the focus (see `MarkdownPanel.ready`). So the overview's group is
+   * locked meanwhile: VS Code opens nothing new in a locked group, and opens
+   * the diff in the code column instead. Locking and unlocking act on the
+   * active group, which the overview can only make its own.
    */
   async function showAllChangesBesideOverview(change: Change): Promise<void> {
-    const column = await codeColumnOf(change);
-    const title = allChangesTitle(change);
-    for (let tries = 0; tries < 5; tries++) {
+    await showingChange.catch(() => undefined);
+    const overview = timelines.overviewColumn(change);
+    if (overview === undefined) {
       await focusCodeColumn(change);
       await showAllChanges(change);
-      const strays = vscode.window.tabGroups.all
-        .filter((group) => group.viewColumn !== column)
-        .flatMap((group) => group.tabs)
-        .filter((tab) => tab.label.startsWith(title));
-      if (strays.length === 0) return;
-      await vscode.window.tabGroups.close(strays, true);
+    } else {
+      await focusEditorGroup(overview);
+      await vscode.commands.executeCommand("workbench.action.lockEditorGroup");
+      try {
+        await focusCodeColumn(change);
+        await showAllChanges(change);
+      } finally {
+        await focusEditorGroup(overview);
+        await vscode.commands.executeCommand(
+          "workbench.action.unlockEditorGroup"
+        );
+        await focusCodeColumn(change);
+      }
     }
+    const column = await codeColumnOf(change);
+    const shown = vscode.window.tabGroups.all
+      .filter((group) => group.viewColumn === column)
+      .some((group) =>
+        group.tabs.some((tab) => tab.isActive && isAllChangesTab(change, tab))
+      );
+    if (!shown)
+      void vscode.window.showErrorMessage(
+        `The diff of all of ${changeName(change)}'s changes didn't open beside its overview.`
+      );
   }
 
   /**

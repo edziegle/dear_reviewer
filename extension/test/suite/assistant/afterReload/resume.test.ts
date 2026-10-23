@@ -14,11 +14,11 @@ import { overviewTake } from "../../timeline";
 import { closeChange, eventually, short } from "../../reviewer";
 import { pickUpAfterReload } from "../handoff";
 
-// A second launch of the workspace the first assistant launch left with a
-// Change open and a conversation in its Assistant panel.
 /** The review chord, as the Reviewer's platform writes it. */
 const chord = process.platform === "darwin" ? "⌃⌥R" : "Ctrl+Alt+R";
 
+// A second launch of the workspace the first assistant launch left with a
+// Change open and a conversation in its Assistant panel.
 describe("The Assistant after a window reload", () => {
   const { change, title, sessionId } = pickUpAfterReload();
   before(() =>

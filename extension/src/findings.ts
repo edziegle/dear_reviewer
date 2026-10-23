@@ -277,17 +277,13 @@ export class Findings implements vscode.CodeActionProvider, vscode.Disposable {
   async selectionOf(
     finding: Finding
   ): Promise<(Selection & { text: string }) | undefined> {
-    const { change, place } = finding;
-    const side = place.side === "LEFT" ? "base" : "head";
-    const file = await readInWorktree(
-      side === "base" ? change.baseDir : change.headDir,
-      place.path
-    );
+    const { place } = finding;
+    const file = await readInWorktree(worktreeOf(finding), place.path);
     if (!file) return;
     const startLine = place.startLine ?? place.line;
     return {
       path: place.path,
-      side,
+      side: sideOf(finding),
       startLine,
       endLine: place.line,
       text: file.text
@@ -721,9 +717,20 @@ function hoverOf(
 }
 
 function fileOf(finding: Finding): vscode.Uri {
-  const { change, place } = finding;
-  const dir = place.side === "LEFT" ? change.baseDir : change.headDir;
-  return vscode.Uri.file(path.join(dir, ...place.path.split("/")));
+  return vscode.Uri.file(
+    path.join(worktreeOf(finding), ...finding.place.path.split("/"))
+  );
+}
+
+function sideOf(finding: Finding): "base" | "head" {
+  return finding.place.side === "LEFT" ? "base" : "head";
+}
+
+/** The worktree of the Finding's side, which its hover and its chip both read. */
+function worktreeOf(finding: Finding): string {
+  return sideOf(finding) === "base"
+    ? finding.change.baseDir
+    : finding.change.headDir;
 }
 
 /** The Finding's whole lines, so hovering its code shows it. */

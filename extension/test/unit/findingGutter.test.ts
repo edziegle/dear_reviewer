@@ -5,59 +5,58 @@ describe("Which icon a Finding's lines show in the gutter", () => {
   const icons = (...spans: LineSpan[]) =>
     gutterIcons(spans).map(({ icon, first, last }) => [icon, first, last]);
 
-  it("shows the plain lightbulb on a one-line Finding", () => {
-    assert.deepStrictEqual(icons({ first: 4, last: 4 }), [["lightbulb", 4, 4]]);
+  it("shows the cat on a one-line Finding", () => {
+    assert.deepStrictEqual(icons({ first: 4, last: 4 }), [["cat", 4, 4]]);
   });
 
-  it("shows the lightbulb with a bar on a long Finding's first line, and the bar on the rest", () => {
+  it("shows the cat on a long Finding's first line, and the bar on the rest", () => {
     assert.deepStrictEqual(icons({ first: 0, last: 9 }), [
-      ["lightbulbWithBar", 0, 0],
+      ["cat", 0, 0],
       ["bar", 1, 9],
     ]);
   });
 
-  it("starts each of two Findings on adjacent lines with its own lightbulb", () => {
+  it("starts each of two Findings on adjacent lines with its own cat", () => {
     assert.deepStrictEqual(
       icons({ first: 3, last: 4 }, { first: 0, last: 2 }),
       [
-        ["lightbulbWithBar", 0, 0],
+        ["cat", 0, 0],
         ["bar", 1, 2],
-        ["lightbulbWithBar", 3, 3],
+        ["cat", 3, 3],
         ["bar", 4, 4],
       ]
     );
   });
 
-  it("shows a one-line Finding right after a long one as the plain lightbulb", () => {
+  it("starts two adjacent one-line Findings each with a cat", () => {
     assert.deepStrictEqual(
-      icons({ first: 0, last: 1 }, { first: 2, last: 2 }),
+      icons({ first: 0, last: 0 }, { first: 1, last: 1 }),
       [
-        ["lightbulbWithBar", 0, 0],
-        ["bar", 1, 1],
-        ["lightbulb", 2, 2],
+        ["cat", 0, 0],
+        ["cat", 1, 1],
       ]
     );
   });
 
-  it("starts a Finding inside a longer one with a lightbulb that keeps the bar", () => {
+  it("starts a Finding inside a longer one with a cat and keeps the bar after it", () => {
     assert.deepStrictEqual(
       icons({ first: 0, last: 4 }, { first: 2, last: 2 }),
       [
-        ["lightbulbWithBar", 0, 0],
+        ["cat", 0, 0],
         ["bar", 1, 1],
-        ["lightbulbWithBar", 2, 2],
+        ["cat", 2, 2],
         ["bar", 3, 4],
       ]
     );
   });
 
-  it("keeps the bar on the lightbulb where a one-line Finding sits on a longer one's last line", () => {
+  it("shows the cat where a one-line Finding sits on a longer one's last line", () => {
     assert.deepStrictEqual(
       icons({ first: 3, last: 3 }, { first: 0, last: 3 }),
       [
-        ["lightbulbWithBar", 0, 0],
+        ["cat", 0, 0],
         ["bar", 1, 2],
-        ["lightbulbWithBar", 3, 3],
+        ["cat", 3, 3],
       ]
     );
   });
@@ -66,9 +65,9 @@ describe("Which icon a Finding's lines show in the gutter", () => {
     assert.deepStrictEqual(
       icons({ first: 0, last: 9 }, { first: 2, last: 4 }),
       [
-        ["lightbulbWithBar", 0, 0],
+        ["cat", 0, 0],
         ["bar", 1, 1],
-        ["lightbulbWithBar", 2, 2],
+        ["cat", 2, 2],
         ["bar", 3, 9],
       ]
     );
@@ -78,13 +77,13 @@ describe("Which icon a Finding's lines show in the gutter", () => {
     assert.deepStrictEqual(
       icons({ first: 1, last: 1 }, { first: 1, last: 2 }),
       [
-        ["lightbulbWithBar", 1, 1],
+        ["cat", 1, 1],
         ["bar", 2, 2],
       ]
     );
     assert.deepStrictEqual(
       icons({ first: 1, last: 1 }, { first: 1, last: 1 }),
-      [["lightbulb", 1, 1]]
+      [["cat", 1, 1]]
     );
   });
 
@@ -92,9 +91,9 @@ describe("Which icon a Finding's lines show in the gutter", () => {
     assert.deepStrictEqual(
       icons({ first: 0, last: 1 }, { first: 5, last: 5 }),
       [
-        ["lightbulbWithBar", 0, 0],
+        ["cat", 0, 0],
         ["bar", 1, 1],
-        ["lightbulb", 5, 5],
+        ["cat", 5, 5],
       ]
     );
   });
@@ -112,11 +111,11 @@ describe("Which icon a Finding's lines show in the gutter", () => {
     );
 
     assert.deepStrictEqual(result, [
-      ["lightbulbWithBar", 0, 0],
+      ["cat", 0, 0],
       ["bar", 1, 5e11 - 1],
-      ["lightbulbWithBar", 5e11, 5e11],
+      ["cat", 5e11, 5e11],
       ["bar", 5e11 + 1, 7e11 - 1],
-      ["lightbulbWithBar", 7e11, 7e11],
+      ["cat", 7e11, 7e11],
       ["bar", 7e11 + 1, 1e12],
     ]);
   });

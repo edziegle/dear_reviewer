@@ -3,7 +3,7 @@
 // buttons and the hover's links run the commands the extension contributes.
 
 import * as vscode from "vscode";
-import type { ChangeRequest } from "./reviewer";
+import { eventually, type ChangeRequest } from "./reviewer";
 
 interface FindingsApi {
   view: vscode.TreeDataProvider<unknown>;
@@ -24,7 +24,14 @@ export interface GutterMarker {
   /** The only commands the hover's links may run. */
   enabledCommands: readonly string[];
   /** The icon the gutter shows on each of its lines. */
-  gutter: ("lightbulb" | "lightbulbWithBar" | "bar" | undefined)[];
+  gutter: ("cat" | "bar" | undefined)[];
+}
+
+export interface FindingQuickFix {
+  title: string;
+  kind: string | undefined;
+  command: string | undefined;
+  arguments: unknown[] | undefined;
 }
 
 export interface FindingEntry {
@@ -96,6 +103,52 @@ export function convertFinding(entry: FindingEntry): Thenable<unknown> {
   return vscode.commands.executeCommand(
     "dearReviewer.convertFinding",
     entry.node
+  );
+}
+
+/**
+ * The Finding actions the editor's Quick Fix offers on the line, counted from
+ * 0, of the file, leaving out any other extension's. The editor cancels a
+ * request when its document changes under it, as when a Comment was just
+ * saved, so a cancelled one is asked again.
+ */
+export async function findingQuickFixes(
+  file: string,
+  line: number
+): Promise<FindingQuickFix[]> {
+  let actions: vscode.CodeAction[] = [];
+  let failure: unknown;
+  await eventually(async () => {
+    failure = undefined;
+    try {
+      actions =
+        (await vscode.commands.executeCommand<vscode.CodeAction[]>(
+          "vscode.executeCodeActionProvider",
+          vscode.Uri.file(file),
+          new vscode.Range(line, 0, line, 0),
+          vscode.CodeActionKind.QuickFix.value
+        )) ?? [];
+    } catch (err) {
+      if (err instanceof Error && err.name === "Canceled") throw err;
+      failure = err;
+    }
+  });
+  if (failure !== undefined) throw failure;
+  return actions
+    .filter((a) => a.title.startsWith("Finding"))
+    .map((a) => ({
+      title: a.title,
+      kind: a.kind?.value,
+      command: a.command?.command,
+      arguments: a.command?.arguments,
+    }));
+}
+
+/** Runs a Quick Fix action as choosing it in the menu does. */
+export function runQuickFix(action: FindingQuickFix): Thenable<unknown> {
+  return vscode.commands.executeCommand(
+    action.command!,
+    ...(action.arguments ?? [])
   );
 }
 

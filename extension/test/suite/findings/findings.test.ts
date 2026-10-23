@@ -16,8 +16,10 @@ import {
   dismissFinding,
   findIssues,
   findingAt,
+  findingQuickFixes,
   findingsView,
   gutterMarkers,
+  runQuickFix,
 } from "../findings";
 import { buildFixtureRepo, buildPullRequestFixture } from "../fixtures";
 import {
@@ -294,8 +296,8 @@ describe("Findings on request", () => {
           .filter((m) => opened.includes(m.file))
           .map(({ file, lines, gutter }) => ({ file, lines, gutter })),
         [
-          { file: opened[0], lines: [0, 0], gutter: ["lightbulb"] },
-          { file: opened[1], lines: [1, 1], gutter: ["lightbulb"] },
+          { file: opened[0], lines: [0, 0], gutter: ["cat"] },
+          { file: opened[1], lines: [1, 1], gutter: ["cat"] },
         ]
       )
     );
@@ -344,6 +346,39 @@ describe("Findings on request", () => {
     );
     assert.match(marker.hover, /\]\(command:dearReviewer\.convertFinding\?/);
     assert.match(marker.hover, /\]\(command:dearReviewer\.dismissFinding\?/);
+  });
+
+  it("offers a Finding's Convert to Comment and Dismiss in Quick Fix on its lines, on either side", async () => {
+    const idOf = async (where: string) =>
+      (await findingAt(where)).command!.arguments![0];
+    const actionsOf = (id: unknown) => [
+      {
+        title: "Finding: Convert to Comment",
+        kind: "quickfix",
+        command: "dearReviewer.convertFinding",
+        arguments: [id],
+      },
+      {
+        title: "Finding: Dismiss",
+        kind: "quickfix",
+        command: "dearReviewer.dismissFinding",
+        arguments: [id],
+      },
+    ];
+
+    assert.deepStrictEqual(
+      await findingQuickFixes(path.join(head, "util.py"), 1),
+      actionsOf(await idOf("util.py:2"))
+    );
+    assert.deepStrictEqual(
+      await findingQuickFixes(path.join(base, "pkg/legacy.py"), 0),
+      actionsOf(await idOf("pkg/legacy.py:1 (base)"))
+    );
+    assert.deepStrictEqual(
+      await findingQuickFixes(path.join(head, "util.py"), 0),
+      [],
+      "no Finding on the line"
+    );
   });
 
   it("opens a Finding's file at its lines from the view", async () => {
@@ -446,8 +481,9 @@ describe("Findings on request", () => {
     ]);
   });
 
-  it("drops a draft Comment the Reviewer cancels", async () => {
-    await convertFinding(await findingAt("util.py:2"));
+  it("drops a draft Comment the Reviewer cancels, converted from Quick Fix", async () => {
+    const [convert] = await findingQuickFixes(path.join(head, "util.py"), 1);
+    await runQuickFix(convert);
     const [draft] = (await threadAt(path.join(head, "util.py"), 1)).comments;
 
     await vscode.commands.executeCommand(
@@ -524,7 +560,7 @@ describe("Findings on request", () => {
     );
   });
 
-  it("marks a Finding over several lines with one lightbulb and a bar down the rest, and one icon per line where Findings overlap", async () => {
+  it("marks a Finding over several lines with one cat and a bar down the rest, and one icon per line where Findings overlap", async () => {
     await vscode.commands.executeCommand("workbench.action.closeAllEditors");
     const headFile = path.join(head, "util.py");
     const baseFile = path.join(base, "util.py");
@@ -551,13 +587,13 @@ describe("Findings on request", () => {
           {
             file: baseFile,
             lines: [0, 1],
-            gutter: ["lightbulbWithBar", "lightbulbWithBar"],
+            gutter: ["cat", "cat"],
           },
-          { file: baseFile, lines: [1, 1], gutter: ["lightbulbWithBar"] },
+          { file: baseFile, lines: [1, 1], gutter: ["cat"] },
           {
             file: headFile,
             lines: [0, 2],
-            gutter: ["lightbulbWithBar", "bar", "bar"],
+            gutter: ["cat", "bar", "bar"],
           },
         ].sort((a, b) => a.file.localeCompare(b.file))
       )
@@ -585,6 +621,31 @@ describe("Findings on request", () => {
     assert.deepStrictEqual(
       (await findingsView()).map((e) => e.where),
       ["util.py:1-2 (base)", "util.py:2 (base)"]
+    );
+  });
+
+  it("offers each Finding on a line its own Quick Fix actions, told apart by their titles", async () => {
+    const baseFile = path.join(base, "util.py");
+
+    const actions = await findingQuickFixes(baseFile, 1);
+
+    assert.deepStrictEqual(
+      actions.map((a) => a.title),
+      [
+        "Finding on lines 1–2, “The base had no docstring.”: Convert to Comment",
+        "Finding on lines 1–2, “The base had no docstring.”: Dismiss",
+        "Finding on line 2, “It returned 2 here too.”: Convert to Comment",
+        "Finding on line 2, “It returned 2 here too.”: Dismiss",
+      ]
+    );
+    await runQuickFix(actions[3]);
+    assert.deepStrictEqual(
+      (await findingsView()).map((e) => e.where),
+      ["util.py:1-2 (base)"]
+    );
+    assert.deepStrictEqual(
+      (await findingQuickFixes(baseFile, 1)).map((a) => a.title),
+      ["Finding: Convert to Comment", "Finding: Dismiss"]
     );
   });
 

@@ -22,7 +22,7 @@ import {
   sharedStyles,
 } from "../markdownPanel";
 import type { ShownReadingOrder } from "../readingOrder";
-import type { ShownRepeatedEdits } from "../repetitions";
+import { fewSites, type ShownRepeatedEdits } from "../repetitions";
 import type { PendingCommentLine } from "../reviewComments";
 import type { BriefState } from "../briefs";
 import type {
@@ -222,6 +222,7 @@ export type FromWebview =
   | { type: "nextFile" }
   | { type: "ask" }
   | { type: "codeFlow" }
+  | { type: "findIssues" }
   | { type: "showChangesSince" }
   | { type: "skimSetting" }
   | { type: "takeAction" }
@@ -360,6 +361,7 @@ export class TimelinePanel {
         "nextFile",
         "ask",
         "codeFlow",
+        "findIssues",
         "showChangesSince",
         "skimSetting",
         "takeAction",
@@ -553,6 +555,8 @@ function html(cspSource: string): string {
   .repeats .sample { margin: 2px 0 2px; font-family: var(--vscode-editor-font-family); overflow-wrap: anywhere; white-space: pre-wrap; color: var(--vscode-descriptionForeground); }
   .repeats .sites { margin-top: 2px; }
   #repeatsNote { margin: 2px 0 4px; }
+  #repeatsNext { margin-top: 6px; }
+  #repeatsNext .link { text-decoration: underline; text-underline-offset: 2px; }
   #checksSummary { margin: 0 0 4px; }
   #checks .more { margin-top: 4px; font-size: 0.9em; }
   .checks li { display: flex; flex-wrap: wrap; gap: 0 8px; align-items: baseline; padding: 2px 0; }
@@ -660,6 +664,7 @@ ${catSymbol}
       <summary class="step" id="repeatsSummary"></summary>
       <div class="muted" id="repeatsNote" role="status"></div>
       <ol id="repeatList"></ol>
+      <div class="muted" id="repeatsNext" hidden>The Assistant checks these when you <button class="link" id="askFindings" type="button" title="Ask the Assistant for Findings on this Change, with these sites among them">Ask for Findings</button>.</div>
     </details>
   </div>
   <div class="actions" id="ways">
@@ -1025,6 +1030,10 @@ ${catSymbol}
   // The Repeated edits section opens when an edit has a differing or a missed
   // site, and stays as the Reviewer left it once they have opened or closed it.
   byId("repeatsSummary").addEventListener("click", () => { byId("repeats").dataset.touched = "true"; });
+  byId("askFindings").addEventListener("click", () => vscode.postMessage({ type: "findIssues" }));
+  // A list of sites shows its first few; each list keeps its own Show more.
+  const fewSites = ${fewSites};
+  const allSites = new Set();
   function repeatedEdits(state) {
     const shown = state.repeatedEdits;
     const node = byId("repeats");
@@ -1034,7 +1043,8 @@ ${catSymbol}
     if (node.dataset.said === said) return;
     node.dataset.said = said;
     if (!node.dataset.touched) node.open = shown.open;
-    byId("repeatsSummary").textContent = "Repeated edits (" + shown.edits.length + ")";
+    byId("repeatsSummary").textContent = shown.heading;
+    byId("repeatsNext").hidden = !shown.open;
     const note = byId("repeatsNote");
     note.textContent = shown.checked === "pending" ? "Still checking the rest of the repository for places that missed the edit."
       : shown.checked === "partial" ? "The repository took too long to read, so places that missed the edit weren't fully checked."
@@ -1047,7 +1057,7 @@ ${catSymbol}
       open.title = missed ? "Open " + site.path + " at the lines that still hold the old code" : "Open the diff of " + site.path + " at this edit";
       return open;
     };
-    byId("repeatList").replaceChildren(...shown.edits.map((edit) => {
+    byId("repeatList").replaceChildren(...shown.edits.map((edit, at) => {
       const li = el("li");
       li.append(el("div", "step", edit.summary));
       if (edit.removed.length || edit.added.length) {
@@ -1057,14 +1067,36 @@ ${catSymbol}
         li.append(sample);
       }
       const sites = el("ul", "sites");
-      const row = (label, buttons, more) => {
+      // The sites past the first few are drawn hidden, so Show more only
+      // shows them and keeps the focus where it is.
+      const row = (kind, label, buttons, showMore, more) => {
         const item = el("li");
+        item.id = "repeat-" + at + "-" + kind;
         item.append(el("span", "muted", label), ...buttons);
+        if (showMore) {
+          const key = item.id;
+          const toggle = el("button", "link more");
+          toggle.type = "button";
+          toggle.setAttribute("aria-controls", item.id);
+          const draw = () => {
+            const all = allSites.has(key);
+            buttons.forEach((button, i) => { button.hidden = !all && i >= fewSites; });
+            setText(toggle, all ? "Show less" : showMore);
+            toggle.setAttribute("aria-expanded", String(all));
+          };
+          toggle.addEventListener("click", () => {
+            if (allSites.has(key)) allSites.delete(key);
+            else allSites.add(key);
+            draw();
+          });
+          draw();
+          item.append(toggle);
+        }
         if (more) item.append(el("span", "muted", "and " + more + " more"));
         sites.append(item);
       };
-      if (edit.differing.length) row("Differs here:", edit.differing.map((site) => siteButton(site, false)));
-      if (edit.missed.length) row("Still holds the old code:", edit.missed.map((site) => siteButton(site, true)), edit.moreMissed);
+      if (edit.differing.length) row("differing", "Made a different change. On purpose?", edit.differing.map((site) => siteButton(site, false)), edit.showDiffering);
+      if (edit.missed.length) row("missed", "Not changed, but holds the same code. Missed?", edit.missed.map((site) => siteButton(site, true)), edit.showMissed, edit.moreMissed);
       li.append(sites);
       return li;
     }));

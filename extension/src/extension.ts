@@ -3,6 +3,7 @@ import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
 import {
+  allChangesTitle,
   Change,
   ChangeRequest,
   OpenDeclined,
@@ -747,6 +748,28 @@ export function activate(context: vscode.ExtensionContext) {
         ? "workbench.action.focusSecondEditorGroup"
         : "workbench.action.focusFirstEditorGroup"
     );
+  }
+
+  /**
+   * Shows the Change's multi-file diff in its code column, beside its
+   * overview. The diff opens in the active group, and an overview given the
+   * focus can make its own group active again a moment after the code column
+   * got the focus (see `MarkdownPanel.ready`), so a diff that lands outside
+   * the code column closes, and opens again from a code column focused anew.
+   */
+  async function showAllChangesBesideOverview(change: Change): Promise<void> {
+    const column = await codeColumnOf(change);
+    const title = allChangesTitle(change);
+    for (let tries = 0; tries < 5; tries++) {
+      await focusCodeColumn(change);
+      await showAllChanges(change);
+      const strays = vscode.window.tabGroups.all
+        .filter((group) => group.viewColumn !== column)
+        .flatMap((group) => group.tabs)
+        .filter((tab) => tab.label.startsWith(title));
+      if (strays.length === 0) return;
+      await vscode.window.tabGroups.close(strays, true);
+    }
   }
 
   /**
@@ -1708,8 +1731,7 @@ export function activate(context: vscode.ExtensionContext) {
       async (target?: ChangeTarget) => {
         const change = await changeFor(target, "Open All Diffs");
         if (!change) return;
-        await focusCodeColumn(change);
-        await showAllChanges(change);
+        await showAllChangesBesideOverview(change);
       }
     ),
     vscode.commands.registerCommand(

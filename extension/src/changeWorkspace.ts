@@ -521,16 +521,33 @@ export function fileSides(
   };
 }
 
-/** Opens the multi-file diff of all the Change's files, in the main column. */
+/**
+ * The title of the Change's multi-file diff. VS Code adds the file count to
+ * its tab's label, as in "acme/api #7 · all changes (4 files)".
+ */
+export function allChangesTitle(change: Change): string {
+  return `${changeName(change)} · all changes`;
+}
+
+/**
+ * Opens the multi-file diff of all the Change's files in the active editor
+ * group, or shows it there if it's open already.
+ */
 export async function showAllChanges(change: Change): Promise<void> {
-  // Each resource is [label, original (absent if added), modified (absent if deleted)].
+  // A side is absent if the file was added or deleted.
   const resources = (await changedFiles(change)).map((file) => {
     const { original, modified } = fileSides(change, file);
-    return [(modified ?? original)!, original, modified];
+    return { originalUri: original, modifiedUri: modified };
   });
-  await vscode.commands.executeCommand(
-    "vscode.changes",
-    `${changeName(change)} · all changes`,
-    resources
-  );
+  // `vscode.changes` gives each diff it opens a source of its own, so the
+  // Change's diff would open again beside one already open. The command it
+  // calls takes the source; the same one each time shows the open diff.
+  await vscode.commands.executeCommand("_workbench.openMultiDiffEditor", {
+    multiDiffSourceUri: vscode.Uri.from({
+      scheme: "dear-reviewer-all-changes",
+      path: `/${change.id}`,
+    }),
+    title: allChangesTitle(change),
+    resources,
+  });
 }

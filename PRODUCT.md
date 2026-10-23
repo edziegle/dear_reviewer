@@ -54,7 +54,7 @@ Real navigation on both sides of every diff, for pull requests and local Changes
 1. Eliminate the tedium in code review, not the code review. The Assistant is present and visible, but the Reviewer's reading, judgement and Comments are the main flow (issue #17).
 2. The Reviewer decides and publishes; the Assistant suggests and explains.
 3. Navigation on both sides of the diff comes first. A feature that breaks real code navigation is the wrong feature.
-4. Feel native to the editor: VS Code views, theme, keyboard and command palette before custom UI.
+4. Feel native to the editor, and be as fast as it. The Change's code is only ever read in the real editor. Around it, use VS Code's own views where they serve the Reviewer well, and a webview where native UI would hide a feature or make it hard to use. A webview takes the theme's colors and the editor's density, works fully from the keyboard and with a screen reader, and shows and updates as fast as a native view, on a large Change too.
 
 ## Accessibility & Inclusion
 

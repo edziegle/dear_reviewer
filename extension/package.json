@@ -438,7 +438,7 @@
           "type": "array",
           "items": {
             "type": "string",
-            "pattern": "^(?!\\s*([\"']).*\\1\\s*$)",
+            "pattern": "^(?!\\s*(?:\"[^\"]*\"|'[^']*')\\s*$)",
             "patternErrorMessage": "Leave out the quotes around an item: each item is one whole argument, and the command runs without a shell. "
           },
           "default": [],

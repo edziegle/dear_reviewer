@@ -256,6 +256,11 @@ describe("The Claude Command setting", () => {
       assert.strictEqual(pattern.test(item), true, item);
   });
 
+  it("accepts an item that starts and ends with quotes no one pair wraps, such as a script for sh -c", () => {
+    for (const item of ['"$HOME/bin/claude" "$@"', "'a' 'b'"])
+      assert.strictEqual(pattern.test(item), true, item);
+  });
+
   it("says to leave the quotes out, ending so that several messages read apart", () => {
     assert.match(items.patternErrorMessage, /quotes/);
     assert.match(items.patternErrorMessage, /\. $/);

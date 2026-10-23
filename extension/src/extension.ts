@@ -22,7 +22,7 @@ import { ClosedChanges } from "./closedChanges";
 import { Assistants } from "./assistant/assistant";
 import { Briefs } from "./briefs";
 import { Conversations } from "./assistant/conversations";
-import { Findings, FindingsNode } from "./findings";
+import { Findings } from "./findings";
 import {
   ReadingTracker,
   selectionInChange,
@@ -1654,7 +1654,6 @@ export function activate(context: vscode.ExtensionContext) {
       (uri?: vscode.Uri) => briefs.copy(uri)
     ),
     findings,
-    vscode.window.registerTreeDataProvider("dearReviewer.findings", findings),
     vscode.commands.registerCommand(
       "dearReviewer.findIssues",
       async (target?: ChangeTarget) => {
@@ -1664,7 +1663,7 @@ export function activate(context: vscode.ExtensionContext) {
     ),
     vscode.commands.registerCommand(
       "dearReviewer.dismissFinding",
-      (target?: string | FindingsNode) => {
+      (target?: string) => {
         const finding = findings.get(target);
         if (finding) findings.dismiss(finding);
         else showNoFinding();
@@ -1672,7 +1671,7 @@ export function activate(context: vscode.ExtensionContext) {
     ),
     vscode.commands.registerCommand(
       "dearReviewer.convertFinding",
-      async (target?: string | FindingsNode) => {
+      async (target?: string) => {
         const finding = findings.get(target);
         if (finding) await findings.convert(finding);
         else showNoFinding();
@@ -1712,7 +1711,7 @@ export function activate(context: vscode.ExtensionContext) {
     ),
     vscode.commands.registerCommand(
       "dearReviewer.revealFinding",
-      async (target?: string | FindingsNode) => {
+      async (target?: string) => {
         const finding = findings.get(target);
         if (finding) await findings.open(finding);
       }
@@ -2011,7 +2010,7 @@ export function activate(context: vscode.ExtensionContext) {
     inbox,
     changeFiles,
     findings: {
-      view: findings,
+      view: findings.view,
       decorated: () => findings.decorated(),
       hovers: () => findings.hovers(),
     },

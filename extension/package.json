@@ -509,10 +509,11 @@
         {
           "id": "dearReviewer.changeFiles",
           "name": "Change Files",
-          "size": 5,
+          "size": 2,
           "when": "dearReviewer.inReviewWindow || dearReviewer.hasOpenChange"
         },
         {
+          "type": "webview",
           "id": "dearReviewer.findings",
           "name": "Findings",
           "size": 1,
@@ -848,26 +849,6 @@
           "group": "4_viewed@2"
         },
         {
-          "command": "dearReviewer.convertFinding",
-          "when": "view == dearReviewer.findings && viewItem == finding",
-          "group": "inline@1"
-        },
-        {
-          "command": "dearReviewer.dismissFinding",
-          "when": "view == dearReviewer.findings && viewItem == finding",
-          "group": "inline@2"
-        },
-        {
-          "command": "dearReviewer.convertFinding",
-          "when": "view == dearReviewer.findings && viewItem == finding",
-          "group": "finding@1"
-        },
-        {
-          "command": "dearReviewer.dismissFinding",
-          "when": "view == dearReviewer.findings && viewItem == finding",
-          "group": "finding@2"
-        },
-        {
           "command": "dearReviewer.showTimeline",
           "when": "view == dearReviewer.changeFiles && viewItem =~ /^change\\./",
           "group": "inline@1"
@@ -1071,16 +1052,6 @@
     ],
     "viewsWelcome": [
       {
-        "view": "dearReviewer.findings",
-        "contents": "The Assistant looks for spots worth a second look, only when you ask. Each shows in the diff's gutter, where you can dismiss it or turn it into a Comment. Ctrl+Alt+R F, or ⌃⌥R F on a Mac, steps through them.\n[Ask for Findings](command:dearReviewer.findIssues)",
-        "when": "dearReviewer.hasOpenChange"
-      },
-      {
-        "view": "dearReviewer.findings",
-        "when": "!dearReviewer.hasOpenChange",
-        "contents": "The Assistant looks for spots worth a second look, only when you ask. Open a Change to ask for them."
-      },
-      {
         "view": "dearReviewer.changeFiles",
         "contents": "No Change is open in this window. Open a pull request or a local branch from the Dear Reviewer side bar in the window you work in, or [open a commit range](command:dearReviewer.openChange) as a Change."
       }
@@ -1224,9 +1195,15 @@
           {
             "id": "findings",
             "title": "Ask for Findings",
-            "description": "The Assistant points at spots that deserve your attention only when you ask: bugs, missed edge cases, security problems or code that misleads. Each Finding shows in the gutter of the diff and in the Findings view. Turn one into a Comment, or dismiss it: a Finding is never published. Ctrl+Alt+R F steps through them, and Ctrl+Alt+R Shift+F goes back.\n[Ask for Findings](command:dearReviewer.findIssues)",
+            "description": "The Assistant points at spots that deserve your attention only when you ask: bugs, missed edge cases, security problems or code that misleads. Each Finding marks its lines in the gutter of the diff, and the Findings view under Change Files lists them by file, with the current one open to its whole message. Turn one into a Comment, or dismiss it, from the view, its hover or Quick Fix: a Finding is never published. Ctrl+Alt+R F steps through them, and Ctrl+Alt+R Shift+F goes back, as do the arrows at the foot of the view.\n[Ask for Findings](command:dearReviewer.findIssues)",
             "media": {
-              "markdown": "media/walkthrough/findings.md"
+              "image": {
+                "dark": "media/walkthrough/findings-dark.png",
+                "light": "media/walkthrough/findings-light.png",
+                "hc": "media/walkthrough/findings-dark.png",
+                "hcLight": "media/walkthrough/findings-light.png"
+              },
+              "altText": "The Findings view: retry.py's three Findings under its file row, the first open to its whole message with Convert to Comment and Dismiss, and 1 of 4 with the arrows at its foot"
             },
             "completionEvents": [
               "onCommand:dearReviewer.findIssues"

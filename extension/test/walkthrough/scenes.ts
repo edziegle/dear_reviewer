@@ -1,7 +1,8 @@
 // The screens of the walkthroughs' images (package.json,
 // contributes.walkthroughs): each is a real webview, the Dashboard, the
-// Assistant's view, a Change's overview or its Code Flow, given a state for
-// the story of "Retry failed webhooks with exponential backoff".
+// Assistant's view, the Findings view, a Change's overview or its Code Flow,
+// given a state for the story of "Retry failed webhooks with exponential
+// backoff".
 // `capture.mjs` draws them.
 
 import type * as vscode from "vscode";
@@ -9,6 +10,8 @@ import { AssistantView } from "../../src/assistant/panel";
 import { flowOffers, shownFlow, type FlowGraph } from "../../src/codeFlow";
 import { CodeFlowPanel } from "../../src/codeFlowPanel";
 import { DashboardView, type DashboardState } from "../../src/dashboard/view";
+import { byFile, countText, type Listed } from "../../src/findingsList";
+import { FindingsView } from "../../src/findingsView";
 import { TimelinePanel, type TimelineState } from "../../src/timeline/panel";
 import { latestWebview, stubView, type StubWebview } from "./vscodeStub";
 
@@ -49,18 +52,74 @@ function dashboard(state: Partial<DashboardState>): StubWebview {
   return latestWebview();
 }
 
+/** A Finding as the Findings view lists it, on lines counted from 0. */
+function finding(
+  id: string,
+  path: string,
+  first: number,
+  last: number,
+  message: string,
+  base = false
+): Listed {
+  return {
+    id,
+    file: `${base ? "base" : "head"}/${path}`,
+    path,
+    first,
+    last,
+    base,
+    message,
+  };
+}
+
 const take =
   "This change moves webhook retries from a fixed 3-attempt loop to an exponential backoff queue backed by Redis. The core is the new `RetryScheduler` in `src/webhooks/retry.py:42`, which replaces the inline loop in the dispatcher. Start there, then check the migration that adds the `attempts` column.";
 
 /** What calls what in the Change, as a language server tells it. */
 const calls: FlowGraph = {
   nodes: [
-    { id: "dispatch", name: "dispatch", path: "src/webhooks/dispatcher.py", line: 20, status: "changed" },
-    { id: "schedule", name: "RetryScheduler.schedule", path: "src/webhooks/retry.py", line: 42, status: "new" },
-    { id: "delay", name: "backoff_delay", path: "src/webhooks/retry.py", line: 61, status: "new" },
-    { id: "record", name: "record_attempt", path: "src/webhooks/retry.py", line: 80, status: "new" },
-    { id: "push", name: "RedisQueue.push", path: "src/queue/redis.py", line: 15, status: "unchanged" },
-    { id: "send", name: "send_webhook", path: "src/webhooks/http.py", line: 8, status: "unchanged" },
+    {
+      id: "dispatch",
+      name: "dispatch",
+      path: "src/webhooks/dispatcher.py",
+      line: 20,
+      status: "changed",
+    },
+    {
+      id: "schedule",
+      name: "RetryScheduler.schedule",
+      path: "src/webhooks/retry.py",
+      line: 42,
+      status: "new",
+    },
+    {
+      id: "delay",
+      name: "backoff_delay",
+      path: "src/webhooks/retry.py",
+      line: 61,
+      status: "new",
+    },
+    {
+      id: "record",
+      name: "record_attempt",
+      path: "src/webhooks/retry.py",
+      line: 80,
+      status: "new",
+    },
+    {
+      id: "push",
+      name: "RedisQueue.push",
+      path: "src/queue/redis.py",
+      line: 15,
+      status: "unchanged",
+    },
+    {
+      id: "send",
+      name: "send_webhook",
+      path: "src/webhooks/http.py",
+      line: 8,
+      status: "unchanged",
+    },
   ],
   edges: [
     { from: "dispatch", to: "send", label: "send_webhook(event)" },
@@ -307,6 +366,57 @@ export const scenes: Scene[] = [
           submitting: false,
         },
       }),
+  },
+  {
+    name: "findings",
+    surface: "sideBar",
+    width: 340,
+    height: 300,
+    open: () => {
+      const listed = [
+        finding(
+          "schedule",
+          "src/webhooks/retry.py",
+          41,
+          41,
+          "`schedule` retries forever when `max_attempts` is 0: the check is `attempts > max_attempts`, which never stops a zero limit. A webhook that always fails would be queued again on every run."
+        ),
+        finding(
+          "delay",
+          "src/webhooks/retry.py",
+          60,
+          62,
+          "The delay has no jitter, so webhooks that failed together retry together."
+        ),
+        finding(
+          "record",
+          "src/webhooks/retry.py",
+          79,
+          79,
+          "`record_attempt` commits before the push, so a crash in between loses the retry."
+        ),
+        finding(
+          "loop",
+          "src/webhooks/dispatcher.py",
+          19,
+          19,
+          "The old loop also logged each failure; nothing logs them now.",
+          true
+        ),
+      ];
+      const findingsView = new FindingsView(
+        {
+          changeOpen: true,
+          files: byFile(listed),
+          current: "schedule",
+          count: countText(listed, "schedule"),
+          key: "Ctrl+Alt+R F",
+        },
+        async () => undefined
+      );
+      findingsView.resolveWebviewView(view());
+      return latestWebview();
+    },
   },
   {
     name: "codeflow",

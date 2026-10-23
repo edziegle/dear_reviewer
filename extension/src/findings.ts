@@ -24,6 +24,12 @@ import {
   stepOrder,
   type StepStart,
 } from "./findingOrder";
+import { byFile, countText, currentFinding } from "./findingsList";
+import {
+  FindingsView,
+  type FindingsAction,
+  type FindingsViewState,
+} from "./findingsView";
 import { reviewKey } from "./reviewKeys";
 import { countLines, readInWorktree } from "./worktreeFile";
 
@@ -35,10 +41,6 @@ export interface Finding {
   place: ThreadPlace;
   message: string;
 }
-
-export type FindingsNode =
-  | { kind: "change"; change: Change; findings: Finding[] }
-  | { kind: "finding"; finding: Finding };
 
 /** The most Findings kept from one reply, and the longest message. */
 const maxFindings = 50;
@@ -57,14 +59,9 @@ const quickFixes = [
   ["Dismiss", "dearReviewer.dismissFinding"],
 ] as const;
 
-export class Findings
-  implements
-    vscode.TreeDataProvider<FindingsNode>,
-    vscode.CodeActionProvider,
-    vscode.Disposable
-{
-  private readonly changed = new vscode.EventEmitter<void>();
-  readonly onDidChangeTreeData = this.changed.event;
+export class Findings implements vscode.CodeActionProvider, vscode.Disposable {
+  /** The Findings view, which lists the Change in front's Findings. */
+  readonly view: FindingsView;
   /** By Change id. */
   private readonly byChange = new Map<
     string,
@@ -79,7 +76,10 @@ export class Findings
     string,
     { options: vscode.DecorationOptions[]; icons: IconSpan[] }
   >();
-  /** The Finding stepped to or opened last, which the next step starts from. */
+  /**
+   * The Finding stepped to or opened last, which the next step starts from
+   * and the view shows open while the cursor is on no Finding.
+   */
   private current: string | undefined;
   /** How many hovers opened on a Finding's lines, and where the last did, for the tests. */
   private hovered: { count: number; last?: { file: string; line: number } } = {
@@ -139,11 +139,21 @@ export class Findings
       ),
       overviewRulerLane: vscode.OverviewRulerLane.Right,
     });
+    this.view = new FindingsView(this.viewState(), (action) =>
+      this.act(action)
+    );
     this.subscriptions.push(
       this.decoration,
       ...Object.values(this.icons),
-      this.changed,
+      vscode.window.registerWebviewViewProvider(
+        FindingsView.viewType,
+        this.view,
+        { webviewOptions: { retainContextWhenHidden: true } }
+      ),
       vscode.window.onDidChangeVisibleTextEditors(() => this.render()),
+      // The current Finding is the one under the cursor.
+      vscode.window.onDidChangeTextEditorSelection(() => this.showView()),
+      vscode.window.onDidChangeActiveTextEditor(() => this.showView()),
       vscode.languages.registerCodeActionsProvider({ scheme: "file" }, this, {
         providedCodeActionKinds: [vscode.CodeActionKind.QuickFix],
       })
@@ -272,6 +282,7 @@ export class Findings
       start
     );
     this.current = finding.id;
+    this.showView();
     // By default a hover already open, such as the last Finding's, only
     // takes the focus and stays where it is.
     await vscode.commands.executeCommand("editor.action.showHover", {
@@ -308,9 +319,9 @@ export class Findings
    * after another came to the front, since their hovers count them.
    */
   refresh(): void {
-    this.changed.fire();
     this.showHasFindings();
     this.render();
+    this.showView();
   }
 
   /** The names of the Changes this window holds Findings for, for the tests. */
@@ -324,13 +335,11 @@ export class Findings
   }
 
   /**
-   * The Finding a command names: by its id, as a hover's link does, by a
-   * node of the view, or else the one under the active editor's cursor.
+   * The Finding a command names: by its id, as a hover's link and the view
+   * do, or else the one under the active editor's cursor.
    */
-  get(target: string | FindingsNode | undefined): Finding | undefined {
+  get(target: string | undefined): Finding | undefined {
     if (target === undefined) return this.underCursor();
-    if (typeof target !== "string")
-      return target.kind === "finding" ? target.finding : undefined;
     return this.all().find((f) => f.id === target);
   }
 
@@ -374,50 +383,6 @@ export class Findings
         return action;
       })
     );
-  }
-
-  getTreeItem(node: FindingsNode): vscode.TreeItem {
-    if (node.kind === "change") {
-      const item = new vscode.TreeItem(
-        changeName(node.change),
-        vscode.TreeItemCollapsibleState.Expanded
-      );
-      item.description = `${node.findings.length} Finding${node.findings.length === 1 ? "" : "s"}`;
-      item.contextValue = "change";
-      return item;
-    }
-    const { finding } = node;
-    const item = new vscode.TreeItem(
-      finding.message.split("\n")[0],
-      vscode.TreeItemCollapsibleState.None
-    );
-    item.description = `${reference(finding.place)}${finding.place.side === "LEFT" ? " (base)" : ""}`;
-    // Plain text: the message is the Assistant's, from other people's code.
-    item.tooltip = finding.message;
-    item.iconPath = new vscode.ThemeIcon(
-      "lightbulb",
-      new vscode.ThemeColor("dearReviewer.assistantForeground")
-    );
-    item.contextValue = "finding";
-    item.command = {
-      title: "Show Finding",
-      command: "dearReviewer.revealFinding",
-      arguments: [finding.id],
-    };
-    return item;
-  }
-
-  getChildren(node?: FindingsNode): FindingsNode[] {
-    if (node) {
-      return node.kind === "change"
-        ? node.findings.map((finding) => ({ kind: "finding", finding }))
-        : [];
-    }
-    const front = this.inFront();
-    const entry = front && this.byChange.get(front.id);
-    return entry
-      ? [{ kind: "change", change: entry.change, findings: entry.findings }]
-      : [];
   }
 
   /**
@@ -483,6 +448,67 @@ export class Findings
         };
       })
     );
+  }
+
+  /**
+   * What the view shows: the Change in front's Findings by file, and the
+   * current one, under the cursor or else stepped to or opened last.
+   */
+  private viewState(): FindingsViewState {
+    const ordered = this.inStepOrder();
+    const editor = vscode.window.activeTextEditor;
+    const current = currentFinding(
+      ordered,
+      editor && {
+        file: editor.document.uri.toString(),
+        line: editor.selection.active.line,
+      },
+      this.current
+    );
+    return {
+      changeOpen: !!this.inFront(),
+      files: byFile(
+        ordered.map((f) => ({
+          ...f,
+          path: f.finding.place.path,
+          base: f.finding.place.side === "LEFT",
+          message: f.finding.message,
+        }))
+      ),
+      ...(current !== undefined && { current }),
+      count: countText(ordered, current),
+      key: reviewKey("F"),
+    };
+  }
+
+  private showView(): void {
+    // Undefined while the constructor makes the view, which asks for its first state.
+    this.view?.update(this.viewState());
+  }
+
+  /**
+   * Does what the Reviewer asked of the view. A Finding it names must be
+   * one it lists, of the Change in front, and a step starts from the
+   * current Finding.
+   */
+  private async act(action: FindingsAction): Promise<void> {
+    if (action.type === "ask") {
+      await vscode.commands.executeCommand("dearReviewer.findIssues");
+      return;
+    }
+    if (action.type === "step") {
+      const { current } = this.viewState();
+      await this.step(
+        action.direction,
+        this.ofFront().find((f) => f.id === current)
+      );
+      return;
+    }
+    const finding = this.ofFront().find((f) => f.id === action.id);
+    if (!finding) return;
+    if (action.type === "reveal") await this.open(finding);
+    else if (action.type === "convert") await this.convert(finding);
+    else this.dismiss(finding);
   }
 
   private showHasFindings(): void {
@@ -654,11 +680,6 @@ function rangeOf(place: ThreadPlace): vscode.Range {
     place.line - 1,
     Number.MAX_SAFE_INTEGER
   );
-}
-
-function reference(place: ThreadPlace): string {
-  const first = place.startLine ?? place.line;
-  return `${place.path}:${first === place.line ? first : `${first}-${place.line}`}`;
 }
 
 function isLine(n: unknown): n is number {

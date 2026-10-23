@@ -13,20 +13,29 @@ import {
 } from "../assistant";
 import { shownText } from "../changeFiles";
 import {
+  clickFindings,
+  clickInFindings,
   clickHoverLink,
   convertFinding,
   dismissFinding,
   findIssues,
   findingAt,
   findingQuickFixes,
+  findingsReport,
+  findingsState,
+  freshFindingsReport,
+  focusFindingRow,
   hoversOpened,
   findingsView,
   gutterMarkers,
   nextHover,
+  pressInFindings,
   revealFinding,
   runQuickFix,
+  showFindingsView,
   type GutterMarker,
 } from "../findings";
+import { actAsReviewWindow } from "../dashboard";
 import { buildFixtureRepo, buildPullRequestFixture } from "../fixtures";
 import {
   configure,
@@ -145,6 +154,15 @@ const longFindingsReply = JSON.stringify({
   ],
 });
 
+// As many Findings as one reply keeps, all on one line of the diff.
+const manyFindings = Array.from({ length: 50 }, (_, i) => ({
+  path: "util.py",
+  side: "head",
+  startLine: 2,
+  endLine: 2,
+  message: `Finding number ${i + 1}.`,
+}));
+
 /** The marker of the file's Finding, on `line` if given, once its editor shows it. */
 async function markerOf(file: string, line?: number): Promise<GutterMarker> {
   let found: GutterMarker | undefined;
@@ -191,6 +209,26 @@ describe("Findings on request", () => {
   const found = new Map<string, unknown>();
   let base = "";
   let head = "";
+
+  /**
+   * The places, such as `util.py:2` or `pkg/legacy.py:1 (base)`, in Next
+   * Finding's order: by file, as the editor names it, then by line.
+   */
+  function inStepOrder(wheres: string[]): string[] {
+    const keyOf = (where: string) => {
+      const [file, line] = where.replace(" (base)", "").split(":");
+      const dir = where.endsWith("(base)") ? base : head;
+      return [
+        vscode.Uri.file(path.join(dir, file)).toString(),
+        parseInt(line),
+      ] as const;
+    };
+    return [...wheres].sort((a, b) => {
+      const [fileA, lineA] = keyOf(a);
+      const [fileB, lineB] = keyOf(b);
+      return fileA < fileB ? -1 : fileA > fileB ? 1 : lineA - lineB;
+    });
+  }
 
   before(async () => {
     const config = vscode.workspace.getConfiguration("dearReviewer");
@@ -259,31 +297,70 @@ describe("Findings on request", () => {
   });
 
   it("lists the Findings on the diff's lines, inside the worktrees, and leaves out the rest", async () => {
+    const messages: Record<string, string> = {
+      "util.py:2":
+        "The docstring says **Two**; see [this](command:workbench.action.terminal.new).",
+      "pkg/legacy.py:1 (base)": "Something may still read LEGACY.",
+      "pkg/sub/new.py:1": "NEW isn't used anywhere.",
+    };
     assert.deepStrictEqual(
-      (await findingsView()).map(({ change, message, where }) => ({
-        change,
-        message,
+      (await findingsView()).map(({ message, where }) => ({ message, where })),
+      inStepOrder(Object.keys(messages)).map((where) => ({
+        message: messages[where],
         where,
-      })),
-      [
-        {
-          change: "acme/api #31",
-          message:
-            "The docstring says **Two**; see [this](command:workbench.action.terminal.new).",
-          where: "util.py:2",
-        },
-        {
-          change: "acme/api #31",
-          message: "Something may still read LEGACY.",
-          where: "pkg/legacy.py:1 (base)",
-        },
-        {
-          change: "acme/api #31",
-          message: "NEW isn't used anywhere.",
-          where: "pkg/sub/new.py:1",
-        },
-      ]
+      }))
     );
+  });
+
+  it("lists them under a row per file, in Next Finding's order, with counts, lines and the base-side mark", async () => {
+    const state = await findingsState();
+    assert.deepStrictEqual(
+      state.files.map((file) => ({
+        name: file.name,
+        folder: file.folder,
+        findings: file.findings.map((f) => [f.lines, f.base, f.name]),
+      })),
+      inStepOrder([
+        "util.py:2",
+        "pkg/legacy.py:1 (base)",
+        "pkg/sub/new.py:1",
+      ]).map(
+        (where) =>
+          ({
+            "util.py:2": {
+              name: "util.py",
+              folder: "",
+              findings: [
+                [
+                  "2",
+                  false,
+                  "util.py line 2: The docstring says **Two**; see [this](command:workbench.action.terminal.new).",
+                ],
+              ],
+            },
+            "pkg/legacy.py:1 (base)": {
+              name: "legacy.py",
+              folder: "pkg",
+              findings: [
+                [
+                  "1",
+                  true,
+                  "legacy.py line 1, base: Something may still read LEGACY.",
+                ],
+              ],
+            },
+            "pkg/sub/new.py:1": {
+              name: "new.py",
+              folder: "pkg/sub",
+              findings: [
+                ["1", false, "new.py line 1: NEW isn't used anywhere."],
+              ],
+            },
+          })[where]
+      )
+    );
+    assert.strictEqual(state.changeOpen, true);
+    assert.strictEqual(state.key, `${chord} F`);
   });
 
   it("keeps only a note about the Findings in the Assistant's panel", async () => {
@@ -375,7 +452,7 @@ describe("Findings on request", () => {
     );
     assert.match(marker.hover, /\*\*Finding [1-3] of 3\*\* from the Assistant/);
     const entry = await findingAt("util.py:2");
-    const args = encodeURIComponent(JSON.stringify(entry.command!.arguments));
+    const args = encodeURIComponent(JSON.stringify([entry.id]));
     for (const command of [
       "convertFinding",
       "dismissFinding",
@@ -389,8 +466,7 @@ describe("Findings on request", () => {
   });
 
   it("offers a Finding's Convert to Comment and Dismiss in Quick Fix on its lines, on either side", async () => {
-    const idOf = async (where: string) =>
-      (await findingAt(where)).command!.arguments![0];
+    const idOf = async (where: string) => (await findingAt(where)).id;
     const actionsOf = (id: unknown) => [
       {
         title: "Finding: Convert to Comment",
@@ -441,17 +517,138 @@ describe("Findings on request", () => {
 
   it("opens a Finding's file from the view with the cursor on its first line and its hover open", async () => {
     const entry = await findingAt("pkg/sub/new.py:1");
+    await showFindingsView(false);
     const before = await hoversOpened();
 
-    await vscode.commands.executeCommand(
-      entry.command!.command,
-      ...(entry.command!.arguments ?? [])
-    );
+    await clickInFindings(`finding:${entry.id}`);
 
     assert.deepStrictEqual(await nextHover(before), {
       file: path.join(head, "pkg/sub/new.py"),
       line: 0,
     });
+    await eventually(async () =>
+      assert.strictEqual((await findingsState()).current, entry.id)
+    );
+  });
+
+  it("makes the Finding stepped to current, and the stepper says which it is", async () => {
+    await vscode.commands.executeCommand("dearReviewer.nextFinding");
+
+    await eventually(async () => {
+      const state = await findingsState();
+      const ids = (await findingsView()).map((e) => e.id);
+      assert.ok(state.current, "a current Finding");
+      assert.strictEqual(state.count, `${ids.indexOf(state.current) + 1} of 3`);
+    });
+    const opened = shownText().fsPath;
+    const { current } = await findingsState();
+    const entry = (await findingsView()).find((e) => e.id === current)!;
+    assert.ok(
+      opened.endsWith(entry.where.replace(/:.*/, "")),
+      `${opened} is ${entry.where}'s file`
+    );
+  });
+
+  it("makes the Finding under the editor's cursor current, and the one clicked last once the cursor is on none", async () => {
+    const legacy = await findingAt("pkg/legacy.py:1 (base)");
+    await revealFinding(legacy);
+    const editor = await vscode.window.showTextDocument(
+      vscode.Uri.file(path.join(head, "util.py")),
+      { viewColumn: vscode.ViewColumn.One, preview: false }
+    );
+    editor.selection = new vscode.Selection(1, 3, 1, 3);
+
+    const util = await findingAt("util.py:2");
+    await eventually(async () =>
+      assert.strictEqual((await findingsState()).current, util.id)
+    );
+
+    editor.selection = new vscode.Selection(0, 0, 0, 0);
+    await eventually(async () =>
+      assert.strictEqual((await findingsState()).current, legacy.id)
+    );
+  });
+
+  it("steps from the current Finding with the stepper's Previous and Next", async () => {
+    await revealFinding(await findingAt("pkg/legacy.py:1 (base)"));
+    const ids = (await findingsView()).map((e) => e.id);
+    const from = ids.indexOf((await findingAt("pkg/legacy.py:1 (base)")).id);
+
+    await showFindingsView(false);
+
+    await clickInFindings("next");
+    await eventually(async () =>
+      assert.strictEqual((await findingsState()).current, ids[(from + 1) % 3])
+    );
+
+    await clickInFindings("previous");
+    await eventually(async () =>
+      assert.strictEqual((await findingsState()).current, ids[from])
+    );
+  });
+
+  it("shows the current Finding open, with its message as literal text, its links, then the stepper, after the list's one tab stop", async () => {
+    const util = await findingAt("util.py:2");
+    await revealFinding(util);
+    await showFindingsView();
+
+    const report = await focusFindingRow(util.id);
+
+    assert.strictEqual(report.focused, `finding:${util.id}`);
+    assert.deepStrictEqual(report.tabOrder, [
+      `finding:${util.id}`,
+      `convert:${util.id}`,
+      `dismiss:${util.id}`,
+      "previous",
+      "next",
+    ]);
+    assert.strictEqual(
+      report.openMessage,
+      "The docstring says **Two**; see [this](command:workbench.action.terminal.new)."
+    );
+    assert.strictEqual(
+      report.foreign,
+      0,
+      "no link or formatting from the message"
+    );
+  });
+
+  it("moves between Findings with Up, Down, Home and End, and opens one with Enter", async () => {
+    const ids = (await findingsView()).map((e) => e.id);
+    await showFindingsView();
+    const lands = async (key: string, from: string) =>
+      (await pressInFindings(key, from)).focused;
+
+    assert.strictEqual(await lands("ArrowDown", ids[0]), `finding:${ids[1]}`);
+    assert.strictEqual(await lands("ArrowUp", ids[1]), `finding:${ids[0]}`);
+    assert.strictEqual(
+      await lands("ArrowUp", ids[0]),
+      `finding:${ids[0]}`,
+      "stays at the top"
+    );
+    assert.strictEqual(await lands("End", ids[0]), `finding:${ids[2]}`);
+    const atStart = await pressInFindings("Home", ids[2]);
+    assert.strictEqual(atStart.focused, `finding:${ids[0]}`);
+    assert.strictEqual(
+      atStart.tabOrder.filter((name) => name.startsWith("finding:")).length,
+      1,
+      "the list is one tab stop"
+    );
+
+    const { current } = await findingsState();
+    const other = ids.find((id) => id !== current)!;
+    assert.strictEqual(
+      await lands("Tab", other),
+      `convert:${current}`,
+      "Tab goes on to the open row's links from any Finding"
+    );
+
+    const before = await hoversOpened();
+    await pressInFindings("Enter", ids[0]);
+    await nextHover(before);
+    await eventually(async () =>
+      assert.strictEqual((await findingsState()).current, ids[0])
+    );
   });
 
   it("steps from the Finding whose hover's link is clicked, not from the cursor", async () => {
@@ -474,7 +671,7 @@ describe("Findings on request", () => {
 
     assert.deepStrictEqual(
       (await findingsView()).map((e) => e.where),
-      ["util.py:2", "pkg/legacy.py:1 (base)"]
+      inStepOrder(["util.py:2", "pkg/legacy.py:1 (base)"])
     );
     assert.ok(
       !(await gutterMarkers()).some((m) => m.file.endsWith("new.py")),
@@ -499,7 +696,7 @@ describe("Findings on request", () => {
 
     assert.deepStrictEqual(
       (await findingsView()).map((e) => e.where),
-      ["util.py:2", "pkg/legacy.py:1 (base)"]
+      inStepOrder(["util.py:2", "pkg/legacy.py:1 (base)"])
     );
   });
 
@@ -592,13 +789,12 @@ describe("Findings on request", () => {
   it("lists only the Active Change's Findings, and drops a Change's when it stops", async () => {
     await scriptClaude(change, { turns: [replyTurn(findingsReply)] });
     await findIssues(change);
-    const listed = async () =>
-      (await findingsView()).map(({ change, where }) => `${change} ${where}`);
-    const raised = [
-      "acme/api #31 util.py:2",
-      "acme/api #31 pkg/legacy.py:1 (base)",
-      "acme/api #31 pkg/sub/new.py:1",
-    ];
+    const listed = async () => (await findingsView()).map(({ where }) => where);
+    const raised = inStepOrder([
+      "util.py:2",
+      "pkg/legacy.py:1 (base)",
+      "pkg/sub/new.py:1",
+    ]);
     assert.deepStrictEqual(await listed(), raised);
     const repo = buildFixtureRepo("behind-findings");
     const other = {
@@ -709,7 +905,7 @@ describe("Findings on request", () => {
 
     assert.deepStrictEqual(
       (await findingsView()).map((e) => e.where),
-      ["util.py:1-2 (base)", "util.py:2 (base)"]
+      ["util.py:1–2 (base)", "util.py:2 (base)"]
     );
   });
 
@@ -732,7 +928,7 @@ describe("Findings on request", () => {
     await runQuickFix(actions[3]);
     assert.deepStrictEqual(
       (await findingsView()).map((e) => e.where),
-      ["util.py:1-3", "util.py:1-2 (base)"]
+      inStepOrder(["util.py:1–3", "util.py:1–2 (base)"])
     );
     assert.deepStrictEqual(
       (await findingQuickFixes(baseFile, 1)).map((a) => a.title),
@@ -830,6 +1026,99 @@ describe("Findings on request", () => {
     );
   });
 
+  it("with 50 Findings, rebuilds only the rows a converted Finding changes", async () => {
+    await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+    await scriptClaude(change, {
+      turns: [replyTurn(JSON.stringify({ findings: manyFindings }))],
+    });
+    await findIssues(change);
+    const ids = (await findingsView()).map((e) => e.id);
+    assert.strictEqual(ids.length, 50);
+    await clickFindings({ type: "reveal", id: ids[0] });
+    await showFindingsView();
+    const before = await findingsState();
+    assert.strictEqual(before.current, ids[0]);
+
+    const report = await findingsReport(() =>
+      clickFindings({ type: "convert", id: ids[20] })
+    );
+
+    const after = await findingsState();
+    assert.ok(
+      !after.files.some((f) => f.findings.some((r) => r.id === ids[20]))
+    );
+    const affected = [
+      `file:${before.files[0].key}`,
+      ...[before.current, after.current].flatMap((id) => [
+        `finding:${id}`,
+        `open:${id}`,
+      ]),
+    ];
+    assert.ok(
+      report.rebuilt.includes(`file:${before.files[0].key}`),
+      "the file's count"
+    );
+    assert.deepStrictEqual(
+      report.rebuilt.filter((row) => !affected.includes(row)),
+      [],
+      "no other row"
+    );
+    const [draft] = (await threadAt(path.join(head, "util.py"), 1)).comments;
+    await vscode.commands.executeCommand(
+      "dearReviewer.cancelEditComment",
+      draft
+    );
+  });
+
+  it("keeps the focus on the Finding that takes a dismissed one's place, else the one before, else Ask for Findings", async () => {
+    await showFindingsView();
+    const ids = () => findingsView().then((all) => all.map((e) => e.id));
+    let listed = await ids();
+
+    await focusFindingRow(listed[5]);
+    let report = await findingsReport(() =>
+      clickFindings({ type: "dismiss", id: listed[5] })
+    );
+    assert.strictEqual(report.focused, `finding:${listed[6]}`, "the one after");
+
+    listed = await ids();
+    const last = listed.at(-1)!;
+    await focusFindingRow(last);
+    report = await findingsReport(() =>
+      clickFindings({ type: "dismiss", id: last })
+    );
+    assert.strictEqual(
+      report.focused,
+      `finding:${listed.at(-2)}`,
+      "the one before"
+    );
+
+    listed = await ids();
+    for (const id of listed.slice(1))
+      await clickFindings({ type: "dismiss", id });
+    // The last, the current one, from its own Dismiss link.
+    assert.strictEqual((await findingsState()).current, listed[0]);
+    await clickInFindings(`dismiss:${listed[0]}`);
+    await eventually(async () =>
+      assert.deepStrictEqual((await findingsState()).files, [])
+    );
+    report = await freshFindingsReport();
+    assert.strictEqual(report.focused, "ask");
+    assert.deepStrictEqual(report.tabOrder, ["ask"]);
+    const state = await findingsState();
+    assert.deepStrictEqual([state.changeOpen, state.files], [true, []]);
+  });
+
+  it("asks for Findings from the view's own button while it has none", async () => {
+    await scriptClaude(change, { turns: [replyTurn(findingsReply)] });
+
+    await clickInFindings("ask");
+
+    await eventually(async () =>
+      assert.strictEqual((await findingsView()).length, 3)
+    );
+  });
+
   describe("opening another Change with a Comment being written", () => {
     const repo = buildFixtureRepo("discard-prompt");
     const other = {
@@ -887,5 +1176,17 @@ describe("Findings on request", () => {
         await closeChange(other);
       }
     });
+  });
+});
+
+describe("The Findings view with no Change open", () => {
+  before(() => actAsReviewWindow(true));
+  after(() => actAsReviewWindow(false));
+
+  it("says to open a Change, with no Ask for Findings button", async () => {
+    const state = await showFindingsView(false);
+
+    assert.deepStrictEqual([state.changeOpen, state.files], [false, []]);
+    assert.ok(!(await findingsReport()).tabOrder.includes("ask"));
   });
 });

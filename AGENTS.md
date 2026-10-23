@@ -32,7 +32,7 @@ Rules for tests, which reviewers enforce:
 
 ## Docs
 
-The wiki mirrors `docs/`, each file as the page named after it. Users read docs in the wiki, so a link in the code goes to a doc's page: the wiki's address, then the file name without `.md`, as `customClaudeCommandGuide` in `extension/src/assistant/claude.ts` does. Code comments keep the doc's path in the repository.
+Guides for users go in `wiki/`, which the wiki mirrors, each file as the page named after it; ADRs, research and docs for contributors go in `docs/`. A link in the code goes to a guide's page: the wiki's address, then the file name without `.md`, as `customClaudeCommandGuide` in `extension/src/assistant/claude.ts` does.
 
 ## Agent skills
 

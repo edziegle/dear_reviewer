@@ -111,8 +111,8 @@ run = [{ task = "test-integration" }]
 description = "Check prose with Vale; warnings and errors fail, suggestions are advice"
 # Vale exits nonzero only on errors, so the second command fails on warnings too.
 run = [
-  "vale --no-exit docs GLOSSARY.md AGENTS.md DESIGN.md",
-  "vale --minAlertLevel=warning --output=line docs GLOSSARY.md AGENTS.md DESIGN.md | awk '{ print } END { exit NR > 0 }'",
+  "vale --no-exit docs wiki GLOSSARY.md AGENTS.md DESIGN.md",
+  "vale --minAlertLevel=warning --output=line docs wiki GLOSSARY.md AGENTS.md DESIGN.md | awk '{ print } END { exit NR > 0 }'",
 ]
 
 # A range whose start isn't in the history (a new branch's all-zeros "before", or
@@ -157,46 +157,30 @@ run = 'echo "week=$(date -u +%G-W%V)" >> "${GITHUB_OUTPUT:-/dev/stdout}"'
 description = "Format Markdown with Prettier"
 run = "npx prettier --write '**/*.md'"
 
-# The wiki mirrors docs/ (.github/workflows/wiki.yml): one page for each
-# Markdown file, named after the file, since a wiki's pages share one
-# namespace whatever folder they're in. A link to another doc becomes a link
+# The wiki mirrors wiki/ (.github/workflows/wiki.yml): each Markdown file
+# there is the page named after it, and a link to another one becomes a link
 # to its page. Each page ends by naming its file, because the next push to
-# main overwrites an edit made in the wiki. Home lists every page. The ADR
-# templates stay out: they're for writing an ADR here.
+# main overwrites an edit made in the wiki. Home lists every page.
 [tasks.wiki]
-description = "Write docs/ as GitHub wiki pages into a clone of the wiki"
+description = "Write wiki/ as GitHub wiki pages into a clone of the wiki"
 usage = 'arg "<wiki>" help="A clone of the wiki repository, from the repository root; its pages are all replaced"'
 run = '''
 if ! git -C "$usage_wiki" remote get-url origin | grep -q '\.wiki\(\.git\)\{0,1\}$'; then
   echo "$usage_wiki isn't a clone of a wiki" >&2
   exit 1
 fi
-docs=$(git ls-files -- 'docs/*.md' ':!docs/adr/adr-template*')
-clashes=$(basename -a $docs | sort | uniq -d)
-if [ -n "$clashes" ]; then
-  echo "Docs that would share a wiki page: $clashes" >&2
-  exit 1
-fi
 find "$usage_wiki" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
 blob=https://github.com/edziegle/dear_reviewer/blob/main
-for doc in $docs; do
-  page="$usage_wiki/$(basename "$doc")"
-  sed -E 's|\]\(([^):]*/)?([^)/:#]+)\.md(#[^)]*)?\)|](\2\3)|g' "$doc" > "$page"
+echo "# Dear Reviewer" > "$usage_wiki/Home.md"
+echo >> "$usage_wiki/Home.md"
+for file in wiki/*.md; do
+  name=$(basename "$file" .md)
+  sed -E 's|\]\(([^):/#]+)\.md(#[^)]*)?\)|](\1\2)|g' "$file" > "$usage_wiki/$name.md"
   printf '\n---\n\n_This page mirrors [`%s`](%s/%s). Edit it there: each push to main rewrites the wiki._\n' \
-    "$doc" "$blob" "$doc" >> "$page"
+    "$file" "$blob" "$file" >> "$usage_wiki/$name.md"
+  title=$(awk 'sub(/^# /, "") { print; exit }' "$file")
+  echo "- [${title:-$name}]($name)" >> "$usage_wiki/Home.md"
 done
-{
-  echo "# Dear Reviewer"
-  for folder in $(for doc in $docs; do dirname "$doc"; done | sort -u); do
-    printf '\n## `%s`\n\n' "$folder"
-    for doc in $docs; do
-      [ "$(dirname "$doc")" = "$folder" ] || continue
-      name=$(basename "$doc" .md)
-      title=$(awk 'sub(/^# /, "") { print; exit }' "$doc")
-      echo "- [${title:-$name}]($name)"
-    done
-  done
-} > "$usage_wiki/Home.md"
 '''
 
 # The root README and LICENSE are the only copies. The listing needs them next

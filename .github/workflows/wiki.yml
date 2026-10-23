@@ -1,11 +1,11 @@
 name: Wiki
 
-# The wiki mirrors docs/ (mise run wiki): a push to main that changes them
-# rewrites its pages. Run it by hand to put back pages edited in the wiki.
+# The wiki mirrors wiki/ (mise run wiki): a push to main that changes it
+# rewrites the wiki's pages. Run it by hand to put back pages edited in the wiki.
 on:
   push:
     branches: [main]
-    paths: [docs/**, mise.toml, .github/workflows/wiki.yml]
+    paths: [wiki/**, mise.toml, .github/workflows/wiki.yml]
   workflow_dispatch:
 
 permissions:
@@ -42,5 +42,5 @@ jobs:
           git diff --cached --quiet && exit 0
           git -c user.name='github-actions[bot]' \
             -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
-            commit -m "Mirror docs/ at ${GITHUB_SHA::7}"
+            commit -m "Mirror wiki/ at ${GITHUB_SHA::7}"
           git push

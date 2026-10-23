@@ -150,11 +150,14 @@ export function clickHoverLink(
   hover: string,
   command: string
 ): Thenable<unknown> {
-  const link = new RegExp(
-    `\\]\\(command:${command.replace(/\./g, "\\.")}\\?([^)]+)\\)`
-  ).exec(hover);
-  if (!link) throw new Error(`no link to ${command} in ${hover}`);
-  const args = JSON.parse(decodeURIComponent(link[1])) as unknown[];
+  const opening = `](command:${command}?`;
+  const start = hover.indexOf(opening);
+  const end = hover.indexOf(")", start);
+  if (start < 0 || end < 0)
+    throw new Error(`no link to ${command} in ${hover}`);
+  const args = JSON.parse(
+    decodeURIComponent(hover.slice(start + opening.length, end))
+  ) as unknown[];
   return vscode.commands.executeCommand(command, ...args);
 }
 

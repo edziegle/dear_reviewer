@@ -1065,9 +1065,16 @@ describe("Findings on request", () => {
       entries.map((e) => e.where),
       ["util.py:1", "util.py:2"]
     );
+    const before = await hoversOpened();
     await revealFinding(entries[0]);
+    // Waits for the row's hover, so it can't open late in the next test.
+    const opened = await nextHover(before);
+    assert.deepStrictEqual(opened, {
+      file: path.join(head, "util.py"),
+      line: 0,
+    });
     assert.match(
-      (await markerOf(path.join(head, "util.py"), 0)).hover,
+      (await markerOf(opened.file, opened.line)).hover,
       /\*\*Finding 1 of 2\*\*/
     );
   });

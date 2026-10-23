@@ -407,6 +407,7 @@ export class Findings
     return item;
   }
 
+  /** The Change in front, with its Findings in the order the steps take. */
   getChildren(node?: FindingsNode): FindingsNode[] {
     if (node) {
       return node.kind === "change"
@@ -415,9 +416,9 @@ export class Findings
     }
     const front = this.inFront();
     const entry = front && this.byChange.get(front.id);
-    return entry
-      ? [{ kind: "change", change: entry.change, findings: entry.findings }]
-      : [];
+    if (!entry) return [];
+    const findings = this.inStepOrder().map(({ finding }) => finding);
+    return [{ kind: "change", change: entry.change, findings }];
   }
 
   /**

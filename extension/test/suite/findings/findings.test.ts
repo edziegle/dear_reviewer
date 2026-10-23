@@ -258,7 +258,7 @@ describe("Findings on request", () => {
       assert.ok(prompt?.includes(expected), `${expected} in ${prompt}`);
   });
 
-  it("lists the Findings on the diff's lines, inside the worktrees, and leaves out the rest", async () => {
+  it("lists the Findings on the diff's lines, inside the worktrees, by file and line, and leaves out the rest", async () => {
     assert.deepStrictEqual(
       (await findingsView()).map(({ change, message, where }) => ({
         change,
@@ -268,12 +268,6 @@ describe("Findings on request", () => {
       [
         {
           change: "acme/api #31",
-          message:
-            "The docstring says **Two**; see [this](command:workbench.action.terminal.new).",
-          where: "util.py:2",
-        },
-        {
-          change: "acme/api #31",
           message: "Something may still read LEGACY.",
           where: "pkg/legacy.py:1 (base)",
         },
@@ -281,6 +275,12 @@ describe("Findings on request", () => {
           change: "acme/api #31",
           message: "NEW isn't used anywhere.",
           where: "pkg/sub/new.py:1",
+        },
+        {
+          change: "acme/api #31",
+          message:
+            "The docstring says **Two**; see [this](command:workbench.action.terminal.new).",
+          where: "util.py:2",
         },
       ]
     );
@@ -474,7 +474,7 @@ describe("Findings on request", () => {
 
     assert.deepStrictEqual(
       (await findingsView()).map((e) => e.where),
-      ["util.py:2", "pkg/legacy.py:1 (base)"]
+      ["pkg/legacy.py:1 (base)", "util.py:2"]
     );
     assert.ok(
       !(await gutterMarkers()).some((m) => m.file.endsWith("new.py")),
@@ -499,7 +499,7 @@ describe("Findings on request", () => {
 
     assert.deepStrictEqual(
       (await findingsView()).map((e) => e.where),
-      ["util.py:2", "pkg/legacy.py:1 (base)"]
+      ["pkg/legacy.py:1 (base)", "util.py:2"]
     );
   });
 
@@ -595,9 +595,9 @@ describe("Findings on request", () => {
     const listed = async () =>
       (await findingsView()).map(({ change, where }) => `${change} ${where}`);
     const raised = [
-      "acme/api #31 util.py:2",
       "acme/api #31 pkg/legacy.py:1 (base)",
       "acme/api #31 pkg/sub/new.py:1",
+      "acme/api #31 util.py:2",
     ];
     assert.deepStrictEqual(await listed(), raised);
     const repo = buildFixtureRepo("behind-findings");
@@ -732,7 +732,7 @@ describe("Findings on request", () => {
     await runQuickFix(actions[3]);
     assert.deepStrictEqual(
       (await findingsView()).map((e) => e.where),
-      ["util.py:1-3", "util.py:1-2 (base)"]
+      ["util.py:1-2 (base)", "util.py:1-3"]
     );
     assert.deepStrictEqual(
       (await findingQuickFixes(baseFile, 1)).map((a) => a.title),
@@ -827,6 +827,47 @@ describe("Findings on request", () => {
     await step(
       () => vscode.commands.executeCommand("dearReviewer.previousFinding"),
       { file, line: 0 }
+    );
+  });
+
+  it("lists Findings the Assistant raised out of order by line, as their hovers count them", async () => {
+    await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+    await scriptClaude(change, {
+      turns: [
+        replyTurn(
+          JSON.stringify({
+            findings: [
+              {
+                path: "util.py",
+                side: "head",
+                startLine: 2,
+                endLine: 2,
+                message: "Raised first.",
+              },
+              {
+                path: "util.py",
+                side: "head",
+                startLine: 1,
+                endLine: 1,
+                message: "Raised second.",
+              },
+            ],
+          })
+        ),
+      ],
+    });
+    await findIssues(change);
+
+    const entries = await findingsView();
+
+    assert.deepStrictEqual(
+      entries.map((e) => e.where),
+      ["util.py:1", "util.py:2"]
+    );
+    await revealFinding(entries[0]);
+    assert.match(
+      (await markerOf(path.join(head, "util.py"), 0)).hover,
+      /\*\*Finding 1 of 2\*\*/
     );
   });
 

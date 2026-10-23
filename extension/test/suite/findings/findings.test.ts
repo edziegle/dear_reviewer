@@ -1031,6 +1031,47 @@ describe("Findings on request", () => {
     );
   });
 
+  it("lists Findings the Assistant raised out of order by line, as their hovers count them", async () => {
+    await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+    await scriptClaude(change, {
+      turns: [
+        replyTurn(
+          JSON.stringify({
+            findings: [
+              {
+                path: "util.py",
+                side: "head",
+                startLine: 2,
+                endLine: 2,
+                message: "Raised first.",
+              },
+              {
+                path: "util.py",
+                side: "head",
+                startLine: 1,
+                endLine: 1,
+                message: "Raised second.",
+              },
+            ],
+          })
+        ),
+      ],
+    });
+    await findIssues(change);
+
+    const entries = await findingsView();
+
+    assert.deepStrictEqual(
+      entries.map((e) => e.where),
+      ["util.py:1", "util.py:2"]
+    );
+    await revealFinding(entries[0]);
+    assert.match(
+      (await markerOf(path.join(head, "util.py"), 0)).hover,
+      /\*\*Finding 1 of 2\*\*/
+    );
+  });
+
   it("with 50 Findings, rebuilds only the rows a converted Finding changes", async () => {
     await vscode.commands.executeCommand("workbench.action.closeAllEditors");
     await scriptClaude(change, {

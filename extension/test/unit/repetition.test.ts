@@ -190,6 +190,187 @@ describe("Repeated edits", () => {
     );
   });
 
+  it("aren't three tests that each got a new title, as the sites made different changes", async () => {
+    const hunks = [
+      hunk(
+        "findings.test.ts",
+        380,
+        [
+          `  it("opens a Finding's file at its lines from the view", async () => {`,
+        ],
+        [
+          `  it("opens a Finding's file from the view with the cursor on its first line and its hover open", async () => {`,
+        ]
+      ),
+      hunk(
+        "findings.test.ts",
+        404,
+        [`  it("dismisses a Finding", async () => {`],
+        [
+          `  it("steps from the Finding whose hover's link is clicked, not from the cursor", async () => {`,
+        ]
+      ),
+      hunk(
+        "findings.test.ts",
+        453,
+        [
+          `  it("turns a Finding into a draft Comment at the same place, without reaching GitHub", async () => {`,
+        ],
+        [
+          `  it("turns a Finding into a draft Comment at the same place, without reaching GitHub, opening its file without a hover", async () => {`,
+        ]
+      ),
+    ];
+    const index = new RepositoryIndex();
+    index.add("other.test.ts", `  it("does something", async () => {\n`);
+    assert.deepStrictEqual(await repeatedEdits(hunks, { index }), []);
+  });
+
+  it("group a rename whose sites differ in the strings and names around it", async () => {
+    const hunks = [
+      hunk("a.ts", 1, [`oldApi("first", user);`], [`newApi("first", user);`]),
+      hunk(
+        "b.ts",
+        1,
+        [`oldApi("second", order);`],
+        [`newApi("second", order);`]
+      ),
+      hunk("c.ts", 1, [`oldApi('third', cart);`], [`newApi('third', cart);`]),
+    ];
+    const edits = await repeatedEdits(hunks);
+    assert.strictEqual(edits.length, 1);
+    assert.deepStrictEqual(edits[0].differing, []);
+    assert.deepStrictEqual(edits[0].majority, {
+      removed: [`oldApi("first", user);`],
+      added: [`newApi("first", user);`],
+    });
+  });
+
+  it("group an added argument and an API swap, as written", async () => {
+    const argument = await repeatedEdits(
+      ["a", "b", "c"].map((p, i) =>
+        hunk(`${p}.py`, 1, [`open(path${i})`], [`open(path${i}, "rb")`])
+      )
+    );
+    assert.strictEqual(argument.length, 1);
+    assert.deepStrictEqual(argument[0].differing, []);
+    const swap = await repeatedEdits(
+      ["a", "b", "c"].map((p, i) =>
+        hunk(`${p}.ts`, 1, [`cache.get(key${i})`], [`store.fetch(key${i})`])
+      )
+    );
+    assert.strictEqual(swap.length, 1);
+    assert.deepStrictEqual(swap[0].differing, []);
+  });
+
+  it("need more than half the sites to agree, with the rest differing", async () => {
+    const twoOfThree = await repeatedEdits([
+      ...sweep("a.py", "b.py"),
+      hunk("c.py", 3, ["legacy(arg2)"], ["other(arg2)"]),
+    ]);
+    assert.strictEqual(twoOfThree.length, 1);
+    assert.deepStrictEqual(
+      twoOfThree[0].differing.map((s) => s.path),
+      ["c.py"]
+    );
+    const allDifferent = [
+      hunk("a.py", 3, ["legacy(arg0)"], ["modern(arg0)"]),
+      hunk("b.py", 3, ["legacy(arg1)"], ["other(arg1)"]),
+      hunk("c.py", 3, ["legacy(arg2)"], ["third(arg2)"]),
+    ];
+    assert.deepStrictEqual(await repeatedEdits(allDifferent), []);
+    const twoAndTwo = [
+      ...sweep("a.py", "b.py"),
+      hunk("c.py", 3, ["legacy(arg2)"], ["other(arg2)"]),
+      hunk("d.py", 3, ["legacy(arg3)"], ["other(arg3)"]),
+    ];
+    assert.deepStrictEqual(await repeatedEdits(twoAndTwo), []);
+  });
+
+  it("compare sites that only deleted lines by the names they deleted, whatever their numbers and strings", async () => {
+    const logs = await repeatedEdits(
+      ["a", "b", "c"].map((p) =>
+        hunk(`${p}.ts`, 1, [`console.log("${p}");`], [])
+      )
+    );
+    assert.strictEqual(logs.length, 1);
+    assert.deepStrictEqual(logs[0].differing, []);
+    const imports = [
+      hunk("a.ts", 1, [`import { x } from "y";`], []),
+      hunk("b.ts", 1, [`import { z } from "w";`], []),
+      hunk("c.ts", 1, [`import { q } from "r";`], []),
+    ];
+    assert.deepStrictEqual(await repeatedEdits(imports), []);
+  });
+
+  it("group a sweep that moves each site's own names, and find the sites it missed", async () => {
+    const hunks = ["x", "conn", "file"].map((name) =>
+      hunk(`${name}.py`, 1, [`${name}.close()`], [`close(${name})`])
+    );
+    const index = new RepositoryIndex();
+    index.add("d.py", "socket.close()\n");
+    const [edit] = await repeatedEdits(hunks, {
+      index,
+      lineText: () => ["socket.close()"],
+    });
+    assert.deepStrictEqual(edit.differing, []);
+    assert.deepStrictEqual(edit.missed, [
+      { path: "d.py", line: 1, endLine: 1 },
+    ]);
+    const reordered = await repeatedEdits(
+      ["a", "b", "c"].map((p) =>
+        hunk(
+          `${p}.py`,
+          1,
+          [`copy(src_${p}, dst_${p})`],
+          [`copy(dst_${p}, src_${p})`]
+        )
+      )
+    );
+    assert.strictEqual(reordered.length, 1);
+    assert.deepStrictEqual(reordered[0].differing, []);
+    const intoOthers = await repeatedEdits([
+      ...hunks.slice(0, 2),
+      hunk("y.py", 1, ["y.close()"], ["close(x)"]),
+    ]);
+    assert.deepStrictEqual(
+      intoOthers[0].differing.map((s) => s.path),
+      ["y.py"]
+    );
+  });
+
+  it("group sites that replaced a large block with one line", async () => {
+    const block = Array.from({ length: 50_000 }, (_, i) => `step(${i});`);
+    const edits = await repeatedEdits(
+      ["a", "b", "c"].map((p) => hunk(`${p}.ts`, 1, block, ["run();"]))
+    );
+    assert.strictEqual(edits.length, 1);
+    assert.deepStrictEqual(edits[0].differing, []);
+  });
+
+  it("find the calls a sweep renaming it( to test( missed", async () => {
+    const hunks = ["a", "b", "c"].map((p) =>
+      hunk(
+        `${p}.test.ts`,
+        5,
+        [`  it("${p} works", () => {`],
+        [`  test("${p} works", () => {`]
+      )
+    );
+    const index = new RepositoryIndex();
+    index.add("d.test.ts", `describe("d", () => {\n  it("d works", () => {\n`);
+    const texts: Record<string, string[]> = {
+      "d.test.ts": [`describe("d", () => {`, `  it("d works", () => {`],
+    };
+    const [edit] = await repeatedEdits(hunks, {
+      index,
+      lineText: (path) => texts[path],
+    });
+    assert.deepStrictEqual(edit.missed, [
+      { path: "d.test.ts", line: 2, endLine: 2 },
+    ]);
+  });
+
   it("skip a group whose removed lines are only punctuation, or nothing", async () => {
     assert.deepStrictEqual(
       await repeatedEdits(
@@ -287,9 +468,9 @@ describe("Repeated edits", () => {
     const index = new RepositoryIndex();
     index.add("anywhere.py", "qux(4)\nquux(5)\n");
     const hunks = [
-      hunk("a.py", 1, ["foo(1)"], ["x"]),
-      hunk("b.py", 1, ["bar(2)"], ["x"]),
-      hunk("c.py", 1, ["baz(3)"], ["x"]),
+      hunk("a.py", 1, ["foo(1)"], ["foo(1, strict)"]),
+      hunk("b.py", 1, ["bar(2)"], ["bar(2, strict)"]),
+      hunk("c.py", 1, ["baz(3)"], ["baz(3, strict)"]),
     ];
     const [edit] = await repeatedEdits(hunks, { index });
     assert.deepStrictEqual(edit.missed, []);

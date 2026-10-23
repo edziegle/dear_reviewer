@@ -397,7 +397,7 @@ export interface Site {
 export interface RepeatedEdit {
   /** Every site, in the order of the diff. */
   sites: Site[];
-  /** The sites that got added lines other than the majority's. */
+  /** The sites that made another change than the majority's. */
   differing: Site[];
   /** Places at the head, outside the Change's hunks, that still hold the removed lines. */
   missed: Place[];
@@ -431,11 +431,13 @@ const withoutBlanks = (lines: string[]) => lines.filter((l) => l !== "");
 /**
  * The Change's Repeated edits: hunks that removed the same normalized lines
  * at {@link minSites} or more sites, when those lines hold more than
- * punctuation. The index, if given, finds each edit's missed sites: places
- * that hold the removed lines and, when `lineText` gives a file's lines as
- * written, the names that all the sites' removed lines share, so a rename's
- * callers that kept the old name are found and other code that merely looks
- * the same is not. An edit whose sites share no name has no missed sites.
+ * punctuation and more than half the sites made the same change as written
+ * (see {@link changeOf}). The index, if given, finds each edit's missed
+ * sites: places that hold the removed lines and, when `lineText` gives a
+ * file's lines as written, the names that all the sites' removed lines
+ * share, so a rename's callers that kept the old name are found and other
+ * code that merely looks the same is not. An edit whose sites share no name
+ * has no missed sites.
  */
 export async function repeatedEdits(
   hunks: readonly Hunk[],
@@ -471,15 +473,17 @@ export async function repeatedEdits(
   const edits: RepeatedEdit[] = [];
   for (const { removed, hunks: sites } of groups.values()) {
     if (sites.length < minSites) continue;
-    const byAdded = new Map<string, Hunk[]>();
+    const byChange = new Map<string, Hunk[]>();
     for (const hunk of sites) {
-      const key = normalizedAdded(hunk);
-      byAdded.set(key, [...(byAdded.get(key) ?? []), hunk]);
+      const key = changeOf(hunk);
+      byChange.set(key, [...(byChange.get(key) ?? []), hunk]);
     }
     // The most common, and of equal counts the first to appear.
-    const agreeing = [...byAdded.values()].reduce((best, next) =>
+    const agreeing = [...byChange.values()].reduce((best, next) =>
       next.length > best.length ? next : best
     );
+    // Sites of one shape that each made their own change are no one edit.
+    if (agreeing.length * 2 <= sites.length) continue;
     const differing = sites.filter((hunk) => !agreeing.includes(hunk));
     const missed: Place[] = [];
     let cutOff = false;
@@ -518,8 +522,104 @@ export async function repeatedEdits(
   return edits;
 }
 
-function normalizedAdded(hunk: Hunk): string {
-  return withoutBlanks(normalizeLines(hunk.added)).join("\n");
+/** The most cells of the table that aligns a site's removed and added tokens. */
+const maxAligned = 1_000_000;
+
+/**
+ * What the site changed, as written, so two sites made the same change when
+ * the texts are equal: the runs of tokens it took away and put in, where its
+ * removed and added tokens differ. A name the site both removed and added is
+ * its own, moved or kept, and stands for where it first is in the removed
+ * lines, which have one shape at every site of a group: so `x.close()` to
+ * `close(x)` and `y.close()` to `close(y)` are one change. A site that only
+ * deleted lines is its removed tokens, with names as written and numbers and
+ * strings as placeholders, so `drop(1)` and `drop(2)` are one change.
+ */
+function changeOf(hunk: Hunk): string {
+  const removed = scanLines(hunk.removed).flat();
+  const added = scanLines(hunk.added).flat();
+  if (added.length === 0)
+    return JSON.stringify([
+      "deleted",
+      removed.map((t) =>
+        t.kind === "number" || t.kind === "string"
+          ? placeholder[t.kind]
+          : t.text
+      ),
+    ]);
+  const firstAt = new Map<string, number>();
+  removed.forEach((t, at) => {
+    if (t.kind === "name" && !firstAt.has(t.text)) firstAt.set(t.text, at);
+  });
+  const kept = new Set(
+    added
+      .filter((t) => t.kind === "name" && firstAt.has(t.text))
+      .map((t) => t.text)
+  );
+  // Punctuation is one character, so no token is written as a position is.
+  const textOf = (t: Token) =>
+    t.kind === "name" && kept.has(t.text) ? `@${firstAt.get(t.text)}` : t.text;
+  return JSON.stringify([
+    "changed",
+    differences(removed.map(textOf), added.map(textOf)),
+  ]);
+}
+
+/**
+ * The runs where `a` and `b` differ, each as what `a` had and what `b` has
+ * there, from a longest common subsequence that prefers the earliest match,
+ * so the same tokens always give the same runs. A middle too long to align
+ * is one run.
+ */
+function differences(
+  a: readonly string[],
+  b: readonly string[]
+): [string[], string[]][] {
+  let start = 0;
+  while (start < a.length && start < b.length && a[start] === b[start]) start++;
+  let end = 0;
+  while (
+    end < a.length - start &&
+    end < b.length - start &&
+    a[a.length - 1 - end] === b[b.length - 1 - end]
+  )
+    end++;
+  const x = a.slice(start, a.length - end);
+  const y = b.slice(start, b.length - end);
+  if (x.length === 0 && y.length === 0) return [];
+  if (
+    x.length === 0 ||
+    y.length === 0 ||
+    (x.length + 1) * (y.length + 1) > maxAligned
+  )
+    return [[x, y]];
+  // The longest common subsequence of x from i and y from j, at `i * width + j`.
+  const width = y.length + 1;
+  const common = new Uint32Array((x.length + 1) * width);
+  const at = (i: number, j: number) => common[i * width + j];
+  for (let i = x.length - 1; i >= 0; i--)
+    for (let j = y.length - 1; j >= 0; j--)
+      common[i * width + j] =
+        x[i] === y[j]
+          ? at(i + 1, j + 1) + 1
+          : Math.max(at(i + 1, j), at(i, j + 1));
+  const runs: [string[], string[]][] = [];
+  let run: [string[], string[]] | undefined;
+  let i = 0;
+  let j = 0;
+  while (i < x.length || j < y.length) {
+    if (i < x.length && j < y.length && x[i] === y[j]) {
+      run = undefined;
+      i++;
+      j++;
+      continue;
+    }
+    if (!run) runs.push((run = [[], []]));
+    if (j >= y.length || (i < x.length && at(i + 1, j) >= at(i, j + 1)))
+      run[0].push(x[i++]);
+    else run[1].push(y[j++]);
+  }
+  return runs;
 }
 
 /** The names every site's removed lines hold. */

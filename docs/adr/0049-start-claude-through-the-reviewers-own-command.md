@@ -33,7 +33,7 @@ Chosen option: a list of strings, because Dear Reviewer runs it without a shell,
 
 - Good, because a Reviewer whose organization sandboxes Claude Code can use the Assistant, and Dear Reviewer knows nothing about any sandbox.
 - Good, because the Assistant still has no shell and its environment stays allow-listed.
-- Bad, because in the Settings UI a list gets only "Edit in settings.json", not a text box.
+- Bad, because the Settings UI shows each item of the list in a text box of its own, without the JSON quoting, so quotes typed around an item stay in it unseen (issue #197).
 - Bad, because most custom commands lose the git tools, and with them history older than the Change.
 - Bad, because whether the Assistant notices its git tools are missing rests on the model reading its tool list.
 - Bad, because a command that needs more variables than ADR 0004 passes must be a script.

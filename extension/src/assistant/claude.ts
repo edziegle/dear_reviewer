@@ -13,6 +13,7 @@ import {
   allowedGitTools,
   type ChangeHistory,
   gitServerConfig,
+  gitServerName,
 } from "./gitTools";
 
 /** The Assistant can look at code, never change it or run anything. */
@@ -108,6 +109,10 @@ export function claudeEnvironment(
   return result;
 }
 
+/** What a custom Claude Command must do, which the Assistant's panel and the setting link to. */
+export const customClaudeCommandGuide =
+  "https://github.com/edziegle/dear_reviewer/blob/main/docs/custom-claude-command.md";
+
 const installLocations = [
   path.join(os.homedir(), ".local", "bin"),
   "/opt/homebrew/bin",
@@ -117,15 +122,39 @@ const installLocations = [
 ];
 
 /**
- * The `claude` executable: the configured path, or else the first `claude` on
- * the PATH or in a usual install location.
+ * How to start `claude`: a program and the arguments that go before Dear
+ * Reviewer's own (ADR 0049).
  */
-export function findClaude(configured: string): string {
-  if (configured) {
-    if (isExecutable(configured)) return configured;
+export interface ClaudeCommand {
+  program: string;
+  args: string[];
+}
+
+/** The command as the Reviewer would type it, for messages. */
+export function describeCommand(command: ClaudeCommand): string {
+  return [command.program, ...command.args].join(" ");
+}
+
+/**
+ * The command that starts `claude`: the Reviewer's Claude Command, or else
+ * their deprecated Claude Path as a command of one item, or else the first
+ * `claude` on the PATH or in a usual install location. The first item of a
+ * command is a path, with a leading `~` expanded, or a bare name looked up on
+ * the PATH.
+ */
+export function resolveClaude(
+  claudeCommand: string[],
+  claudePath: string,
+  home: string = os.homedir()
+): ClaudeCommand {
+  const configured = claudeCommand.length > 0 ? claudeCommand : [claudePath];
+  const [first, ...args] = configured;
+  if (first) {
+    const program = findProgram(expandHome(first, home));
+    if (program) return { program, args };
     throw new ClaudeProblem(
       "notFound",
-      `Claude Code isn't at ${configured}. Install Claude Code, or set Dear Reviewer: Claude Path to your \`claude\` executable.`
+      `Claude Code isn't at ${first}, so \`${configured.join(" ")}\` can't run. Install Claude Code, or set Dear Reviewer: Claude Command to the command that starts \`claude\`.`
     );
   }
   const dirs = [
@@ -134,12 +163,28 @@ export function findClaude(configured: string): string {
   ];
   for (const dir of dirs) {
     const candidate = path.join(dir, "claude");
-    if (isExecutable(candidate)) return candidate;
+    if (isExecutable(candidate)) return { program: candidate, args: [] };
   }
   throw new ClaudeProblem(
     "notFound",
-    "Couldn't find Claude Code. Install it, or set Dear Reviewer: Claude Path to your `claude` executable."
+    "Couldn't find Claude Code. Install it, or set Dear Reviewer: Claude Command to the command that starts `claude`."
   );
+}
+
+function expandHome(item: string, home: string): string {
+  return item === "~" || item.startsWith("~/")
+    ? path.join(home, item.slice(1))
+    : item;
+}
+
+/** A path as it is, or a bare name found on the PATH. */
+function findProgram(program: string): string | undefined {
+  if (program.includes("/") || path.isAbsolute(program))
+    return isExecutable(program) ? program : undefined;
+  for (const dir of (process.env.PATH ?? "").split(path.delimiter)) {
+    const candidate = path.join(dir, program);
+    if (dir && isExecutable(candidate)) return candidate;
+  }
 }
 
 function isExecutable(file: string): boolean {
@@ -152,14 +197,14 @@ function isExecutable(file: string): boolean {
 }
 
 export class ClaudeCli {
-  constructor(readonly executable: string) {}
+  constructor(readonly command: ClaudeCommand) {}
 
   /** Which login `claude` would use, from `claude auth status`. */
   login(): Promise<ClaudeLogin> {
     return new Promise((resolve, reject) => {
       execFile(
-        this.executable,
-        ["auth", "status"],
+        this.command.program,
+        [...this.command.args, "auth", "status"],
         { env: claudeEnvironment(), timeout: 30_000 },
         (err, stdout, stderr) => {
           // It exits non-zero when signed out, but still reports the status.
@@ -177,7 +222,7 @@ export class ClaudeCli {
 
   /** Starts a conversation that can read the Change's worktrees. */
   converse(options: ConversationOptions): ClaudeConversation {
-    return new ClaudeConversation(this.executable, options);
+    return new ClaudeConversation(this.command, options);
   }
 
   private failure(err: Error | null, output: string): ClaudeProblem {
@@ -185,7 +230,7 @@ export class ClaudeCli {
     if (code === "ENOENT" || code === "EACCES")
       return new ClaudeProblem(
         "notFound",
-        `Couldn't run Claude Code at ${this.executable}. Install Claude Code, or set Dear Reviewer: Claude Path to your \`claude\` executable.`
+        `Couldn't run Claude Code with \`${describeCommand(this.command)}\`. Install Claude Code, or set Dear Reviewer: Claude Command to the command that starts \`claude\`.`
       );
     return new ClaudeProblem(
       "failed",
@@ -233,6 +278,8 @@ export interface ConversationOptions {
   resume?: string;
   /** The repository, base and head the Assistant's git tools reach. */
   history: ChangeHistory;
+  /** Called with whether the git server connected, each time `claude` says which MCP servers started. */
+  onGitTools?: (connected: boolean) => void;
 }
 
 /**
@@ -258,9 +305,11 @@ export class ClaudeConversation {
   readonly resumed: boolean;
   /** Whether Claude Code has finished a turn, so it took up the session. */
   answered = false;
+  private readonly onGitTools: (connected: boolean) => void;
 
-  constructor(executable: string, options: ConversationOptions) {
+  constructor(command: ClaudeCommand, options: ConversationOptions) {
     const args = [
+      ...command.args,
       "-p",
       "--input-format",
       "stream-json",
@@ -296,15 +345,14 @@ export class ClaudeConversation {
       ...options.addDirs.flatMap((dir) => ["--add-dir", dir]),
       ...(options.resume ? ["--resume", options.resume] : []),
     ];
+    this.onGitTools = options.onGitTools ?? (() => undefined);
     this.resumed = options.resume !== undefined;
     this.sessionId = options.resume;
-    this.child = spawn(executable, args, {
+    this.child = spawn(command.program, args, {
       cwd: options.cwd,
       env: claudeEnvironment(),
     });
-    this.child.on("error", (err) =>
-      this.end(this.spawnFailure(executable, err))
-    );
+    this.child.on("error", (err) => this.end(this.spawnFailure(command, err)));
     this.child.stdin.on("error", () => undefined);
     this.child.stderr.on("data", (chunk: Buffer) => {
       this.stderr = (this.stderr + chunk.toString("utf8")).slice(-4000);
@@ -376,6 +424,8 @@ export class ClaudeConversation {
     }
     if (typeof event.session_id === "string" && event.session_id)
       this.sessionId = event.session_id;
+    if (event.type === "system" && event.subtype === "init")
+      this.onGitTools(gitServerConnected(event));
     const turn = this.turn;
     if (!turn) return;
     if (
@@ -428,11 +478,14 @@ export class ClaudeConversation {
     this.turn = undefined;
   }
 
-  private spawnFailure(executable: string, err: NodeJS.ErrnoException): Error {
+  private spawnFailure(
+    command: ClaudeCommand,
+    err: NodeJS.ErrnoException
+  ): Error {
     if (err.code === "ENOENT" || err.code === "EACCES")
       return new ClaudeProblem(
         "notFound",
-        `Couldn't run Claude Code at ${executable}. Install Claude Code, or set Dear Reviewer: Claude Path to your \`claude\` executable.`
+        `Couldn't run Claude Code with \`${describeCommand(command)}\`. Install Claude Code, or set Dear Reviewer: Claude Command to the command that starts \`claude\`.`
       );
     return new ClaudeProblem(
       "failed",
@@ -451,8 +504,21 @@ export interface ToolUse {
   input: Record<string, unknown>;
 }
 
-interface StreamEvent {
+/**
+ * Whether a `system`/`init` event says Dear Reviewer's git server connected.
+ * `claude` carries on without a server that failed to start.
+ */
+export function gitServerConnected(event: StreamEvent): boolean {
+  return (
+    event.mcp_servers?.some(
+      (server) => server.name === gitServerName && server.status === "connected"
+    ) ?? false
+  );
+}
+
+export interface StreamEvent {
   type?: string;
+  mcp_servers?: { name: string; status: string }[];
   subtype?: string;
   session_id?: string;
   is_error?: boolean;

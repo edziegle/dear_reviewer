@@ -76,7 +76,7 @@ describe("The Assistant's git history tools", () => {
     assert.strictEqual(flag(run, "--tools"), "Read,Grep,Glob");
     assert.ok(
       (flag(run, "--append-system-prompt") ?? "").includes(
-        "Your git tools, log, show, blame and diff"
+        "If the git tools log, show, blame and diff are among your tools"
       )
     );
   });

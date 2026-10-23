@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.9.0](https://github.com/edziegle/dear_reviewer/compare/v0.8.1...v0.9.0) (2026-10-23)
+
+
+### Features
+
+* **assistant:** start claude through the Reviewer's own command ([#195](https://github.com/edziegle/dear_reviewer/issues/195)) ([4d3e1d5](https://github.com/edziegle/dear_reviewer/commit/4d3e1d52b8249b16661386b9a9260acbc0043b9b))
+
+
+### Bug Fixes
+
+* **assistant:** disable all hooks in the Assistant's claude ([#191](https://github.com/edziegle/dear_reviewer/issues/191)) ([2129c09](https://github.com/edziegle/dear_reviewer/commit/2129c095cfa8d9a48c5eeb6b90428949f53e4244)), closes [#184](https://github.com/edziegle/dear_reviewer/issues/184)
+* **dashboard:** share the overview's review-verdict colors ([#190](https://github.com/edziegle/dear_reviewer/issues/190)) ([db5531c](https://github.com/edziegle/dear_reviewer/commit/db5531c8bb50666d88eadcc95320a01e7078d58e))
+* **diff:** keep Open All Diffs beside the overview when it takes the focus back ([#196](https://github.com/edziegle/dear_reviewer/issues/196)) ([2b6f021](https://github.com/edziegle/dear_reviewer/commit/2b6f021344f1e28395ab8be8cbf91a5be7065217))
+* **ui:** give every avatar a hairline edge in every theme ([#193](https://github.com/edziegle/dear_reviewer/issues/193)) ([382ef31](https://github.com/edziegle/dear_reviewer/commit/382ef31d688a876007a067fa40f44a067ade8c9c)), closes [#183](https://github.com/edziegle/dear_reviewer/issues/183)
+
 ## [0.8.1](https://github.com/edziegle/dear_reviewer/compare/v0.8.0...v0.8.1) (2026-10-22)
 
 

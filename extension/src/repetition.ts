@@ -522,15 +522,18 @@ export async function repeatedEdits(
   return edits;
 }
 
-/** The most token pairs compared to align a site's removed and added tokens. */
+/** The most cells of the table that aligns a site's removed and added tokens. */
 const maxAligned = 1_000_000;
 
 /**
  * What the site changed, as written, so two sites made the same change when
  * the texts are equal: the runs of tokens it took away and put in, where its
- * removed and added tokens differ. A site that only deleted lines is its
- * removed tokens, with names as written and numbers and strings as
- * placeholders, so `drop(1)` and `drop(2)` are one change.
+ * removed and added tokens differ. A name the site both removed and added is
+ * its own, moved or kept, and stands for where it first is in the removed
+ * lines, which have one shape at every site of a group: so `x.close()` to
+ * `close(x)` and `y.close()` to `close(y)` are one change. A site that only
+ * deleted lines is its removed tokens, with names as written and numbers and
+ * strings as placeholders, so `drop(1)` and `drop(2)` are one change.
  */
 function changeOf(hunk: Hunk): string {
   const removed = scanLines(hunk.removed).flat();
@@ -544,12 +547,21 @@ function changeOf(hunk: Hunk): string {
           : t.text
       ),
     ]);
+  const firstAt = new Map<string, number>();
+  removed.forEach((t, at) => {
+    if (t.kind === "name" && !firstAt.has(t.text)) firstAt.set(t.text, at);
+  });
+  const kept = new Set(
+    added
+      .filter((t) => t.kind === "name" && firstAt.has(t.text))
+      .map((t) => t.text)
+  );
+  // Punctuation is one character, so no token is written as a position is.
+  const textOf = (t: Token) =>
+    t.kind === "name" && kept.has(t.text) ? `@${firstAt.get(t.text)}` : t.text;
   return JSON.stringify([
     "changed",
-    differences(
-      removed.map((t) => t.text),
-      added.map((t) => t.text)
-    ),
+    differences(removed.map(textOf), added.map(textOf)),
   ]);
 }
 
@@ -574,18 +586,23 @@ function differences(
     end++;
   const x = a.slice(start, a.length - end);
   const y = b.slice(start, b.length - end);
-  if (x.length * y.length > maxAligned) return [[x, y]];
-  // `common[i][j]`: the longest common subsequence of x from i and y from j.
-  const common = Array.from(
-    { length: x.length + 1 },
-    () => new Uint32Array(y.length + 1)
-  );
+  if (x.length === 0 && y.length === 0) return [];
+  if (
+    x.length === 0 ||
+    y.length === 0 ||
+    (x.length + 1) * (y.length + 1) > maxAligned
+  )
+    return [[x, y]];
+  // The longest common subsequence of x from i and y from j, at `i * width + j`.
+  const width = y.length + 1;
+  const common = new Uint32Array((x.length + 1) * width);
+  const at = (i: number, j: number) => common[i * width + j];
   for (let i = x.length - 1; i >= 0; i--)
     for (let j = y.length - 1; j >= 0; j--)
-      common[i][j] =
+      common[i * width + j] =
         x[i] === y[j]
-          ? common[i + 1][j + 1] + 1
-          : Math.max(common[i + 1][j], common[i][j + 1]);
+          ? at(i + 1, j + 1) + 1
+          : Math.max(at(i + 1, j), at(i, j + 1));
   const runs: [string[], string[]][] = [];
   let run: [string[], string[]] | undefined;
   let i = 0;
@@ -598,7 +615,7 @@ function differences(
       continue;
     }
     if (!run) runs.push((run = [[], []]));
-    if (j >= y.length || (i < x.length && common[i + 1][j] >= common[i][j + 1]))
+    if (j >= y.length || (i < x.length && at(i + 1, j) >= at(i, j + 1)))
       run[0].push(x[i++]);
     else run[1].push(y[j++]);
   }

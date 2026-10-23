@@ -303,6 +303,51 @@ describe("Repeated edits", () => {
     assert.deepStrictEqual(await repeatedEdits(imports), []);
   });
 
+  it("group a sweep that moves each site's own names, and find the sites it missed", async () => {
+    const hunks = ["x", "conn", "file"].map((name) =>
+      hunk(`${name}.py`, 1, [`${name}.close()`], [`close(${name})`])
+    );
+    const index = new RepositoryIndex();
+    index.add("d.py", "socket.close()\n");
+    const [edit] = await repeatedEdits(hunks, {
+      index,
+      lineText: () => ["socket.close()"],
+    });
+    assert.deepStrictEqual(edit.differing, []);
+    assert.deepStrictEqual(edit.missed, [
+      { path: "d.py", line: 1, endLine: 1 },
+    ]);
+    const reordered = await repeatedEdits(
+      ["a", "b", "c"].map((p) =>
+        hunk(
+          `${p}.py`,
+          1,
+          [`copy(src_${p}, dst_${p})`],
+          [`copy(dst_${p}, src_${p})`]
+        )
+      )
+    );
+    assert.strictEqual(reordered.length, 1);
+    assert.deepStrictEqual(reordered[0].differing, []);
+    const intoOthers = await repeatedEdits([
+      ...hunks.slice(0, 2),
+      hunk("y.py", 1, ["y.close()"], ["close(x)"]),
+    ]);
+    assert.deepStrictEqual(
+      intoOthers[0].differing.map((s) => s.path),
+      ["y.py"]
+    );
+  });
+
+  it("group sites that replaced a large block with one line", async () => {
+    const block = Array.from({ length: 50_000 }, (_, i) => `step(${i});`);
+    const edits = await repeatedEdits(
+      ["a", "b", "c"].map((p) => hunk(`${p}.ts`, 1, block, ["run();"]))
+    );
+    assert.strictEqual(edits.length, 1);
+    assert.deepStrictEqual(edits[0].differing, []);
+  });
+
   it("find the calls a sweep renaming it( to test( missed", async () => {
     const hunks = ["a", "b", "c"].map((p) =>
       hunk(

@@ -37,7 +37,19 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: refs/tags/${{ inputs.tag }}
+          # For origin/main, which the next step checks the tag against.
+          fetch-depth: 0
           persist-credentials: false
+      # Anyone who can push can make a tag on any commit, so the build takes
+      # only one on main that holds its version. Written here, not as a mise
+      # task, and before mise loads the tag's mise.toml, so the tag can't
+      # change the check.
+      - run: |
+          git merge-base --is-ancestor HEAD origin/main || { echo "::error::$TAG isn't on main"; exit 1; }
+          version=$(jq -r .version extension/package.json)
+          [[ "v$version" == "$TAG" ]] || { echo "::error::$TAG holds version $version"; exit 1; }
+        env:
+          TAG: ${{ inputs.tag }}
       - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
         with:
           install_args: node

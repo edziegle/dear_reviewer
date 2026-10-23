@@ -40,13 +40,15 @@ jobs:
         id: release
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-      # Only a tag with a GitHub Release, so a run started by hand can't list
-      # a branch or an unreleased commit.
+      # Only a version tag with a published GitHub Release, so a run started by
+      # hand can't list a branch or a draft. build-vsix.yml checks that the
+      # tag is on main.
       - if: github.event_name == 'workflow_dispatch'
         id: given
         run: |
           [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::$TAG isn't a version tag"; exit 1; }
-          gh release view "$TAG" -R "$GITHUB_REPOSITORY" > /dev/null
+          draft=$(gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)
+          [[ "$draft" == false ]] || { echo "::error::$TAG's GitHub Release is a draft"; exit 1; }
           echo "release_created=true" >> "$GITHUB_OUTPUT"
           echo "tag_name=$TAG" >> "$GITHUB_OUTPUT"
         env:

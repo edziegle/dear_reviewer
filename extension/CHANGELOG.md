@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.10.0](https://github.com/edziegle/dear_reviewer/compare/v0.9.0...v0.10.0) (2026-10-23)
+
+
+### Features
+
+* act on a Finding from Quick Fix, and mark it with the Assistant's cat ([#205](https://github.com/edziegle/dear_reviewer/issues/205)) ([2c2fabf](https://github.com/edziegle/dear_reviewer/commit/2c2fabf5845e8f530958058007419d1ed88b8815))
+* **assistant:** show why a quoted Claude Command item can't run ([#202](https://github.com/edziegle/dear_reviewer/issues/202)) ([f47d74a](https://github.com/edziegle/dear_reviewer/commit/f47d74a236c39dba2fc2580855cdf6b82bcffd53))
+* **findings:** ask the Assistant about a Finding from its hover ([#215](https://github.com/edziegle/dear_reviewer/issues/215)) ([35b0609](https://github.com/edziegle/dear_reviewer/commit/35b06092a10ceda22c6eef6da1e1bd51fc553adb))
+* **findings:** head a Finding's hover with the Assistant's cat and name, and wrap its message between words ([#216](https://github.com/edziegle/dear_reviewer/issues/216)) ([353f8e5](https://github.com/edziegle/dear_reviewer/commit/353f8e507b0714370ebed987a585a224557fe177))
+* **findings:** open a Finding's hover when stepping to it, and step from the hover ([#204](https://github.com/edziegle/dear_reviewer/issues/204)) ([f1df17a](https://github.com/edziegle/dear_reviewer/commit/f1df17a7d1476f1df09431651ce8b1c8e454c854))
+* **findings:** show the Findings view as a webview, with the current Finding open and a stepper at its foot ([#211](https://github.com/edziegle/dear_reviewer/issues/211)) ([93a5a9b](https://github.com/edziegle/dear_reviewer/commit/93a5a9b781efdabe8c25125cfd1b430dc3f9dbf1))
+* **repetition:** say what the Reviewer should check at a Repeated edit ([#209](https://github.com/edziegle/dear_reviewer/issues/209)) ([70253c6](https://github.com/edziegle/dear_reviewer/commit/70253c6acf7a2dfe532f5ac459f0e03705b1236e))
+
+
+### Bug Fixes
+
+* **repetition:** count a Repeated edit only when most of its sites made the same change as written ([#208](https://github.com/edziegle/dear_reviewer/issues/208)) ([26064ca](https://github.com/edziegle/dear_reviewer/commit/26064cabb94388e6edb6443298611c4fd22238e5))
+
 ## [0.9.0](https://github.com/edziegle/dear_reviewer/compare/v0.8.1...v0.9.0) (2026-10-23)
 
 

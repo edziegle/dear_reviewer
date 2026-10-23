@@ -4,6 +4,7 @@ import * as os from "os";
 import * as path from "path";
 import {
   allowedWithoutAsking,
+  ClaudeCli,
   claudeEnvironment,
   ClaudeProblem,
   describeLogin,
@@ -189,8 +190,75 @@ describe("The command that starts claude", () => {
         (err: unknown) =>
           err instanceof ClaudeProblem &&
           err.kind === "notFound" &&
-          err.message.includes(command.join(" "))
+          err.message.includes(`\`${JSON.stringify(command)}\``)
       );
+  });
+
+  it("names the command as JSON when it isn't found, so quotes and spaces in an item show", () => {
+    for (const command of [
+      ['"~/.foo/my-command"'],
+      [path.join(dir, "my claude"), "--flag"],
+    ])
+      assert.throws(
+        () => resolveClaude(command, "", dir),
+        (err: unknown) =>
+          err instanceof ClaudeProblem &&
+          err.kind === "notFound" &&
+          err.message.startsWith(
+            `Claude Code isn't at ${JSON.stringify(command[0])}, so \`${JSON.stringify(command)}\` can't run.`
+          )
+      );
+  });
+
+  it("names the command as JSON when it can't be run", async () => {
+    const spaced = path.join(dir, "my claude");
+    fs.writeFileSync(spaced, "#!/no/such/interpreter\n", { mode: 0o755 });
+    const command = resolveClaude([spaced, '"--flag"'], "");
+
+    await assert.rejects(
+      new ClaudeCli(command).login(),
+      (err: unknown) =>
+        err instanceof ClaudeProblem &&
+        err.kind === "notFound" &&
+        err.message.startsWith(
+          `Couldn't run Claude Code with \`${JSON.stringify([spaced, '"--flag"'])}\`.`
+        )
+    );
+  });
+});
+
+describe("The Claude Command setting", () => {
+  const manifest = JSON.parse(
+    fs.readFileSync(path.join(__dirname, "../../../../package.json"), "utf8")
+  ) as {
+    contributes: {
+      configuration: {
+        properties: Record<
+          string,
+          { items: { pattern: string; patternErrorMessage: string } }
+        >;
+      };
+    };
+  };
+  const items =
+    manifest.contributes.configuration.properties["dearReviewer.claudeCommand"]
+      .items;
+  // VSCodium compiles an item's pattern with the u flag.
+  const pattern = new RegExp(items.pattern, "u");
+
+  it("rejects an item wrapped in quotes, which would be part of the path", () => {
+    for (const item of ['"~/bin/claude"', "'claude'", ' "x" ', '""'])
+      assert.strictEqual(pattern.test(item), false, item);
+  });
+
+  it("accepts an item without wrapping quotes", () => {
+    for (const item of ["~/bin/claude", '--flag="x"', "docker"])
+      assert.strictEqual(pattern.test(item), true, item);
+  });
+
+  it("says to leave the quotes out, ending so that several messages read apart", () => {
+    assert.match(items.patternErrorMessage, /quotes/);
+    assert.match(items.patternErrorMessage, /\. $/);
   });
 });
 

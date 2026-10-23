@@ -56,7 +56,10 @@ describe("Setting up the Assistant", () => {
       await eventually(async () => {
         const panel = await renderedPanel(title);
         assert.ok(panel?.problem, "the panel shows a problem");
-        assert.ok(panel.problem.includes(missing), panel.problem);
+        assert.ok(
+          panel.problem.includes(JSON.stringify([missing])),
+          panel.problem
+        );
         assert.match(panel.problem, /Claude Command/);
         assert.strictEqual(panel.problemAction, "Set Claude Command");
         assert.strictEqual(panel.busy, false);

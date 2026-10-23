@@ -148,7 +148,7 @@
         "displayName": "Finding",
         "canonical": "var(--vscode-dearReviewer-assistantForeground)",
         "previewValue": "#b180d7",
-        "note": "Gutter icons can't take a theme color: extension/media/finding.svg, finding-start.svg and finding-bar.svg (#b180d7, dark) and finding-light.svg, finding-start-light.svg and finding-bar-light.svg (#652d90, light) carry charts.purple's defaults."
+        "note": "Gutter icons can't take a theme color: extension/media/finding-cat.svg and finding-bar.svg (#b180d7, dark) and finding-cat-light.svg and finding-bar-light.svg (#652d90, light) carry charts.purple's defaults."
       },
       "problem-background": {
         "role": "tertiary",

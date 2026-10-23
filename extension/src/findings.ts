@@ -3,7 +3,8 @@
 // JSON object. Each one that lands on lines of its side's diff, inside the
 // Change's worktrees, shows as a gutter marker on those lines and in the
 // Findings view, never inline in the diff. The Reviewer dismisses a Finding,
-// or converts it into a draft Comment at the same place; nothing reaches
+// or converts it into a draft Comment at the same place, from its hover, the
+// view or the editor's Quick Fix on its lines; nothing reaches
 // GitHub until they save that Comment into their pending review and submit.
 // The view, and stepping through Findings, follow the Change in front (ADR
 // 0025); a Change behind it keeps its Findings until it comes back.
@@ -15,6 +16,7 @@ import { Change, changeName } from "./changeWorkspace";
 import type { ThreadPlace } from "./github/client";
 import { setContext } from "./context";
 import { messageOf } from "./errors";
+import { quickFixLabels, selectedLines } from "./findingActions";
 import { gutterIcons, type GutterIcon, type IconSpan } from "./findingGutter";
 import {
   findingAfter,
@@ -49,8 +51,17 @@ const findingCommands = [
   "dearReviewer.previousFinding",
 ];
 
+/** Each Finding's Quick Fix actions: what they do, and the command they run. */
+const quickFixes = [
+  ["Convert to Comment", "dearReviewer.convertFinding"],
+  ["Dismiss", "dearReviewer.dismissFinding"],
+] as const;
+
 export class Findings
-  implements vscode.TreeDataProvider<FindingsNode>, vscode.Disposable
+  implements
+    vscode.TreeDataProvider<FindingsNode>,
+    vscode.CodeActionProvider,
+    vscode.Disposable
 {
   private readonly changed = new vscode.EventEmitter<void>();
   readonly onDidChangeTreeData = this.changed.event;
@@ -121,11 +132,7 @@ export class Findings
         },
         gutterIconSize: "contain",
       });
-    this.icons = {
-      lightbulb: icon("finding"),
-      lightbulbWithBar: icon("finding-start"),
-      bar: icon("finding-bar"),
-    };
+    this.icons = { cat: icon("finding-cat"), bar: icon("finding-bar") };
     this.decoration = vscode.window.createTextEditorDecorationType({
       overviewRulerColor: new vscode.ThemeColor(
         "dearReviewer.assistantForeground"
@@ -136,7 +143,10 @@ export class Findings
       this.decoration,
       ...Object.values(this.icons),
       this.changed,
-      vscode.window.onDidChangeVisibleTextEditors(() => this.render())
+      vscode.window.onDidChangeVisibleTextEditors(() => this.render()),
+      vscode.languages.registerCodeActionsProvider({ scheme: "file" }, this, {
+        providedCodeActionKinds: [vscode.CodeActionKind.QuickFix],
+      })
     );
     // The extension host can't see a hover, but the editor asks every
     // provider for its part of one where it opens. This one adds nothing.
@@ -322,6 +332,48 @@ export class Findings
     if (typeof target !== "string")
       return target.kind === "finding" ? target.finding : undefined;
     return this.all().find((f) => f.id === target);
+  }
+
+  /**
+   * The Quick Fix actions of the Findings on the range's lines, in either
+   * side's file: Convert to Comment and Dismiss for each, as its hover has.
+   */
+  provideCodeActions(
+    document: vscode.TextDocument,
+    range: vscode.Range | vscode.Selection
+  ): vscode.CodeAction[] {
+    const uri = document.uri.toString();
+    const selected = selectedLines(range.start, range.end);
+    const here = this.all()
+      .filter((f) => {
+        const lines = rangeOf(f.place);
+        return (
+          fileOf(f).toString() === uri &&
+          lines.start.line <= selected.last &&
+          selected.first <= lines.end.line
+        );
+      })
+      .sort(
+        (a, b) => rangeOf(a.place).start.line - rangeOf(b.place).start.line
+      );
+    const labels = quickFixLabels(
+      here.map((f) => ({
+        first: f.place.startLine ?? f.place.line,
+        last: f.place.line,
+        message: f.message,
+      }))
+    );
+    return here.flatMap((finding, i) =>
+      quickFixes.map(([verb, command]) => {
+        const title = `${labels[i]}: ${verb}`;
+        const action = new vscode.CodeAction(
+          title,
+          vscode.CodeActionKind.QuickFix
+        );
+        action.command = { title, command, arguments: [finding.id] };
+        return action;
+      })
+    );
   }
 
   getTreeItem(node: FindingsNode): vscode.TreeItem {

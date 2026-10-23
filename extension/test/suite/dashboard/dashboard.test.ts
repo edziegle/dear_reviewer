@@ -172,7 +172,7 @@ describe("Dashboard", () => {
         ],
         [
           "dearReviewer.findings",
-          undefined,
+          "webview",
           "dearReviewer.inReviewWindow || dearReviewer.hasOpenChange",
         ],
       ]

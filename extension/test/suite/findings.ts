@@ -1,13 +1,74 @@
 // Findings the way the Reviewer sees them: listed in the Findings view and
-// marked in the gutter of the editors that show their files. The view's
-// buttons and the hover's links run the commands the extension contributes.
+// marked in the gutter of the editors that show their files. The view is read
+// through the state the extension last sent it, and clicks in it are the
+// messages its webview would send. The webview renders, and answers the
+// tests' keys, only while it's in sight, so `showFindingsView` brings it
+// there first. The hover's links run the commands the extension contributes.
 
 import * as assert from "assert";
 import * as vscode from "vscode";
 import { eventually, type ChangeRequest } from "./reviewer";
 
+/** A Finding's row in the view. */
+export interface FindingsRow {
+  id: string;
+  /** Such as `12` or `16–18`. */
+  lines: string;
+  base: boolean;
+  message: string;
+  firstLine: string;
+  /** Its name for a screen reader. */
+  name: string;
+}
+
+export interface FindingsFile {
+  key: string;
+  name: string;
+  folder: string;
+  findings: FindingsRow[];
+}
+
+export interface FindingsViewState {
+  changeOpen: boolean;
+  files: FindingsFile[];
+  current?: string;
+  count: string;
+  key: string;
+  previousKey: string;
+}
+
+/** What the webview said it shows after its last render or key. */
+export interface FindingsReport {
+  focused: string | null;
+  tabOrder: string[];
+  rebuilt: string[];
+  /** The open row's message as the page shows it. */
+  openMessage: string | null;
+  /** How many elements in the list the page didn't make itself, such as links from a message. */
+  foreign: number;
+  /** Whether the page has the focus. */
+  hasFocus: boolean;
+  /** Whether the listbox holds only a group per file, of Findings and a header hidden from screen readers. */
+  ownsOnlyFindings: boolean;
+}
+
+export type FindingsClick =
+  | { type: "reveal" | "convert" | "dismiss"; id: string }
+  | { type: "step"; direction: 1 | -1 }
+  | { type: "ask" };
+
 interface FindingsApi {
-  view: vscode.TreeDataProvider<unknown>;
+  view: {
+    visible: boolean;
+    sent: FindingsViewState;
+    rendered?: FindingsViewState;
+    report?: FindingsReport;
+    receive(message: FindingsClick): Promise<void> | undefined;
+    focusFinding(id: string): void;
+    click(name: string): void;
+    press(key: string, from?: string): void;
+    requestReport(): void;
+  };
   decorated(): GutterMarker[];
   hovers(): { count: number; last?: HoverPlace };
 }
@@ -43,15 +104,10 @@ export interface FindingQuickFix {
 }
 
 export interface FindingEntry {
-  /** The Change the Finding is in, as the view names it. */
-  change: string;
+  id: string;
   message: string;
-  /** Such as `util.py:2`, with ` (base)` for the base side. */
+  /** Such as `util.py:2` or `util.py:1–3`, with ` (base)` for the base side. */
   where: string;
-  /** The tree element, for passing to the view's commands. */
-  node: unknown;
-  /** What clicking the entry runs. */
-  command?: vscode.Command;
 }
 
 async function findingsApi(): Promise<FindingsApi> {
@@ -67,24 +123,121 @@ export function findIssues(change: ChangeRequest): Thenable<unknown> {
   return vscode.commands.executeCommand("dearReviewer.findIssues", change);
 }
 
-/** The Findings view, fully expanded, as its entries. */
+/** The state the extension last sent the Findings view. */
+export async function findingsState(): Promise<FindingsViewState> {
+  return (await findingsApi()).view.sent;
+}
+
+/** The Findings the view lists, in its order. */
 export async function findingsView(): Promise<FindingEntry[]> {
-  const { view } = await findingsApi();
-  const entries: FindingEntry[] = [];
-  for (const group of (await view.getChildren()) ?? []) {
-    const change = labelOf(await view.getTreeItem(group));
-    for (const node of (await view.getChildren(group)) ?? []) {
-      const item = await view.getTreeItem(node);
-      entries.push({
-        change,
-        message: labelOf(item),
-        where: String(item.description ?? ""),
-        node,
-        command: item.command,
-      });
-    }
+  return (await findingsState()).files.flatMap((file) =>
+    file.findings.map((f) => ({
+      id: f.id,
+      message: f.message,
+      where: `${file.folder ? `${file.folder}/` : ""}${file.name}:${f.lines}${f.base ? " (base)" : ""}`,
+    }))
+  );
+}
+
+/**
+ * Shows the Findings view, and waits for it to render its latest state.
+ * Unless `focused` is false, it also waits for the page to have the focus,
+ * which the editor gives it a moment after showing it, so that the focus a
+ * test then puts in the page stays there.
+ */
+export async function showFindingsView(
+  focused = true
+): Promise<FindingsViewState> {
+  await vscode.commands.executeCommand("dearReviewer.findings.focus");
+  const rendered = await renderedFindings();
+  if (focused) {
+    const { view } = await findingsApi();
+    await eventually(async () =>
+      assert.ok(
+        (await findingsReport(() => view.requestReport())).hasFocus,
+        "the page has the focus"
+      )
+    );
   }
-  return entries;
+  return rendered;
+}
+
+/** What the Findings view last rendered, once it's in sight and has rendered the latest state. */
+export async function renderedFindings(): Promise<FindingsViewState> {
+  let rendered: FindingsViewState | undefined;
+  await eventually(async () => {
+    const { view } = await findingsApi();
+    assert.ok(view.visible, "the Findings view is in sight");
+    assert.deepStrictEqual(
+      view.rendered,
+      view.sent,
+      "it rendered the latest state"
+    );
+    rendered = view.rendered;
+  });
+  return rendered!;
+}
+
+/** Clicks in the Findings view, as its webview does, and waits for what the click does. */
+export async function clickFindings(click: FindingsClick): Promise<void> {
+  await (await findingsApi()).view.receive(click);
+}
+
+/**
+ * What the webview reports once it has done `act`, such as rendering a
+ * state or pressing a key: where the focus is, what Tab reaches, and which
+ * rows its last render built afresh.
+ */
+export async function findingsReport(
+  act: () => unknown = () => undefined
+): Promise<FindingsReport> {
+  const { view } = await findingsApi();
+  await act();
+  let report: FindingsReport | undefined;
+  await eventually(async () => {
+    assert.deepStrictEqual(
+      view.rendered,
+      view.sent,
+      "it rendered the latest state"
+    );
+    report = view.report;
+    assert.ok(report, "the webview reported");
+  });
+  return report!;
+}
+
+/**
+ * Clicks an element of the view's page, such as `finding:<id>`,
+ * `dismiss:<id>`, `next` or `ask`, so the page itself sends what it does.
+ * What the click does follows; wait for it.
+ */
+export async function clickInFindings(name: string): Promise<void> {
+  const { view } = await findingsApi();
+  await findingsReport(() => view.click(name));
+}
+
+/** What the webview shows now, once it has rendered the latest state. */
+export async function freshFindingsReport(): Promise<FindingsReport> {
+  const { view } = await findingsApi();
+  return findingsReport(() => view.requestReport());
+}
+
+/** Puts the focus on a Finding's row in the view, and gives the webview's report. */
+export async function focusFindingRow(id: string): Promise<FindingsReport> {
+  const { view } = await findingsApi();
+  return findingsReport(() => view.focusFinding(id));
+}
+
+/**
+ * Presses a key on the view's focused element, or on the row of the Finding
+ * `from`, focused first, and gives the webview's report.
+ */
+export async function pressInFindings(
+  key: string,
+  from?: string
+): Promise<FindingsReport> {
+  const { view } = await findingsApi();
+  return findingsReport(() => view.press(key, from));
 }
 
 /** The Findings view's entry at `where`. */
@@ -98,28 +251,19 @@ export async function findingAt(where: string): Promise<FindingEntry> {
   return found;
 }
 
-/** Clicks the entry. */
-export function revealFinding(entry: FindingEntry): Thenable<unknown> {
-  return vscode.commands.executeCommand(
-    entry.command!.command,
-    ...(entry.command!.arguments ?? [])
-  );
+/** Clicks the entry's row. */
+export function revealFinding(entry: FindingEntry): Promise<void> {
+  return clickFindings({ type: "reveal", id: entry.id });
 }
 
-/** Clicks the entry's Dismiss button. */
-export function dismissFinding(entry: FindingEntry): Thenable<unknown> {
-  return vscode.commands.executeCommand(
-    "dearReviewer.dismissFinding",
-    entry.node
-  );
+/** Clicks the entry's Dismiss link. */
+export function dismissFinding(entry: FindingEntry): Promise<void> {
+  return clickFindings({ type: "dismiss", id: entry.id });
 }
 
-/** Clicks the entry's Convert to Comment button. */
-export function convertFinding(entry: FindingEntry): Thenable<unknown> {
-  return vscode.commands.executeCommand(
-    "dearReviewer.convertFinding",
-    entry.node
-  );
+/** Clicks the entry's Convert to Comment link. */
+export function convertFinding(entry: FindingEntry): Promise<void> {
+  return clickFindings({ type: "convert", id: entry.id });
 }
 
 /**
@@ -215,10 +359,4 @@ export function clickHoverLink(
     decodeURIComponent(hover.slice(start + opening.length, end))
   ) as unknown[];
   return vscode.commands.executeCommand(command, ...args);
-}
-
-function labelOf(item: vscode.TreeItem): string {
-  return typeof item.label === "string"
-    ? item.label
-    : (item.label?.label ?? "");
 }

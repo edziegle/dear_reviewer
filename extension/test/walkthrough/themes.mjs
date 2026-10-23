@@ -34,7 +34,9 @@ const defaults = {
   "inputValidation.errorBorder": { dark: "#be1100", light: "#be1100" },
   "list.activeSelectionBackground": { dark: "#04395e", light: "#0060c0" },
   "list.activeSelectionForeground": { dark: "#ffffff", light: "#ffffff" },
+  "list.focusOutline": { dark: "#007fd4", light: "#0090f1" },
   "list.hoverBackground": { dark: "#2a2d2e", light: "#e8e8e8" },
+  "list.inactiveSelectionBackground": { dark: "#37373d", light: "#e4e6f1" },
   "testing.iconFailed": { dark: "#f14c4c", light: "#f14c4c" },
   "testing.iconPassed": { dark: "#73c991", light: "#73c991" },
   "testing.iconQueued": { dark: "#cca700", light: "#cca700" },
@@ -43,7 +45,10 @@ const defaults = {
 };
 
 /** Variables the sources read with a fallback, which VS Code doesn't define. */
-const undefinedByVSCode = new Set(["textBlockQuote-foreground"]);
+const undefinedByVSCode = new Set([
+  "textBlockQuote-foreground",
+  "list-inactiveSelectionForeground",
+]);
 
 /** The variables that aren't colors. */
 const fonts = {

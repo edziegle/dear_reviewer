@@ -4,7 +4,7 @@
   "description": "A workbench for reviewing Changes, with real code navigation on both sides of the diff.",
   "private": true,
   "license": "MIT",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "publisher": "edziegle",
   "icon": "media/icon.png",
   "repository": {

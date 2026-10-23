@@ -155,7 +155,7 @@ export function hunksIn(diff: string): Hunk[] {
 export type ShownSite = Site;
 
 export interface ShownRepeatedEdit {
-  /** Such as "This edit appears in 40 files". */
+  /** Such as "Same edit in 3 places in 1 file", or "Same edit in 40 files: read one, skim the rest." for a uniform edit. */
   summary: string;
   /** What most sites removed and added, cut short. */
   removed: string[];
@@ -164,6 +164,10 @@ export interface ShownRepeatedEdit {
   missed: ShownSite[];
   /** How many more missed sites there are than listed. */
   moreMissed: number;
+  /** The label of the button that shows the differing sites past the first few, when there are more. */
+  showDiffering?: string;
+  /** The label of the button that shows the missed sites past the first few, when there are more. */
+  showMissed?: string;
 }
 
 /** The Repeated edits as the overview lists them. */
@@ -173,6 +177,8 @@ export interface ShownRepeatedEdits {
    * the index ran out of time, `pending` while it is still being built.
    */
   checked: "complete" | "partial" | "pending";
+  /** Such as "Repeated edits: 1 to check", or "Repeated edits (2)" when every edit is uniform and the repository fully checked. */
+  heading: string;
   /** Whether any edit has a differing or a missed site, which opens the section. */
   open: boolean;
   edits: ShownRepeatedEdit[];
@@ -202,29 +208,89 @@ function sample(lines: readonly string[]): string[] {
   return lines.length > sampleLines ? [...shown, "…"] : shown;
 }
 
-function summaryOf(sites: readonly Site[]): string {
+/** How many sites a list shows before the button that shows the rest. */
+export const fewSites = 5;
+
+function counted(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+/**
+ * The edit's headline: where it was made, and for a uniform edit, what that
+ * lets the Reviewer do.
+ */
+export function headlineOf(sites: readonly Site[], uniform: boolean): string {
   const files = new Set(sites.map((s) => s.path)).size;
-  return sites.length === files
-    ? `This edit appears in ${files} files`
-    : `This edit appears in ${sites.length} places in ${files} files`;
+  const where =
+    sites.length === files
+      ? counted(files, "file", "files")
+      : `${counted(sites.length, "place", "places")} in ${counted(files, "file", "files")}`;
+  return uniform
+    ? `Same edit in ${where}: read one, skim the rest.`
+    : `Same edit in ${where}`;
+}
+
+/**
+ * The label of the button that shows a list's sites past the first few:
+ * how many more it lists, or all of them when no more were counted past
+ * those listed. None when the list shows whole.
+ */
+export function showMoreOf(listed: number, more = 0): string | undefined {
+  if (listed <= fewSites) return undefined;
+  return more > 0 ? `Show ${listed - fewSites} more` : `Show all ${listed}`;
+}
+
+/**
+ * The section's heading: how many edits have a site to check, or how many
+ * there are when none has. Until the repository is fully checked, an edit
+ * with none may yet have missed sites, so the heading says so.
+ */
+export function headingOf(
+  edits: readonly ShownRepeatedEdit[],
+  checked: ShownRepeatedEdits["checked"]
+): string {
+  const toCheck = edits.filter(
+    (e) => e.differing.length > 0 || e.missed.length > 0
+  ).length;
+  if (toCheck > 0) return `Repeated edits: ${toCheck} to check`;
+  const all = `Repeated edits (${edits.length})`;
+  return checked === "pending"
+    ? `${all}: still checking`
+    : checked === "partial"
+      ? `${all}: not fully checked`
+      : all;
 }
 
 function shownOf(
   edits: readonly RepeatedEdit[],
   index: RepositoryIndex | undefined
 ): ShownRepeatedEdits {
+  // A search that stopped early checked the repository in part, as an index that ran out of time did.
+  const partial = index?.partial || edits.some((edit) => edit.cutOff);
+  const checked = !index ? "pending" : partial ? "partial" : "complete";
   const shown = edits
-    .map((edit) => ({
-      summary: summaryOf(edit.sites),
-      removed: sample(edit.majority.removed),
-      added: sample(edit.majority.added),
-      differing: edit.differing,
-      missed: edit.missed.map((place): ShownSite => ({
-        ...place,
-        side: "head",
-      })),
-      moreMissed: edit.moreMissed,
-    }))
+    .map((edit): ShownRepeatedEdit => {
+      const showDiffering = showMoreOf(edit.differing.length);
+      const showMissed = showMoreOf(edit.missed.length, edit.moreMissed);
+      // Until the whole repository is checked, an edit may yet have missed sites.
+      const uniform =
+        checked === "complete" &&
+        edit.differing.length === 0 &&
+        edit.missed.length === 0;
+      return {
+        summary: headlineOf(edit.sites, uniform),
+        removed: sample(edit.majority.removed),
+        added: sample(edit.majority.added),
+        differing: edit.differing,
+        missed: edit.missed.map((place): ShownSite => ({
+          ...place,
+          side: "head",
+        })),
+        moreMissed: edit.moreMissed,
+        ...(showDiffering && { showDiffering }),
+        ...(showMissed && { showMissed }),
+      };
+    })
     // The edits with something to look at come first.
     .sort(
       (a, b) =>
@@ -232,10 +298,9 @@ function shownOf(
         b.missed.length -
         (a.differing.length + a.missed.length)
     );
-  // A search that stopped early checked the repository in part, as an index that ran out of time did.
-  const partial = index?.partial || edits.some((edit) => edit.cutOff);
   return {
-    checked: !index ? "pending" : partial ? "partial" : "complete",
+    checked,
+    heading: headingOf(shown, checked),
     open: shown.some((e) => e.differing.length > 0 || e.missed.length > 0),
     edits: shown,
   };

@@ -14,6 +14,7 @@ import { findingsView, findIssues } from "../findings";
 import { buildFixtureRepo } from "../fixtures";
 import { closeChange, eventually, openChange, short } from "../reviewer";
 import {
+  clickOverview,
   clickRepeatedSite,
   renderedTimeline,
   sentTimeline,
@@ -118,10 +119,11 @@ describe("Repeated edits in the overview", () => {
 
     assert.deepStrictEqual(shown, {
       checked: "complete",
+      heading: "Repeated edits: 1 to check",
       open: true,
       edits: [
         {
-          summary: "This edit appears in 4 files",
+          summary: "Same edit in 4 files",
           removed: ["    return legacy_call(x, 1)"],
           added: ["    return modern_call(x, 1)"],
           differing: [{ path: "src/d.py", side: "head", line: 5, endLine: 5 }],
@@ -200,6 +202,21 @@ describe("Repeated edits in the overview", () => {
     );
     assert.deepStrictEqual(await findingsView(), [], "none raised");
   });
+
+  it("asks for Findings on the Change from the section's next step", async () => {
+    await scriptClaude(sweep.request, {
+      turns: [replyTurn(JSON.stringify({ findings: [] }))],
+    });
+
+    await clickOverview(sweep.title, "findIssues");
+
+    await eventually(async () => {
+      const [run] = await assistantRuns(sweep.request);
+      const prompt =
+        run && userMessages(run).find((m) => m.includes('"findings"'));
+      assert.ok(prompt?.includes("missed site: src/e.py:5"), prompt);
+    });
+  });
 });
 
 describe("Repeated edits that are all alike", () => {
@@ -217,10 +234,11 @@ describe("Repeated edits that are all alike", () => {
 
     assert.deepStrictEqual(shown, {
       checked: "complete",
+      heading: "Repeated edits (1)",
       open: false,
       edits: [
         {
-          summary: "This edit appears in 5 files",
+          summary: "Same edit in 5 files: read one, skim the rest.",
           removed: ["    return legacy_call(x, 1)"],
           added: ["    return modern_call(x, 1)"],
           differing: [],

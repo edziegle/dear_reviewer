@@ -8,7 +8,14 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import type { Change } from "../../src/changeDetails";
-import { hunksIn, Repetitions } from "../../src/repetitions";
+import {
+  headingOf,
+  headlineOf,
+  hunksIn,
+  Repetitions,
+  showMoreOf,
+  type ShownRepeatedEdit,
+} from "../../src/repetitions";
 
 describe("Hunks of a diff", () => {
   it("are read from a diff of no context, with their lines and where they start", () => {
@@ -132,6 +139,83 @@ describe("Hunks of a diff", () => {
   });
 });
 
+describe("What the overview says of a Repeated edit", () => {
+  const at = (path: string, line: number) => ({
+    path,
+    side: "head" as const,
+    line,
+    endLine: line,
+  });
+
+  it("heads an edit with its places and files, singular for one file", () => {
+    assert.strictEqual(
+      headlineOf([at("a.ts", 1), at("a.ts", 9), at("a.ts", 20)], false),
+      "Same edit in 3 places in 1 file"
+    );
+    assert.strictEqual(
+      headlineOf([at("a.ts", 1), at("a.ts", 9), at("b.ts", 2)], false),
+      "Same edit in 3 places in 2 files"
+    );
+    assert.strictEqual(
+      headlineOf([at("a.ts", 1), at("b.ts", 1), at("c.ts", 1)], false),
+      "Same edit in 3 files"
+    );
+  });
+
+  it("says what a uniform edit lets the Reviewer do", () => {
+    const sites = Array.from({ length: 40 }, (_, i) => at(`f${i}.ts`, 1));
+    assert.strictEqual(
+      headlineOf(sites, true),
+      "Same edit in 40 files: read one, skim the rest."
+    );
+  });
+
+  it("shows five sites of a list, and offers the rest of those listed", () => {
+    assert.strictEqual(showMoreOf(5), undefined, "five show whole");
+    assert.strictEqual(showMoreOf(7), "Show all 7");
+    assert.strictEqual(showMoreOf(20, 480), "Show 15 more");
+    assert.strictEqual(showMoreOf(3, 0), undefined);
+  });
+
+  it("counts the edits to check, or all the edits when every one is uniform", () => {
+    const edit = (differing: number, missed: number): ShownRepeatedEdit => ({
+      summary: "",
+      removed: [],
+      added: [],
+      differing: Array.from({ length: differing }, (_, i) => at("d.ts", i)),
+      missed: Array.from({ length: missed }, (_, i) => at("m.ts", i)),
+      moreMissed: 0,
+    });
+    assert.strictEqual(
+      headingOf([edit(2, 0), edit(0, 0), edit(0, 1)], "complete"),
+      "Repeated edits: 2 to check"
+    );
+    assert.strictEqual(
+      headingOf([edit(0, 0), edit(0, 0)], "complete"),
+      "Repeated edits (2)"
+    );
+  });
+
+  it("doesn't call the edits uniform until the repository is fully checked", () => {
+    const uniform: ShownRepeatedEdit = {
+      summary: "",
+      removed: [],
+      added: [],
+      differing: [],
+      missed: [],
+      moreMissed: 0,
+    };
+    assert.strictEqual(
+      headingOf([uniform, uniform], "pending"),
+      "Repeated edits (2): still checking"
+    );
+    assert.strictEqual(
+      headingOf([uniform], "partial"),
+      "Repeated edits (1): not fully checked"
+    );
+  });
+});
+
 describe("The repetition of a real Change", () => {
   const dir = fs.mkdtempSync(
     path.join(fs.realpathSync(os.tmpdir()), "dr-repetitions-")
@@ -213,7 +297,8 @@ describe("The repetition of a real Change", () => {
     const early = await repetitions.repeatedEdits(change);
     assert.strictEqual(early?.checked, "pending");
     assert.strictEqual(early?.edits.length, 1);
-    assert.strictEqual(early?.edits[0].summary, "This edit appears in 4 files");
+    assert.strictEqual(early?.edits[0].summary, "Same edit in 4 files");
+    assert.strictEqual(early?.heading, "Repeated edits: 1 to check");
     assert.deepStrictEqual(early?.edits[0].missed, []);
 
     await settled;
@@ -251,9 +336,29 @@ describe("The repetition of a real Change", () => {
     assert.strictEqual(shown?.checked, "complete");
     assert.strictEqual(shown?.open, false);
     assert.strictEqual(shown?.edits.length, 1);
-    assert.strictEqual(shown?.edits[0].summary, "This edit appears in 3 files");
+    assert.strictEqual(
+      shown?.edits[0].summary,
+      "Same edit in 3 files: read one, skim the rest."
+    );
+    assert.strictEqual(shown?.heading, "Repeated edits (1)");
     assert.deepStrictEqual(shown?.edits[0].differing, []);
     assert.deepStrictEqual(shown?.edits[0].missed, []);
+  });
+
+  it("doesn't tell the Reviewer to skim a uniform edit while missed sites weren't fully checked", async () => {
+    const repetitions = new Repetitions({ budgetMs: 0 });
+    const settled = new Promise<void>((resolve) =>
+      repetitions.onDidSettle(resolve)
+    );
+    const early = await repetitions.repeatedEdits(uniform);
+    assert.strictEqual(early?.checked, "pending");
+    assert.strictEqual(early?.edits[0].summary, "Same edit in 3 files");
+    assert.strictEqual(early?.heading, "Repeated edits (1): still checking");
+    await settled;
+    const shown = await repetitions.repeatedEdits(uniform);
+    assert.strictEqual(shown?.checked, "partial");
+    assert.strictEqual(shown?.edits[0].summary, "Same edit in 3 files");
+    assert.strictEqual(shown?.heading, "Repeated edits (1): not fully checked");
   });
 
   it("says missed sites weren't fully checked when the index ran out of time", async () => {
@@ -329,6 +434,33 @@ describe("The repetition of a real Change", () => {
     const found = await repetitions.candidates(quiet);
     assert.deepStrictEqual(found.duplicates, []);
     assert.deepStrictEqual(found.edits, []);
+  });
+
+  it("offers the missed sites past the first five behind Show all", async () => {
+    // Three of ten callers of old3() are swept; seven still hold it.
+    for (let n = 0; n < 10; n++)
+      write(`many/${n}.js`, `import m from "m";\nold3(${n});\n`);
+    const before = commit("ten callers");
+    for (let n = 0; n < 3; n++)
+      write(`many/${n}.js`, `import m from "m";\nnew3(${n});\n`);
+    const after = commit("sweep three");
+    const many = { ...change, mergeBase: before, headSha: after } as Change;
+    try {
+      const repetitions = new Repetitions();
+      const settled = new Promise<void>((resolve) =>
+        repetitions.onDidSettle(resolve)
+      );
+      await repetitions.repeatedEdits(many);
+      await settled;
+      const [edit] = (await repetitions.repeatedEdits(many))!.edits;
+      assert.strictEqual(edit.summary, "Same edit in 3 files");
+      assert.strictEqual(edit.missed.length, 7);
+      assert.strictEqual(edit.moreMissed, 0);
+      assert.strictEqual(edit.showMissed, "Show all 7");
+      assert.strictEqual(edit.showDiffering, undefined);
+    } finally {
+      git("reset", "-q", "--hard", head);
+    }
   });
 
   it("gives no section, and no error, when git can't read the Change", async () => {

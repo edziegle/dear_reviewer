@@ -125,6 +125,7 @@ export interface OverviewSources {
       | "nextFile"
       | "ask"
       | "codeFlow"
+      | "findIssues"
       | "showChangesSince"
       | "skimSetting"
       | "takeAction"
@@ -617,6 +618,11 @@ class ChangeTimeline {
         // Only a file extension the overview offered.
         if (this.state.unhighlighted?.includes(action.extension))
           this.sources.findExtension(action.extension);
+        return;
+      case "findIssues":
+        // Only while the Repeated edits offer it.
+        if (this.state.repeatedEdits?.open)
+          this.sources.act(this.change, action.type);
         return;
       case "dismissUnhighlighted":
         if (this.state.unhighlighted)

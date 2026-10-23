@@ -264,6 +264,7 @@ export async function clickOverview(
     | "nextFile"
     | "ask"
     | "codeFlow"
+    | "findIssues"
     | "showChangesSince"
     | "takeAction"
     | "takeRetry"

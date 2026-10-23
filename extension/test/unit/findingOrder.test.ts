@@ -111,6 +111,18 @@ describe("The Finding a step goes to", () => {
     assert.strictEqual(step({ file: "a.py", line: 7 }, 1), "a5b");
   });
 
+  it("steps from the Finding that starts nearest above the cursor, where one lies inside another", () => {
+    const nested = stepOrder([
+      finding("outer", "a.py", 0, 9),
+      finding("inner", "a.py", 4, 5),
+      finding("after", "a.py", 12),
+    ]);
+    const from = { file: "a.py", line: 5 };
+
+    assert.strictEqual(findingAfter(nested, from, 1)?.id, "after");
+    assert.strictEqual(findingAfter(nested, from, -1)?.id, "outer");
+  });
+
   it("steps from the current Finding while the cursor is on its lines", () => {
     assert.strictEqual(
       step({ file: "a.py", line: 5, current: "a5b" }, 1),

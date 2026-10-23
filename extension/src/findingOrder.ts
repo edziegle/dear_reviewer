@@ -38,7 +38,8 @@ export function placeAmong(
  * The Finding after `from`, or the one before it when `direction` is -1,
  * going round at either end. From the cursor, a step starts at the Finding
  * stepped to last while the cursor is still on its lines, then at the first
- * Finding on the cursor's line, and otherwise at the cursor's line itself.
+ * of the Findings on the cursor's line that start nearest above it, and
+ * otherwise at the cursor's line itself.
  * From nowhere, or from a Finding not among them, it goes to the first or
  * last.
  */
@@ -56,7 +57,12 @@ export function findingAfter<T extends Placed>(
     const covers = (f: T) =>
       f.file === from.file && f.first <= from.line && from.line <= f.last;
     start = ordered.findIndex((f) => f.id === from.current && covers(f));
-    if (start < 0) start = ordered.findIndex(covers);
+    if (start < 0) {
+      // The Finding the cursor is on is the one that starts nearest above
+      // it, such as one inside a longer Finding that starts earlier.
+      const nearest = Math.max(...ordered.filter(covers).map((f) => f.first));
+      start = ordered.findIndex((f) => covers(f) && f.first === nearest);
+    }
     if (start < 0) {
       const before = (f: T) =>
         f.file < from.file || (f.file === from.file && f.first < from.line);

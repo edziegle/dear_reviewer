@@ -705,19 +705,29 @@ describe("Findings on request", () => {
       );
     });
     const first = ties.find((m) => positionIn(m.hover) === 1)!;
-    const step = async (run: () => Thenable<unknown>) => {
+    // Waits for a hover where the step should open one, so that a hover
+    // late from an earlier step can't pass for it.
+    const step = async (
+      run: () => Thenable<unknown>,
+      expected: { file: string; line: number }
+    ) => {
       const before = await hoversOpened();
       await run();
-      return nextHover(before);
+      await eventually(async () =>
+        assert.deepStrictEqual(await nextHover(before), expected)
+      );
     };
+    // Closed, so the click opens the file again with a hover of its own.
+    await vscode.commands.executeCommand("workbench.action.closeAllEditors");
 
-    // From the first tie to the second, whose hover is the one already open
-    // on that line, then on past them both.
-    await clickHoverLink(first.hover, "dearReviewer.nextFinding");
-    assert.deepStrictEqual(
-      await step(() =>
-        vscode.commands.executeCommand("dearReviewer.nextFinding")
-      ),
+    await step(() => clickHoverLink(first.hover, "dearReviewer.nextFinding"), {
+      file,
+      line: 0,
+    });
+    // On from the second tie goes past both: from the first, it would stay
+    // on line 0.
+    await step(
+      () => vscode.commands.executeCommand("dearReviewer.nextFinding"),
       { file, line: 1 }
     );
     const editor = vscode.window.visibleTextEditors.find(
@@ -731,10 +741,8 @@ describe("Findings on request", () => {
       )
     );
 
-    assert.deepStrictEqual(
-      await step(() =>
-        vscode.commands.executeCommand("dearReviewer.previousFinding")
-      ),
+    await step(
+      () => vscode.commands.executeCommand("dearReviewer.previousFinding"),
       { file, line: 0 }
     );
   });

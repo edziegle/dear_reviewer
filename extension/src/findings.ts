@@ -81,6 +81,8 @@ export class Findings
    * `tell` adds a note to its panel. `onDiff` says whether lines take a
    * Comment, and `draft` opens a draft Comment for the Reviewer to edit.
    * `inFront` gives the Change in front, whose Findings the view lists.
+   * `countHovers`, set only under the tests, counts the hovers that open on
+   * Findings, for `hovers`.
    */
   constructor(
     extensionUri: vscode.Uri,
@@ -95,7 +97,8 @@ export class Findings
       change: Change,
       place: ThreadPlace,
       body: string
-    ) => vscode.CommentThread
+    ) => vscode.CommentThread,
+    countHovers: boolean
   ) {
     // A gutter marker and a mark on the scroll bar: nothing in the text. A
     // gutter icon can't take a theme color, so each theme kind gets an icon
@@ -133,22 +136,26 @@ export class Findings
       this.decoration,
       ...Object.values(this.icons),
       this.changed,
-      vscode.window.onDidChangeVisibleTextEditors(() => this.render()),
-      // Adds nothing to a hover: it only notes that one opened.
-      vscode.languages.registerHoverProvider(
-        { scheme: "file" },
-        {
-          provideHover: (document, position) => {
-            if (this.at(document.uri, position.line))
-              this.hovered = {
-                count: this.hovered.count + 1,
-                last: { file: document.uri.fsPath, line: position.line },
-              };
-            return undefined;
-          },
-        }
-      )
+      vscode.window.onDidChangeVisibleTextEditors(() => this.render())
     );
+    // The extension host can't see a hover, but the editor asks every
+    // provider for its part of one where it opens. This one adds nothing.
+    if (countHovers)
+      this.subscriptions.push(
+        vscode.languages.registerHoverProvider(
+          { scheme: "file" },
+          {
+            provideHover: (document, position) => {
+              if (this.at(document.uri, position.line))
+                this.hovered = {
+                  count: this.hovered.count + 1,
+                  last: { file: document.uri.fsPath, line: position.line },
+                };
+              return undefined;
+            },
+          }
+        )
+      );
   }
 
   dispose(): void {

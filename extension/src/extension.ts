@@ -637,7 +637,8 @@ export function activate(context: vscode.ExtensionContext) {
     (change) => assistants.findIssues(change),
     (change, note) => assistants.addNote(change, note),
     (change, place) => review.onDiff(change, place),
-    (change, place, body) => review.draft(change, place, body)
+    (change, place, body) => review.draft(change, place, body),
+    context.extensionMode === vscode.ExtensionMode.Test
   );
 
   /** Steps from the Finding a hover's link names, or else from the cursor. */

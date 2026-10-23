@@ -38,6 +38,7 @@ The build runs inside the reusable workflow too: a workflow that only signs vouc
 - Inside `build-vsix.yml`, the `vsix` job builds with `contents: read` only, and the `attest` job, which runs no dependency code, downloads the .vsix and attests it. The calling job in `release.yml` grants `contents: read`, `id-token: write` and `attestations: write`, since a reusable workflow gets no more than its caller grants.
 - The release build restores no cache: no `actions/cache` for `~/.npm`, and `cache: false` on `mise-action`, whose own cache the CI workflow's `build` job writes under the same key. The CI workflow keeps its caches.
 - Attaching the .vsix to the release stays in `release.yml`, in a `publish` job that alone holds `contents: write`, and restores no cache either.
+- The build checks out the release's tag, not the commit whose push started the run. A push just before the release PR merges starts a run whose `release-please` finds the new release, and that commit still has the old version: v0.9.0 went out as a 0.8.1 .vsix that way, and both registries skipped it as a duplicate. Starting `release.yml` by hand with a tag builds and lists that release again. It runs on `main` only, for a version tag that has a GitHub Release.
 - `slsa-github-generator` is unmaintained, has to be referenced by tag, against the rule that pins every action to a commit SHA, and moves verification from `gh` to `slsa-verifier`.
 
 <!-- vale RedHat.Slash = YES -->

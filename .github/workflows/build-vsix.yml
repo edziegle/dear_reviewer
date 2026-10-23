@@ -9,6 +9,11 @@ name: Build the .vsix
 
 on:
   workflow_call:
+    inputs:
+      tag:
+        description: The release tag to build, like v0.9.0
+        required: true
+        type: string
 
 permissions: {}
 
@@ -26,8 +31,12 @@ jobs:
     permissions:
       contents: read
     steps:
+      # The tag, not the commit that started the run: a push just before the
+      # release PR merges starts a run whose release-please finds the release,
+      # and that commit still has the old version.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: refs/tags/${{ inputs.tag }}
           persist-credentials: false
       - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
         with:

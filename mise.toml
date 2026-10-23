@@ -165,6 +165,10 @@ run = "npx prettier --write '**/*.md'"
 description = "Write wiki/ as GitHub wiki pages into a clone of the wiki"
 usage = 'arg "<wiki>" help="A clone of the wiki repository, from the repository root; its pages are all replaced"'
 run = '''
+if [ "$(cd "$usage_wiki" && pwd -P)" = "$(pwd -P)/wiki" ]; then
+  echo "The clone can't be wiki/, the folder it mirrors" >&2
+  exit 1
+fi
 if ! git -C "$usage_wiki" remote get-url origin | grep -q '\.wiki\(\.git\)\{0,1\}$'; then
   echo "$usage_wiki isn't a clone of a wiki" >&2
   exit 1

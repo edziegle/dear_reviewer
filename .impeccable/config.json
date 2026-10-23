@@ -1,0 +1,28 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "design-system-font",
+        "value": "menlo",
+        "createdAt": "2026-10-23T18:05:47.174Z",
+        "reason": "Claude: stand-in value for --vscode-editor-font-family in a throwaway prototype, as extension/test/walkthrough/themes.mjs uses"
+      },
+      {
+        "rule": "undersized-ui-text",
+        "value": "*",
+        "files": ["extension/prototype/findings-view/index.html"],
+        "createdAt": "2026-10-23T18:06:45.825Z",
+        "reason": "Claude: throwaway prototype that copies VS Code's native tree, pane-header and status-bar density (22px rows, 11px headers) and a 10px PROTOTYPE tag outside the design"
+      },
+      {
+        "rule": "cramped-padding",
+        "value": "*",
+        "files": ["extension/prototype/findings-view/index.html"],
+        "createdAt": "2026-10-23T18:06:45.844Z",
+        "reason": "Claude: throwaway prototype that copies VS Code's native tree, pane-header and status-bar density (22px rows, 11px headers) and a 10px PROTOTYPE tag outside the design"
+      }
+    ]
+  }
+}

@@ -306,3 +306,7 @@ run = """
 ../tools/vsce/node_modules/.bin/vsce publish --packagePath dist/dear-reviewer.vsix \
   --azure-credential --skip-duplicate
 """
+
+[tasks.prototype-findings]
+description = "PROTOTYPE, throw away: open the Findings view variants in the browser"
+run = "open extension/prototype/findings-view/index.html"

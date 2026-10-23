@@ -1,0 +1,1370 @@
+<!doctype html>
+<!--
+  PROTOTYPE, throw away. Not part of the extension.
+
+  Question: would a webview give the Findings view a much better UX than the
+  native tree? Four variants of the Findings view, in a mock review window
+  with Change Files above it and the diff's head side beside it, switchable
+  with ?variant=A|B|C|D|E (or the arrows in the bar at the bottom, or ← →).
+
+    A  Native tree, as today, plus #199's title-bar arrows (the baseline)
+    B  Cards: every Finding in full, with its buttons, and a stepper at the foot
+    C  Pager: the current Finding in full on top, the rest as an index below
+    D  Dense accordion: tree-height rows by file; the current one opens in place
+    E  D, with B's real Convert and Dismiss buttons in the opened row
+
+  Every variant shares #199's hover in the editor and #198's bar-only gutter
+  marker, so only the side bar differs. ?theme=dark|light and ?size=small|tall
+  (small is the fresh layout's one part in six) are in the bar too.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Findings view prototype</title>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.36/dist/codicon.css"
+    />
+    <style>
+      /* Default Dark Modern and Default Light Modern, from VSCodium's theme files. */
+      :root,
+      :root[data-theme="dark"] {
+        --vscode-font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+        --vscode-font-size: 13px;
+        --vscode-editor-font-family: Menlo, Monaco, "Courier New", monospace;
+        --vscode-editor-font-size: 12px;
+        --vscode-foreground: #cccccc;
+        --vscode-descriptionForeground: #9d9d9d;
+        --vscode-focusBorder: #0078d4;
+        --vscode-icon-foreground: #cccccc;
+        --vscode-sideBar-background: #181818;
+        --vscode-sideBar-border: #2b2b2b;
+        --vscode-sideBarSectionHeader-border: #2b2b2b;
+        --vscode-activityBar-background: #181818;
+        --vscode-activityBar-foreground: #d7d7d7;
+        --vscode-activityBar-inactiveForeground: #868686;
+        --vscode-activityBar-activeBorder: #0078d4;
+        --vscode-titleBar-activeBackground: #181818;
+        --vscode-statusBar-background: #181818;
+        --vscode-statusBar-foreground: #cccccc;
+        --vscode-editor-background: #1f1f1f;
+        --vscode-editor-foreground: #cccccc;
+        --vscode-editor-selectionBackground: #264f78;
+        --vscode-editor-inactiveSelectionBackground: #3a3d41;
+        --vscode-editorLineNumber-foreground: #6e7681;
+        --vscode-editorLineNumber-activeForeground: #cccccc;
+        --vscode-editorGroupHeader-tabsBackground: #181818;
+        --vscode-tab-activeBackground: #1f1f1f;
+        --vscode-tab-activeBorderTop: #0078d4;
+        --vscode-tab-border: #2b2b2b;
+        --vscode-editorWidget-background: #202020;
+        --vscode-widget-border: #313131;
+        --vscode-list-hoverBackground: #2a2d2e;
+        --vscode-list-activeSelectionBackground: #04395e;
+        --vscode-list-activeSelectionForeground: #ffffff;
+        --vscode-list-inactiveSelectionBackground: #37373d;
+        --vscode-textLink-foreground: #4daafc;
+        --vscode-button-background: #0078d4;
+        --vscode-button-foreground: #ffffff;
+        --vscode-button-hoverBackground: #026ec1;
+        --vscode-button-secondaryBackground: #313131;
+        --vscode-button-secondaryForeground: #cccccc;
+        --vscode-button-secondaryHoverBackground: #3c3c3c;
+        --vscode-button-border: #ffffff1a;
+        --vscode-toolbar-hoverBackground: #5a5d5e50;
+        --vscode-badge-background: #616161;
+        --vscode-badge-foreground: #f8f8f8;
+        --vscode-textCodeBlock-background: #2b2b2b;
+        --vscode-gitDecoration-modifiedResourceForeground: #e2c08d;
+        --vscode-gitDecoration-addedResourceForeground: #81b88b;
+        --vscode-dearReviewer-assistantForeground: #b180d7;
+        --syn-kw: #569cd6;
+        --syn-ty: #4ec9b0;
+        --syn-str: #ce9178;
+        --syn-fn: #dcdcaa;
+        --syn-com: #6a9955;
+      }
+      :root[data-theme="light"] {
+        --vscode-foreground: #3b3b3b;
+        --vscode-descriptionForeground: #3b3b3b;
+        --vscode-focusBorder: #005fb8;
+        --vscode-icon-foreground: #3b3b3b;
+        --vscode-sideBar-background: #f8f8f8;
+        --vscode-sideBar-border: #e5e5e5;
+        --vscode-sideBarSectionHeader-border: #e5e5e5;
+        --vscode-activityBar-background: #f8f8f8;
+        --vscode-activityBar-foreground: #1f1f1f;
+        --vscode-activityBar-inactiveForeground: #616161;
+        --vscode-activityBar-activeBorder: #005fb8;
+        --vscode-titleBar-activeBackground: #f8f8f8;
+        --vscode-statusBar-background: #f8f8f8;
+        --vscode-statusBar-foreground: #3b3b3b;
+        --vscode-editor-background: #ffffff;
+        --vscode-editor-foreground: #3b3b3b;
+        --vscode-editor-selectionBackground: #add6ff;
+        --vscode-editor-inactiveSelectionBackground: #e5ebf1;
+        --vscode-editorLineNumber-foreground: #6e7681;
+        --vscode-editorLineNumber-activeForeground: #171184;
+        --vscode-editorGroupHeader-tabsBackground: #f8f8f8;
+        --vscode-tab-activeBackground: #ffffff;
+        --vscode-tab-activeBorderTop: #005fb8;
+        --vscode-tab-border: #e5e5e5;
+        --vscode-editorWidget-background: #f8f8f8;
+        --vscode-widget-border: #e5e5e5;
+        --vscode-list-hoverBackground: #f2f2f2;
+        --vscode-list-activeSelectionBackground: #e8e8e8;
+        --vscode-list-activeSelectionForeground: #000000;
+        --vscode-list-inactiveSelectionBackground: #e4e6f1;
+        --vscode-textLink-foreground: #005fb8;
+        --vscode-button-background: #005fb8;
+        --vscode-button-foreground: #ffffff;
+        --vscode-button-hoverBackground: #0258a8;
+        --vscode-button-secondaryBackground: #e5e5e5;
+        --vscode-button-secondaryForeground: #3b3b3b;
+        --vscode-button-secondaryHoverBackground: #cccccc;
+        --vscode-button-border: #0000001a;
+        --vscode-toolbar-hoverBackground: #b8b8b850;
+        --vscode-badge-background: #cccccc;
+        --vscode-badge-foreground: #3b3b3b;
+        --vscode-textCodeBlock-background: #f8f8f8;
+        --vscode-gitDecoration-modifiedResourceForeground: #895503;
+        --vscode-gitDecoration-addedResourceForeground: #587c0c;
+        --vscode-dearReviewer-assistantForeground: #652d90;
+        --syn-kw: #0000ff;
+        --syn-ty: #267f99;
+        --syn-str: #a31515;
+        --syn-fn: #795e26;
+        --syn-com: #008000;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+      }
+      body {
+        background: var(--vscode-editor-background);
+        color: var(--vscode-foreground);
+        font-family: var(--vscode-font-family);
+        font-size: var(--vscode-font-size);
+        overflow: hidden;
+      }
+      button {
+        font: inherit;
+        color: inherit;
+      }
+
+      /* ---------- The mock window ---------- */
+      .window {
+        display: grid;
+        grid-template-columns: 48px 300px 1fr;
+        grid-template-rows: 30px 1fr 22px;
+        height: 100vh;
+      }
+      .titlebar {
+        grid-column: 1 / -1;
+        background: var(--vscode-titleBar-activeBackground);
+        border-bottom: 1px solid var(--vscode-sideBar-border);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        color: var(--vscode-descriptionForeground);
+      }
+      .activitybar {
+        background: var(--vscode-activityBar-background);
+        border-right: 1px solid var(--vscode-sideBar-border);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding-top: 4px;
+      }
+      .activitybar .codicon {
+        font-size: 24px;
+        color: var(--vscode-activityBar-inactiveForeground);
+        padding: 12px 0;
+        width: 48px;
+        text-align: center;
+      }
+      .activitybar .codicon.active {
+        color: var(--vscode-activityBar-foreground);
+        box-shadow: inset 2px 0 0 var(--vscode-activityBar-activeBorder);
+      }
+      .statusbar {
+        grid-column: 1 / -1;
+        background: var(--vscode-statusBar-background);
+        color: var(--vscode-statusBar-foreground);
+        border-top: 1px solid var(--vscode-sideBar-border);
+        font-size: 12px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 0 10px;
+      }
+
+      .sidebar {
+        background: var(--vscode-sideBar-background);
+        border-right: 1px solid var(--vscode-sideBar-border);
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+      }
+      .sidebar-title {
+        height: 35px;
+        display: flex;
+        align-items: center;
+        padding: 0 20px;
+        font-size: 11px;
+        text-transform: uppercase;
+      }
+      .pane {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        border-top: 1px solid var(--vscode-sideBarSectionHeader-border);
+      }
+      .pane.files {
+        flex: 5;
+      }
+      .pane.findings {
+        flex: 1;
+      }
+      body[data-size="tall"] .pane.findings {
+        flex: 4;
+      }
+      .pane-header {
+        height: 22px;
+        flex: none;
+        display: flex;
+        align-items: center;
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        padding-right: 8px;
+        cursor: default;
+      }
+      .pane-header .codicon {
+        font-size: 16px;
+        width: 20px;
+        text-align: center;
+      }
+      .pane-header .title {
+        flex: 1;
+      }
+      .pane-actions {
+        display: flex;
+        gap: 2px;
+        visibility: hidden;
+      }
+      .pane:hover .pane-actions,
+      .pane:focus-within .pane-actions {
+        visibility: visible;
+      }
+      .icon-btn {
+        background: none;
+        border: 0;
+        border-radius: 5px;
+        padding: 2px;
+        width: 22px;
+        height: 22px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        color: var(--vscode-icon-foreground);
+      }
+      .icon-btn:hover {
+        background: var(--vscode-toolbar-hoverBackground);
+      }
+      .icon-btn:disabled {
+        opacity: 0.4;
+        cursor: default;
+        background: none;
+      }
+      .icon-btn .codicon {
+        font-size: 16px;
+      }
+      .pane-body {
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+      }
+
+      /* Native tree rows (Change Files, and variant A). */
+      .row {
+        height: 22px;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding-right: 8px;
+        white-space: nowrap;
+        cursor: pointer;
+      }
+      .row:hover {
+        background: var(--vscode-list-hoverBackground);
+      }
+      .row.selected {
+        background: var(--vscode-list-activeSelectionBackground);
+        color: var(--vscode-list-activeSelectionForeground);
+        outline: 1px solid var(--vscode-focusBorder);
+        outline-offset: -1px;
+      }
+      .row .twisty {
+        width: 16px;
+        flex: none;
+        text-align: center;
+      }
+      .row .label {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        flex: 0 1 auto;
+        min-width: 0;
+      }
+      .row .desc {
+        color: var(--vscode-descriptionForeground);
+        font-size: 0.92em;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        flex: 1 1 auto;
+        min-width: 0;
+        opacity: 0.9;
+      }
+      .row .deco {
+        margin-left: auto;
+        font-size: 12px;
+        flex: none;
+      }
+      .row .inline-actions {
+        display: none;
+        flex: none;
+        gap: 2px;
+        margin-left: auto;
+      }
+      .row:hover .inline-actions,
+      .row.selected .inline-actions {
+        display: inline-flex;
+      }
+      .row .file-icon {
+        font-size: 16px;
+        flex: none;
+      }
+      .row.modified .label,
+      .row.modified .deco {
+        color: var(--vscode-gitDecoration-modifiedResourceForeground);
+      }
+      .row.added .label,
+      .row.added .deco {
+        color: var(--vscode-gitDecoration-addedResourceForeground);
+      }
+      .assistant-icon {
+        color: var(--vscode-dearReviewer-assistantForeground);
+      }
+
+      .welcome {
+        padding: 8px 20px;
+        line-height: 1.4;
+        color: var(--vscode-foreground);
+      }
+      .welcome p {
+        margin: 0 0 10px;
+      }
+      .btn {
+        background: var(--vscode-button-background);
+        color: var(--vscode-button-foreground);
+        border: 1px solid var(--vscode-button-border);
+        border-radius: 2px;
+        padding: 4px 12px;
+        cursor: pointer;
+      }
+      .btn:hover {
+        background: var(--vscode-button-hoverBackground);
+      }
+      .btn.secondary {
+        background: var(--vscode-button-secondaryBackground);
+        color: var(--vscode-button-secondaryForeground);
+        padding: 2px 8px;
+      }
+      .btn.secondary:hover {
+        background: var(--vscode-button-secondaryHoverBackground);
+      }
+      .btn.wide {
+        width: 100%;
+      }
+      .link {
+        background: none;
+        border: 0;
+        padding: 0;
+        color: var(--vscode-textLink-foreground);
+        cursor: pointer;
+      }
+      .link:hover {
+        text-decoration: underline;
+      }
+      :focus-visible {
+        outline: 1px solid var(--vscode-focusBorder);
+        outline-offset: -1px;
+      }
+      .muted {
+        color: var(--vscode-descriptionForeground);
+      }
+      .mono {
+        font-family: var(--vscode-editor-font-family);
+        font-size: var(--vscode-editor-font-size);
+      }
+      code {
+        font-family: var(--vscode-editor-font-family);
+        font-size: 0.95em;
+        background: var(--vscode-textCodeBlock-background);
+        padding: 0 3px;
+        border-radius: 3px;
+      }
+
+      /* The foot every webview variant shares: the stepper. */
+      .foot {
+        flex: none;
+        border-top: 1px solid var(--vscode-sideBarSectionHeader-border);
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 3px 8px 3px 12px;
+        background: var(--vscode-sideBar-background);
+      }
+      .foot .count {
+        flex: 1;
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+      }
+      .foot .key {
+        font-family: var(--vscode-editor-font-family);
+        font-size: 11px;
+        color: var(--vscode-descriptionForeground);
+        margin-right: 4px;
+      }
+
+      /* B: cards */
+      .cards {
+        padding: 4px 0;
+      }
+      .card {
+        margin: 0 8px 6px 8px;
+        padding: 6px 8px 8px 10px;
+        border-left: 2px solid var(--vscode-dearReviewer-assistantForeground);
+        cursor: pointer;
+        border-radius: 0 2px 2px 0;
+      }
+      .card:hover {
+        background: var(--vscode-list-hoverBackground);
+      }
+      .card.current {
+        background: var(--vscode-editor-inactiveSelectionBackground);
+      }
+      .card .where {
+        display: flex;
+        gap: 6px;
+        align-items: baseline;
+        font-size: 12px;
+        margin-bottom: 3px;
+      }
+      .card .msg {
+        line-height: 1.45;
+        overflow-wrap: anywhere;
+      }
+      .card:not(.current) .msg {
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+      .card .actions {
+        display: flex;
+        gap: 6px;
+        margin-top: 6px;
+      }
+      .card:not(.current) .actions {
+        display: none;
+      }
+      .card:not(.current):hover .actions {
+        display: flex;
+      }
+      .file-group {
+        font-size: 11px;
+        padding: 6px 12px 3px;
+        color: var(--vscode-descriptionForeground);
+        display: flex;
+        gap: 6px;
+      }
+
+      /* C: pager */
+      .pager {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        flex: 1;
+      }
+      .focus-card {
+        flex: none;
+        padding: 8px 12px 10px 12px;
+        border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border);
+      }
+      .focus-card .hand {
+        border-left: 2px solid var(--vscode-dearReviewer-assistantForeground);
+        padding-left: 10px;
+      }
+      .focus-card .head {
+        display: flex;
+        align-items: baseline;
+        gap: 6px;
+        font-size: 12px;
+        margin-bottom: 4px;
+      }
+      .focus-card .msg {
+        line-height: 1.5;
+        overflow-wrap: anywhere;
+        max-height: 9.5em;
+        overflow: auto;
+      }
+      .focus-card .actions {
+        display: flex;
+        gap: 6px;
+        margin-top: 8px;
+        align-items: center;
+      }
+      .index {
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+        padding: 2px 0;
+      }
+      .index .row {
+        padding-left: 12px;
+      }
+      .index .row .n {
+        width: 18px;
+        flex: none;
+        color: var(--vscode-descriptionForeground);
+        font-variant-numeric: tabular-nums;
+        font-size: 11px;
+      }
+      .index .row.current {
+        background: var(--vscode-list-inactiveSelectionBackground);
+      }
+      .index .row.current .n {
+        color: var(--vscode-dearReviewer-assistantForeground);
+      }
+      .index .row .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--vscode-dearReviewer-assistantForeground);
+        flex: none;
+        margin-right: 4px;
+      }
+
+      /* D: dense accordion */
+      .acc .row {
+        padding-left: 8px;
+      }
+      .acc .finding-row .label {
+        flex: 1;
+      }
+      .acc .finding-row.current {
+        background: var(--vscode-list-inactiveSelectionBackground);
+      }
+      .acc .finding-row .line {
+        color: var(--vscode-descriptionForeground);
+        font-size: 11px;
+        font-variant-numeric: tabular-nums;
+        flex: none;
+      }
+      .acc .rule {
+        width: 2px;
+        align-self: stretch;
+        margin: 3px 4px 3px 0;
+        background: var(--vscode-dearReviewer-assistantForeground);
+        flex: none;
+      }
+      .acc .open {
+        padding: 2px 10px 8px 42px;
+        background: var(--vscode-list-inactiveSelectionBackground);
+      }
+      .acc .open .msg {
+        line-height: 1.45;
+        overflow-wrap: anywhere;
+        border-left: 2px solid var(--vscode-dearReviewer-assistantForeground);
+        padding-left: 8px;
+      }
+      .acc .open .actions {
+        display: flex;
+        gap: 10px;
+        margin-top: 6px;
+        padding-left: 10px;
+        font-size: 12px;
+      }
+      .acc .open .actions.buttons {
+        gap: 6px;
+        font-size: inherit;
+        margin-top: 8px;
+      }
+
+      /* ---------- The editor ---------- */
+      .editor {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        min-height: 0;
+      }
+      .tabs {
+        height: 35px;
+        flex: none;
+        background: var(--vscode-editorGroupHeader-tabsBackground);
+        display: flex;
+        border-bottom: 1px solid var(--vscode-tab-border);
+      }
+      .tab {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 0 12px;
+        background: var(--vscode-tab-activeBackground);
+        box-shadow: inset 0 1px 0 var(--vscode-tab-activeBorderTop);
+        border-right: 1px solid var(--vscode-tab-border);
+        font-size: 13px;
+      }
+      .tab .ts {
+        color: #3178c6;
+        font-weight: 700;
+        font-size: 10px;
+      }
+      .breadcrumbs {
+        height: 22px;
+        flex: none;
+        padding: 0 16px;
+        display: flex;
+        align-items: center;
+        font-size: 12px;
+        color: var(--vscode-descriptionForeground);
+        gap: 4px;
+      }
+      .code {
+        position: relative;
+        flex: 1;
+        overflow: auto;
+        font-family: var(--vscode-editor-font-family);
+        font-size: var(--vscode-editor-font-size);
+        line-height: 18px;
+        padding-top: 2px;
+      }
+      .line {
+        display: flex;
+        height: 18px;
+        white-space: pre;
+      }
+      .line .ln {
+        width: 44px;
+        text-align: right;
+        color: var(--vscode-editorLineNumber-foreground);
+        padding-right: 6px;
+        flex: none;
+      }
+      .line.cursor .ln {
+        color: var(--vscode-editorLineNumber-activeForeground);
+      }
+      .line .gutter {
+        width: 18px;
+        flex: none;
+        position: relative;
+      }
+      .line .gutter.mark::before {
+        content: "";
+        position: absolute;
+        left: 4px;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        background: var(--vscode-dearReviewer-assistantForeground);
+      }
+      .line .gutter.mark.first::before {
+        top: 2px;
+      }
+      .line .gutter.mark.last::before {
+        bottom: 2px;
+      }
+      .line .text {
+        padding-left: 4px;
+        flex: 1;
+      }
+      .line.sel .text {
+        background: var(--vscode-editor-selectionBackground);
+      }
+      .kw {
+        color: var(--syn-kw);
+      }
+      .ty {
+        color: var(--syn-ty);
+      }
+      .str {
+        color: var(--syn-str);
+      }
+      .fn {
+        color: var(--syn-fn);
+      }
+      .com {
+        color: var(--syn-com);
+      }
+      .caret {
+        display: inline-block;
+        width: 2px;
+        height: 16px;
+        background: var(--vscode-editor-foreground);
+        vertical-align: -3px;
+        margin-left: -1px;
+      }
+      .ruler {
+        position: absolute;
+        right: 0;
+        top: 0;
+        width: 14px;
+        height: 100%;
+        border-left: 1px solid var(--vscode-widget-border);
+      }
+      .ruler i {
+        position: absolute;
+        right: 2px;
+        width: 6px;
+        height: 3px;
+        background: var(--vscode-dearReviewer-assistantForeground);
+      }
+
+      .hover {
+        position: absolute;
+        left: 70px;
+        max-width: 520px;
+        background: var(--vscode-editorWidget-background);
+        border: 1px solid var(--vscode-widget-border);
+        border-radius: 3px;
+        font-family: var(--vscode-font-family);
+        font-size: 13px;
+        line-height: 1.45;
+        box-shadow: 0 2px 8px #0005;
+        z-index: 2;
+        white-space: normal;
+      }
+      .hover .body {
+        padding: 6px 10px;
+      }
+      .hover .body p {
+        margin: 0 0 6px;
+      }
+      .hover .status {
+        border-top: 1px solid var(--vscode-widget-border);
+        padding: 4px 10px;
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+      .hover .status .spacer {
+        flex: 1;
+      }
+      .hover .link {
+        font-size: 13px;
+      }
+
+      /* ---------- The prototype's own bar (not part of any design) ---------- */
+      .proto-bar {
+        position: fixed;
+        right: 24px;
+        bottom: 34px;
+        white-space: nowrap;
+        background: #111;
+        color: #fff;
+        border-radius: 999px;
+        padding: 6px 8px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font:
+          12px/1 system-ui,
+          sans-serif;
+        box-shadow: 0 6px 24px #0008;
+        z-index: 10;
+        border: 1px solid #ffcc00;
+      }
+      .proto-bar button {
+        background: #333;
+        color: #fff;
+        border: 0;
+        border-radius: 999px;
+        padding: 6px 10px;
+        cursor: pointer;
+        font: inherit;
+      }
+      .proto-bar button:hover {
+        background: #555;
+      }
+      .proto-bar .name {
+        min-width: 200px;
+        text-align: center;
+        font-weight: 600;
+      }
+      .proto-bar .sep {
+        width: 1px;
+        height: 18px;
+        background: #555;
+      }
+      .proto-bar .state {
+        color: #ffcc00;
+        font-variant-numeric: tabular-nums;
+      }
+      .proto-tag {
+        position: fixed;
+        top: 6px;
+        left: 8px;
+        z-index: 10;
+        background: #ffcc00;
+        color: #000;
+        font: 700 10px/1 system-ui;
+        padding: 3px 6px;
+        border-radius: 3px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="proto-tag">PROTOTYPE</div>
+    <div class="window">
+      <div class="titlebar">acme/payments #482 — Review</div>
+      <div class="activitybar">
+        <span class="codicon codicon-files"></span>
+        <span class="codicon codicon-search"></span>
+        <span class="codicon codicon-source-control"></span>
+        <span class="codicon codicon-eye active" title="Dear Reviewer"></span>
+      </div>
+      <div class="sidebar">
+        <div class="sidebar-title">Dear Reviewer</div>
+        <div class="pane files">
+          <div class="pane-header">
+            <span class="codicon codicon-chevron-down"></span
+            ><span class="title">Change Files</span>
+            <span class="pane-actions"
+              ><button class="icon-btn" title="Refresh">
+                <span class="codicon codicon-refresh"></span></button
+              ><button class="icon-btn" title="More">
+                <span class="codicon codicon-ellipsis"></span></button
+            ></span>
+          </div>
+          <div class="pane-body" id="files"></div>
+        </div>
+        <div class="pane findings" id="findingsPane"></div>
+      </div>
+      <div class="editor" id="editor"></div>
+      <div class="statusbar">
+        <span class="codicon codicon-source-control"></span> i482
+        <span style="margin-left: auto">Assistant ready</span>
+      </div>
+    </div>
+
+    <div class="proto-bar" id="protoBar"></div>
+
+    <script>
+      // ---------------------------------------------------------------- data
+      const files = {
+        "src/payments/client.ts": [
+          `<span class="kw">import</span> { <span class="ty">PaymentError</span> } <span class="kw">from</span> <span class="str">"./errors"</span>;`,
+          `<span class="kw">import</span> { <span class="fn">withRetry</span> } <span class="kw">from</span> <span class="str">"./retry"</span>;`,
+          ``,
+          `<span class="kw">export interface</span> <span class="ty">Charge</span> {`,
+          `  id: <span class="ty">string</span>;`,
+          `  cents: <span class="ty">number</span>;`,
+          `}`,
+          ``,
+          `<span class="kw">export class</span> <span class="ty">PaymentsClient</span> {`,
+          `  <span class="kw">constructor</span>(<span class="kw">private readonly</span> baseUrl: <span class="ty">string</span>) {}`,
+          ``,
+          `  <span class="kw">async</span> <span class="fn">charge</span>(customerId: <span class="ty">string</span>, cents: <span class="ty">number</span>): <span class="ty">Promise</span>&lt;<span class="ty">Charge</span>&gt; {`,
+          `    <span class="kw">return</span> <span class="fn">withRetry</span>(() =&gt; <span class="kw">this</span>.<span class="fn">post</span>(<span class="str">"/charges"</span>, { customerId, cents }));`,
+          `  }`,
+          ``,
+          `  <span class="kw">async</span> <span class="fn">refund</span>(chargeId: <span class="ty">string</span>): <span class="ty">Promise</span>&lt;<span class="ty">void</span>&gt; {`,
+          `    <span class="kw">await</span> <span class="kw">this</span>.<span class="fn">post</span>(<span class="str">\`/charges/\${chargeId}/refund\`</span>, {});`,
+          `  }`,
+          ``,
+          `  <span class="kw">private async</span> <span class="fn">post</span>(path: <span class="ty">string</span>, body: <span class="ty">unknown</span>) {`,
+          `    <span class="kw">const</span> res = <span class="kw">await</span> <span class="fn">fetch</span>(<span class="kw">this</span>.baseUrl + path, { method: <span class="str">"POST"</span>, body: <span class="ty">JSON</span>.<span class="fn">stringify</span>(body) });`,
+          `    <span class="kw">if</span> (!res.ok) <span class="kw">throw new</span> <span class="ty">PaymentError</span>(res.status);`,
+          `    <span class="kw">return</span> res.<span class="fn">json</span>();`,
+          `  }`,
+          `}`,
+        ],
+        "src/payments/retry.ts": [
+          `<span class="kw">const</span> attempts = <span class="ty">8</span>;`,
+          ``,
+          `<span class="com">/** Runs \`fn\` until it succeeds, backing off between tries. */</span>`,
+          `<span class="kw">export async function</span> <span class="fn">withRetry</span>&lt;<span class="ty">T</span>&gt;(fn: () =&gt; <span class="ty">Promise</span>&lt;<span class="ty">T</span>&gt;): <span class="ty">Promise</span>&lt;<span class="ty">T</span>&gt; {`,
+          `  <span class="kw">let</span> delay = <span class="ty">500</span>;`,
+          `  <span class="kw">for</span> (<span class="kw">let</span> i = <span class="ty">1</span>; ; i++) {`,
+          `    <span class="kw">try</span> {`,
+          `      <span class="kw">return await</span> <span class="fn">fn</span>();`,
+          `    } <span class="kw">catch</span> (err) {`,
+          `      <span class="kw">if</span> (i === attempts) <span class="kw">throw</span> err;`,
+          `      <span class="kw">await</span> <span class="fn">sleep</span>(delay);`,
+          `      delay *= <span class="ty">2</span>;`,
+          `    }`,
+          `  }`,
+          `}`,
+          ``,
+          `<span class="kw">const</span> <span class="fn">sleep</span> = (ms: <span class="ty">number</span>) =&gt; <span class="kw">new</span> <span class="ty">Promise</span>((r) =&gt; <span class="fn">setTimeout</span>(r, ms));`,
+        ],
+        "src/webhooks/handler.ts": [
+          `<span class="kw">import</span> * <span class="kw">as</span> crypto <span class="kw">from</span> <span class="str">"node:crypto"</span>;`,
+          ``,
+          `<span class="kw">export function</span> <span class="fn">verify</span>(payload: <span class="ty">string</span>, signature: <span class="ty">string</span>, secret: <span class="ty">string</span>) {`,
+          `  <span class="kw">const</span> expected = crypto`,
+          `    .<span class="fn">createHmac</span>(<span class="str">"sha256"</span>, secret)`,
+          `    .<span class="fn">update</span>(payload)`,
+          `    .<span class="fn">digest</span>(<span class="str">"hex"</span>);`,
+          `  <span class="kw">return</span> expected === signature;`,
+          `}`,
+        ],
+      };
+
+      const initialFindings = [
+        {
+          id: 1,
+          path: "src/payments/client.ts",
+          start: 12,
+          end: 12,
+          msg: "`charge` is retried but sends no idempotency key, so a timeout after the bank accepted the charge can bill the customer twice.",
+        },
+        {
+          id: 2,
+          path: "src/payments/client.ts",
+          start: 16,
+          end: 18,
+          msg: "`refund` posts without retry while `charge` retries. A transient 503 here leaves a charge the customer was told would be refunded. Wrap it in `withRetry` with the same idempotency key, or say in the description why refunds must not retry.",
+        },
+        {
+          id: 3,
+          path: "src/payments/retry.ts",
+          start: 10,
+          end: 12,
+          msg: "Every error is retried, including a 402 card decline, which will decline again. Retry only timeouts, 5xx and 429.",
+        },
+        {
+          id: 4,
+          path: "src/payments/retry.ts",
+          start: 12,
+          end: 12,
+          msg: "The delay doubles with no cap: the eighth attempt waits 64 s, and all eight take over two minutes, past the gateway's 30 s timeout.",
+        },
+        {
+          id: 5,
+          path: "src/webhooks/handler.ts",
+          start: 8,
+          end: 8,
+          msg: "The signature is compared with `===`, which returns as soon as a byte differs and so leaks timing. Use `crypto.timingSafeEqual` on the two buffers.",
+        },
+      ];
+
+      const changeFiles = [
+        {
+          dir: "src/payments",
+          files: [
+            ["client.ts", "M"],
+            ["errors.ts", "M"],
+            ["retry.ts", "A"],
+          ],
+        },
+        { dir: "src/webhooks", files: [["handler.ts", "M"]] },
+        {
+          dir: "test",
+          files: [
+            ["client.test.ts", "M"],
+            ["retry.test.ts", "A"],
+          ],
+        },
+      ];
+
+      const variants = {
+        A: "Native tree (today + #199 arrows)",
+        B: "Cards with a stepper",
+        C: "Pager: one Finding, then an index",
+        D: "Dense accordion by file",
+        E: "D with B's buttons",
+      };
+
+      // ---------------------------------------------------------------- state
+      const params = new URLSearchParams(location.search);
+      const state = {
+        variant: variants[params.get("variant")] ? params.get("variant") : "A",
+        theme: params.get("theme") === "light" ? "light" : "dark",
+        size: params.get("size") === "tall" ? "tall" : "small",
+        findings: initialFindings.map((f) => ({ ...f })),
+        current: 1,
+        hoverOpen: true,
+        shownPath: "src/payments/client.ts",
+        log: "",
+      };
+
+      const esc = (s) =>
+        s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      // The message is plain text; backticks become code only for the prototype's readability.
+      const msgHtml = (s) => esc(s).replace(/`([^`]+)`/g, "<code>$1</code>");
+      const base = (p) => p.split("/").pop();
+      const ref = (f) =>
+        `${base(f.path)}:${f.start === f.end ? f.start : `${f.start}-${f.end}`}`;
+      const sorted = () =>
+        [...state.findings].sort(
+          (a, b) => a.path.localeCompare(b.path) || a.start - b.start
+        );
+      const cur = () => state.findings.find((f) => f.id === state.current);
+      const indexOf = (f) => sorted().indexOf(f) + 1;
+      const firstLine = (s) => s.split(/(?<=\.)\s/)[0];
+      // A webview can drop the backticks a tree row has to show as typed.
+      const plainLine = (s) => firstLine(s).replace(/`/g, "");
+
+      function go(id, { hover = true } = {}) {
+        const f = state.findings.find((x) => x.id === id);
+        if (!f) return;
+        state.current = id;
+        state.shownPath = f.path;
+        state.hoverOpen = hover;
+        render();
+      }
+      function step(dir) {
+        const list = sorted();
+        if (!list.length) return;
+        const i = list.indexOf(cur());
+        const next = list[(i + dir + list.length) % list.length] ?? list[0];
+        go(next.id);
+      }
+      function act(id, what) {
+        const list = sorted();
+        const i = list.findIndex((f) => f.id === id);
+        const f = list[i];
+        state.findings = state.findings.filter((x) => x.id !== id);
+        state.log =
+          what === "convert"
+            ? `Draft Comment opened at ${ref(f)}`
+            : `Dismissed the Finding at ${ref(f)}`;
+        const rest = sorted();
+        if (state.current === id) {
+          const next = rest[Math.min(i, rest.length - 1)];
+          state.current = next?.id ?? null;
+          if (next) state.shownPath = next.path;
+          state.hoverOpen = false;
+        }
+        render();
+      }
+
+      // ---------------------------------------------------------------- side bar
+      function renderFiles() {
+        let h = `<div class="row" style="padding-left:4px"><span class="twisty codicon codicon-chevron-down"></span><span class="label">Make charges retry on timeouts</span><span class="desc">acme/payments #482</span></div>`;
+        for (const g of changeFiles) {
+          h += `<div class="row" style="padding-left:12px"><span class="twisty codicon codicon-chevron-down"></span><span class="codicon codicon-folder file-icon"></span><span class="label">${g.dir}</span></div>`;
+          for (const [name, st] of g.files) {
+            const p = `${g.dir}/${name}`;
+            const sel = p === state.shownPath ? " selected" : "";
+            h += `<div class="row ${st === "A" ? "added" : "modified"}${sel}" style="padding-left:40px" data-open="${p}"><span class="codicon codicon-file-code file-icon"></span><span class="label">${name}</span><span class="deco">${st}</span></div>`;
+          }
+        }
+        document.getElementById("files").innerHTML = h;
+      }
+
+      function paneHeader(actions) {
+        const n = state.findings.length;
+        return `<div class="pane-header"><span class="codicon codicon-chevron-down"></span><span class="title">Findings</span>
+    <span class="pane-actions">${actions}<button class="icon-btn" title="Ask for Findings" data-ask><span class="codicon codicon-lightbulb"></span></button></span></div>`;
+      }
+
+      function stepper() {
+        const n = state.findings.length;
+        const f = cur();
+        const pos = f
+          ? `<b>${indexOf(f)}</b> of ${n}`
+          : `${n} Finding${n === 1 ? "" : "s"}`;
+        return `<div class="foot"><span class="count">${pos}</span><span class="key">⌃⌥R F</span>
+    <button class="icon-btn" data-step="-1" title="Previous Finding (⌃⌥R ⇧F)" ${n ? "" : "disabled"}><span class="codicon codicon-arrow-up"></span></button>
+    <button class="icon-btn" data-step="1" title="Next Finding (⌃⌥R F)" ${n ? "" : "disabled"}><span class="codicon codicon-arrow-down"></span></button></div>`;
+      }
+
+      function empty() {
+        return `<div class="welcome"><p>No Findings left. Ask again once you've looked at the code.</p><button class="btn wide" data-ask>Ask for Findings</button>${state.log ? `<p class="muted" style="margin-top:8px">${esc(state.log)}.</p>` : ""}</div>`;
+      }
+
+      const renderers = {
+        A() {
+          const arrows = `<button class="icon-btn" data-step="-1" title="Previous Finding"><span class="codicon codicon-arrow-up"></span></button><button class="icon-btn" data-step="1" title="Next Finding"><span class="codicon codicon-arrow-down"></span></button>`;
+          let body = "";
+          if (!state.findings.length) body = empty();
+          else {
+            body += `<div class="row" style="padding-left:4px"><span class="twisty codicon codicon-chevron-down"></span><span class="label">acme/payments #482</span><span class="desc">${state.findings.length} Findings</span></div>`;
+            for (const f of sorted()) {
+              const sel = f.id === state.current ? " selected" : "";
+              body += `<div class="row${sel}" style="padding-left:24px" data-go="${f.id}" title="${esc(f.msg)}">
+          <span class="codicon codicon-lightbulb assistant-icon"></span>
+          <span class="label">${esc(firstLine(f.msg))}</span><span class="desc">${ref(f)}</span>
+          <span class="inline-actions"><button class="icon-btn" data-convert="${f.id}" title="Convert to Comment"><span class="codicon codicon-comment"></span></button><button class="icon-btn" data-dismiss="${f.id}" title="Dismiss"><span class="codicon codicon-close"></span></button></span></div>`;
+            }
+          }
+          return (
+            paneHeader(state.findings.length ? arrows : "") +
+            `<div class="pane-body">${body}</div>`
+          );
+        },
+
+        B() {
+          if (!state.findings.length)
+            return paneHeader("") + `<div class="pane-body">${empty()}</div>`;
+          let body = `<div class="cards">`;
+          let lastPath = "";
+          for (const f of sorted()) {
+            if (f.path !== lastPath) {
+              body += `<div class="file-group"><span class="codicon codicon-file-code"></span>${esc(f.path)}</div>`;
+              lastPath = f.path;
+            }
+            const c = f.id === state.current ? " current" : "";
+            body += `<div class="card${c}" data-go="${f.id}">
+        <div class="where"><button class="link mono" data-go="${f.id}">${ref(f)}</button></div>
+        <div class="msg">${msgHtml(f.msg)}</div>
+        <div class="actions"><button class="btn secondary" data-convert="${f.id}">Convert to Comment</button><button class="btn secondary" data-dismiss="${f.id}">Dismiss</button></div>
+      </div>`;
+          }
+          body += `</div>`;
+          return (
+            paneHeader("") + `<div class="pane-body">${body}</div>` + stepper()
+          );
+        },
+
+        C() {
+          if (!state.findings.length)
+            return paneHeader("") + `<div class="pane-body">${empty()}</div>`;
+          const f = cur() ?? sorted()[0];
+          const list = sorted();
+          let index = "";
+          list.forEach((x, i) => {
+            const c = x.id === f.id ? " current" : "";
+            index += `<div class="row${c}" data-go="${x.id}" title="${esc(x.msg)}"><span class="n">${i + 1}</span><span class="label">${esc(plainLine(x.msg))}</span><span class="desc">${ref(x)}</span></div>`;
+          });
+          return (
+            paneHeader("") +
+            `<div class="pager">
+      <div class="focus-card"><div class="hand">
+        <div class="head"><span class="assistant-icon codicon codicon-lightbulb" style="font-size:14px"></span><b>Finding ${indexOf(f)} of ${list.length}</b><button class="link mono" data-go="${f.id}">${ref(f)}</button></div>
+        <div class="msg">${msgHtml(f.msg)}</div>
+        <div class="actions"><button class="btn" data-convert="${f.id}">Convert to Comment</button><button class="btn secondary" data-dismiss="${f.id}">Dismiss</button></div>
+      </div></div>
+      <div class="index">${index}</div>
+    </div>` +
+            stepper()
+          );
+        },
+
+        D() {
+          return accordion(
+            (f) =>
+              `<div class="actions"><button class="link" data-convert="${f.id}">Convert to Comment</button><button class="link" data-dismiss="${f.id}">Dismiss</button></div>`
+          );
+        },
+
+        E() {
+          return accordion(
+            (f) =>
+              `<div class="actions buttons"><button class="btn secondary" data-convert="${f.id}">Convert to Comment</button><button class="btn secondary" data-dismiss="${f.id}">Dismiss</button></div>`
+          );
+        },
+      };
+
+      function accordion(actions) {
+        {
+          if (!state.findings.length)
+            return paneHeader("") + `<div class="pane-body">${empty()}</div>`;
+          let body = `<div class="acc">`;
+          const byPath = {};
+          for (const f of sorted()) (byPath[f.path] ??= []).push(f);
+          for (const [p, fs] of Object.entries(byPath)) {
+            body += `<div class="row"><span class="twisty codicon codicon-chevron-down"></span><span class="codicon codicon-file-code file-icon"></span><span class="label">${base(p)}</span><span class="desc">${p.split("/").slice(0, -1).join("/")}</span><span class="deco muted">${fs.length}</span></div>`;
+            for (const f of fs) {
+              const open = f.id === state.current;
+              body += `<div class="row finding-row${open ? " current" : ""}" style="padding-left:28px" data-go="${f.id}" title="${open ? "" : esc(f.msg)}">
+          <span class="rule"></span><span class="line">${f.start === f.end ? f.start : `${f.start}–${f.end}`}</span><span class="label">${open ? "" : esc(plainLine(f.msg))}</span></div>`;
+              if (open)
+                body += `<div class="open"><div class="msg">${msgHtml(f.msg)}</div>${actions(f)}</div>`;
+            }
+          }
+          body += `</div>`;
+          return (
+            paneHeader("") + `<div class="pane-body">${body}</div>` + stepper()
+          );
+        }
+      }
+
+      // ---------------------------------------------------------------- editor
+      function renderEditor() {
+        const p = state.shownPath;
+        const lines = files[p];
+        const here = state.findings.filter((f) => f.path === p);
+        const f = cur()?.path === p ? cur() : undefined;
+        let h = `<div class="tabs"><div class="tab"><span class="ts">TS</span>${base(p)} <span class="muted" style="font-size:12px">(head)</span><span class="codicon codicon-close" style="font-size:14px;margin-left:6px"></span></div></div>
+    <div class="breadcrumbs">${p.split("/").map(esc).join(' <span class="codicon codicon-chevron-right" style="font-size:12px"></span> ')}</div><div class="code" id="code">`;
+        lines.forEach((text, i) => {
+          const n = i + 1;
+          const marks = here.filter((x) => n >= x.start && n <= x.end);
+          const g = marks.length
+            ? `mark${marks.some((x) => x.start === n) ? " first" : ""}${marks.some((x) => x.end === n) ? " last" : ""}`
+            : "";
+          const sel = f && n >= f.start && n <= f.end ? " sel" : "";
+          const cursorLine = f && n === f.start;
+          h += `<div class="line${sel}${cursorLine ? " cursor" : ""}" data-line="${n}"><span class="ln">${n}</span><span class="gutter ${g}"></span><span class="text">${cursorLine ? '<span class="caret"></span>' : ""}${text || " "}</span></div>`;
+        });
+        const total = lines.length;
+        h += `<div class="ruler">${here.map((x) => `<i style="top:${((x.start - 1) / total) * 100}%"></i>`).join("")}</div>`;
+        if (f && state.hoverOpen) {
+          const n = state.findings.length;
+          h += `<div class="hover" id="hover"><div class="body"><p><b>Finding ${indexOf(f)} of ${n}</b> from the Assistant</p><p>${msgHtml(f.msg)}</p></div>
+      <div class="status"><button class="link" data-convert="${f.id}">Convert to Comment</button><span class="muted">·</span><button class="link" data-dismiss="${f.id}">Dismiss</button><span class="spacer"></span>
+      <button class="link" data-step="-1">↑ Previous</button><span class="muted">·</span><button class="link" data-step="1">↓ Next</button></div></div>`;
+        }
+        h += `</div>`;
+        document.getElementById("editor").innerHTML = h;
+        const hover = document.getElementById("hover");
+        if (hover) {
+          // Above the Finding's first line, where the cursor is, or below it when there's no room.
+          const top = 2 + (f.start - 1) * 18;
+          const height = hover.offsetHeight;
+          hover.style.top =
+            (top - height - 2 >= 0 ? top - height - 2 : top + 20) + "px";
+        }
+      }
+
+      // ---------------------------------------------------------------- the prototype's bar
+      function renderBar() {
+        const keys = Object.keys(variants);
+        const f = cur();
+        document.getElementById("protoBar").innerHTML = `
+    <button data-variant="-1" title="Previous variant (←)">◀</button>
+    <span class="name">${state.variant} · ${variants[state.variant]}</span>
+    <button data-variant="1" title="Next variant (→)">▶</button>
+    <span class="sep"></span>
+    <button data-theme>${state.theme === "dark" ? "☾ Dark" : "☀ Light"}</button>
+    <button data-size>Findings: ${state.size === "small" ? "⅙ height" : "tall"}</button>
+    <button data-reset>Reset</button>
+    <span class="sep"></span>
+    <span class="state">${state.findings.length} left · current ${f ? ref(f) : "none"} · hover ${state.hoverOpen ? "open" : "closed"}</span>`;
+      }
+
+      function syncUrl() {
+        const q = new URLSearchParams({
+          variant: state.variant,
+          theme: state.theme,
+          size: state.size,
+        });
+        history.replaceState(null, "", "?" + q);
+      }
+
+      function render() {
+        document.documentElement.dataset.theme = state.theme;
+        document.body.dataset.size = state.size;
+        renderFiles();
+        const pane = document.getElementById("findingsPane");
+        pane.innerHTML = renderers[state.variant]();
+        renderEditor();
+        renderBar();
+        syncUrl();
+      }
+
+      // ---------------------------------------------------------------- events
+      document.addEventListener("click", (e) => {
+        const t = e.target.closest(
+          "[data-step],[data-go],[data-convert],[data-dismiss],[data-open],[data-variant],[data-theme],[data-size],[data-reset],[data-ask]"
+        );
+        if (!t) {
+          if (!e.target.closest(".hover")) {
+            state.hoverOpen = false;
+            renderEditor();
+            renderBar();
+          }
+          return;
+        }
+        const d = t.dataset;
+        e.stopPropagation();
+        if (d.convert) return act(+d.convert, "convert");
+        if (d.dismiss) return act(+d.dismiss, "dismiss");
+        if (d.step) return step(+d.step);
+        if (d.go) return go(+d.go);
+        if (d.open !== undefined && d.open) {
+          state.shownPath = d.open;
+          state.hoverOpen = false;
+          return render();
+        }
+        if (d.variant) {
+          const keys = Object.keys(variants);
+          state.variant =
+            keys[
+              (keys.indexOf(state.variant) + +d.variant + keys.length) %
+                keys.length
+            ];
+          return render();
+        }
+        if (d.theme !== undefined) {
+          state.theme = state.theme === "dark" ? "light" : "dark";
+          return render();
+        }
+        if (d.size !== undefined) {
+          state.size = state.size === "small" ? "tall" : "small";
+          return render();
+        }
+        if (d.reset !== undefined || d.ask !== undefined) {
+          state.findings = initialFindings.map((f) => ({ ...f }));
+          state.current = 1;
+          state.shownPath = initialFindings[0].path;
+          state.hoverOpen = true;
+          state.log = "";
+          return render();
+        }
+      });
+
+      // Pointing at the current Finding's code opens its hover again.
+      document.addEventListener("mouseover", (e) => {
+        const line = e.target.closest?.(".line");
+        if (!line || document.getElementById("hover")) return;
+        const n = +line.dataset.line;
+        const f = state.findings.find(
+          (x) => x.path === state.shownPath && n >= x.start && n <= x.end
+        );
+        if (f && f.id === state.current) {
+          state.hoverOpen = true;
+          renderEditor();
+          renderBar();
+        }
+      });
+
+      document.addEventListener("keydown", (e) => {
+        if (e.target.closest("input, textarea, [contenteditable]")) return;
+        if (e.key === "Escape") {
+          state.hoverOpen = false;
+          renderEditor();
+          renderBar();
+        }
+        if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+          const keys = Object.keys(variants);
+          state.variant =
+            keys[
+              (keys.indexOf(state.variant) +
+                (e.key === "ArrowRight" ? 1 : keys.length - 1)) %
+                keys.length
+            ];
+          render();
+        }
+        // The review keys: F steps on, Shift+F back, standing in for ⌃⌥R F.
+        if (e.key.toLowerCase() === "f" && !e.metaKey && !e.ctrlKey)
+          step(e.shiftKey ? -1 : 1);
+      });
+
+      render();
+    </script>
+  </body>
+</html>

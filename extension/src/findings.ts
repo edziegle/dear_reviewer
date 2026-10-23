@@ -6,12 +6,15 @@
 // or converts it into a draft Comment at the same place, from its hover, the
 // view or the editor's Quick Fix on its lines; nothing reaches
 // GitHub until they save that Comment into their pending review and submit.
+// From its hover or Quick Fix they can also ask its Change's Assistant about
+// it, in the conversation that raised it.
 // The view, and stepping through Findings, follow the Change in front (ADR
 // 0025); a Change behind it keeps its Findings until it comes back.
 
 import * as crypto from "crypto";
 import * as path from "path";
 import * as vscode from "vscode";
+import type { Selection } from "./assistant/prompts";
 import { Change, changeName } from "./changeWorkspace";
 import type { ThreadPlace } from "./github/client";
 import { setContext } from "./context";
@@ -50,6 +53,7 @@ const maxMessageChars = 2_000;
 const findingCommands = [
   "dearReviewer.convertFinding",
   "dearReviewer.dismissFinding",
+  "dearReviewer.askAboutFinding",
   "dearReviewer.nextFinding",
   "dearReviewer.previousFinding",
 ];
@@ -58,6 +62,7 @@ const findingCommands = [
 const quickFixes = [
   ["Convert to Comment", "dearReviewer.convertFinding"],
   ["Dismiss", "dearReviewer.dismissFinding"],
+  ["Ask the Assistant", "dearReviewer.askAboutFinding"],
 ] as const;
 
 export class Findings implements vscode.CodeActionProvider, vscode.Disposable {
@@ -264,6 +269,31 @@ export class Findings implements vscode.CodeActionProvider, vscode.Disposable {
       await this.reveal(finding);
   }
 
+  /**
+   * The Finding's lines, as a selection for its Change's Assistant, marked
+   * as the Finding and with its message as it is now. Gives nothing if its
+   * file can't be read.
+   */
+  async selectionOf(
+    finding: Finding
+  ): Promise<(Selection & { text: string }) | undefined> {
+    const { place } = finding;
+    const file = await readInWorktree(worktreeOf(finding), place.path);
+    if (!file) return;
+    const startLine = place.startLine ?? place.line;
+    return {
+      path: place.path,
+      side: sideOf(finding),
+      startLine,
+      endLine: place.line,
+      text: file.text
+        .split(/\r?\n/)
+        .slice(startLine - 1, place.line)
+        .join("\n"),
+      finding: { message: finding.message },
+    };
+  }
+
   /** Opens the Finding's file at its lines, without its hover. */
   async reveal(finding: Finding): Promise<vscode.TextEditor> {
     return vscode.window.showTextDocument(fileOf(finding), {
@@ -348,7 +378,8 @@ export class Findings implements vscode.CodeActionProvider, vscode.Disposable {
 
   /**
    * The Quick Fix actions of the Findings on the range's lines, in either
-   * side's file: Convert to Comment and Dismiss for each, as its hover has.
+   * side's file: Convert to Comment, Dismiss and Ask the Assistant for
+   * each, as its hover has.
    */
   provideCodeActions(
     document: vscode.TextDocument,
@@ -659,7 +690,7 @@ export function parseFindings(reply: string): unknown[] {
 
 /**
  * The hover on a Finding's lines: the Assistant's message as plain text,
- * escaped so it can't add links or formatting, and the two actions. A
+ * escaped so it can't add links or formatting, and its three actions. A
  * Finding of the Change in front, which has a `place` among its Findings,
  * also gets its count and steps to its neighbours. These are the only
  * commands the hover may run, each given the Finding's id.
@@ -680,15 +711,26 @@ function hoverOf(
     ? `&emsp;&emsp;[↑ Previous](command:dearReviewer.previousFinding?${args}) · [↓ Next](command:dearReviewer.nextFinding?${args})`
     : "";
   hover.appendMarkdown(
-    `\n\n[Convert to Comment](command:dearReviewer.convertFinding?${args}) · [Dismiss](command:dearReviewer.dismissFinding?${args})${steps}`
+    `\n\n[Convert to Comment](command:dearReviewer.convertFinding?${args}) · [Dismiss](command:dearReviewer.dismissFinding?${args}) · [Ask the Assistant](command:dearReviewer.askAboutFinding?${args})${steps}`
   );
   return hover;
 }
 
 function fileOf(finding: Finding): vscode.Uri {
-  const { change, place } = finding;
-  const dir = place.side === "LEFT" ? change.baseDir : change.headDir;
-  return vscode.Uri.file(path.join(dir, ...place.path.split("/")));
+  return vscode.Uri.file(
+    path.join(worktreeOf(finding), ...finding.place.path.split("/"))
+  );
+}
+
+function sideOf(finding: Finding): "base" | "head" {
+  return finding.place.side === "LEFT" ? "base" : "head";
+}
+
+/** The worktree of the Finding's side, which its hover and its chip both read. */
+function worktreeOf(finding: Finding): string {
+  return sideOf(finding) === "base"
+    ? finding.change.baseDir
+    : finding.change.headDir;
 }
 
 /** The Finding's whole lines, so hovering its code shows it. */

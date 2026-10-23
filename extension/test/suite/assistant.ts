@@ -201,6 +201,8 @@ export interface Selection {
   side: "base" | "head";
   startLine: number;
   endLine: number;
+  /** There when the lines are a Finding the Reviewer asked about; the view never gets its message. */
+  finding?: Record<string, never>;
 }
 
 /** Something the Assistant did while working on a reply, such as reading a file. */

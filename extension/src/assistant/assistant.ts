@@ -55,6 +55,7 @@ import {
   chatPrompt,
   codeFlowWalkthroughPrompt,
   findingsPrompt,
+  keptSelection,
   newHeadNote,
   readingOrderPrompt,
   Selection,
@@ -873,7 +874,7 @@ class ChangeAssistant {
           from: "reviewer",
           text: question,
           ...(context.length && {
-            context: context.map(({ text: _, ...selection }) => selection),
+            context: context.map(keptSelection),
           }),
         },
       ],

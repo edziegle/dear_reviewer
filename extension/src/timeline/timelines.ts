@@ -178,6 +178,11 @@ export class Timelines implements vscode.Disposable {
     return this.byChange.get(change.id)?.codeColumn() ?? vscode.ViewColumn.One;
   }
 
+  /** The column the Change's overview is in, while it is shown. */
+  overviewColumn(change: Change): vscode.ViewColumn | undefined {
+    return this.byChange.get(change.id)?.panel?.viewColumn;
+  }
+
   /** Closes the overviews of every Change but this one; Show Overview brings them back. */
   closeOthers(change: Change): void {
     for (const [id, timeline] of this.byChange)

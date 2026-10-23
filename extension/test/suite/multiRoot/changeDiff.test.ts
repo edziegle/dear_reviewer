@@ -66,6 +66,21 @@ describe("The Change's multi-file diff", () => {
           },
         ])
       );
+
+      await vscode.commands.executeCommand(
+        "dearReviewer.openAllChanges",
+        request
+      );
+      await eventually(() =>
+        assert.deepStrictEqual(
+          vscode.window.tabGroups.all
+            .flatMap((group) => group.tabs)
+            .filter((tab) => / · all changes \(4 files\)$/.test(tab.label))
+            .map((tab) => tab === codeColumnTab()),
+          [true],
+          "asked again, the diff in the code column is shown, not opened again"
+        )
+      );
     } finally {
       await closeChange(request);
     }

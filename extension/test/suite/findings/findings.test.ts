@@ -180,7 +180,7 @@ async function markerOf(file: string, line?: number): Promise<GutterMarker> {
 
 /** The place a hover gives its Finding, `n` of `Finding n of N`. */
 function positionIn(hover: string): number {
-  const count = /\*\*Finding (\d+) of \d+\*\*/.exec(hover);
+  const count = /\*\*Assistant\*\* · Finding (\d+) of \d+/.exec(hover);
   assert.ok(count, `a count in ${hover}`);
   return Number(count[1]);
 }
@@ -455,7 +455,18 @@ describe("Findings on request", () => {
         !marker.hover.includes("](command:workbench"),
       `the message can't format or link: ${marker.hover}`
     );
-    assert.match(marker.hover, /\*\*Finding [1-3] of 3\*\* from the Assistant/);
+    assert.match(
+      marker.hover,
+      /^!\[\]\([^)]*\/media\/finding-cat(-light)?\.svg\|width=13,height=13\) \*\*Assistant\*\* · Finding [1-3] of 3\n\n/,
+      "the cat, then the Assistant's name, then the count"
+    );
+    // Its spaces are ordinary ones, so it wraps between words.
+    assert.ok(
+      marker.hover.includes(
+        String.raw`The docstring says \*\*Two\*\*\; see \[this\]\(command\:workbench\.action\.terminal\.new\)\.`
+      ),
+      `the message escaped, with ordinary spaces: ${marker.hover}`
+    );
     const entry = await findingAt("util.py:2");
     const args = encodeURIComponent(JSON.stringify([entry.id]));
     for (const command of [
@@ -475,6 +486,43 @@ describe("Findings on request", () => {
       ),
       `the three actions together on one line: ${marker.hover}`
     );
+  });
+
+  // A hover's image can't take a theme color, so it shows the gutter's cat
+  // for the theme's kind: the light one in light themes, high contrast
+  // included, and the dark one in dark themes.
+  it("heads the hover with the gutter's cat for the theme, and follows a change of theme", async () => {
+    await vscode.window.showTextDocument(
+      vscode.Uri.file(path.join(head, "util.py")),
+      { viewColumn: vscode.ViewColumn.One, preview: false }
+    );
+    const workbench = () => vscode.workspace.getConfiguration("workbench");
+    const before = workbench().inspect<string>("colorTheme")?.globalValue;
+    try {
+      for (const [theme, cat] of [
+        ["Default Light Modern", "finding-cat-light.svg"],
+        ["Default Dark Modern", "finding-cat.svg"],
+        ["Default High Contrast Light", "finding-cat-light.svg"],
+        ["Default High Contrast", "finding-cat.svg"],
+      ]) {
+        await workbench().update(
+          "colorTheme",
+          theme,
+          vscode.ConfigurationTarget.Global
+        );
+        await eventually(async () => {
+          const { hover } = await markerOf(path.join(head, "util.py"));
+          const heading = hover.split("\n")[0];
+          assert.ok(heading.includes(`/media/${cat}|`), `${theme}: ${hover}`);
+        });
+      }
+    } finally {
+      await workbench().update(
+        "colorTheme",
+        before,
+        vscode.ConfigurationTarget.Global
+      );
+    }
   });
 
   it("offers a Finding's Convert to Comment, Dismiss and Ask the Assistant in Quick Fix on its lines, on either side", async () => {
@@ -709,7 +757,7 @@ describe("Findings on request", () => {
     );
     assert.match(
       (await markerOf(path.join(head, "util.py"))).hover,
-      /\*\*Finding [12] of 2\*\*/
+      /\*\*Assistant\*\* · Finding [12] of 2/
     );
   });
 
@@ -911,7 +959,7 @@ describe("Findings on request", () => {
       .filter((m) => m.file === headFile)
       .map((m) => m.hover);
     assert.strictEqual(hovers.length, 1, "one hover over the whole Finding");
-    assert.ok(hovers[0].includes("inlined."), hovers[0]);
+    assert.ok(hovers[0].includes(String.raw`inlined\.`), hovers[0]);
     assert.match(hovers[0], /\]\(command:dearReviewer\.dismissFinding\?/);
   });
 
@@ -1102,7 +1150,7 @@ describe("Findings on request", () => {
     });
     assert.match(
       (await markerOf(opened.file, opened.line)).hover,
-      /\*\*Finding 1 of 2\*\*/
+      /\*\*Assistant\*\* · Finding 1 of 2/
     );
   });
 

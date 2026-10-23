@@ -40,6 +40,10 @@ organize a human code reviewer's workflow.
 
 When you install Dear Reviewer, a setup walkthrough will open. In case you missed it open the Command Palette, run `Welcome: Open Walkthrough...` and pick `Set Up Dear Reviewer`.
 
+### Customizing the Assistant's invoke command
+
+By default, the Assistant will just look for your `claude` binary and use it. Dear Reviewer lets you override this behavior, see [Start the Assistant's `claude` with your own command](https://github.com/edziegle/dear_reviewer/wiki/custom-claude-command). If you use sandboxing with your `claude`, you'll want to take a look.
+
 ## About AI
 
 I believe that Code Review is a fundamentally cognitive task. As such, I do not believe Code Review should be blindly

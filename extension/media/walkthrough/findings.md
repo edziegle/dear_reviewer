@@ -6,10 +6,10 @@ Each Finding marks its lines in the gutter of the diff: a lightbulb on its first
 
 Hover a Finding's lines to read it, then choose **Convert to Comment** to make it your own, or **Dismiss**. A Finding is never published: only Comments are.
 
-| Key | Command |
-| --- | --- |
-| Ctrl+Alt+R I | Ask for Findings |
-| Ctrl+Alt+R F | Next Finding |
+| Key                | Command          |
+| ------------------ | ---------------- |
+| Ctrl+Alt+R I       | Ask for Findings |
+| Ctrl+Alt+R F       | Next Finding     |
 | Ctrl+Alt+R Shift+F | Previous Finding |
 
 On a Mac, press ⌃⌥R in place of Ctrl+Alt+R.

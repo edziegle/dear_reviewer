@@ -2,7 +2,8 @@
 version: 1
 slug: "extension-src-dashboard-view-ts"
 primary_target: "extension/src/dashboard/view.ts"
-related_targets: ["extension/src/dashboard/dashboard.ts", "extension/package.json"]
+related_targets:
+  ["extension/src/dashboard/dashboard.ts", "extension/package.json"]
 ---
 
 # Dashboard

@@ -2,131 +2,117 @@
 
 ## [0.8.1](https://github.com/edziegle/dear_reviewer/compare/v0.8.0...v0.8.1) (2026-10-22)
 
-
 ### Bug Fixes
 
-* **code-flow:** make the Code Flow readable in every theme, and let the picture lead ([#174](https://github.com/edziegle/dear_reviewer/issues/174)) ([ea1820f](https://github.com/edziegle/dear_reviewer/commit/ea1820ff13fee727c4c34625e49008c321280b6d))
-* **dashboard:** announce Ignore and Restore to screen readers ([#187](https://github.com/edziegle/dear_reviewer/issues/187)) ([5bc4415](https://github.com/edziegle/dear_reviewer/commit/5bc44157d22495a8f3b0f24f22e96c6398f40a62)), closes [#180](https://github.com/edziegle/dear_reviewer/issues/180)
-* **dashboard:** keep a reviewed pull request out of Waiting on you ([#189](https://github.com/edziegle/dear_reviewer/issues/189)) ([bf4057f](https://github.com/edziegle/dear_reviewer/commit/bf4057f5f9fb4112fab942e764bbd8f10ff02b6d))
-* **dashboard:** protect a Waiting on you row's wait duration from truncation ([#185](https://github.com/edziegle/dear_reviewer/issues/185)) ([6a139c9](https://github.com/edziegle/dear_reviewer/commit/6a139c9ff315952e884c2d5ded9c01626d4d440b)), closes [#181](https://github.com/edziegle/dear_reviewer/issues/181)
-* open the diff from the overview's Start at line and take links ([#188](https://github.com/edziegle/dear_reviewer/issues/188)) ([1686933](https://github.com/edziegle/dear_reviewer/commit/1686933a22a1335ad3b1ba4acaeced0844ad4697))
+- **code-flow:** make the Code Flow readable in every theme, and let the picture lead ([#174](https://github.com/edziegle/dear_reviewer/issues/174)) ([ea1820f](https://github.com/edziegle/dear_reviewer/commit/ea1820ff13fee727c4c34625e49008c321280b6d))
+- **dashboard:** announce Ignore and Restore to screen readers ([#187](https://github.com/edziegle/dear_reviewer/issues/187)) ([5bc4415](https://github.com/edziegle/dear_reviewer/commit/5bc44157d22495a8f3b0f24f22e96c6398f40a62)), closes [#180](https://github.com/edziegle/dear_reviewer/issues/180)
+- **dashboard:** keep a reviewed pull request out of Waiting on you ([#189](https://github.com/edziegle/dear_reviewer/issues/189)) ([bf4057f](https://github.com/edziegle/dear_reviewer/commit/bf4057f5f9fb4112fab942e764bbd8f10ff02b6d))
+- **dashboard:** protect a Waiting on you row's wait duration from truncation ([#185](https://github.com/edziegle/dear_reviewer/issues/185)) ([6a139c9](https://github.com/edziegle/dear_reviewer/commit/6a139c9ff315952e884c2d5ded9c01626d4d440b)), closes [#181](https://github.com/edziegle/dear_reviewer/issues/181)
+- open the diff from the overview's Start at line and take links ([#188](https://github.com/edziegle/dear_reviewer/issues/188)) ([1686933](https://github.com/edziegle/dear_reviewer/commit/1686933a22a1335ad3b1ba4acaeced0844ad4697))
 
 ## [0.8.0](https://github.com/edziegle/dear_reviewer/compare/v0.7.0...v0.8.0) (2026-10-21)
 
-
 ### Features
 
-* **code-flow:** have the Assistant walk through a Change's Code Flow in order ([#155](https://github.com/edziegle/dear_reviewer/issues/155)) ([61374ae](https://github.com/edziegle/dear_reviewer/commit/61374aee2ca9bb38ab759b59dc9b077aca948efa)), closes [#72](https://github.com/edziegle/dear_reviewer/issues/72)
-* **code-flow:** move the call map's symbols to their new places, and run ink along a selected symbol's calls ([#159](https://github.com/edziegle/dear_reviewer/issues/159)) ([fbc7eda](https://github.com/edziegle/dear_reviewer/commit/fbc7eda44a53b650be218c3e90280d99723fdfb1))
-* **comments:** let the Assistant add an Agent note under a pending pull request Comment ([#169](https://github.com/edziegle/dear_reviewer/issues/169)) ([137553c](https://github.com/edziegle/dear_reviewer/commit/137553c3d31973988f47e47049364bca1babd9d5))
-* **reading-order:** mark lock files, generated files and exact renames skim-only, and label the core ([#157](https://github.com/edziegle/dear_reviewer/issues/157)) ([52075b6](https://github.com/edziegle/dear_reviewer/commit/52075b6af86d75d092723f0a658eb91b3f66d933)), closes [#115](https://github.com/edziegle/dear_reviewer/issues/115)
-* **repetition:** tell the Reviewer when a Change repeats an edit, and give Duplicate code candidates to the Assistant ([#172](https://github.com/edziegle/dear_reviewer/issues/172)) ([2474c20](https://github.com/edziegle/dear_reviewer/commit/2474c202a24bda897e11a1567d9a4fee8642d694))
-* **skim-only:** mark a file skim-only when its change is formatting only, by comparing syntax trees ([#173](https://github.com/edziegle/dear_reviewer/issues/173)) ([5e1ab08](https://github.com/edziegle/dear_reviewer/commit/5e1ab088dd9ea984a242c4993dee4e39caf948bf))
-
+- **code-flow:** have the Assistant walk through a Change's Code Flow in order ([#155](https://github.com/edziegle/dear_reviewer/issues/155)) ([61374ae](https://github.com/edziegle/dear_reviewer/commit/61374aee2ca9bb38ab759b59dc9b077aca948efa)), closes [#72](https://github.com/edziegle/dear_reviewer/issues/72)
+- **code-flow:** move the call map's symbols to their new places, and run ink along a selected symbol's calls ([#159](https://github.com/edziegle/dear_reviewer/issues/159)) ([fbc7eda](https://github.com/edziegle/dear_reviewer/commit/fbc7eda44a53b650be218c3e90280d99723fdfb1))
+- **comments:** let the Assistant add an Agent note under a pending pull request Comment ([#169](https://github.com/edziegle/dear_reviewer/issues/169)) ([137553c](https://github.com/edziegle/dear_reviewer/commit/137553c3d31973988f47e47049364bca1babd9d5))
+- **reading-order:** mark lock files, generated files and exact renames skim-only, and label the core ([#157](https://github.com/edziegle/dear_reviewer/issues/157)) ([52075b6](https://github.com/edziegle/dear_reviewer/commit/52075b6af86d75d092723f0a658eb91b3f66d933)), closes [#115](https://github.com/edziegle/dear_reviewer/issues/115)
+- **repetition:** tell the Reviewer when a Change repeats an edit, and give Duplicate code candidates to the Assistant ([#172](https://github.com/edziegle/dear_reviewer/issues/172)) ([2474c20](https://github.com/edziegle/dear_reviewer/commit/2474c202a24bda897e11a1567d9a4fee8642d694))
+- **skim-only:** mark a file skim-only when its change is formatting only, by comparing syntax trees ([#173](https://github.com/edziegle/dear_reviewer/issues/173)) ([5e1ab08](https://github.com/edziegle/dear_reviewer/commit/5e1ab088dd9ea984a242c4993dee4e39caf948bf))
 
 ### Bug Fixes
 
-* **assistant:** show text the Reviewer can't see as escapes, and drop HTML comments, before it reaches a prompt ([#170](https://github.com/edziegle/dear_reviewer/issues/170)) ([1daef7d](https://github.com/edziegle/dear_reviewer/commit/1daef7dc27d1a652a86ff2d96ea7708ff2718d34)), closes [#163](https://github.com/edziegle/dear_reviewer/issues/163)
-* **change-files:** act on the Change of whichever row has focus when a title-bar button is clicked ([#171](https://github.com/edziegle/dear_reviewer/issues/171)) ([ff06ec2](https://github.com/edziegle/dear_reviewer/commit/ff06ec2fbdd9c16c3f01eadac96d9a94d5ce4169)), closes [#138](https://github.com/edziegle/dear_reviewer/issues/138)
-* **listing:** ship the changelog, and give the listings a banner, a Q&A link and matching categories ([#167](https://github.com/edziegle/dear_reviewer/issues/167)) ([e02cf5d](https://github.com/edziegle/dear_reviewer/commit/e02cf5d29c803fff374930cd49d741d3994a6e73))
+- **assistant:** show text the Reviewer can't see as escapes, and drop HTML comments, before it reaches a prompt ([#170](https://github.com/edziegle/dear_reviewer/issues/170)) ([1daef7d](https://github.com/edziegle/dear_reviewer/commit/1daef7dc27d1a652a86ff2d96ea7708ff2718d34)), closes [#163](https://github.com/edziegle/dear_reviewer/issues/163)
+- **change-files:** act on the Change of whichever row has focus when a title-bar button is clicked ([#171](https://github.com/edziegle/dear_reviewer/issues/171)) ([ff06ec2](https://github.com/edziegle/dear_reviewer/commit/ff06ec2fbdd9c16c3f01eadac96d9a94d5ce4169)), closes [#138](https://github.com/edziegle/dear_reviewer/issues/138)
+- **listing:** ship the changelog, and give the listings a banner, a Q&A link and matching categories ([#167](https://github.com/edziegle/dear_reviewer/issues/167)) ([e02cf5d](https://github.com/edziegle/dear_reviewer/commit/e02cf5d29c803fff374930cd49d741d3994a6e73))
 
 ## [0.7.0](https://github.com/edziegle/dear_reviewer/compare/v0.6.0...v0.7.0) (2026-10-20)
 
-
 ### Features
 
-* **overview:** add a View on GitHub button and command for a pull request ([#150](https://github.com/edziegle/dear_reviewer/issues/150)) ([b2924cb](https://github.com/edziegle/dear_reviewer/commit/b2924cb2e3547500db9d42a9caff289dd4703df7))
-
+- **overview:** add a View on GitHub button and command for a pull request ([#150](https://github.com/edziegle/dear_reviewer/issues/150)) ([b2924cb](https://github.com/edziegle/dear_reviewer/commit/b2924cb2e3547500db9d42a9caff289dd4703df7))
 
 ### Bug Fixes
 
-* **walkthrough:** redraw the walkthrough's images at 2x, with a task that does it ([#152](https://github.com/edziegle/dear_reviewer/issues/152)) ([f4452bf](https://github.com/edziegle/dear_reviewer/commit/f4452bff1e40cae4e896fc76cac89c1158b6194f)), closes [#74](https://github.com/edziegle/dear_reviewer/issues/74)
+- **walkthrough:** redraw the walkthrough's images at 2x, with a task that does it ([#152](https://github.com/edziegle/dear_reviewer/issues/152)) ([f4452bf](https://github.com/edziegle/dear_reviewer/commit/f4452bff1e40cae4e896fc76cac89c1158b6194f)), closes [#74](https://github.com/edziegle/dear_reviewer/issues/74)
 
 ## [0.6.0](https://github.com/edziegle/dear_reviewer/compare/v0.5.0...v0.6.0) (2026-10-20)
 
-
 ### Features
 
-* **code-flow:** give the call map and swimlanes a keyboard and screen reader model ([#136](https://github.com/edziegle/dear_reviewer/issues/136)) ([0461967](https://github.com/edziegle/dear_reviewer/commit/0461967814339139e20ad5a42998c12444cb268f)), closes [#121](https://github.com/edziegle/dear_reviewer/issues/121)
-* **code-flow:** lead with the symbols that make calls ([#139](https://github.com/edziegle/dear_reviewer/issues/139)) ([309800c](https://github.com/edziegle/dear_reviewer/commit/309800c6d245b47f4f6e51dca2471a84bdbf9900))
-* **release:** list every release on Open VSX ([#146](https://github.com/edziegle/dear_reviewer/issues/146)) ([ef02f35](https://github.com/edziegle/dear_reviewer/commit/ef02f35d0ec4c1c15e44ee0488a82ed25c6ed3d6))
-* **review-window:** name the Change under review by its pull request's title ([#132](https://github.com/edziegle/dear_reviewer/issues/132)) ([cf5ab89](https://github.com/edziegle/dear_reviewer/commit/cf5ab89188dbbd47f4fb3b3d37c3fb5f7ece2ffd))
-
+- **code-flow:** give the call map and swimlanes a keyboard and screen reader model ([#136](https://github.com/edziegle/dear_reviewer/issues/136)) ([0461967](https://github.com/edziegle/dear_reviewer/commit/0461967814339139e20ad5a42998c12444cb268f)), closes [#121](https://github.com/edziegle/dear_reviewer/issues/121)
+- **code-flow:** lead with the symbols that make calls ([#139](https://github.com/edziegle/dear_reviewer/issues/139)) ([309800c](https://github.com/edziegle/dear_reviewer/commit/309800c6d245b47f4f6e51dca2471a84bdbf9900))
+- **release:** list every release on Open VSX ([#146](https://github.com/edziegle/dear_reviewer/issues/146)) ([ef02f35](https://github.com/edziegle/dear_reviewer/commit/ef02f35d0ec4c1c15e44ee0488a82ed25c6ed3d6))
+- **review-window:** name the Change under review by its pull request's title ([#132](https://github.com/edziegle/dear_reviewer/issues/132)) ([cf5ab89](https://github.com/edziegle/dear_reviewer/commit/cf5ab89188dbbd47f4fb3b3d37c3fb5f7ece2ffd))
 
 ### Bug Fixes
 
-* **assistant:** confine the Assistant's reads to the Change and fence all other people's text ([#144](https://github.com/edziegle/dear_reviewer/issues/144)) ([0d7055d](https://github.com/edziegle/dear_reviewer/commit/0d7055dc9d99fabdfb18084d1958cc0a66594d32)), closes [#112](https://github.com/edziegle/dear_reviewer/issues/112)
-* **code-flow:** list only the swimlane entries that make calls ([#140](https://github.com/edziegle/dear_reviewer/issues/140)) ([c56bb6a](https://github.com/edziegle/dear_reviewer/commit/c56bb6a9838c364f46c5be77f7d3ff416b3e59c1)), closes [#113](https://github.com/edziegle/dear_reviewer/issues/113)
-* **code-flow:** offer each control and notice only in the view it acts on ([#133](https://github.com/edziegle/dear_reviewer/issues/133)) ([d630d84](https://github.com/edziegle/dear_reviewer/commit/d630d845d3e1451dc97230306368c62b75694b04)), closes [#122](https://github.com/edziegle/dear_reviewer/issues/122)
-* **overview:** offer Submit Another Review… and rename Close Change ([#137](https://github.com/edziegle/dear_reviewer/issues/137)) ([d805443](https://github.com/edziegle/dear_reviewer/commit/d805443912a5967686c06a6e6d5be822aaaf7907)), closes [#76](https://github.com/edziegle/dear_reviewer/issues/76)
-* **webviews:** give code in rendered Markdown the theme's foreground ([#145](https://github.com/edziegle/dear_reviewer/issues/145)) ([b7f2bf8](https://github.com/edziegle/dear_reviewer/commit/b7f2bf81e5e9ec1e6180a4442079bee22f94d6c0)), closes [#89](https://github.com/edziegle/dear_reviewer/issues/89)
+- **assistant:** confine the Assistant's reads to the Change and fence all other people's text ([#144](https://github.com/edziegle/dear_reviewer/issues/144)) ([0d7055d](https://github.com/edziegle/dear_reviewer/commit/0d7055dc9d99fabdfb18084d1958cc0a66594d32)), closes [#112](https://github.com/edziegle/dear_reviewer/issues/112)
+- **code-flow:** list only the swimlane entries that make calls ([#140](https://github.com/edziegle/dear_reviewer/issues/140)) ([c56bb6a](https://github.com/edziegle/dear_reviewer/commit/c56bb6a9838c364f46c5be77f7d3ff416b3e59c1)), closes [#113](https://github.com/edziegle/dear_reviewer/issues/113)
+- **code-flow:** offer each control and notice only in the view it acts on ([#133](https://github.com/edziegle/dear_reviewer/issues/133)) ([d630d84](https://github.com/edziegle/dear_reviewer/commit/d630d845d3e1451dc97230306368c62b75694b04)), closes [#122](https://github.com/edziegle/dear_reviewer/issues/122)
+- **overview:** offer Submit Another Review… and rename Close Change ([#137](https://github.com/edziegle/dear_reviewer/issues/137)) ([d805443](https://github.com/edziegle/dear_reviewer/commit/d805443912a5967686c06a6e6d5be822aaaf7907)), closes [#76](https://github.com/edziegle/dear_reviewer/issues/76)
+- **webviews:** give code in rendered Markdown the theme's foreground ([#145](https://github.com/edziegle/dear_reviewer/issues/145)) ([b7f2bf8](https://github.com/edziegle/dear_reviewer/commit/b7f2bf81e5e9ec1e6180a4442079bee22f94d6c0)), closes [#89](https://github.com/edziegle/dear_reviewer/issues/89)
 
 ## [0.5.0](https://github.com/edziegle/dear_reviewer/compare/v0.4.0...v0.5.0) (2026-10-19)
 
-
 ### Features
 
-* **assistant:** give the Assistant a plain tone in Simplified Technical English ([0d5a441](https://github.com/edziegle/dear_reviewer/commit/0d5a441e9cfdc4a789c61a3b4afd0a492c0f96e4))
-* **code-flow:** hide test code unless the Reviewer shows it ([#118](https://github.com/edziegle/dear_reviewer/issues/118)) ([f8e077e](https://github.com/edziegle/dear_reviewer/commit/f8e077e94ce9556b5ab981ebbc89fb478707df8d))
-* **dashboard:** reload the Inbox when another window closes a Change ([#94](https://github.com/edziegle/dear_reviewer/issues/94)) ([7ec2ea0](https://github.com/edziegle/dear_reviewer/commit/7ec2ea00d613d5775027dcd4938d4aaebe5e3b8d)), closes [#79](https://github.com/edziegle/dear_reviewer/issues/79)
-* **review-window:** hold one Active Change, in the review window ([#111](https://github.com/edziegle/dear_reviewer/issues/111)) ([72b2329](https://github.com/edziegle/dear_reviewer/commit/72b2329812876166ccfec9effd818a53fe4022cf))
-
+- **assistant:** give the Assistant a plain tone in Simplified Technical English ([0d5a441](https://github.com/edziegle/dear_reviewer/commit/0d5a441e9cfdc4a789c61a3b4afd0a492c0f96e4))
+- **code-flow:** hide test code unless the Reviewer shows it ([#118](https://github.com/edziegle/dear_reviewer/issues/118)) ([f8e077e](https://github.com/edziegle/dear_reviewer/commit/f8e077e94ce9556b5ab981ebbc89fb478707df8d))
+- **dashboard:** reload the Inbox when another window closes a Change ([#94](https://github.com/edziegle/dear_reviewer/issues/94)) ([7ec2ea0](https://github.com/edziegle/dear_reviewer/commit/7ec2ea00d613d5775027dcd4938d4aaebe5e3b8d)), closes [#79](https://github.com/edziegle/dear_reviewer/issues/79)
+- **review-window:** hold one Active Change, in the review window ([#111](https://github.com/edziegle/dear_reviewer/issues/111)) ([72b2329](https://github.com/edziegle/dear_reviewer/commit/72b2329812876166ccfec9effd818a53fe4022cf))
 
 ### Bug Fixes
 
-* **assistant:** keep the Assistant's view in every window and offer Open Assistant when empty ([#110](https://github.com/edziegle/dear_reviewer/issues/110)) ([eaa1c1c](https://github.com/edziegle/dear_reviewer/commit/eaa1c1c6e113ab8be725efa4924e4720025cd76a))
-* **code-flow:** fit a call map symbol's name beside its status label ([#123](https://github.com/edziegle/dear_reviewer/issues/123)) ([2f9c3e8](https://github.com/edziegle/dear_reviewer/commit/2f9c3e86a9e182b4da64f31e6558f6c00723acaf)), closes [#91](https://github.com/edziegle/dear_reviewer/issues/91)
-* **code-flow:** keep the canvas scrolled where it was when the Reviewer selects a symbol ([#129](https://github.com/edziegle/dear_reviewer/issues/129)) ([0a50854](https://github.com/edziegle/dear_reviewer/commit/0a50854dd6bef86ef18ec172529e3401c85a858b))
-* **code-flow:** mark a Swimlanes call with its status and location ([#130](https://github.com/edziegle/dear_reviewer/issues/130)) ([befc71b](https://github.com/edziegle/dear_reviewer/commit/befc71b680f46d5b32a807cd8442e6f8fdb3a846))
-* **code-flow:** tell a language server with no call hierarchy from one that timed out ([#125](https://github.com/edziegle/dear_reviewer/issues/125)) ([c32f40a](https://github.com/edziegle/dear_reviewer/commit/c32f40a09866c3cf26f4966b36421f2c01bddd8f)), closes [#90](https://github.com/edziegle/dear_reviewer/issues/90)
-* **refresh:** keep a Change's place when a swap brings its new head ([#103](https://github.com/edziegle/dear_reviewer/issues/103)) ([20a9e68](https://github.com/edziegle/dear_reviewer/commit/20a9e685230485912292878090adb7b157f2cbd7)), closes [#101](https://github.com/edziegle/dear_reviewer/issues/101)
-* **refresh:** reopen the file beside the overview, wherever the focus is ([#131](https://github.com/edziegle/dear_reviewer/issues/131)) ([55ff76c](https://github.com/edziegle/dear_reviewer/commit/55ff76c0ede25c9e26ba7f4383eedc32a47d3790))
-* **review-window:** close the review window when the Reviewer closes its last Change ([#99](https://github.com/edziegle/dear_reviewer/issues/99)) ([a1ca6e1](https://github.com/edziegle/dear_reviewer/commit/a1ca6e14d66356de8e33c7a34d3c7023c74d288c)), closes [#77](https://github.com/edziegle/dear_reviewer/issues/77)
+- **assistant:** keep the Assistant's view in every window and offer Open Assistant when empty ([#110](https://github.com/edziegle/dear_reviewer/issues/110)) ([eaa1c1c](https://github.com/edziegle/dear_reviewer/commit/eaa1c1c6e113ab8be725efa4924e4720025cd76a))
+- **code-flow:** fit a call map symbol's name beside its status label ([#123](https://github.com/edziegle/dear_reviewer/issues/123)) ([2f9c3e8](https://github.com/edziegle/dear_reviewer/commit/2f9c3e86a9e182b4da64f31e6558f6c00723acaf)), closes [#91](https://github.com/edziegle/dear_reviewer/issues/91)
+- **code-flow:** keep the canvas scrolled where it was when the Reviewer selects a symbol ([#129](https://github.com/edziegle/dear_reviewer/issues/129)) ([0a50854](https://github.com/edziegle/dear_reviewer/commit/0a50854dd6bef86ef18ec172529e3401c85a858b))
+- **code-flow:** mark a Swimlanes call with its status and location ([#130](https://github.com/edziegle/dear_reviewer/issues/130)) ([befc71b](https://github.com/edziegle/dear_reviewer/commit/befc71b680f46d5b32a807cd8442e6f8fdb3a846))
+- **code-flow:** tell a language server with no call hierarchy from one that timed out ([#125](https://github.com/edziegle/dear_reviewer/issues/125)) ([c32f40a](https://github.com/edziegle/dear_reviewer/commit/c32f40a09866c3cf26f4966b36421f2c01bddd8f)), closes [#90](https://github.com/edziegle/dear_reviewer/issues/90)
+- **refresh:** keep a Change's place when a swap brings its new head ([#103](https://github.com/edziegle/dear_reviewer/issues/103)) ([20a9e68](https://github.com/edziegle/dear_reviewer/commit/20a9e685230485912292878090adb7b157f2cbd7)), closes [#101](https://github.com/edziegle/dear_reviewer/issues/101)
+- **refresh:** reopen the file beside the overview, wherever the focus is ([#131](https://github.com/edziegle/dear_reviewer/issues/131)) ([55ff76c](https://github.com/edziegle/dear_reviewer/commit/55ff76c0ede25c9e26ba7f4383eedc32a47d3790))
+- **review-window:** close the review window when the Reviewer closes its last Change ([#99](https://github.com/edziegle/dear_reviewer/issues/99)) ([a1ca6e1](https://github.com/edziegle/dear_reviewer/commit/a1ca6e14d66356de8e33c7a34d3c7023c74d288c)), closes [#77](https://github.com/edziegle/dear_reviewer/issues/77)
 
 ## [0.4.0](https://github.com/edziegle/dear_reviewer/compare/v0.3.0...v0.4.0) (2026-10-17)
 
-
 ### Features
 
-* **assistant:** show the Assistant in the Secondary Side Bar ([ce18724](https://github.com/edziegle/dear_reviewer/commit/ce187248a78b4d4f00aed2fd6ceb12201e165fbd)), closes [#84](https://github.com/edziegle/dear_reviewer/issues/84)
-* **code-flow:** add code flow view ([95b8f45](https://github.com/edziegle/dear_reviewer/commit/95b8f452a45f5ee969969b1b78fd81e5cdcb0930))
-* keep a team-requested pull request in the Inbox once a teammate reviews it ([1b7f9d7](https://github.com/edziegle/dear_reviewer/commit/1b7f9d70a72e484b40b7c7a6b89119db6dc8f33c)), closes [#54](https://github.com/edziegle/dear_reviewer/issues/54)
-* let the Reviewer ignore a pull request waiting on them ([8e72878](https://github.com/edziegle/dear_reviewer/commit/8e728780ca26eedf8917054623c3d78ba08fe713)), closes [#70](https://github.com/edziegle/dear_reviewer/issues/70)
-* **overview:** give the Change overview a masthead ([fdd5501](https://github.com/edziegle/dear_reviewer/commit/fdd5501e678700735338072a14c41dcf70e69ee7)), closes [#37](https://github.com/edziegle/dear_reviewer/issues/37)
-* refresh a pull request's Change when the window regains focus ([624ab60](https://github.com/edziegle/dear_reviewer/commit/624ab607e59d15584618c744e8efda1b48aed71a)), closes [#75](https://github.com/edziegle/dear_reviewer/issues/75)
-
+- **assistant:** show the Assistant in the Secondary Side Bar ([ce18724](https://github.com/edziegle/dear_reviewer/commit/ce187248a78b4d4f00aed2fd6ceb12201e165fbd)), closes [#84](https://github.com/edziegle/dear_reviewer/issues/84)
+- **code-flow:** add code flow view ([95b8f45](https://github.com/edziegle/dear_reviewer/commit/95b8f452a45f5ee969969b1b78fd81e5cdcb0930))
+- keep a team-requested pull request in the Inbox once a teammate reviews it ([1b7f9d7](https://github.com/edziegle/dear_reviewer/commit/1b7f9d70a72e484b40b7c7a6b89119db6dc8f33c)), closes [#54](https://github.com/edziegle/dear_reviewer/issues/54)
+- let the Reviewer ignore a pull request waiting on them ([8e72878](https://github.com/edziegle/dear_reviewer/commit/8e728780ca26eedf8917054623c3d78ba08fe713)), closes [#70](https://github.com/edziegle/dear_reviewer/issues/70)
+- **overview:** give the Change overview a masthead ([fdd5501](https://github.com/edziegle/dear_reviewer/commit/fdd5501e678700735338072a14c41dcf70e69ee7)), closes [#37](https://github.com/edziegle/dear_reviewer/issues/37)
+- refresh a pull request's Change when the window regains focus ([624ab60](https://github.com/edziegle/dear_reviewer/commit/624ab607e59d15584618c744e8efda1b48aed71a)), closes [#75](https://github.com/edziegle/dear_reviewer/issues/75)
 
 ### Bug Fixes
 
-* keep a Comment being written when new commits arrive, and check what GitHub gives git ([c1a6fa0](https://github.com/edziegle/dear_reviewer/commit/c1a6fa0d1be1da760bc23511e39cb240c37233c2)), closes [#75](https://github.com/edziegle/dear_reviewer/issues/75)
-* let go of a Change's state when another window closes it ([b4e0536](https://github.com/edziegle/dear_reviewer/commit/b4e053634685a617ab4a8c67537ca6179ac0c825)), closes [#56](https://github.com/edziegle/dear_reviewer/issues/56)
-* **refresh:** run a focus check that met a running one when it ends ([93f09cc](https://github.com/edziegle/dear_reviewer/commit/93f09cc57c53b5c221a6880f6e008c66411b0732)), closes [#87](https://github.com/edziegle/dear_reviewer/issues/87)
-* **refresh:** run the owed check whatever the gap ([c9e6b4c](https://github.com/edziegle/dear_reviewer/commit/c9e6b4cd4f705d38b2de56b65cb1289cbb1f2238)), closes [#87](https://github.com/edziegle/dear_reviewer/issues/87)
-* start Change Files tall and Findings small in a fresh layout ([bdea6da](https://github.com/edziegle/dear_reviewer/commit/bdea6daa868fd9e76db4b36646cfb56ad92f90d0)), closes [#80](https://github.com/edziegle/dear_reviewer/issues/80)
-* time out GitHub requests that never answer ([7520ef4](https://github.com/edziegle/dear_reviewer/commit/7520ef458c4cc8196ab7cf31cb9af2ff91d7b6e4)), closes [#65](https://github.com/edziegle/dear_reviewer/issues/65)
+- keep a Comment being written when new commits arrive, and check what GitHub gives git ([c1a6fa0](https://github.com/edziegle/dear_reviewer/commit/c1a6fa0d1be1da760bc23511e39cb240c37233c2)), closes [#75](https://github.com/edziegle/dear_reviewer/issues/75)
+- let go of a Change's state when another window closes it ([b4e0536](https://github.com/edziegle/dear_reviewer/commit/b4e053634685a617ab4a8c67537ca6179ac0c825)), closes [#56](https://github.com/edziegle/dear_reviewer/issues/56)
+- **refresh:** run a focus check that met a running one when it ends ([93f09cc](https://github.com/edziegle/dear_reviewer/commit/93f09cc57c53b5c221a6880f6e008c66411b0732)), closes [#87](https://github.com/edziegle/dear_reviewer/issues/87)
+- **refresh:** run the owed check whatever the gap ([c9e6b4c](https://github.com/edziegle/dear_reviewer/commit/c9e6b4cd4f705d38b2de56b65cb1289cbb1f2238)), closes [#87](https://github.com/edziegle/dear_reviewer/issues/87)
+- start Change Files tall and Findings small in a fresh layout ([bdea6da](https://github.com/edziegle/dear_reviewer/commit/bdea6daa868fd9e76db4b36646cfb56ad92f90d0)), closes [#80](https://github.com/edziegle/dear_reviewer/issues/80)
+- time out GitHub requests that never answer ([7520ef4](https://github.com/edziegle/dear_reviewer/commit/7520ef458c4cc8196ab7cf31cb9af2ff91d7b6e4)), closes [#65](https://github.com/edziegle/dear_reviewer/issues/65)
 
 ## [0.3.0](https://github.com/edziegle/dear_reviewer/compare/v0.2.1...v0.3.0) (2026-10-16)
 
-
 ### Features
 
-* lay out In progress like Waiting on you ([cd8dbbe](https://github.com/edziegle/dear_reviewer/commit/cd8dbbe1550bab38994c7c180af5d26e18f159c2)), closes [#38](https://github.com/edziegle/dear_reviewer/issues/38)
-* lead In progress with the Change shown last, and keep its rows light ([ab43cb3](https://github.com/edziegle/dear_reviewer/commit/ab43cb383959642394abe12f5a4edefba5439011)), closes [#38](https://github.com/edziegle/dear_reviewer/issues/38)
-* make the Dashboard the side bar outside the review window ([a0f9dec](https://github.com/edziegle/dear_reviewer/commit/a0f9decd86e181b984d86d55bf5e0647a1bbf316)), closes [#38](https://github.com/edziegle/dear_reviewer/issues/38)
-* show each pull request once, in progress or waiting ([b1c065d](https://github.com/edziegle/dear_reviewer/commit/b1c065d1bdb47b68889faa43113ce7827bb65151)), closes [#38](https://github.com/edziegle/dear_reviewer/issues/38)
-* show loading with the editor's progress bar ([4d8c072](https://github.com/edziegle/dear_reviewer/commit/4d8c0726527b9075ac7fd1dc338e1b02998358af)), closes [#38](https://github.com/edziegle/dear_reviewer/issues/38)
-
+- lay out In progress like Waiting on you ([cd8dbbe](https://github.com/edziegle/dear_reviewer/commit/cd8dbbe1550bab38994c7c180af5d26e18f159c2)), closes [#38](https://github.com/edziegle/dear_reviewer/issues/38)
+- lead In progress with the Change shown last, and keep its rows light ([ab43cb3](https://github.com/edziegle/dear_reviewer/commit/ab43cb383959642394abe12f5a4edefba5439011)), closes [#38](https://github.com/edziegle/dear_reviewer/issues/38)
+- make the Dashboard the side bar outside the review window ([a0f9dec](https://github.com/edziegle/dear_reviewer/commit/a0f9decd86e181b984d86d55bf5e0647a1bbf316)), closes [#38](https://github.com/edziegle/dear_reviewer/issues/38)
+- show each pull request once, in progress or waiting ([b1c065d](https://github.com/edziegle/dear_reviewer/commit/b1c065d1bdb47b68889faa43113ce7827bb65151)), closes [#38](https://github.com/edziegle/dear_reviewer/issues/38)
+- show loading with the editor's progress bar ([4d8c072](https://github.com/edziegle/dear_reviewer/commit/4d8c0726527b9075ac7fd1dc338e1b02998358af)), closes [#38](https://github.com/edziegle/dear_reviewer/issues/38)
 
 ### Bug Fixes
 
-* keep the open-Changes list safe when several windows write it ([3ec50c4](https://github.com/edziegle/dear_reviewer/commit/3ec50c4c10d1616f44a5fe90e2816355ac6906e2)), closes [#55](https://github.com/edziegle/dear_reviewer/issues/55)
+- keep the open-Changes list safe when several windows write it ([3ec50c4](https://github.com/edziegle/dear_reviewer/commit/3ec50c4c10d1616f44a5fe90e2816355ac6906e2)), closes [#55](https://github.com/edziegle/dear_reviewer/issues/55)
 
 ## [0.2.1](https://github.com/edziegle/dear_reviewer/compare/v0.2.0...v0.2.1) (2026-10-15)
 
-
 ### Bug Fixes
 
-* keep the focus clear of Home's header and name each row's buttons ([#62](https://github.com/edziegle/dear_reviewer/issues/62)) ([fb0e4c3](https://github.com/edziegle/dear_reviewer/commit/fb0e4c3b376ed624c5e95d5491ff5d7aa2518563))
+- keep the focus clear of Home's header and name each row's buttons ([#62](https://github.com/edziegle/dear_reviewer/issues/62)) ([fb0e4c3](https://github.com/edziegle/dear_reviewer/commit/fb0e4c3b376ed624c5e95d5491ff5d7aa2518563))
 
 ## [0.2.0](https://github.com/edziegle/dear_reviewer/compare/v0.1.1...v0.2.0) (2026-10-15)
 

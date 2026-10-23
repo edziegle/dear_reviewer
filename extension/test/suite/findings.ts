@@ -2,12 +2,20 @@
 // marked in the gutter of the editors that show their files. The view's
 // buttons and the hover's links run the commands the extension contributes.
 
+import * as assert from "assert";
 import * as vscode from "vscode";
 import { eventually, type ChangeRequest } from "./reviewer";
 
 interface FindingsApi {
   view: vscode.TreeDataProvider<unknown>;
   decorated(): GutterMarker[];
+  hovers(): { count: number; last?: HoverPlace };
+}
+
+/** Where a hover opened on a Finding's lines: its file and line, from 0. */
+export interface HoverPlace {
+  file: string;
+  line: number;
 }
 
 export interface GutterMarker {
@@ -90,6 +98,14 @@ export async function findingAt(where: string): Promise<FindingEntry> {
   return found;
 }
 
+/** Clicks the entry. */
+export function revealFinding(entry: FindingEntry): Thenable<unknown> {
+  return vscode.commands.executeCommand(
+    entry.command!.command,
+    ...(entry.command!.arguments ?? [])
+  );
+}
+
 /** Clicks the entry's Dismiss button. */
 export function dismissFinding(entry: FindingEntry): Thenable<unknown> {
   return vscode.commands.executeCommand(
@@ -160,6 +176,45 @@ export async function gutterMarkers(): Promise<GutterMarker[]> {
   return (await findingsApi())
     .decorated()
     .sort((a, b) => a.file.localeCompare(b.file) || a.lines[0] - b.lines[0]);
+}
+
+/**
+ * How many hovers have opened on a Finding's lines. The editor asks for a
+ * hover where it opens one, and the extension counts each time, since the
+ * extension host can't see the hover itself.
+ */
+export async function hoversOpened(): Promise<number> {
+  return (await findingsApi()).hovers().count;
+}
+
+/**
+ * Waits for a hover to open after the `before` that `hoversOpened` gave,
+ * and gives where the last one opened.
+ */
+export async function nextHover(before: number): Promise<HoverPlace> {
+  let opened: HoverPlace | undefined;
+  await eventually(async () => {
+    const { count, last } = (await findingsApi()).hovers();
+    assert.ok(count > before && last, "a hover opened");
+    opened = last;
+  });
+  return opened!;
+}
+
+/** Runs the hover's link to `command` with its arguments, as clicking it does. */
+export function clickHoverLink(
+  hover: string,
+  command: string
+): Thenable<unknown> {
+  const opening = `](command:${command}?`;
+  const start = hover.indexOf(opening);
+  const end = hover.indexOf(")", start);
+  if (start < 0 || end < 0)
+    throw new Error(`no link to ${command} in ${hover}`);
+  const args = JSON.parse(
+    decodeURIComponent(hover.slice(start + opening.length, end))
+  ) as unknown[];
+  return vscode.commands.executeCommand(command, ...args);
 }
 
 function labelOf(item: vscode.TreeItem): string {

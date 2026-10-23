@@ -11,15 +11,21 @@ import {
   scriptClaude,
   userMessages,
 } from "../assistant";
+import { shownText } from "../changeFiles";
 import {
+  clickHoverLink,
   convertFinding,
   dismissFinding,
   findIssues,
   findingAt,
   findingQuickFixes,
+  hoversOpened,
   findingsView,
   gutterMarkers,
+  nextHover,
+  revealFinding,
   runQuickFix,
+  type GutterMarker,
 } from "../findings";
 import { buildFixtureRepo, buildPullRequestFixture } from "../fixtures";
 import {
@@ -138,6 +144,25 @@ const longFindingsReply = JSON.stringify({
     },
   ],
 });
+
+/** The marker of the file's Finding, on `line` if given, once its editor shows it. */
+async function markerOf(file: string, line?: number): Promise<GutterMarker> {
+  let found: GutterMarker | undefined;
+  await eventually(async () => {
+    found = (await gutterMarkers()).find(
+      (m) => m.file === file && (line === undefined || m.lines[0] === line)
+    );
+    assert.ok(found, `a marker in ${file}`);
+  });
+  return found!;
+}
+
+/** The place a hover gives its Finding, `n` of `Finding n of N`. */
+function positionIn(hover: string): number {
+  const count = /\*\*Finding (\d+) of \d+\*\*/.exec(hover);
+  assert.ok(count, `a count in ${hover}`);
+  return Number(count[1]);
+}
 
 // Findings only when the Reviewer asks for them, in the gutter of a pull
 // request's diff, turned into Comments or dismissed.
@@ -304,16 +329,18 @@ describe("Findings on request", () => {
     assert.deepStrictEqual(await commentThreads(), []);
   });
 
-  it("steps from Finding to Finding, and round again, with the review keys", async () => {
-    const at = () => {
-      const editor = vscode.window.activeTextEditor!;
-      return `${editor.document.uri.fsPath}:${editor.selection.start.line}`;
+  // The editor opens a hover at the cursor, so where it opens is where the
+  // step left the cursor.
+  it("steps from Finding to Finding, and round again, with the review keys, opening each one's hover on its first line", async () => {
+    const step = async (command: string) => {
+      const before = await hoversOpened();
+      await vscode.commands.executeCommand(command);
+      const { file, line } = await nextHover(before);
+      return `${file}:${line}`;
     };
     const visited: string[] = [];
-    for (let i = 0; i < 4; i++) {
-      await vscode.commands.executeCommand("dearReviewer.nextFinding");
-      visited.push(at());
-    }
+    for (let i = 0; i < 4; i++)
+      visited.push(await step("dearReviewer.nextFinding"));
 
     assert.deepStrictEqual(
       [...visited.slice(0, 3)].sort(),
@@ -324,19 +351,21 @@ describe("Findings on request", () => {
       ].sort()
     );
     assert.strictEqual(visited[3], visited[0], "goes round");
-    await vscode.commands.executeCommand("dearReviewer.previousFinding");
-    assert.strictEqual(at(), visited[2]);
+    assert.strictEqual(await step("dearReviewer.previousFinding"), visited[2]);
   });
 
-  it("shows the Assistant's message in the hover as plain text, with only Dismiss and Convert to run", async () => {
-    const marker = (await gutterMarkers()).find(
-      (m) => m.file === path.join(head, "util.py")
+  it("shows the Assistant's message in the hover as plain text, with its place among the Findings, and only Convert, Dismiss, Next and Previous to run", async () => {
+    await vscode.window.showTextDocument(
+      vscode.Uri.file(path.join(head, "util.py")),
+      { viewColumn: vscode.ViewColumn.One, preview: false }
     );
+    const marker = await markerOf(path.join(head, "util.py"));
 
-    assert.ok(marker, "util.py has a marker");
     assert.deepStrictEqual(marker.enabledCommands, [
       "dearReviewer.convertFinding",
       "dearReviewer.dismissFinding",
+      "dearReviewer.nextFinding",
+      "dearReviewer.previousFinding",
     ]);
     assert.ok(marker.hover.includes("docstring"), marker.hover);
     assert.ok(
@@ -344,8 +373,19 @@ describe("Findings on request", () => {
         !marker.hover.includes("](command:workbench"),
       `the message can't format or link: ${marker.hover}`
     );
-    assert.match(marker.hover, /\]\(command:dearReviewer\.convertFinding\?/);
-    assert.match(marker.hover, /\]\(command:dearReviewer\.dismissFinding\?/);
+    assert.match(marker.hover, /\*\*Finding [1-3] of 3\*\* from the Assistant/);
+    const entry = await findingAt("util.py:2");
+    const args = encodeURIComponent(JSON.stringify(entry.command!.arguments));
+    for (const command of [
+      "convertFinding",
+      "dismissFinding",
+      "previousFinding",
+      "nextFinding",
+    ])
+      assert.ok(
+        marker.hover.includes(`](command:dearReviewer.${command}?${args})`),
+        `${command} with the Finding's id in ${marker.hover}`
+      );
   });
 
   it("offers a Finding's Convert to Comment and Dismiss in Quick Fix on its lines, on either side", async () => {
@@ -399,23 +439,37 @@ describe("Findings on request", () => {
     );
   });
 
-  it("opens a Finding's file at its lines from the view", async () => {
+  it("opens a Finding's file from the view with the cursor on its first line and its hover open", async () => {
     const entry = await findingAt("pkg/sub/new.py:1");
+    const before = await hoversOpened();
 
     await vscode.commands.executeCommand(
       entry.command!.command,
       ...(entry.command!.arguments ?? [])
     );
 
-    const editor = vscode.window.activeTextEditor;
-    assert.strictEqual(
-      editor?.document.uri.fsPath,
-      path.join(head, "pkg/sub/new.py")
-    );
-    assert.strictEqual(editor?.selection.start.line, 0);
+    assert.deepStrictEqual(await nextHover(before), {
+      file: path.join(head, "pkg/sub/new.py"),
+      line: 0,
+    });
   });
 
-  it("dismisses a Finding", async () => {
+  it("steps from the Finding whose hover's link is clicked, not from the cursor", async () => {
+    const legacy = path.join(base, "pkg/legacy.py");
+    await revealFinding(await findingAt("pkg/legacy.py:1 (base)"));
+    const from = await markerOf(legacy);
+    const position = positionIn(from.hover);
+    await revealFinding(await findingAt("util.py:2"));
+    const before = await hoversOpened();
+
+    await clickHoverLink(from.hover, "dearReviewer.nextFinding");
+
+    const opened = await nextHover(before);
+    const marker = await markerOf(opened.file, opened.line);
+    assert.strictEqual(positionIn(marker.hover), (position % 3) + 1);
+  });
+
+  it("dismisses a Finding, and counts the rest again", async () => {
     await dismissFinding(await findingAt("pkg/sub/new.py:1"));
 
     assert.deepStrictEqual(
@@ -425,6 +479,14 @@ describe("Findings on request", () => {
     assert.ok(
       !(await gutterMarkers()).some((m) => m.file.endsWith("new.py")),
       "its marker is gone"
+    );
+    await vscode.window.showTextDocument(
+      vscode.Uri.file(path.join(head, "util.py")),
+      { viewColumn: vscode.ViewColumn.One, preview: false }
+    );
+    assert.match(
+      (await markerOf(path.join(head, "util.py"))).hover,
+      /\*\*Finding [12] of 2\*\*/
     );
   });
 
@@ -441,9 +503,16 @@ describe("Findings on request", () => {
     );
   });
 
-  it("turns a Finding into a draft Comment at the same place, without reaching GitHub", async () => {
+  it("turns a Finding into a draft Comment at the same place, without reaching GitHub, opening its file without a hover", async () => {
+    await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+    const hovers = await hoversOpened();
+
     await convertFinding(await findingAt("pkg/legacy.py:1 (base)"));
 
+    await eventually(() =>
+      assert.strictEqual(shownText().fsPath, path.join(base, "pkg/legacy.py"))
+    );
+    assert.strictEqual(await hoversOpened(), hovers, "no hover");
     const thread = await threadAt(path.join(base, "pkg/legacy.py"), 0);
     assert.deepStrictEqual(
       thread.comments.map((c) => [c.body, c.mode, c.contextValue]),
@@ -668,6 +737,96 @@ describe("Findings on request", () => {
     assert.deepStrictEqual(
       (await findingQuickFixes(baseFile, 1)).map((a) => a.title),
       ["Finding: Convert to Comment", "Finding: Dismiss"]
+    );
+  });
+
+  it("reaches each of two Findings that start on the same line, and steps back from a Finding of several lines to the one before it", async () => {
+    await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+    const file = path.join(head, "util.py");
+    await scriptClaude(change, {
+      turns: [
+        replyTurn(
+          JSON.stringify({
+            findings: [
+              {
+                path: "util.py",
+                side: "head",
+                startLine: 1,
+                endLine: 1,
+                message: "Tie one.",
+              },
+              {
+                path: "util.py",
+                side: "head",
+                startLine: 1,
+                endLine: 1,
+                message: "Tie two.",
+              },
+              {
+                path: "util.py",
+                side: "head",
+                startLine: 2,
+                endLine: 3,
+                message: "Spans two lines.",
+              },
+            ],
+          })
+        ),
+      ],
+    });
+    await findIssues(change);
+    await revealFinding(await findingAt("util.py:1"));
+    let ties: GutterMarker[] = [];
+    await eventually(async () => {
+      ties = (await gutterMarkers()).filter(
+        (m) => m.file === file && m.lines[0] === 0
+      );
+      assert.deepStrictEqual(
+        ties.map((m) => positionIn(m.hover)).sort(),
+        [1, 2],
+        "two places for two Findings on one line"
+      );
+    });
+    const first = ties.find((m) => positionIn(m.hover) === 1)!;
+    // Waits for a hover where the step should open one, so that a hover
+    // late from an earlier step can't pass for it.
+    const step = async (
+      run: () => Thenable<unknown>,
+      expected: { file: string; line: number }
+    ) => {
+      const before = await hoversOpened();
+      await run();
+      await eventually(async () =>
+        assert.deepStrictEqual(await nextHover(before), expected)
+      );
+    };
+    // Closed, so the click opens the file again with a hover of its own.
+    await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+
+    await step(() => clickHoverLink(first.hover, "dearReviewer.nextFinding"), {
+      file,
+      line: 0,
+    });
+    // On from the second tie goes past both: from the first, it would stay
+    // on line 0.
+    await step(
+      () => vscode.commands.executeCommand("dearReviewer.nextFinding"),
+      { file, line: 1 }
+    );
+    const editor = vscode.window.visibleTextEditors.find(
+      (e) => e.document.uri.fsPath === file
+    )!;
+    editor.selection = new vscode.Selection(2, 0, 2, 0);
+    await eventually(() =>
+      assert.strictEqual(
+        vscode.window.activeTextEditor?.selection.active.line,
+        2
+      )
+    );
+
+    await step(
+      () => vscode.commands.executeCommand("dearReviewer.previousFinding"),
+      { file, line: 0 }
     );
   });
 

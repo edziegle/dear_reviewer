@@ -6,6 +6,8 @@ Each Finding marks its lines in the gutter of the diff: the Assistant's reading 
 
 Hover a Finding's lines to read it, then choose **Convert to Comment** to make it your own, or **Dismiss**. Both are in Quick Fix too, as **Finding: Convert to Comment** and **Finding: Dismiss**: put the cursor on the Finding's lines and press Ctrl+. (⌘. on a Mac). A Finding is never published: only Comments are.
 
+Stepping to a Finding, or choosing it in the Findings view, opens its hover for you. The hover says which Finding it is, such as **Finding 2 of 5**, and its **Previous** and **Next** links step to its neighbours.
+
 | Key                | Command          |
 | ------------------ | ---------------- |
 | Ctrl+Alt+R I       | Ask for Findings |

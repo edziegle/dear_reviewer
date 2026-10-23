@@ -59,7 +59,7 @@ describe("The Reviewer's own command for claude", () => {
     );
     assert.match(
       properties["dearReviewer.claudeCommand"].markdownDescription,
-      /docs\/custom-claude-command\.md/
+      /dear_reviewer\/wiki\/custom-claude-command\)/
     );
     assert.match(
       properties["dearReviewer.claudePath"].markdownDeprecationMessage,

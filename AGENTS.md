@@ -30,6 +30,10 @@ Rules for tests, which reviewers enforce:
 - A test that changes the Claude login with `scriptClaudeLogin` puts the default back when it ends.
 - The fake `claude` (`extension/test/fakeClaude.ts`) and the helpers in `extension/test/suite/` name their traps in their doc comments: read them before scripting the Assistant or serving GitHub.
 
+## Docs
+
+The wiki mirrors `docs/`, each file as the page named after it. Users read docs in the wiki, so a link in the code goes to a doc's page: the wiki's address, then the file name without `.md`, as `customClaudeCommandGuide` in `extension/src/assistant/claude.ts` does. Code comments keep the doc's path in the repository.
+
 ## Agent skills
 
 ### Issue tracker

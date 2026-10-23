@@ -111,7 +111,7 @@ export function claudeEnvironment(
 
 /** What a custom Claude Command must do, which the Assistant's panel and the setting link to. */
 export const customClaudeCommandGuide =
-  "https://github.com/edziegle/dear_reviewer/blob/main/docs/custom-claude-command.md";
+  "https://github.com/edziegle/dear_reviewer/wiki/custom-claude-command";
 
 const installLocations = [
   path.join(os.homedir(), ".local", "bin"),

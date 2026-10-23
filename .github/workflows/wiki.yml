@@ -1,0 +1,46 @@
+name: Wiki
+
+# The wiki mirrors docs/ (mise run wiki): a push to main that changes them
+# rewrites its pages. Run it by hand to put back pages edited in the wiki.
+on:
+  push:
+    branches: [main]
+    paths: [docs/**, mise.toml, .github/workflows/wiki.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  MISE_TASK_RUN_AUTO_INSTALL: false
+
+# One run at a time, so an older run can't push its pages over a newer one's.
+concurrency:
+  group: wiki
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    # The wiki is a repository of its own, which the job's token can push to.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ github.repository }}.wiki
+          path: wiki
+      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+        with:
+          install: false
+      - run: mise run wiki wiki
+      - working-directory: wiki
+        run: |
+          git add --all
+          git diff --cached --quiet && exit 0
+          git -c user.name='github-actions[bot]' \
+            -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -m "Mirror docs/ at ${GITHUB_SHA::7}"
+          git push

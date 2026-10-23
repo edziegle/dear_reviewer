@@ -187,12 +187,31 @@ describe("What the overview says of a Repeated edit", () => {
       moreMissed: 0,
     });
     assert.strictEqual(
-      headingOf([edit(2, 0), edit(0, 0), edit(0, 1)]),
+      headingOf([edit(2, 0), edit(0, 0), edit(0, 1)], "complete"),
       "Repeated edits: 2 to check"
     );
     assert.strictEqual(
-      headingOf([edit(0, 0), edit(0, 0)]),
+      headingOf([edit(0, 0), edit(0, 0)], "complete"),
       "Repeated edits (2)"
+    );
+  });
+
+  it("doesn't call the edits uniform until the repository is fully checked", () => {
+    const uniform: ShownRepeatedEdit = {
+      summary: "",
+      removed: [],
+      added: [],
+      differing: [],
+      missed: [],
+      moreMissed: 0,
+    };
+    assert.strictEqual(
+      headingOf([uniform, uniform], "pending"),
+      "Repeated edits (2): still checking"
+    );
+    assert.strictEqual(
+      headingOf([uniform], "partial"),
+      "Repeated edits (1): not fully checked"
     );
   });
 });
@@ -324,6 +343,22 @@ describe("The repetition of a real Change", () => {
     assert.strictEqual(shown?.heading, "Repeated edits (1)");
     assert.deepStrictEqual(shown?.edits[0].differing, []);
     assert.deepStrictEqual(shown?.edits[0].missed, []);
+  });
+
+  it("doesn't tell the Reviewer to skim a uniform edit while missed sites weren't fully checked", async () => {
+    const repetitions = new Repetitions({ budgetMs: 0 });
+    const settled = new Promise<void>((resolve) =>
+      repetitions.onDidSettle(resolve)
+    );
+    const early = await repetitions.repeatedEdits(uniform);
+    assert.strictEqual(early?.checked, "pending");
+    assert.strictEqual(early?.edits[0].summary, "Same edit in 3 files");
+    assert.strictEqual(early?.heading, "Repeated edits (1): still checking");
+    await settled;
+    const shown = await repetitions.repeatedEdits(uniform);
+    assert.strictEqual(shown?.checked, "partial");
+    assert.strictEqual(shown?.edits[0].summary, "Same edit in 3 files");
+    assert.strictEqual(shown?.heading, "Repeated edits (1): not fully checked");
   });
 
   it("says missed sites weren't fully checked when the index ran out of time", async () => {

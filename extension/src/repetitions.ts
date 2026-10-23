@@ -177,7 +177,7 @@ export interface ShownRepeatedEdits {
    * the index ran out of time, `pending` while it is still being built.
    */
   checked: "complete" | "partial" | "pending";
-  /** Such as "Repeated edits: 1 to check", or "Repeated edits (2)" when every edit is uniform. */
+  /** Such as "Repeated edits: 1 to check", or "Repeated edits (2)" when every edit is uniform and the repository fully checked. */
   heading: string;
   /** Whether any edit has a differing or a missed site, which opens the section. */
   open: boolean;
@@ -240,14 +240,25 @@ export function showMoreOf(listed: number, more = 0): string | undefined {
   return more > 0 ? `Show ${listed - fewSites} more` : `Show all ${listed}`;
 }
 
-/** The section's heading: how many edits have a site to check, or how many there are when none has. */
-export function headingOf(edits: readonly ShownRepeatedEdit[]): string {
+/**
+ * The section's heading: how many edits have a site to check, or how many
+ * there are when none has. Until the repository is fully checked, an edit
+ * with none may yet have missed sites, so the heading says so.
+ */
+export function headingOf(
+  edits: readonly ShownRepeatedEdit[],
+  checked: ShownRepeatedEdits["checked"]
+): string {
   const toCheck = edits.filter(
     (e) => e.differing.length > 0 || e.missed.length > 0
   ).length;
-  return toCheck > 0
-    ? `Repeated edits: ${toCheck} to check`
-    : `Repeated edits (${edits.length})`;
+  if (toCheck > 0) return `Repeated edits: ${toCheck} to check`;
+  const all = `Repeated edits (${edits.length})`;
+  return checked === "pending"
+    ? `${all}: still checking`
+    : checked === "partial"
+      ? `${all}: not fully checked`
+      : all;
 }
 
 function shownOf(
@@ -261,9 +272,9 @@ function shownOf(
     .map((edit): ShownRepeatedEdit => {
       const showDiffering = showMoreOf(edit.differing.length);
       const showMissed = showMoreOf(edit.missed.length, edit.moreMissed);
-      // Until the repository is checked, an edit may yet have missed sites.
+      // Until the whole repository is checked, an edit may yet have missed sites.
       const uniform =
-        checked !== "pending" &&
+        checked === "complete" &&
         edit.differing.length === 0 &&
         edit.missed.length === 0;
       return {
@@ -289,7 +300,7 @@ function shownOf(
     );
   return {
     checked,
-    heading: headingOf(shown),
+    heading: headingOf(shown, checked),
     open: shown.some((e) => e.differing.length > 0 || e.missed.length > 0),
     edits: shown,
   };

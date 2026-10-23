@@ -1074,7 +1074,8 @@ ${catSymbol}
         item.id = "repeat-" + at + "-" + kind;
         item.append(el("span", "muted", label), ...buttons);
         if (showMore) {
-          const key = item.id;
+          // Keyed by the edit, not its place: the edits re-sort as missed sites come in.
+          const key = JSON.stringify([kind, edit.removed, edit.added]);
           const toggle = el("button", "link more");
           toggle.type = "button";
           toggle.setAttribute("aria-controls", item.id);

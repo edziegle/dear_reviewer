@@ -31,19 +31,23 @@ const ours = new Set(commands.map((c) => c.command));
 /** The editor's own commands that a step may link to. */
 const workbench = new Set(["workbench.action.openSettings"]);
 
+const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 describe("The walkthroughs", () => {
   for (const walkthrough of walkthroughs)
     for (const step of walkthrough.steps) {
       const name = `${walkthrough.id}/${step.id}`;
 
       it(`${name} links only to commands that exist`, () => {
-        for (const [, id] of step.description.matchAll(
-          /\(command:([\w.]+)/g
-        ))
-          assert.ok(ours.has(id) || workbench.has(id), `${name} links to ${id}`);
+        for (const [, id] of step.description.matchAll(/\(command:([\w.]+)/g))
+          assert.ok(
+            ours.has(id) || workbench.has(id),
+            `${name} links to ${id}`
+          );
         for (const event of step.completionEvents ?? []) {
           const command = /^onCommand:(.+)$/.exec(event)?.[1];
-          if (command) assert.ok(ours.has(command), `${name} waits for ${command}`);
+          if (command)
+            assert.ok(ours.has(command), `${name} waits for ${command}`);
         }
       });
 
@@ -76,10 +80,11 @@ describe("The walkthroughs", () => {
           (_, shift, letter: string) =>
             ` ${shift ? "Shift+" : ""}${letter.toUpperCase()}`
         );
-      assert.ok(
-        keys.includes(`| ${shown} | ${title}`),
-        `${shown} | ${title} in keys.md`
+      // A formatter pads a table's cells to line its columns up.
+      const row = new RegExp(
+        `\\| ${escape(shown)} +\\| ${escape(title ?? "")}`
       );
+      assert.match(keys, row, `${shown} | ${title} in keys.md`);
     }
   });
 });

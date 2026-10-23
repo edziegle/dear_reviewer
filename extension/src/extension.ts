@@ -640,8 +640,13 @@ export function activate(context: vscode.ExtensionContext) {
     (change, place, body) => review.draft(change, place, body)
   );
 
-  async function stepFinding(direction: 1 | -1): Promise<void> {
-    if (!(await findings.step(direction)))
+  /** Steps from the Finding a hover's link names, or else from the cursor. */
+  async function stepFinding(
+    direction: 1 | -1,
+    target: string | undefined
+  ): Promise<void> {
+    const from = target === undefined ? undefined : findings.get(target);
+    if (!(await findings.step(direction, from)))
       void vscode.window.showInformationMessage(
         "There are no Findings. Ask for Findings on a Change to have the Assistant raise some."
       );
@@ -1679,11 +1684,13 @@ export function activate(context: vscode.ExtensionContext) {
         if (change) await codeFlows.show(change);
       }
     ),
-    vscode.commands.registerCommand("dearReviewer.nextFinding", () =>
-      stepFinding(1)
+    vscode.commands.registerCommand(
+      "dearReviewer.nextFinding",
+      (target?: string) => stepFinding(1, target)
     ),
-    vscode.commands.registerCommand("dearReviewer.previousFinding", () =>
-      stepFinding(-1)
+    vscode.commands.registerCommand(
+      "dearReviewer.previousFinding",
+      (target?: string) => stepFinding(-1, target)
     ),
     vscode.commands.registerCommand(
       "dearReviewer.nextUnviewedFile",
@@ -1706,7 +1713,7 @@ export function activate(context: vscode.ExtensionContext) {
       "dearReviewer.revealFinding",
       async (target?: string | FindingsNode) => {
         const finding = findings.get(target);
-        if (finding) await findings.reveal(finding);
+        if (finding) await findings.open(finding);
       }
     ),
     vscode.commands.registerCommand(
@@ -2005,6 +2012,7 @@ export function activate(context: vscode.ExtensionContext) {
     findings: {
       view: findings,
       decorated: () => findings.decorated(),
+      hovers: () => findings.hovers(),
     },
     review: {
       controller: review.controller,

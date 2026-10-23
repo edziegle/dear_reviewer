@@ -16,6 +16,12 @@ import type { ThreadPlace } from "./github/client";
 import { setContext } from "./context";
 import { messageOf } from "./errors";
 import { gutterIcons, type GutterIcon, type IconSpan } from "./findingGutter";
+import {
+  findingAfter,
+  placeAmong,
+  stepOrder,
+  type StepStart,
+} from "./findingOrder";
 import { reviewKey } from "./reviewKeys";
 import { countLines, readInWorktree } from "./worktreeFile";
 
@@ -39,6 +45,8 @@ const maxMessageChars = 2_000;
 const findingCommands = [
   "dearReviewer.convertFinding",
   "dearReviewer.dismissFinding",
+  "dearReviewer.nextFinding",
+  "dearReviewer.previousFinding",
 ];
 
 export class Findings
@@ -60,6 +68,12 @@ export class Findings
     string,
     { options: vscode.DecorationOptions[]; icons: IconSpan[] }
   >();
+  /** The Finding stepped to or opened last, which the next step starts from. */
+  private current: string | undefined;
+  /** How many hovers opened on a Finding's lines, and where the last did, for the tests. */
+  private hovered: { count: number; last?: { file: string; line: number } } = {
+    count: 0,
+  };
   private readonly subscriptions: vscode.Disposable[] = [];
 
   /**
@@ -119,7 +133,21 @@ export class Findings
       this.decoration,
       ...Object.values(this.icons),
       this.changed,
-      vscode.window.onDidChangeVisibleTextEditors(() => this.render())
+      vscode.window.onDidChangeVisibleTextEditors(() => this.render()),
+      // Adds nothing to a hover: it only notes that one opened.
+      vscode.languages.registerHoverProvider(
+        { scheme: "file" },
+        {
+          provideHover: (document, position) => {
+            if (this.at(document.uri, position.line))
+              this.hovered = {
+                count: this.hovered.count + 1,
+                last: { file: document.uri.fsPath, line: position.line },
+              };
+            return undefined;
+          },
+        }
+      )
     );
   }
 
@@ -164,7 +192,7 @@ export class Findings
     const left = raised.length - findings.length;
     if (findings.length > 0) this.byChange.set(change.id, { change, findings });
     else this.byChange.delete(change.id);
-    this.update();
+    this.refresh();
     this.tell(
       change,
       [
@@ -186,7 +214,7 @@ export class Findings
     if (!entry) return;
     entry.findings = entry.findings.filter((f) => f.id !== finding.id);
     if (entry.findings.length === 0) this.byChange.delete(finding.change.id);
-    this.update();
+    this.refresh();
   }
 
   /**
@@ -206,54 +234,66 @@ export class Findings
       await this.reveal(finding);
   }
 
-  /** Opens the Finding's file at its lines. */
-  async reveal(finding: Finding): Promise<void> {
-    await vscode.window.showTextDocument(fileOf(finding), {
+  /** Opens the Finding's file at its lines, without its hover. */
+  async reveal(finding: Finding): Promise<vscode.TextEditor> {
+    return vscode.window.showTextDocument(fileOf(finding), {
       selection: rangeOf(finding.place),
       preview: true,
     });
   }
 
   /**
-   * Opens the next Finding of the Change in front after the active
-   * editor's cursor, or the one before it, by file and line, going round at the
-   * end. Gives the Finding opened, if there is one.
+   * Opens the Finding's file at its lines, with the cursor on its first so
+   * that the hover, which opens above the cursor, leaves them in sight, and
+   * opens its hover.
    */
-  async step(direction: 1 | -1): Promise<Finding | undefined> {
-    const keyOf = (uri: string, line: number) =>
-      `${uri}\0${String(line).padStart(9, "0")}`;
-    const ordered = this.ofFront()
-      .map((finding) => ({
-        finding,
-        key: keyOf(
-          fileOf(finding).toString(),
-          rangeOf(finding.place).start.line
-        ),
-      }))
-      .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
-    if (ordered.length === 0) return;
+  async open(finding: Finding): Promise<void> {
+    const editor = await this.reveal(finding);
+    const { start, end } = rangeOf(finding.place);
+    editor.selection = new vscode.Selection(
+      editor.document.lineAt(end.line).range.end,
+      start
+    );
+    this.current = finding.id;
+    // By default a hover already open, such as the last Finding's, only
+    // takes the focus and stays where it is.
+    await vscode.commands.executeCommand("editor.action.showHover", {
+      focus: "noAutoFocus",
+    });
+  }
+
+  /**
+   * Opens the next Finding of the Change in front, or the one before it, by
+   * file and line, going round at the end, with its hover open. It steps
+   * from `from` if that is one of them, as a hover's link does, and
+   * otherwise from the active editor's cursor. Gives the Finding opened, if
+   * there is one.
+   */
+  async step(direction: 1 | -1, from?: Finding): Promise<Finding | undefined> {
+    const ordered = this.inStepOrder();
     const editor = vscode.window.activeTextEditor;
-    const here =
-      editor &&
-      keyOf(editor.document.uri.toString(), editor.selection.active.line);
-    const next =
-      here === undefined
-        ? direction === 1
-          ? ordered[0]
-          : ordered.at(-1)
-        : direction === 1
-          ? (ordered.find((f) => f.key > here) ?? ordered[0])
-          : ([...ordered].reverse().find((f) => f.key < here) ??
-            ordered.at(-1));
+    const start: StepStart | undefined =
+      from && ordered.some((f) => f.id === from.id)
+        ? { id: from.id }
+        : editor && {
+            file: editor.document.uri.toString(),
+            line: editor.selection.active.line,
+            current: this.current,
+          };
+    const next = findingAfter(ordered, start, direction);
     if (!next) return;
-    await this.reveal(next.finding);
+    await this.open(next.finding);
     return next.finding;
   }
 
-  /** Lists the Findings of the Change in front afresh, such as after another came to the front. */
+  /**
+   * Lists and marks the Findings of the Change in front afresh, such as
+   * after another came to the front, since their hovers count them.
+   */
   refresh(): void {
     this.changed.fire();
     this.showHasFindings();
+    this.render();
   }
 
   /** The names of the Changes this window holds Findings for, for the tests. */
@@ -263,7 +303,7 @@ export class Findings
 
   /** Forgets the Findings of a Change that was closed. */
   forget(change: Change): void {
-    if (this.byChange.delete(change.id)) this.update();
+    if (this.byChange.delete(change.id)) this.refresh();
   }
 
   /**
@@ -355,6 +395,11 @@ export class Findings
     );
   }
 
+  /** How many hovers opened on a Finding's lines, and where the last did, for the tests. */
+  hovers(): { count: number; last?: { file: string; line: number } } {
+    return this.hovered;
+  }
+
   private all(): Finding[] {
     return [...this.byChange.values()].flatMap((entry) => entry.findings);
   }
@@ -365,9 +410,20 @@ export class Findings
     return (front && this.byChange.get(front.id)?.findings) ?? [];
   }
 
-  private update(): void {
-    this.refresh();
-    this.render();
+  /** The Findings of the Change in front, in the order the steps take. */
+  private inStepOrder() {
+    return stepOrder(
+      this.ofFront().map((finding) => {
+        const { start, end } = rangeOf(finding.place);
+        return {
+          id: finding.id,
+          file: fileOf(finding).toString(),
+          first: start.line,
+          last: end.line,
+          finding,
+        };
+      })
+    );
   }
 
   private showHasFindings(): void {
@@ -376,13 +432,14 @@ export class Findings
 
   /** Puts each Finding's marker in the gutter of every visible editor of its file. */
   private render(): void {
+    const ordered = this.inStepOrder();
     const byFile = new Map<string, vscode.DecorationOptions[]>();
     for (const finding of this.all()) {
       const uri = fileOf(finding).toString();
       const options = byFile.get(uri) ?? [];
       options.push({
         range: rangeOf(finding.place),
-        hoverMessage: hoverOf(finding),
+        hoverMessage: hoverOf(finding, placeAmong(ordered, finding.id)),
       });
       byFile.set(uri, options);
     }
@@ -412,13 +469,16 @@ export class Findings
   /** The Finding on the line under the active editor's cursor, if any. */
   private underCursor(): Finding | undefined {
     const editor = vscode.window.activeTextEditor;
-    if (!editor) return;
-    const uri = editor.document.uri.toString();
-    const line = editor.selection.active.line;
+    return editor && this.at(editor.document.uri, editor.selection.active.line);
+  }
+
+  /** A Finding on the line of the file, if any. */
+  private at(uri: vscode.Uri, line: number): Finding | undefined {
+    const file = uri.toString();
     return this.all().find((f) => {
       const range = rangeOf(f.place);
       return (
-        fileOf(f).toString() === uri &&
+        fileOf(f).toString() === file &&
         range.start.line <= line &&
         line <= range.end.line
       );
@@ -495,18 +555,28 @@ export function parseFindings(reply: string): unknown[] {
 
 /**
  * The hover on a Finding's lines: the Assistant's message as plain text,
- * escaped so it can't add links or formatting, and the two actions, the
- * only commands the hover may run.
+ * escaped so it can't add links or formatting, and the two actions. A
+ * Finding of the Change in front, which has a `place` among its Findings,
+ * also gets its count and steps to its neighbours. These are the only
+ * commands the hover may run, each given the Finding's id.
  */
-function hoverOf(finding: Finding): vscode.MarkdownString {
+function hoverOf(
+  finding: Finding,
+  place: { position: number; total: number } | undefined
+): vscode.MarkdownString {
   const hover = new vscode.MarkdownString();
   hover.isTrusted = { enabledCommands: findingCommands };
   hover.supportHtml = false;
-  hover.appendMarkdown("**Finding** from the Assistant\n\n");
+  hover.appendMarkdown(
+    `**Finding${place ? ` ${place.position} of ${place.total}` : ""}** from the Assistant\n\n`
+  );
   hover.appendText(finding.message);
   const args = encodeURIComponent(JSON.stringify([finding.id]));
+  const steps = place
+    ? `&emsp;&emsp;[↑ Previous](command:dearReviewer.previousFinding?${args}) · [↓ Next](command:dearReviewer.nextFinding?${args})`
+    : "";
   hover.appendMarkdown(
-    `\n\n[Convert to Comment](command:dearReviewer.convertFinding?${args}) · [Dismiss](command:dearReviewer.dismissFinding?${args})`
+    `\n\n[Convert to Comment](command:dearReviewer.convertFinding?${args}) · [Dismiss](command:dearReviewer.dismissFinding?${args})${steps}`
   );
   return hover;
 }

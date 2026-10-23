@@ -22,6 +22,7 @@ import {
   findingAfter,
   placeAmong,
   stepOrder,
+  type Placed,
   type StepStart,
 } from "./findingOrder";
 import { byFile, countText, currentFinding } from "./findingsList";
@@ -81,6 +82,8 @@ export class Findings implements vscode.CodeActionProvider, vscode.Disposable {
    * and the view shows open while the cursor is on no Finding.
    */
   private current: string | undefined;
+  /** The current Finding the view was last given. */
+  private shownCurrent: string | undefined;
   /** How many hovers opened on a Finding's lines, and where the last did, for the tests. */
   private hovered: { count: number; last?: { file: string; line: number } } = {
     count: 0,
@@ -152,8 +155,8 @@ export class Findings implements vscode.CodeActionProvider, vscode.Disposable {
       ),
       vscode.window.onDidChangeVisibleTextEditors(() => this.render()),
       // The current Finding is the one under the cursor.
-      vscode.window.onDidChangeTextEditorSelection(() => this.showView()),
-      vscode.window.onDidChangeActiveTextEditor(() => this.showView()),
+      vscode.window.onDidChangeTextEditorSelection(() => this.followCursor()),
+      vscode.window.onDidChangeActiveTextEditor(() => this.followCursor()),
       vscode.languages.registerCodeActionsProvider({ scheme: "file" }, this, {
         providedCodeActionKinds: [vscode.CodeActionKind.QuickFix],
       })
@@ -456,15 +459,8 @@ export class Findings implements vscode.CodeActionProvider, vscode.Disposable {
    */
   private viewState(): FindingsViewState {
     const ordered = this.inStepOrder();
-    const editor = vscode.window.activeTextEditor;
-    const current = currentFinding(
-      ordered,
-      editor && {
-        file: editor.document.uri.toString(),
-        line: editor.selection.active.line,
-      },
-      this.current
-    );
+    const current = this.currentAmong(ordered);
+    this.shownCurrent = current;
     return {
       changeOpen: !!this.inFront(),
       files: byFile(
@@ -478,12 +474,35 @@ export class Findings implements vscode.CodeActionProvider, vscode.Disposable {
       ...(current !== undefined && { current }),
       count: countText(ordered, current),
       key: reviewKey("F"),
+      previousKey: reviewKey("Shift+F"),
     };
+  }
+
+  /** The current Finding among the ordered ones, as the view shows it. */
+  private currentAmong(ordered: Placed[]): string | undefined {
+    const editor = vscode.window.activeTextEditor;
+    return currentFinding(
+      ordered,
+      editor && {
+        file: editor.document.uri.toString(),
+        line: editor.selection.active.line,
+      },
+      this.current
+    );
   }
 
   private showView(): void {
     // Undefined while the constructor makes the view, which asks for its first state.
     this.view?.update(this.viewState());
+  }
+
+  /**
+   * Shows the view afresh once the cursor moves the current Finding, and
+   * only then: the cursor moves on every key typed in any editor.
+   */
+  private followCursor(): void {
+    if (this.currentAmong(this.inStepOrder()) !== this.shownCurrent)
+      this.showView();
   }
 
   /**
@@ -497,7 +516,7 @@ export class Findings implements vscode.CodeActionProvider, vscode.Disposable {
       return;
     }
     if (action.type === "step") {
-      const { current } = this.viewState();
+      const current = this.currentAmong(this.inStepOrder());
       await this.step(
         action.direction,
         this.ofFront().find((f) => f.id === current)

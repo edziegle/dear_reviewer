@@ -361,6 +361,7 @@ describe("Findings on request", () => {
     );
     assert.strictEqual(state.changeOpen, true);
     assert.strictEqual(state.key, `${chord} F`);
+    assert.strictEqual(state.previousKey, `${chord} Shift+F`);
   });
 
   it("keeps only a note about the Findings in the Assistant's panel", async () => {
@@ -610,6 +611,10 @@ describe("Findings on request", () => {
       report.foreign,
       0,
       "no link or formatting from the message"
+    );
+    assert.ok(
+      report.ownsOnlyFindings,
+      "the listbox holds only Findings, grouped by file, and the open row's links follow it"
     );
   });
 

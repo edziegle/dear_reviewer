@@ -411,6 +411,7 @@ export const scenes: Scene[] = [
           current: "schedule",
           count: countText(listed, "schedule"),
           key: "Ctrl+Alt+R F",
+          previousKey: "Ctrl+Alt+R Shift+F",
         },
         async () => undefined
       );

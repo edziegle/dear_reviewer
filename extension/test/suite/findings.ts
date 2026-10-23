@@ -34,6 +34,7 @@ export interface FindingsViewState {
   current?: string;
   count: string;
   key: string;
+  previousKey: string;
 }
 
 /** What the webview said it shows after its last render or key. */
@@ -47,6 +48,8 @@ export interface FindingsReport {
   foreign: number;
   /** Whether the page has the focus. */
   hasFocus: boolean;
+  /** Whether the listbox holds only a group per file, of Findings and a header hidden from screen readers. */
+  ownsOnlyFindings: boolean;
 }
 
 export type FindingsClick =

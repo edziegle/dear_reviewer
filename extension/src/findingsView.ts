@@ -8,7 +8,7 @@
 
 import * as crypto from "crypto";
 import * as vscode from "vscode";
-import { focusAfterRemoval, type FindingsFile } from "./findingsList";
+import { focusAfterRemovalScript, type FindingsFile } from "./findingsList";
 import { sharedScript, sharedStyles, type Handshake } from "./markdownPanel";
 
 export interface FindingsViewState {
@@ -21,6 +21,8 @@ export interface FindingsViewState {
   count: string;
   /** Next Finding's key, such as `Ctrl+Alt+R F`. */
   key: string;
+  /** Previous Finding's key, such as `Ctrl+Alt+R Shift+F`. */
+  previousKey: string;
 }
 
 /** What the webview said it shows after its last render or test message, for the tests. */
@@ -37,6 +39,8 @@ export interface FindingsReport {
   foreign: number;
   /** Whether the page has the focus, as it does once the editor gives the view the focus. */
   hasFocus: boolean;
+  /** Whether the listbox holds only a group per file, of Findings and a header hidden from screen readers. */
+  ownsOnlyFindings: boolean;
 }
 
 /** What the Reviewer does in the view. */
@@ -60,6 +64,8 @@ export class FindingsView implements vscode.WebviewViewProvider {
   static readonly viewType = "dearReviewer.findings";
   private view?: vscode.WebviewView;
   private state: FindingsViewState;
+  /** The state sent last, as JSON, to tell a new state from it. */
+  private stateJson: string;
   private revision = 0;
   private renderedState?: FindingsViewState;
   private lastReport?: FindingsReport;
@@ -68,7 +74,8 @@ export class FindingsView implements vscode.WebviewViewProvider {
     state: FindingsViewState,
     private readonly onAction: (action: FindingsAction) => Promise<void>
   ) {
-    this.state = clone(state);
+    this.stateJson = JSON.stringify(state);
+    this.state = JSON.parse(this.stateJson) as FindingsViewState;
   }
 
   resolveWebviewView(view: vscode.WebviewView): void {
@@ -123,6 +130,7 @@ export class FindingsView implements vscode.WebviewViewProvider {
           openMessage: message.openMessage,
           foreign: message.foreign,
           hasFocus: message.hasFocus,
+          ownsOnlyFindings: message.ownsOnlyFindings,
         };
         return;
       case "reveal":
@@ -142,8 +150,10 @@ export class FindingsView implements vscode.WebviewViewProvider {
 
   /** Sends the state, unless it's the one sent last, as when the cursor moves within a Finding. */
   update(state: FindingsViewState): void {
-    if (JSON.stringify(state) === JSON.stringify(this.state)) return;
-    this.state = clone(state);
+    const json = JSON.stringify(state);
+    if (json === this.stateJson) return;
+    this.stateJson = json;
+    this.state = JSON.parse(json) as FindingsViewState;
     void this.post();
   }
 
@@ -214,7 +224,8 @@ function html(): string {
   [hidden] { display: none !important; }
   html, body { height: 100%; }
   body { display: flex; flex-direction: column; margin: 0; padding: 0; font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-sideBar-foreground, var(--vscode-foreground)); }
-  #list { flex: 1; min-height: 0; overflow: auto; outline: none; }
+  #findings { flex: 1; min-height: 0; overflow: auto; position: relative; }
+  #list { outline: none; }
   .row { height: 22px; display: flex; align-items: center; gap: 4px; padding: 0 8px; white-space: nowrap; cursor: pointer; }
   .row:hover { background: var(--vscode-list-hoverBackground); }
   .row svg { width: 16px; height: 16px; flex: none; }
@@ -233,7 +244,7 @@ function html(): string {
   .finding:focus { outline: 1px solid var(--vscode-list-focusOutline, var(--vscode-focusBorder)); outline-offset: -1px; }
   #list:focus-within .finding:focus { background: var(--vscode-list-activeSelectionBackground); color: var(--vscode-list-activeSelectionForeground, inherit); }
   #list:focus-within .finding:focus .muted { color: inherit; }
-  .open { padding: 2px 10px 8px 42px; }
+  .open { position: absolute; left: 0; right: 0; box-sizing: border-box; padding: 2px 10px 8px 42px; }
   .open .message { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.45; border-left: 2px solid var(--vscode-dearReviewer-assistantForeground); padding-left: 8px; }
   .open .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; padding-left: 10px; }
   .link { background: none; border: none; padding: 0; color: var(--vscode-textLink-foreground); cursor: pointer; font: inherit; }
@@ -252,7 +263,7 @@ function html(): string {
 </head>
 <body>
 <h1 class="visually-hidden">Findings</h1>
-<div id="list" role="listbox" aria-label="Findings" hidden></div>
+<div id="findings" hidden><div id="list" role="listbox" aria-label="Findings"></div></div>
 <div id="welcome" hidden><p id="welcomeText"></p><button class="primary" id="ask" type="button" data-name="ask">Ask for Findings</button></div>
 <div class="foot" id="foot" hidden>
   <span class="count" id="count"></span><span class="key" id="key"></span>
@@ -262,7 +273,7 @@ function html(): string {
 <script nonce="${nonce}">${sharedScript}
   const vscode = acquireVsCodeApi();
   const byId = (id) => document.getElementById(id);
-  const focusAfterRemoval = ${focusAfterRemoval.toString()};
+  const focusAfterRemoval = ${focusAfterRemovalScript};
   const welcome = ${JSON.stringify(welcome)};
   const fileIcon = ${JSON.stringify(fileIcon)};
   const el = (tag, className, text) => {
@@ -271,6 +282,7 @@ function html(): string {
     if (text !== undefined) node.textContent = text;
     return node;
   };
+  const findings = byId("findings");
   const list = byId("list");
   byId("ask").addEventListener("click", () => vscode.postMessage({ type: "ask" }));
   byId("previous").addEventListener("click", () => vscode.postMessage({ type: "step", direction: -1 }));
@@ -290,14 +302,18 @@ function html(): string {
     option.scrollIntoView({ block: "nearest" });
   }
 
+  // A file's header, which a screen reader skips: its group says the same.
   function fileRow(file) {
     const row = el("div", "row file");
-    row.setAttribute("role", "none");
+    row.setAttribute("aria-hidden", "true");
     row.insertAdjacentHTML("beforeend", fileIcon);
     row.append(el("span", "label", file.name), el("span", "folder muted", file.folder), el("span", "count muted", String(file.findings.length)));
     row.title = file.folder ? file.folder + "/" + file.name : file.name;
     return row;
   }
+
+  const fileName = (file) =>
+    [file.name, file.folder, file.findings.length + (file.findings.length === 1 ? " Finding" : " Findings")].filter(Boolean).join(", ");
 
   function findingRow(finding, open) {
     const row = el("div", "row finding");
@@ -322,9 +338,13 @@ function html(): string {
   }
 
   // The current Finding's whole message, as plain text, and its actions.
+  // It isn't part of the listbox, which may hold only Findings: it follows
+  // it, so Tab reaches its links after the list, and it is drawn under its
+  // Finding's row.
   function openRow(finding) {
     const node = el("div", "open");
-    node.setAttribute("role", "none");
+    node.setAttribute("role", "group");
+    node.setAttribute("aria-label", finding.name);
     node.dataset.finding = finding.id;
     node.append(el("div", "message", finding.message));
     const actions = el("div", "actions");
@@ -340,6 +360,19 @@ function html(): string {
     return node;
   }
 
+  // Puts the open row under its Finding's row, which makes room for it.
+  function placeOpen() {
+    for (const option of options()) option.style.marginBottom = "";
+    const open = findings.querySelector(".open");
+    if (!open) return;
+    const option = optionOf(open.dataset.finding);
+    if (!option) return;
+    option.style.marginBottom = open.offsetHeight + "px";
+    open.style.top = option.offsetTop + option.offsetHeight + "px";
+  }
+  const resized = new ResizeObserver(() => placeOpen());
+  resized.observe(findings);
+
   // Each row is built again only when what it shows changed, so an update
   // leaves the others, and the focus in them, alone.
   let built = new Map();
@@ -352,38 +385,56 @@ function html(): string {
     return { text, node: build() };
   }
 
+  // Makes the parent's children the nodes, in order, moving none it keeps.
+  function reconcile(parent, nodes) {
+    const keep = new Set(nodes);
+    for (const child of [...parent.children]) if (!keep.has(child)) child.remove();
+    nodes.forEach((node, i) => {
+      if (parent.children[i] !== node) parent.insertBefore(node, parent.children[i] || null);
+    });
+  }
+
+  const groups = new Map();
   let shownIds = [];
   function renderList(state) {
     const active = document.activeElement;
-    const holder = active && list.contains(active) ? active.closest("[data-finding]") : null;
+    const holder = active && findings.contains(active) ? active.closest("[data-finding]") : null;
     const focused = holder ? holder.dataset.finding : undefined;
     const next = new Map();
-    const order = [];
+    const fileGroups = [];
+    let open;
     for (const file of state.files) {
       const key = "file:" + file.key;
-      const row = rowFor(key, { name: file.name, folder: file.folder, count: file.findings.length }, () => fileRow(file));
-      next.set(key, row);
-      order.push(row.node);
+      let group = groups.get(key);
+      if (!group) {
+        group = el("div", "group");
+        group.setAttribute("role", "group");
+        groups.set(key, group);
+      }
+      group.setAttribute("aria-label", fileName(file));
+      const header = rowFor(key, { name: file.name, folder: file.folder, count: file.findings.length }, () => fileRow(file));
+      next.set(key, header);
+      const rows = [header.node];
       for (const finding of file.findings) {
-        const open = finding.id === state.current;
+        const isOpen = finding.id === state.current;
         const findingKey = "finding:" + finding.id;
-        const row = rowFor(findingKey, [finding, open], () => findingRow(finding, open));
+        const row = rowFor(findingKey, [finding, isOpen], () => findingRow(finding, isOpen));
         next.set(findingKey, row);
-        order.push(row.node);
-        if (open) {
+        rows.push(row.node);
+        if (isOpen) {
           const openKey = "open:" + finding.id;
-          const detail = rowFor(openKey, finding, () => openRow(finding));
-          next.set(openKey, detail);
-          order.push(detail.node);
+          open = rowFor(openKey, finding, () => openRow(finding));
+          next.set(openKey, open);
         }
       }
+      reconcile(group, rows);
+      fileGroups.push(group);
     }
-    const keep = new Set(order);
-    for (const child of [...list.children]) if (!keep.has(child)) child.remove();
-    order.forEach((node, i) => {
-      if (list.children[i] !== node) list.insertBefore(node, list.children[i] || null);
-    });
+    for (const key of [...groups.keys()]) if (!next.has(key)) groups.delete(key);
+    reconcile(list, fileGroups);
+    reconcile(findings, [list, ...(open ? [open.node] : [])]);
     built = next;
+    placeOpen();
     const ids = state.files.flatMap((file) => file.findings.map((f) => f.id));
     const before = shownIds;
     shownIds = ids;
@@ -397,7 +448,7 @@ function html(): string {
     // taken back.
     if (focused === undefined || document.activeElement === active || !document.hasFocus()) return;
     const target = focusAfterRemoval(before, ids, focused);
-    const same = target === focused && [...list.querySelectorAll("[data-name]")].find((node) => node.dataset.name === nameOf(active));
+    const same = target === focused && [...findings.querySelectorAll("[data-name]")].find((node) => node.dataset.name === nameOf(active));
     if (same) same.focus();
     else if (target !== undefined) moveTo(optionOf(target));
     else if (state.changeOpen) byId("ask").focus();
@@ -407,20 +458,22 @@ function html(): string {
   function render(state) {
     current = state.current;
     const any = state.files.length > 0;
-    list.hidden = !any;
+    findings.hidden = !any;
     byId("foot").hidden = !any;
     byId("welcome").hidden = any;
     setText(byId("welcomeText"), state.changeOpen ? welcome.open : welcome.closed);
     byId("ask").hidden = !state.changeOpen;
     setText(byId("count"), state.count);
     setText(byId("key"), state.key);
+    byId("previous").title = "Previous Finding (" + state.previousKey + ")";
     byId("next").title = "Next Finding (" + state.key + ")";
     renderList(state);
   }
 
   // Up and Down move between Findings, skipping file rows; Home and End go
-  // to the first and last; Enter opens the focused one as a click does.
-  // Tab goes on to the open row's links from any Finding, wherever they are.
+  // to the first and last; Enter opens the focused one as a click does. Tab
+  // goes on to the open row's links, which the browser does too, since they
+  // follow the list; a test's key needs it done here.
   list.addEventListener("keydown", (event) => {
     const option = event.target instanceof Element ? event.target.closest("[role=option]") : null;
     if (!option) return;
@@ -428,8 +481,8 @@ function html(): string {
     const i = all.indexOf(option);
     let to;
     if (event.key === "Tab" && !event.shiftKey) {
-      const link = list.querySelector(".open button");
-      if (!link || option.dataset.finding === current) return;
+      const link = findings.querySelector(".open button");
+      if (!link) return;
       event.preventDefault();
       link.focus();
       return;
@@ -465,8 +518,9 @@ function html(): string {
       focused: nameOf(document.activeElement),
       tabOrder: reachable.map(nameOf),
       rebuilt: since,
-      openMessage: list.querySelector(".open .message")?.textContent ?? null,
-      foreign: list.querySelectorAll("a, img, script, iframe, strong, em, code").length,
+      openMessage: findings.querySelector(".open .message")?.textContent ?? null,
+      foreign: findings.querySelectorAll("a, img, script, iframe, strong, em, code").length,
+      ownsOnlyFindings: [...list.children].every((group) => group.getAttribute("role") === "group" && [...group.children].every((row) => row.getAttribute("role") === "option" || row.getAttribute("aria-hidden") === "true")),
       hasFocus: document.hasFocus(),
     });
   }

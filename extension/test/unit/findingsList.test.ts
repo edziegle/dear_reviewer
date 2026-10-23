@@ -4,6 +4,7 @@ import {
   countText,
   currentFinding,
   focusAfterRemoval,
+  focusAfterRemovalScript,
   type Listed,
 } from "../../src/findingsList";
 
@@ -167,14 +168,19 @@ describe("Where the focus goes when its Finding goes", () => {
     );
   });
 
+  it("goes to the first Finding when none from before is left, as when a new Ask replaced them", () => {
+    assert.strictEqual(focusAfterRemoval(["a", "b"], ["x", "y"], "b"), "x");
+  });
+
   it("goes nowhere in the list when none is left", () => {
     assert.strictEqual(focusAfterRemoval(["a"], [], "a"), undefined);
   });
 
-  it("runs on its own, as the webview runs it from its source", () => {
+  it("is the script the webview runs, which uses nothing from outside itself", () => {
     const copy = new Function(
-      `return (${focusAfterRemoval.toString()});`
+      `return (${focusAfterRemovalScript});`
     )() as typeof focusAfterRemoval;
     assert.strictEqual(copy(["a", "b", "c"], ["a", "c"], "b"), "c");
+    assert.match(focusAfterRemovalScript, /^function focusAfterRemoval\(/);
   });
 });

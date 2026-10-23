@@ -95,26 +95,34 @@ export function countText(
 }
 
 /**
- * Where the focus goes when the list changes under it: the focused Finding
- * if it's still listed, else the one that takes its place, else the one
- * before it, else nowhere in the list. The webview runs it from its source,
- * so it uses nothing from outside itself.
+ * `focusAfterRemoval` as plain JavaScript, which the webview runs as it
+ * stands: a string, so no bundler, minifier or coverage tool can change
+ * the copy the page gets. The extension and the unit tests run the same
+ * text, as `focusAfterRemoval`.
  */
-export function focusAfterRemoval(
-  before: readonly string[],
-  after: readonly string[],
-  focused: string
-): string | undefined {
+export const focusAfterRemovalScript = `function focusAfterRemoval(before, after, focused) {
   if (after.includes(focused)) return focused;
   const i = before.indexOf(focused);
   const later = before.slice(i + 1).find((id) => after.includes(id));
   if (later !== undefined) return later;
-  const earlier = before
-    .slice(0, Math.max(i, 0))
-    .reverse()
-    .find((id) => after.includes(id));
-  return earlier ?? after.at(-1);
-}
+  const earlier = before.slice(0, Math.max(i, 0)).reverse().find((id) => after.includes(id));
+  if (earlier !== undefined) return earlier;
+  return after[0];
+}`;
+
+/**
+ * Where the focus goes when the list changes under it: the focused Finding
+ * if it's still listed, else the one that takes its place, else the one
+ * before it, else, when none of the Findings from before is left, the
+ * first Finding listed now, and with none listed, nowhere in the list.
+ */
+export const focusAfterRemoval = new Function(
+  `return (${focusAfterRemovalScript});`
+)() as (
+  before: readonly string[],
+  after: readonly string[],
+  focused: string
+) => string | undefined;
 
 function rowOf(finding: Listed, fileName: string): FindingsRow {
   const first = finding.first + 1;

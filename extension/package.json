@@ -381,6 +381,11 @@
         "category": "Dear Reviewer"
       },
       {
+        "command": "dearReviewer.askAboutFinding",
+        "title": "Ask the Assistant about Finding",
+        "category": "Dear Reviewer"
+      },
+      {
         "command": "dearReviewer.showCodeFlow",
         "title": "Show Code Flow",
         "category": "Dear Reviewer",
@@ -710,6 +715,10 @@
         },
         {
           "command": "dearReviewer.revealFinding",
+          "when": "false"
+        },
+        {
+          "command": "dearReviewer.askAboutFinding",
           "when": "false"
         },
         {

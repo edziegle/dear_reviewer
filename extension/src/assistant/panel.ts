@@ -219,7 +219,13 @@ function shownConversation(
       ? { ...message, html: render(message.text, { references: true }) }
       : message
   );
-  return { ...state, messages };
+  // A Finding's chip says only that it is one: its message is the
+  // Assistant's, from reading other people's code, and can be long.
+  const context = state.context?.map(({ finding, ...selection }) => ({
+    ...selection,
+    ...(finding && { finding: {} }),
+  }));
+  return { ...state, messages, ...(context && { context }) };
 }
 
 function html(): string {
@@ -299,13 +305,14 @@ ${catSymbol}
     const span = document.createElement("span");
     span.className = "chip";
     const side = s.side === "commit" ? "commit " + s.commit.slice(0, 7) : s.side;
-    span.textContent = s.path + " · " + side + " · " + lines(s);
+    const finding = s.finding ? "Finding · " : "";
+    span.textContent = finding + s.path + " · " + side + " · " + lines(s);
     if (onRemove) {
       const button = document.createElement("button");
       button.type = "button";
       button.innerHTML = closeIcon;
       button.title = "Don't send this selection";
-      button.setAttribute("aria-label", "Don't send " + s.path + ", " + lines(s));
+      button.setAttribute("aria-label", "Don't send " + (s.finding ? "the Finding on " : "") + s.path + ", " + lines(s));
       button.addEventListener("click", onRemove);
       span.append(button);
     }

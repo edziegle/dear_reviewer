@@ -1683,6 +1683,24 @@ export function activate(context: vscode.ExtensionContext) {
       }
     ),
     vscode.commands.registerCommand(
+      "dearReviewer.askAboutFinding",
+      async (target?: string) => {
+        const finding = findings.get(target);
+        if (!finding) {
+          showNoFinding();
+          return;
+        }
+        // Its own Change's Assistant, whichever Change is in front: the
+        // Finding belongs to that conversation.
+        const selection = await findings.selectionOf(finding);
+        if (selection) await assistants.addSelection(finding.change, selection);
+        else
+          void vscode.window.showErrorMessage(
+            `Couldn't read ${finding.place.path} to ask the Assistant about the Finding.`
+          );
+      }
+    ),
+    vscode.commands.registerCommand(
       "dearReviewer.showCodeFlow",
       async (target?: ChangeTarget | vscode.Uri) => {
         const change = await changeFor(target, "Show Code Flow");

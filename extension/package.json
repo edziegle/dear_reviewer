@@ -437,7 +437,9 @@
         "dearReviewer.claudeCommand": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^(?!\\s*(?:\"[^\"]*\"|'[^']*')\\s*$)",
+            "patternErrorMessage": "Leave out the quotes around an item: each item is one whole argument, and the command runs without a shell. "
           },
           "default": [],
           "markdownDescription": "The command that starts `claude` for the Assistant: the program, then its arguments, such as `[\"/opt/homebrew/bin/claude\"]` or `[\"docker\", \"exec\", \"-i\", \"my-box\", \"claude\"]`. Dear Reviewer adds its own arguments after yours and runs the command without a shell. Leave empty to use the `claude` on the PATH or in a usual install location. The Assistant uses whichever Claude login this `claude` has; sign in by running `claude` in a terminal. [What a custom command must do](https://github.com/edziegle/dear_reviewer/wiki/custom-claude-command).",

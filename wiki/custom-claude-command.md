@@ -12,6 +12,8 @@ Open your user `settings.json` and set `dearReviewer.claudeCommand` to a list of
 
 The first item is the program, a path (a leading `~` is expanded) or a name on the PATH, and Dear Reviewer adds its own arguments after the others and runs the command without a shell.
 
+Type each item without quotes around it, also when you add it with **Add Item** in the Settings editor. Each item is one whole argument, spaces included, and no shell removes quotes, so quotes typed around `~/bin/claude-in-sandbox` become part of the path, and the `~` isn't expanded. The Settings editor warns about an item wrapped in quotes, and when the command can't run, the Assistant shows it as JSON, so stray quotes show.
+
 You can also point it at a script of your own:
 
 ```json

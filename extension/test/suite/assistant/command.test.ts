@@ -141,7 +141,7 @@ describe("The Reviewer's own command for claude", () => {
       );
       const status = await loginStatus();
       assert.ok(
-        status?.tooltip?.includes(`${launcher} ${marker}`),
+        status?.tooltip?.includes(JSON.stringify([launcher, marker])),
         status?.tooltip
       );
     });
@@ -161,7 +161,10 @@ describe("The Reviewer's own command for claude", () => {
 
       await eventually(async () => {
         const panel = await renderedPanel(title);
-        assert.ok(panel?.problem?.includes(`${missing} exec`), panel?.problem);
+        assert.ok(
+          panel?.problem?.includes(JSON.stringify([missing, "exec"])),
+          panel?.problem
+        );
         assert.strictEqual(panel?.problemAction, "Set Claude Command");
       });
     } finally {

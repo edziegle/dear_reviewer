@@ -130,9 +130,12 @@ export interface ClaudeCommand {
   args: string[];
 }
 
-/** The command as the Reviewer would type it, for messages. */
+/**
+ * The command as JSON, for messages: quotes and spaces inside an item, which
+ * the Settings editor shows without escaping, would hide in a joined string.
+ */
 export function describeCommand(command: ClaudeCommand): string {
-  return [command.program, ...command.args].join(" ");
+  return JSON.stringify([command.program, ...command.args]);
 }
 
 /**
@@ -154,7 +157,7 @@ export function resolveClaude(
     if (program) return { program, args };
     throw new ClaudeProblem(
       "notFound",
-      `Claude Code isn't at ${first}, so \`${configured.join(" ")}\` can't run. Install Claude Code, or set Dear Reviewer: Claude Command to the command that starts \`claude\`.`
+      `Claude Code isn't at ${JSON.stringify(first)}, so \`${JSON.stringify(configured)}\` can't run. Install Claude Code, or set Dear Reviewer: Claude Command to the command that starts \`claude\`.`
     );
   }
   const dirs = [

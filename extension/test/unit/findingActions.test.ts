@@ -1,5 +1,37 @@
 import * as assert from "assert";
-import { quickFixLabels } from "../../src/findingActions";
+import { quickFixLabels, selectedLines } from "../../src/findingActions";
+
+describe("Which lines a Quick Fix request asks about", () => {
+  const at = (line: number, character: number) => ({ line, character });
+
+  it("is the cursor's line", () => {
+    assert.deepStrictEqual(selectedLines(at(4, 7), at(4, 7)), {
+      first: 4,
+      last: 4,
+    });
+  });
+
+  it("leaves out the line after a selection of whole lines", () => {
+    assert.deepStrictEqual(selectedLines(at(4, 0), at(6, 0)), {
+      first: 4,
+      last: 5,
+    });
+  });
+
+  it("keeps the last line of a selection that ends inside it", () => {
+    assert.deepStrictEqual(selectedLines(at(4, 0), at(6, 1)), {
+      first: 4,
+      last: 6,
+    });
+  });
+
+  it("keeps the line of an empty selection at the start of a line", () => {
+    assert.deepStrictEqual(selectedLines(at(4, 0), at(4, 0)), {
+      first: 4,
+      last: 4,
+    });
+  });
+});
 
 describe("What a Finding's Quick Fix actions are called", () => {
   it("calls a Finding alone on the line plain Finding", () => {
@@ -36,6 +68,28 @@ describe("What a Finding's Quick Fix actions are called", () => {
     assert.strictEqual(
       label,
       "Finding on line 1, “This message runs on far longer than any…”"
+    );
+  });
+
+  it("cuts the message by whole characters, never inside a surrogate pair or before a combining mark", () => {
+    const label = (message: string) =>
+      quickFixLabels([
+        { first: 1, last: 1, message: "Short" },
+        { first: 1, last: 1, message },
+      ])[1];
+
+    assert.strictEqual(
+      label(`${"a".repeat(39)}😀😀`),
+      `Finding on line 1, “${"a".repeat(39)}😀…”`
+    );
+    assert.strictEqual(
+      label(`${"a".repeat(39)}e\u0301 and more`),
+      `Finding on line 1, “${"a".repeat(39)}e\u0301…”`
+    );
+    assert.strictEqual(
+      label(`${"😀".repeat(40)}`),
+      `Finding on line 1, “${"😀".repeat(40)}”`,
+      "forty emoji are forty characters"
     );
   });
 

@@ -16,7 +16,7 @@ import { Change, changeName } from "./changeWorkspace";
 import type { ThreadPlace } from "./github/client";
 import { setContext } from "./context";
 import { messageOf } from "./errors";
-import { quickFixLabels } from "./findingActions";
+import { quickFixLabels, selectedLines } from "./findingActions";
 import { gutterIcons, type GutterIcon, type IconSpan } from "./findingGutter";
 import { reviewKey } from "./reviewKeys";
 import { countLines, readInWorktree } from "./worktreeFile";
@@ -296,13 +296,14 @@ export class Findings
     range: vscode.Range | vscode.Selection
   ): vscode.CodeAction[] {
     const uri = document.uri.toString();
+    const selected = selectedLines(range.start, range.end);
     const here = this.all()
       .filter((f) => {
         const lines = rangeOf(f.place);
         return (
           fileOf(f).toString() === uri &&
-          lines.start.line <= range.end.line &&
-          range.start.line <= lines.end.line
+          lines.start.line <= selected.last &&
+          selected.first <= lines.end.line
         );
       })
       .sort(

@@ -107,15 +107,18 @@ export function convertFinding(entry: FindingEntry): Thenable<unknown> {
 }
 
 /**
- * The Finding actions the editor's Quick Fix offers on the line, counted from
- * 0, of the file, leaving out any other extension's. The editor cancels a
- * request when its document changes under it, as when a Comment was just
- * saved, so a cancelled one is asked again.
+ * The Finding actions the editor's Quick Fix offers at the cursor on a line,
+ * counted from 0, or on a selection, leaving out any other extension's. The
+ * editor cancels a request when its document changes under it, as when a
+ * Comment was just saved, so a cancelled one is asked again. It answers only
+ * for a document it has loaded, so the file is opened first.
  */
 export async function findingQuickFixes(
   file: string,
-  line: number
+  at: number | vscode.Range
 ): Promise<FindingQuickFix[]> {
+  const range = typeof at === "number" ? new vscode.Range(at, 0, at, 0) : at;
+  await vscode.workspace.openTextDocument(vscode.Uri.file(file));
   let actions: vscode.CodeAction[] = [];
   let failure: unknown;
   await eventually(async () => {
@@ -125,7 +128,7 @@ export async function findingQuickFixes(
         (await vscode.commands.executeCommand<vscode.CodeAction[]>(
           "vscode.executeCodeActionProvider",
           vscode.Uri.file(file),
-          new vscode.Range(line, 0, line, 0),
+          range,
           vscode.CodeActionKind.QuickFix.value
         )) ?? [];
     } catch (err) {

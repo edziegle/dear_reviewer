@@ -379,6 +379,24 @@ describe("Findings on request", () => {
       [],
       "no Finding on the line"
     );
+    assert.deepStrictEqual(
+      await findingQuickFixes(
+        path.join(head, "util.py"),
+        new vscode.Range(0, 0, 1, 0)
+      ),
+      [],
+      "a selection of the whole line above ends where the Finding starts"
+    );
+    assert.deepStrictEqual(
+      (
+        await findingQuickFixes(
+          path.join(head, "util.py"),
+          new vscode.Range(0, 0, 1, 1)
+        )
+      ).map((a) => a.title),
+      ["Finding: Convert to Comment", "Finding: Dismiss"],
+      "a selection into the Finding's line"
+    );
   });
 
   it("opens a Finding's file at its lines from the view", async () => {
@@ -607,6 +625,8 @@ describe("Findings on request", () => {
   });
 
   it("finds the Finding under the cursor on any of its lines", async () => {
+    await scriptClaude(change, { turns: [replyTurn(longFindingsReply)] });
+    await findIssues(change);
     await vscode.commands.executeCommand("workbench.action.closeAllEditors");
     const editor = await vscode.window.showTextDocument(
       vscode.Uri.file(path.join(head, "util.py"))
@@ -625,6 +645,8 @@ describe("Findings on request", () => {
   });
 
   it("offers each Finding on a line its own Quick Fix actions, told apart by their titles", async () => {
+    await scriptClaude(change, { turns: [replyTurn(longFindingsReply)] });
+    await findIssues(change);
     const baseFile = path.join(base, "util.py");
 
     const actions = await findingQuickFixes(baseFile, 1);
@@ -641,7 +663,7 @@ describe("Findings on request", () => {
     await runQuickFix(actions[3]);
     assert.deepStrictEqual(
       (await findingsView()).map((e) => e.where),
-      ["util.py:1-2 (base)"]
+      ["util.py:1-3", "util.py:1-2 (base)"]
     );
     assert.deepStrictEqual(
       (await findingQuickFixes(baseFile, 1)).map((a) => a.title),

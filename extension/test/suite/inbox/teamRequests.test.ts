@@ -275,7 +275,7 @@ describe("Inbox: Team requests", () => {
     await serveGitHub({
       viewer,
       teams,
-      failQueries: ["ViewerTeams"],
+      failQueries: ["OrganizationTeams"],
       pullRequests: [structuredClone(waitingOnTeam), structuredClone(approved)],
     });
     await refreshInbox();
@@ -291,6 +291,37 @@ describe("Inbox: Team requests", () => {
       ["acme/api #1"],
       "without its team, the request names none"
     );
+  });
+
+  it("still finds Team requests from an organization whose teams lookup succeeds when another's fails", async () => {
+    const elsewhere = pr(10, "Approved by a teammate elsewhere", {
+      repository: "other/svc",
+      requestHistory: [{ type: "requested", team: "other/core", at: at(1) }],
+      reviews: [review("dana", "APPROVED", 2)],
+    });
+    try {
+      await serveGitHub({
+        viewer,
+        teams: [
+          ...teams,
+          { org: "other", slug: "core", members: ["reviewer", "dana"] },
+        ],
+        teamsLookupFailsFor: ["acme"],
+        pullRequests: [structuredClone(elsewhere)],
+      });
+      await configure({ repositories: ["acme/api", "other/svc"] });
+      await refreshInbox();
+
+      const group = (await inbox()).find(
+        (g) => g.label === "Reviewed by my team"
+      );
+      assert.deepStrictEqual(
+        group?.entries.map((e) => e.description),
+        ["other/svc #10 · Approved by @dana · via @other/core"]
+      );
+    } finally {
+      await configure({ repositories: ["acme/api"] });
+    }
   });
 
   it("reads review history only for open pull requests outside the other groups, and only when I'm on a team", async () => {

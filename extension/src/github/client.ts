@@ -371,70 +371,84 @@ ${INBOX_PULL_REQUEST}${withHistory ? `\n${TEAM_HISTORY}` : ""}`;
   /**
    * The teams I'm on in the organizations of these repositories, and the
    * teams above them, with every member of each: a request to a parent team
-   * reaches me through a child team. None when GitHub won't say, such as for
-   * a token without `read:org`, so the Inbox still loads.
+   * reaches me through a child team. Read one organization at a time so the
+   * query stays under GitHub's node limit; an organization GitHub won't say
+   * for, such as for a token without `read:org`, is logged and left out, and
+   * the others still count.
    */
   private async myTeams(
     login: string,
     repositories: string[]
   ): Promise<MyTeam[]> {
-    const owners = new Set(
-      repositories.map((repository) => repository.split("/")[0].toLowerCase())
-    );
-    let data: ViewerTeamsData;
-    try {
-      data = await this.graphql<ViewerTeamsData>(VIEWER_TEAMS, {
-        reviewer: login,
-      });
-    } catch (err) {
-      if (err instanceof GitHubError && !(err instanceof SignInRejectedError))
-        return [];
-      throw err;
+    const owners = new Map<string, string>();
+    for (const repository of repositories) {
+      const owner = repository.split("/")[0];
+      owners.set(owner.toLowerCase(), owner);
     }
-    const teams = new Map<
-      string,
-      { organization: string; slug: string; members: TeamMembersNode }
-    >();
-    for (const organization of data.viewer?.organizations.nodes ?? []) {
-      if (!owners.has(organization.login.toLowerCase())) continue;
-      for (const team of organization.teams.nodes)
+    const slugs = new Map<string, { organization: string; slug: string }>();
+    for (const organization of owners.values()) {
+      let data: OrganizationTeamsData;
+      try {
+        data = await this.graphql<OrganizationTeamsData>(ORGANIZATION_TEAMS, {
+          organization,
+          login,
+        });
+      } catch (err) {
+        if (err instanceof SignInRejectedError) throw err;
+        if (err instanceof GitHubError) {
+          // A repository owned by a person has no teams, which is no failure.
+          if (!/Could not resolve to an Organization/i.test(err.message))
+            console.warn(
+              `Dear Reviewer: couldn't read ${organization}'s teams: ${err.message}`
+            );
+          continue;
+        }
+        throw err;
+      }
+      for (const team of data.organization?.teams.nodes ?? [])
         for (const t of [team, ...team.ancestors.nodes])
-          teams.set(`${organization.login}/${t.slug}`.toLowerCase(), {
-            organization: organization.login,
+          slugs.set(`${organization}/${t.slug}`.toLowerCase(), {
+            organization,
             slug: t.slug,
-            members: t.members,
           });
     }
     return Promise.all(
-      [...teams.values()].map(async ({ organization, slug, members }) => ({
+      [...slugs.values()].map(async ({ organization, slug }) => ({
         name: `${organization}/${slug}`,
-        members: await this.allMembers(organization, slug, members),
+        members: await this.allMembers(organization, slug),
       }))
     );
   }
 
-  /** Every member's login: the first page, then the pages after it. */
+  /** Every member's login, a page at a time. */
   private async allMembers(
     organization: string,
-    slug: string,
-    first: TeamMembersNode
+    slug: string
   ): Promise<string[]> {
-    const logins = first.nodes.map((member) => member.login);
-    let page = first.pageInfo;
+    const logins: string[] = [];
+    let after: string | null = null;
     // A team of more than a thousand members is read no further.
-    for (let i = 0; page.hasNextPage && i < 9; i++) {
+    for (let i = 0; i < 10; i++) {
       try {
         const data: TeamMembersData = await this.graphql<TeamMembersData>(
           TEAM_MEMBERS,
-          { organization, slug, after: page.endCursor }
+          { organization, slug, after }
         );
-        const more = data.organization?.team?.members;
-        if (!more) break;
-        logins.push(...more.nodes.map((member) => member.login));
-        page = more.pageInfo;
+        const members = data.organization?.team?.members;
+        if (!members) break;
+        logins.push(...members.nodes.map((member) => member.login));
+        if (!members.pageInfo.hasNextPage) break;
+        after = members.pageInfo.endCursor;
       } catch (err) {
-        if (err instanceof GitHubError && !(err instanceof SignInRejectedError))
+        if (
+          err instanceof GitHubError &&
+          !(err instanceof SignInRejectedError)
+        ) {
+          console.warn(
+            `Dear Reviewer: couldn't read ${organization}/${slug}'s members: ${err.message}`
+          );
           break;
+        }
         throw err;
       }
     }
@@ -1319,22 +1333,13 @@ const TEAM_HISTORY = `fragment TeamHistory on PullRequest {
   }
 }`;
 
-const TEAM_MEMBERS_FIELDS = `members(first: 100) { nodes { login } pageInfo { hasNextPage endCursor } }`;
-
-/** The teams the viewer is on, in the organizations they are in, with the teams above them. */
-const VIEWER_TEAMS = `query ViewerTeams($reviewer: String!) {
-  viewer {
-    login
-    organizations(first: 100) {
+/** The teams the viewer is on in one organization, with the teams above them; no members yet. */
+const ORGANIZATION_TEAMS = `query OrganizationTeams($organization: String!, $login: String!) {
+  organization(login: $organization) {
+    teams(first: 100, userLogins: [$login]) {
       nodes {
-        login
-        teams(first: 100, userLogins: [$reviewer]) {
-          nodes {
-            slug
-            ${TEAM_MEMBERS_FIELDS}
-            ancestors(first: 10) { nodes { slug ${TEAM_MEMBERS_FIELDS} } }
-          }
-        }
+        slug
+        ancestors(first: 10) { nodes { slug } }
       }
     }
   }
@@ -1353,19 +1358,10 @@ interface TeamMembersNode {
   pageInfo: { hasNextPage: boolean; endCursor: string | null };
 }
 
-interface ViewerTeamsData {
-  viewer: {
-    organizations: {
-      nodes: {
-        login: string;
-        teams: {
-          nodes: {
-            slug: string;
-            members: TeamMembersNode;
-            ancestors: { nodes: { slug: string; members: TeamMembersNode }[] };
-          }[];
-        };
-      }[];
+interface OrganizationTeamsData {
+  organization: {
+    teams: {
+      nodes: { slug: string; ancestors: { nodes: { slug: string }[] } }[];
     };
   } | null;
 }

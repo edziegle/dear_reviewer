@@ -21,6 +21,38 @@ import * as http from "http";
 import { AddressInfo } from "net";
 import * as zlib from "zlib";
 
+/** The most nodes a single GraphQL query may request, as on github.com. */
+export const MAX_NODE_LIMIT = 500_000;
+
+/**
+ * The worst case GitHub counts for a query before running it: the sum, over
+ * each connection field (one with a literal `first`/`last` argument), of the
+ * product of every such argument from the root down to it. Named fragments
+ * are not expanded, since none of this fake's connections sit inside one.
+ */
+export function worstCaseNodeCount(query: string): number {
+  let total = 0;
+  const multipliers = [1];
+  let fieldStart = 0;
+  for (let i = 0; i < query.length; i++) {
+    if (query[i] === "{") {
+      const header = query.slice(fieldStart, i);
+      const match = /\((?:[^()]*\b(?:first|last):\s*(\d+))[^()]*\)\s*$/.exec(
+        header.trimEnd()
+      );
+      const multiplier =
+        multipliers[multipliers.length - 1] * (match ? Number(match[1]) : 1);
+      if (match) total += multiplier;
+      multipliers.push(multiplier);
+      fieldStart = i + 1;
+    } else if (query[i] === "}") {
+      multipliers.pop();
+      fieldStart = i + 1;
+    }
+  }
+  return total;
+}
+
 export type CheckState =
   "SUCCESS" | "FAILURE" | "ERROR" | "PENDING" | "EXPECTED";
 
@@ -228,6 +260,12 @@ export interface FakeGitHubState {
   failQueries?: string[];
   /** Queries, by operation name, that GitHub never answers. */
   stallQueries?: string[];
+  /**
+   * Organizations whose teams GitHub refuses to say, as for a token without
+   * `read:org` scoped to them, SAML SSO not authorized, or an OAuth app
+   * restriction; others still answer.
+   */
+  teamsLookupFailsFor?: string[];
 }
 
 export interface RecordedRequest {
@@ -319,6 +357,29 @@ export async function startFakeGitHub(): Promise<{
         return void stalled.push(res);
       if (operation && state.failQueries?.includes(operation))
         return send(200, { errors: [{ message: `${operation} failed` }] });
+      const organization = (variables as Record<string, string>).organization;
+      if (
+        operation === "OrganizationTeams" &&
+        organization &&
+        state.teamsLookupFailsFor?.some(
+          (org) => org.toLowerCase() === organization.toLowerCase()
+        )
+      )
+        return send(200, {
+          errors: [{ message: "Resource not accessible by integration" }],
+        });
+      const nodeCount = worstCaseNodeCount(query);
+      if (nodeCount > MAX_NODE_LIMIT)
+        return send(200, {
+          errors: [
+            {
+              message:
+                `MAX_NODE_LIMIT_EXCEEDED: By the time this query traverses to ` +
+                `the members connection, it is requesting up to ${nodeCount} ` +
+                `possible nodes which exceeds the maximum limit of ${MAX_NODE_LIMIT}.`,
+            },
+          ],
+        });
       try {
         return send(200, { data: graphql(query, variables) });
       } catch (err) {
@@ -339,17 +400,19 @@ export async function startFakeGitHub(): Promise<{
         login: state.viewer.login,
         avatarUrl: `${state.avatarOrigin ?? url}/avatars/${encodeURIComponent(state.viewer.login)}?v=4`,
       };
-    if (data.viewer && /\borganizations\(/.test(query))
-      (data.viewer as Record<string, unknown>).organizations = {
-        nodes: viewerOrganizations(),
-      };
     if (/\borganization\(login:\s*\$organization\)/.test(query)) {
-      const team = teamNamed(variables.organization, variables.slug);
-      data.organization = {
-        team: team && {
-          members: membersPage(membersOf(team), Number(variables.after ?? 0)),
-        },
-      };
+      if (/\bteams\(first:/.test(query)) {
+        data.organization = {
+          teams: organizationTeams(variables.organization, variables.login),
+        };
+      } else {
+        const team = teamNamed(variables.organization, variables.slug);
+        data.organization = {
+          team: team && {
+            members: membersPage(membersOf(team), Number(variables.after ?? 0)),
+          },
+        };
+      }
     }
     for (const [, alias, variable] of query.matchAll(
       /(\w+)\s*:\s*search\(\s*query:\s*\$(\w+)/g
@@ -970,27 +1033,22 @@ export async function startFakeGitHub(): Promise<{
     return names;
   }
 
-  /** The organizations the viewer is in, with the teams they are directly on and those teams' parents. */
-  function viewerOrganizations() {
-    const me = state.viewer.login;
-    const members = (team: FakeTeam) => membersPage(membersOf(team), 0);
-    return [...new Set((state.teams ?? []).map((t) => t.org))].map((org) => ({
-      login: org,
-      teams: {
-        nodes: (state.teams ?? [])
-          .filter((t) => t.org === org && t.members.includes(me))
-          .map((team) => ({
-            slug: team.slug,
-            members: members(team),
-            ancestors: {
-              nodes: ancestorsOf(team).map((a) => ({
-                slug: a.slug,
-                members: members(a),
-              })),
-            },
-          })),
-      },
-    }));
+  /** The teams a user is directly on in one organization, with their ancestors' slugs; no members. */
+  function organizationTeams(organization: string, login: string) {
+    return {
+      nodes: (state.teams ?? [])
+        .filter(
+          (t) =>
+            t.org.toLowerCase() === organization.toLowerCase() &&
+            t.members.includes(login)
+        )
+        .map((team) => ({
+          slug: team.slug,
+          ancestors: {
+            nodes: ancestorsOf(team).map((a) => ({ slug: a.slug })),
+          },
+        })),
+    };
   }
 
   /** A hundred members from `offset`, as GitHub pages them. */

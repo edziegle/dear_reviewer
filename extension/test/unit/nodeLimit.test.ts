@@ -1,14 +1,28 @@
 import * as assert from "assert";
 import { MAX_NODE_LIMIT, worstCaseNodeCount } from "../fakeGitHub";
+import { ORGANIZATION_TEAMS, TEAM_MEMBERS } from "../../src/github/queries";
 
-// The teams lookup once asked every organization the viewer is in for every
-// team, with every member of each (see #221): the shape that made GitHub
-// answer MAX_NODE_LIMIT_EXCEEDED for every user, whatever their token's
-// scopes or organizations. These cases pin that regression to the fake's
-// own GitHub-node-counting algorithm, and confirm the fix's queries stay
-// well under the limit it enforces.
+// GitHub weighs a query's worst case before running it and refuses one over
+// 500,000 nodes. The fake does the same, so a query the client sends that is
+// too big fails the tests rather than only the Reviewer's Inbox (#221).
 describe("worstCaseNodeCount", () => {
-  it("exceeds GitHub's limit for the teams lookup's shape before #221's fix", () => {
+  it("counts a connection inside a named fragment at every spread", () => {
+    const query = `query Two($a: String!, $b: String!) {
+      first: search(query: $a, type: ISSUE, first: 100) { nodes { ...Reviews } }
+      second: search(query: $b, type: ISSUE, first: 100) { nodes { ...Reviews } }
+    }
+    fragment Reviews on PullRequest {
+      latestReviews(first: 100) { nodes { state } }
+    }`;
+
+    // Two searches at 100 each, and the fragment's 100 reviews under each.
+    assert.strictEqual(worstCaseNodeCount(query), 100 + 100 + 10_000 + 10_000);
+  });
+
+  it("exceeds the limit for the teams lookup's shape before #221's fix", () => {
+    // The query as it stood: every organization the Reviewer is in, every
+    // team in each, and the members of each team and of its ancestors. The
+    // code is gone, so this is the only copy of it left.
     const query = `query ViewerTeams($reviewer: String!) {
       viewer {
         login
@@ -34,34 +48,21 @@ describe("worstCaseNodeCount", () => {
 
     assert.ok(
       worstCaseNodeCount(query) > MAX_NODE_LIMIT,
-      "the old shape must exceed the limit, or this fake wouldn't have caught #221"
+      "the old shape must exceed the limit, or the fake wouldn't catch #221"
     );
   });
 
-  it("stays under the limit for one organization's teams and their ancestors, without members", () => {
-    const query = `query OrganizationTeams($organization: String!, $login: String!) {
-      organization(login: $organization) {
-        teams(first: 100, userLogins: [$login]) {
-          nodes {
-            slug
-            ancestors(first: 10) { nodes { slug } }
-          }
-        }
-      }
-    }`;
-
-    assert.ok(worstCaseNodeCount(query) < MAX_NODE_LIMIT);
+  it("stays under the limit for the teams query the client sends", () => {
+    assert.ok(
+      worstCaseNodeCount(ORGANIZATION_TEAMS) < MAX_NODE_LIMIT,
+      `ORGANIZATION_TEAMS costs ${worstCaseNodeCount(ORGANIZATION_TEAMS)}`
+    );
   });
 
-  it("stays under the limit for a page of one team's members", () => {
-    const query = `query TeamMembers($organization: String!, $slug: String!, $after: String) {
-      organization(login: $organization) {
-        team(slug: $slug) {
-          members(first: 100, after: $after) { nodes { login } pageInfo { hasNextPage endCursor } }
-        }
-      }
-    }`;
-
-    assert.ok(worstCaseNodeCount(query) < MAX_NODE_LIMIT);
+  it("stays under the limit for the team members query the client sends", () => {
+    assert.ok(
+      worstCaseNodeCount(TEAM_MEMBERS) < MAX_NODE_LIMIT,
+      `TEAM_MEMBERS costs ${worstCaseNodeCount(TEAM_MEMBERS)}`
+    );
   });
 });

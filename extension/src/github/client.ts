@@ -8,6 +8,7 @@ import {
   requestedOfReviewerAt,
   type ReviewRequest,
 } from "./reviewRequests";
+import { ORGANIZATION_TEAMS, TEAM_MEMBERS } from "./queries";
 import { fetchWithin, REQUEST_TIMEOUT_MS } from "./request";
 import {
   answeredByTeam,
@@ -227,7 +228,19 @@ export class NotSignedInError extends Error {
   }
 }
 
-export class GitHubError extends Error {}
+export class GitHubError extends Error {
+  /**
+   * The `type` of each error GitHub answered with, such as `NOT_FOUND`, so a
+   * caller can tell the kinds apart without reading the message's English.
+   * Empty where GitHub gave no type, as for a failed request.
+   */
+  constructor(
+    message: string,
+    readonly types: readonly string[] = []
+  ) {
+    super(message);
+  }
+}
 
 /** GitHub turned the token down: signing in again is the way out. */
 export class SignInRejectedError extends GitHubError {
@@ -371,9 +384,12 @@ ${INBOX_PULL_REQUEST}${withHistory ? `\n${TEAM_HISTORY}` : ""}`;
   /**
    * The teams I'm on in the organizations of these repositories, and the
    * teams above them, with every member of each: a request to a parent team
-   * reaches me through a child team. Read one organization at a time so the
-   * query stays under GitHub's node limit; an organization GitHub won't say
-   * for, such as for a token without `read:org`, is logged and left out, and
+   * reaches me through a child team.
+   *
+   * One query per organization, all at once, each carrying the first hundred
+   * members of every team it answers with; only a team of more than a hundred
+   * costs a request of its own. An organization GitHub won't say for, such as
+   * for a token without `read:org`, is logged and left out, and the teams of
    * the others still count.
    */
   private async myTeams(
@@ -385,67 +401,98 @@ ${INBOX_PULL_REQUEST}${withHistory ? `\n${TEAM_HISTORY}` : ""}`;
       const owner = repository.split("/")[0];
       owners.set(owner.toLowerCase(), owner);
     }
-    const slugs = new Map<string, { organization: string; slug: string }>();
-    for (const organization of owners.values()) {
-      let data: OrganizationTeamsData;
-      try {
-        data = await this.graphql<OrganizationTeamsData>(ORGANIZATION_TEAMS, {
-          organization,
-          login,
-        });
-      } catch (err) {
-        if (err instanceof SignInRejectedError) throw err;
-        if (err instanceof GitHubError) {
-          // A repository owned by a person has no teams, which is no failure.
-          if (!/Could not resolve to an Organization/i.test(err.message))
-            console.warn(
-              `Dear Reviewer: couldn't read ${organization}'s teams: ${err.message}`
-            );
-          continue;
-        }
-        throw err;
-      }
-      for (const team of data.organization?.teams.nodes ?? [])
+    const lookups = await Promise.all(
+      [...owners.values()].map(
+        async (organization) =>
+          [
+            organization,
+            await this.organizationTeams(organization, login),
+          ] as const
+      )
+    );
+    const teams = new Map<
+      string,
+      { organization: string; slug: string; members: TeamMembersNode }
+    >();
+    for (const [organization, nodes] of lookups)
+      for (const team of nodes)
         for (const t of [team, ...team.ancestors.nodes])
-          slugs.set(`${organization}/${t.slug}`.toLowerCase(), {
+          teams.set(`${organization}/${t.slug}`.toLowerCase(), {
             organization,
             slug: t.slug,
+            members: t.members,
           });
-    }
-    return Promise.all(
-      [...slugs.values()].map(async ({ organization, slug }) => ({
+    // One team at a time, so a Reviewer on many teams doesn't open a request
+    // for each at once and meet GitHub's secondary rate limits. All but a
+    // team of more than a hundred is already read, and asks nothing further.
+    const mine: MyTeam[] = [];
+    for (const { organization, slug, members } of teams.values())
+      mine.push({
         name: `${organization}/${slug}`,
-        members: await this.allMembers(organization, slug),
-      }))
-    );
+        members: await this.allMembers(organization, slug, members),
+      });
+    return mine;
   }
 
-  /** Every member's login, a page at a time. */
+  /**
+   * The teams of one organization the viewer is on, with the first page of
+   * each team's members; none, with a word about why, when GitHub won't say.
+   */
+  private async organizationTeams(
+    organization: string,
+    login: string
+  ): Promise<OrganizationTeamNode[]> {
+    try {
+      const data = await this.graphql<OrganizationTeamsData>(
+        ORGANIZATION_TEAMS,
+        { organization, login }
+      );
+      return data.organization?.teams.nodes ?? [];
+    } catch (err) {
+      if (err instanceof SignInRejectedError) throw err;
+      if (err instanceof GitHubError) {
+        // A repository of a person, or of an organization under another name,
+        // resolves to no organization: there are no teams to find, which
+        // GitHub reports as NOT_FOUND rather than as a refusal.
+        console.warn(
+          err.types.includes("NOT_FOUND")
+            ? `Dear Reviewer: no organization named ${organization}, so no Team requests from its repositories`
+            : `Dear Reviewer: couldn't read ${organization}'s teams, so no Team requests from its repositories: ${err.message}`
+        );
+        return [];
+      }
+      throw err;
+    }
+  }
+
+  /** Every member's login: the first page, then the pages after it. */
   private async allMembers(
     organization: string,
-    slug: string
+    slug: string,
+    first: TeamMembersNode
   ): Promise<string[]> {
-    const logins: string[] = [];
-    let after: string | null = null;
+    const logins = first.nodes.map((member) => member.login);
+    let page = first.pageInfo;
     // A team of more than a thousand members is read no further.
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; page.hasNextPage && i < 9; i++) {
       try {
         const data: TeamMembersData = await this.graphql<TeamMembersData>(
           TEAM_MEMBERS,
-          { organization, slug, after }
+          { organization, slug, after: page.endCursor }
         );
-        const members = data.organization?.team?.members;
-        if (!members) break;
-        logins.push(...members.nodes.map((member) => member.login));
-        if (!members.pageInfo.hasNextPage) break;
-        after = members.pageInfo.endCursor;
+        const more = data.organization?.team?.members;
+        if (!more) break;
+        logins.push(...more.nodes.map((member) => member.login));
+        page = more.pageInfo;
       } catch (err) {
         if (
           err instanceof GitHubError &&
           !(err instanceof SignInRejectedError)
         ) {
+          // The team counts with the members read so far, so a review by a
+          // member on a page that never arrived goes unrecognized.
           console.warn(
-            `Dear Reviewer: couldn't read ${organization}/${slug}'s members: ${err.message}`
+            `Dear Reviewer: read only ${logins.length} members of ${organization}/${slug}, so a review by another member won't count as my team's: ${err.message}`
           );
           break;
         }
@@ -908,10 +955,13 @@ ${paths
     if (!res.ok) throw new GitHubError(`GitHub answered ${res.status}`);
     const body = (await res.json()) as {
       data?: T;
-      errors?: { message: string }[];
+      errors?: { message: string; type?: string }[];
     };
     if (body.errors?.length)
-      throw new GitHubError(body.errors.map((e) => e.message).join("; "));
+      throw new GitHubError(
+        body.errors.map((e) => e.message).join("; "),
+        body.errors.flatMap((e) => (e.type ? [e.type] : []))
+      );
     return body.data as T;
   }
 }
@@ -1333,37 +1383,20 @@ const TEAM_HISTORY = `fragment TeamHistory on PullRequest {
   }
 }`;
 
-/** The teams the viewer is on in one organization, with the teams above them; no members yet. */
-const ORGANIZATION_TEAMS = `query OrganizationTeams($organization: String!, $login: String!) {
-  organization(login: $organization) {
-    teams(first: 100, userLogins: [$login]) {
-      nodes {
-        slug
-        ancestors(first: 10) { nodes { slug } }
-      }
-    }
-  }
-}`;
-
-const TEAM_MEMBERS = `query TeamMembers($organization: String!, $slug: String!, $after: String) {
-  organization(login: $organization) {
-    team(slug: $slug) {
-      members(first: 100, after: $after) { nodes { login } pageInfo { hasNextPage endCursor } }
-    }
-  }
-}`;
-
 interface TeamMembersNode {
   nodes: { login: string }[];
   pageInfo: { hasNextPage: boolean; endCursor: string | null };
 }
 
+/** A team the viewer is on, with its first page of members and the teams above it. */
+interface OrganizationTeamNode {
+  slug: string;
+  members: TeamMembersNode;
+  ancestors: { nodes: { slug: string; members: TeamMembersNode }[] };
+}
+
 interface OrganizationTeamsData {
-  organization: {
-    teams: {
-      nodes: { slug: string; ancestors: { nodes: { slug: string }[] } }[];
-    };
-  } | null;
+  organization: { teams: { nodes: OrganizationTeamNode[] } } | null;
 }
 
 interface TeamMembersData {

@@ -324,6 +324,55 @@ describe("Inbox: Team requests", () => {
     }
   });
 
+  it("asks once per organization and nothing more for teams of under a hundred", async () => {
+    await serve([approved]);
+
+    const operations = (await requestsToGitHub()).flatMap((r) => {
+      const query = (r.body as { query?: string } | undefined)?.query ?? "";
+      return /^\s*query\s+(\w+)/.exec(query)?.[1] ?? [];
+    });
+
+    assert.deepStrictEqual(
+      operations.filter((o) => o === "OrganizationTeams").length,
+      1,
+      `one lookup for acme, the only owner: ${JSON.stringify(operations)}`
+    );
+    assert.deepStrictEqual(
+      operations.filter((o) => o === "TeamMembers"),
+      [],
+      "the teams query carries the members of a team of under a hundred"
+    );
+  });
+
+  it("keeps the Team requests of an organization alongside a repository whose owner is no organization", async () => {
+    const personal = pr(11, "In my own repository", {
+      repository: "reviewer/scratch",
+      author: "reviewer",
+    });
+    try {
+      await serveGitHub({
+        viewer,
+        teams,
+        notOrganizations: ["reviewer"],
+        pullRequests: [structuredClone(approved), structuredClone(personal)],
+      });
+      await configure({ repositories: ["acme/api", "reviewer/scratch"] });
+      await refreshInbox();
+
+      const groups = await inbox();
+      assert.deepStrictEqual(
+        labels(groups.find((g) => g.label === "Reviewed by my team")),
+        ["Approved by a teammate"]
+      );
+      assert.deepStrictEqual(
+        labels(groups.find((g) => g.label === "Authored by me")),
+        ["In my own repository"]
+      );
+    } finally {
+      await configure({ repositories: ["acme/api"] });
+    }
+  });
+
   it("reads review history only for open pull requests outside the other groups, and only when I'm on a team", async () => {
     await serve([approved], []);
     const without = JSON.stringify(await requestsToGitHub());

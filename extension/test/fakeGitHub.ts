@@ -24,19 +24,59 @@ import * as zlib from "zlib";
 /** The most nodes a single GraphQL query may request, as on github.com. */
 export const MAX_NODE_LIMIT = 500_000;
 
+/** The body of each `fragment Name on Type { ... }` the query defines. */
+function fragmentBodies(query: string): Map<string, string> {
+  const bodies = new Map<string, string>();
+  for (const match of query.matchAll(/fragment\s+(\w+)\s+on\s+\w+\s*\{/g)) {
+    const open = match.index + match[0].length - 1;
+    let depth = 0;
+    for (let i = open; i < query.length; i++) {
+      if (query[i] === "{") depth++;
+      else if (query[i] === "}" && --depth === 0) {
+        bodies.set(match[1], query.slice(open + 1, i));
+        break;
+      }
+    }
+  }
+  return bodies;
+}
+
+/**
+ * The query with every `...Name` spread replaced by the fragment's body, and
+ * the fragment definitions dropped. GitHub weighs a query as the server would
+ * resolve it, so a connection inside a fragment counts wherever the fragment
+ * is spread; the Inbox's searches reach most of theirs that way.
+ */
+function withFragmentsExpanded(query: string): string {
+  const bodies = fragmentBodies(query);
+  let expanded = query.replace(/fragment\s+\w+\s+on\s+\w+\s*\{[\s\S]*/, "");
+  // Spreads nest, so expand until nothing is left to replace. A fragment that
+  // spreads itself would never settle, which GraphQL forbids anyway.
+  for (let i = 0; i < bodies.size + 1; i++) {
+    const next = expanded.replace(
+      /\.\.\.(\w+)/g,
+      (spread, name: string) => bodies.get(name) ?? spread
+    );
+    if (next === expanded) break;
+    expanded = next;
+  }
+  return expanded;
+}
+
 /**
  * The worst case GitHub counts for a query before running it: the sum, over
  * each connection field (one with a literal `first`/`last` argument), of the
- * product of every such argument from the root down to it. Named fragments
- * are not expanded, since none of this fake's connections sit inside one.
+ * product of every such argument from the root down to it. Fragments are
+ * expanded first, since a connection inside one counts at every spread.
  */
 export function worstCaseNodeCount(query: string): number {
+  const expanded = withFragmentsExpanded(query);
   let total = 0;
   const multipliers = [1];
   let fieldStart = 0;
-  for (let i = 0; i < query.length; i++) {
-    if (query[i] === "{") {
-      const header = query.slice(fieldStart, i);
+  for (let i = 0; i < expanded.length; i++) {
+    if (expanded[i] === "{") {
+      const header = expanded.slice(fieldStart, i);
       const match = /\((?:[^()]*\b(?:first|last):\s*(\d+))[^()]*\)\s*$/.exec(
         header.trimEnd()
       );
@@ -45,7 +85,7 @@ export function worstCaseNodeCount(query: string): number {
       if (match) total += multiplier;
       multipliers.push(multiplier);
       fieldStart = i + 1;
-    } else if (query[i] === "}") {
+    } else if (expanded[i] === "}") {
       multipliers.pop();
       fieldStart = i + 1;
     }
@@ -266,6 +306,11 @@ export interface FakeGitHubState {
    * restriction; others still answer.
    */
   teamsLookupFailsFor?: string[];
+  /**
+   * Logins that are no organization, as a person's account or an
+   * organization since renamed: GitHub answers NOT_FOUND for their teams.
+   */
+  notOrganizations?: string[];
 }
 
 export interface RecordedRequest {
@@ -358,13 +403,19 @@ export async function startFakeGitHub(): Promise<{
       if (operation && state.failQueries?.includes(operation))
         return send(200, { errors: [{ message: `${operation} failed` }] });
       const organization = (variables as Record<string, string>).organization;
-      if (
-        operation === "OrganizationTeams" &&
-        organization &&
-        state.teamsLookupFailsFor?.some(
-          (org) => org.toLowerCase() === organization.toLowerCase()
-        )
-      )
+      const named = (logins?: string[]) =>
+        !!organization &&
+        !!logins?.some((l) => l.toLowerCase() === organization.toLowerCase());
+      if (operation === "OrganizationTeams" && named(state.notOrganizations))
+        return send(200, {
+          errors: [
+            {
+              type: "NOT_FOUND",
+              message: `Could not resolve to an Organization with the login of '${organization}'.`,
+            },
+          ],
+        });
+      if (operation === "OrganizationTeams" && named(state.teamsLookupFailsFor))
         return send(200, {
           errors: [{ message: "Resource not accessible by integration" }],
         });
@@ -1033,8 +1084,12 @@ export async function startFakeGitHub(): Promise<{
     return names;
   }
 
-  /** The teams a user is directly on in one organization, with their ancestors' slugs; no members. */
+  /**
+   * The teams a user is directly on in one organization, each with the teams
+   * above it and the first page of its members.
+   */
   function organizationTeams(organization: string, login: string) {
+    const members = (team: FakeTeam) => membersPage(membersOf(team), 0);
     return {
       nodes: (state.teams ?? [])
         .filter(
@@ -1044,8 +1099,12 @@ export async function startFakeGitHub(): Promise<{
         )
         .map((team) => ({
           slug: team.slug,
+          members: members(team),
           ancestors: {
-            nodes: ancestorsOf(team).map((a) => ({ slug: a.slug })),
+            nodes: ancestorsOf(team).map((a) => ({
+              slug: a.slug,
+              members: members(a),
+            })),
           },
         })),
     };

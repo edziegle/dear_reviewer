@@ -21,7 +21,7 @@ Something the Reviewer writes about a Change, meant to be published to GitHub or
 _Avoid_: Note, remark
 
 **Agent note**:
-The Assistant's short addition, written when the Reviewer asks for it, under their own text in a Comment on a pull request, for an agent that will act on it: the reason behind the Comment and what to do instead. Part of the Comment, published with it once the Reviewer has read it. The Assistant writes none when the Comment already says it all or it can't tell the reason.
+The Assistant's short addition under the Reviewer's own text in a pull request Comment, written when the Reviewer asks, for an agent that will act on the Comment: the reason behind it and what to do instead. It is part of the Comment, the Reviewer's to read, edit or remove before saving it, and is published with it. The Assistant writes none when the Comment already says it all or it can't tell the reason.
 _Avoid_: Brief (that's a whole local Review), note on its own, AI comment
 
 **Finding**:
@@ -91,7 +91,3 @@ _Avoid_: Home, start page, landing page
 **Brief**:
 The Reviewer's comments on a local Change, packaged as instructions for an agent to act on. The local counterpart of posting a review to GitHub.
 _Avoid_: Fix-up prompt, task list
-
-**Agent note**:
-A short paragraph the Assistant writes under the Reviewer's own text in a pending pull request Comment, when the Reviewer asks, for the agent that will act on the Comment: the reason behind it and what to do instead. It starts with the label `**For agents:**`, which Dear Reviewer writes. It is the Reviewer's to read, edit or remove before the Comment is saved, and it is not a Brief, which covers a whole local Review.
-_Avoid_: Brief (that is a whole local Review), AI comment

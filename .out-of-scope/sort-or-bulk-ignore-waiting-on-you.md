@@ -12,6 +12,8 @@ Bulk Ignore, such as "Ignore all below this point", would also be the only actio
 
 If a Reviewer with a real backlog finds it hard to clear, start from the GitHub side: a way to remove a review request from the Dashboard, not a second order or bulk Ignore.
 
+Dependency updates have a list of their own under Waiting on you (ADR 0051). That doesn't re-sort Waiting on you: no one is waiting on a bot, so its pull requests leave the list, and each list keeps the longest wait first.
+
 ## Prior requests
 
 - #182: "No way to re-sort or bulk-clear a large Waiting on you backlog on the Dashboard"

@@ -13,7 +13,7 @@ One pass by a Reviewer over a Change, ending when they submit a verdict or copy 
 _Avoid_: Code review session, audit, round
 
 **Assistant**:
-The AI that helps the Reviewer: it summarises, answers questions, raises Findings, writes Briefs and adds Agent notes. It never reviews, decides or publishes.
+The AI that helps the Reviewer: it summarises, answers questions, raises Findings, writes Briefs and adds Agent notes, and gives a Recommendation on a Dependency update. It never reviews, decides or publishes.
 _Avoid_: AI reviewer, bot, copilot
 
 **Comment**:
@@ -28,6 +28,10 @@ _Avoid_: Brief (that's a whole local Review), note on its own, AI comment
 A spot in a Change the Assistant thinks deserves attention. It is never published as it stands; the Reviewer dismisses it or turns it into a Comment.
 _Avoid_: AI comment, flag, suggestion (GitHub uses that for proposed code edits)
 
+**Recommendation**:
+The Assistant's advice, given only when the Reviewer asks, on a Dependency update, with its reasons: approve it, close it, or read it closely. The Reviewer still decides.
+_Avoid_: Verdict (that's the Reviewer's, submitted with a Review), approval, AI review
+
 **Duplicate code**:
 Code a Change adds that repeats a block found elsewhere in the Change or the repository, instead of reusing it: 6 or more lines that match once names, numbers, strings and spacing are set aside. Dear Reviewer finds possible duplicate code by rules, when the Reviewer asks for Findings, and gives up to 20 candidates to the Assistant, which judges which is real and raises it as a Finding.
 _Avoid_: Copy-paste, clone, pattern (vague, and it blurs into Repeated edit)
@@ -39,6 +43,10 @@ _Avoid_: Duplicate code (a clean sweep is not a smell), sweep, pattern
 **Change**:
 The code under review: the difference between two points in a repository's history. A GitHub pull request is one source of a Change; a local range of commits is another. Its conversation with the Assistant lasts until its pull request or branch is over, through any number of Reviews and stops.
 _Avoid_: Diff (that's the rendering), Change Set, Review Target, PR (only one source)
+
+**Dependency update**:
+A pull request a dependency bot opened to update one or more of a repository's dependencies.
+_Avoid_: Dependabot PR (Dependabot is one such bot), bump, bot PR
 
 **Active Change**:
 The one Change the review window holds, from opening it until the Reviewer stops reviewing it, opens another, or its pull request or branch is over. Change Files, Findings, the Assistant and the review keys follow it. It stays active while the review window is closed, and the Dashboard shows it.

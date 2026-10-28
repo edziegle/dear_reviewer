@@ -33,6 +33,8 @@ export interface DashboardPullRequest {
   size: { files: number; additions: number; deletions: number };
   checks?: string;
   notes: string[];
+  /** A Dependency update's update type; absent on every other pull request. */
+  update?: "patch" | "minor" | "major" | "unknown";
 }
 
 export interface DashboardBranch {
@@ -66,6 +68,8 @@ export interface DashboardState {
   reviewed?: DashboardPullRequest[];
   /** Pull requests whose Team request a teammate answered. */
   teamReviewed?: DashboardPullRequest[];
+  /** Dependabot's pull requests that ask the Reviewer for a review; not in `waiting`. */
+  dependencyUpdates?: DashboardPullRequest[];
   branches: DashboardBranch[];
   loading: boolean;
   setup?: { text: string; actions: { id: string; label: string }[] };

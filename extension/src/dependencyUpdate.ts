@@ -18,6 +18,25 @@ export const DEPENDABOT_LOGIN = "dependabot[bot]";
 /** How far a version moved, where Dear Reviewer can tell. */
 export type UpdateType = "patch" | "minor" | "major" | "unknown";
 
+/**
+ * Whether Dependabot opened this pull request (ADR 0051). GitHub sets the
+ * author and marks an App's account a Bot, so the login alone can't be worn
+ * by a person's account of the same name.
+ *
+ * A Dependency update is one of these that also asks the Reviewer for a
+ * review, personally or through a Team request. The Dashboard reads it from
+ * the Inbox's Awaiting my review group, which is that request, so this asks
+ * only about the author.
+ */
+export function byDependabot(pullRequest: {
+  author: { login: string; bot?: boolean };
+}): boolean {
+  return (
+    pullRequest.author.bot === true &&
+    pullRequest.author.login === DEPENDABOT_LOGIN
+  );
+}
+
 /** Whether a dependency is depended on directly, and what for. */
 export interface DependencyType {
   direct: boolean;

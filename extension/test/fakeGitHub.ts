@@ -119,6 +119,11 @@ export interface FakePullRequest {
   title: string;
   /** The author's login. */
   author: string;
+  /**
+   * Set when a GitHub App's account opened it, as `dependabot[bot]` does:
+   * GitHub then answers `__typename: "Bot"` for the author.
+   */
+  authorIsBot?: boolean;
   state?: "OPEN" | "CLOSED" | "MERGED";
   /** Logins whose review is requested. */
   reviewRequested?: string[];
@@ -1195,6 +1200,7 @@ export async function startFakeGitHub(): Promise<{
       baseRefName: pr.baseRefName ?? "main",
       repository: { nameWithOwner: `${owner}/${name}` },
       author: {
+        __typename: pr.authorIsBot ? "Bot" : "User",
         login: pr.author,
         avatarUrl: `${state.avatarOrigin ?? url}/avatars/${encodeURIComponent(pr.author)}?v=4`,
       },

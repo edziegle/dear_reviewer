@@ -44,7 +44,11 @@ export interface PullRequestSummary {
   reviewedByTeam?: TeamAnswer;
   /** How big it is: its changed files and lines. */
   size: { files: number; additions: number; deletions: number };
-  author: { login: string; avatarUrl: string };
+  /**
+   * Who opened it. `bot` is set for a GitHub App's account, such as
+   * `dependabot[bot]`, which nobody can open a pull request as.
+   */
+  author: { login: string; avatarUrl: string; bot?: boolean };
   headRefName: string;
   headSha: string;
   baseRefName: string;
@@ -1383,7 +1387,7 @@ interface PullRequestNode {
   headRefOid: string;
   baseRefName: string;
   repository: { nameWithOwner: string };
-  author: { login: string; avatarUrl: string } | null;
+  author: { __typename?: string; login: string; avatarUrl: string } | null;
   reviewRequests: { nodes: (ReviewRequestedNode | null)[] };
   /** The review requests pending now. */
   pendingRequests?: {
@@ -1463,7 +1467,13 @@ function summaryOf(
       deletions: node.deletions,
     },
     // A deleted account shows as "ghost" on github.com.
-    author: node.author ?? { login: "ghost", avatarUrl: "" },
+    author: node.author
+      ? {
+          login: node.author.login,
+          avatarUrl: node.author.avatarUrl,
+          ...(node.author.__typename === "Bot" && { bot: true }),
+        }
+      : { login: "ghost", avatarUrl: "" },
     headRefName: node.headRefName,
     headSha: node.headRefOid,
     baseRefName: node.baseRefName,

@@ -1,0 +1,209 @@
+import * as assert from "assert";
+import * as vscode from "vscode";
+import {
+  clickDashboard,
+  renderedDashboard,
+  showDashboard,
+  type DashboardState,
+} from "../dashboard";
+import {
+  configure,
+  refreshInbox,
+  serveGitHub,
+  setToken,
+  type FakePullRequest,
+} from "../github";
+import { eventually } from "../reviewer";
+
+const viewer = { login: "reviewer", token: "test-token" };
+const settingKeys = ["githubApiUrl", "repositories", "localClones"];
+const hour = 60 * 60_000;
+const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
+
+// Dependabot asks for a review the same way a person does, so these all sit
+// in the Inbox's Awaiting my review group; what tells them apart is that
+// GitHub says a Bot opened them.
+const update: FakePullRequest = {
+  repository: "acme/deps",
+  number: 81,
+  title: "chore(deps): bump fast-uri from 3.1.8 to 3.1.9",
+  author: "dependabot[bot]",
+  authorIsBot: true,
+  reviewRequested: ["reviewer"],
+  reviewRequestedAt: ago(6 * 24 * hour),
+  headSha: "aaaa",
+};
+const olderUpdate: FakePullRequest = {
+  repository: "acme/deps",
+  number: 82,
+  title: "chore(deps): bump left-pad from 1.0.0 to 2.0.0",
+  author: "dependabot[bot]",
+  authorIsBot: true,
+  reviewRequested: ["reviewer"],
+  reviewRequestedAt: ago(9 * 24 * hour),
+  headSha: "bbbb",
+};
+/** A person's account whose login is Dependabot's: GitHub calls it a User. */
+const impostor: FakePullRequest = {
+  repository: "acme/deps",
+  number: 83,
+  title: "Not really from a bot",
+  author: "dependabot[bot]",
+  reviewRequested: ["reviewer"],
+  reviewRequestedAt: ago(3 * hour),
+  headSha: "cccc",
+};
+const fromAPerson: FakePullRequest = {
+  repository: "acme/deps",
+  number: 84,
+  title: "Retry failed webhooks",
+  author: "alice",
+  reviewRequested: ["reviewer"],
+  reviewRequestedAt: ago(2 * hour),
+  headSha: "dddd",
+};
+/** Dependabot's, but asking nobody: no Team request and no reviewer named. */
+const unasked: FakePullRequest = {
+  repository: "acme/deps",
+  number: 85,
+  title: "chore(deps): bump nothing anyone waits for",
+  author: "dependabot[bot]",
+  authorIsBot: true,
+  headSha: "eeee",
+};
+const idOf = (p: FakePullRequest) => `pull request ${p.repository}#${p.number}`;
+
+const names = (list?: DashboardState["waiting"]) => list?.map((w) => w.name);
+
+// Dependency updates (ADR 0051) are listed apart from Waiting on you, which
+// keeps Waiting on you to the pull requests people are waiting on.
+describe("Dashboard: Dependency updates", () => {
+  const found = new Map<string, unknown>();
+
+  async function serve(...pullRequests: FakePullRequest[]): Promise<void> {
+    await serveGitHub({
+      viewer,
+      pullRequests: pullRequests.map((p) => structuredClone(p)),
+    });
+    await refreshInbox();
+  }
+
+  before(async () => {
+    const config = vscode.workspace.getConfiguration("dearReviewer");
+    for (const key of settingKeys)
+      found.set(key, config.inspect(key)?.globalValue);
+    await configure({ repositories: ["acme/deps"] });
+    await setToken(viewer.token);
+    await showDashboard();
+  });
+
+  after(async () => {
+    const config = vscode.workspace.getConfiguration("dearReviewer");
+    for (const key of settingKeys)
+      await config.update(
+        key,
+        found.get(key),
+        vscode.ConfigurationTarget.Global
+      );
+  });
+
+  it("lists Dependabot's apart from Waiting on you, out of its count, longest wait first", async () => {
+    await serve(update, olderUpdate, fromAPerson);
+
+    await eventually(async () => {
+      const d = await renderedDashboard();
+      assert.deepStrictEqual(names(d.waiting), ["acme/deps #84"]);
+      assert.strictEqual(
+        d.facts,
+        "1 waiting on you · oldest 2 hours",
+        "a Dependency update is in neither the count nor the oldest figure"
+      );
+      assert.deepStrictEqual(names(d.dependencyUpdates), [
+        "acme/deps #82",
+        "acme/deps #81",
+      ]);
+      assert.deepStrictEqual(
+        d.dependencyUpdates?.map((w) => w.waited),
+        ["9 days", "6 days"]
+      );
+    });
+  });
+
+  it("keeps a pull request of a person's account in Waiting on you, whatever login it goes by", async () => {
+    await serve(impostor, fromAPerson);
+
+    await eventually(async () => {
+      const d = await renderedDashboard();
+      assert.deepStrictEqual(names(d.waiting), [
+        "acme/deps #83",
+        "acme/deps #84",
+      ]);
+      assert.deepStrictEqual(names(d.dependencyUpdates), []);
+    });
+  });
+
+  it("leaves out one that asks nobody for a review", async () => {
+    await serve(unasked, fromAPerson);
+
+    await eventually(async () => {
+      const d = await renderedDashboard();
+      assert.deepStrictEqual(names(d.waiting), ["acme/deps #84"]);
+      assert.deepStrictEqual(names(d.dependencyUpdates), []);
+    });
+  });
+
+  it("offers one as the next step only once nothing in Waiting on you is left to open", async () => {
+    await serve(update, fromAPerson);
+    await eventually(async () => {
+      const d = await renderedDashboard();
+      assert.strictEqual(
+        d.next?.id,
+        idOf(fromAPerson),
+        "the person's pull request comes first, though it has waited less"
+      );
+    });
+
+    await serve(update, olderUpdate);
+
+    await eventually(async () => {
+      const d = await renderedDashboard();
+      assert.deepStrictEqual(d.next, {
+        kind: "open",
+        id: idOf(olderUpdate),
+        label: "Review acme/deps #82",
+        place: "acme/deps #82 has waited longest on you: 9 days",
+      });
+      assert.strictEqual(d.facts, "Nothing waiting on you");
+    });
+  });
+
+  it("sets one aside and brings it back to Dependency updates, not to Waiting on you", async () => {
+    await serve(update, fromAPerson);
+    await eventually(async () =>
+      assert.deepStrictEqual(names((await renderedDashboard()).ignored), [])
+    );
+
+    await clickDashboard({ type: "ignore", id: idOf(update) });
+
+    await eventually(async () => {
+      const d = await renderedDashboard();
+      assert.deepStrictEqual(names(d.dependencyUpdates), []);
+      assert.deepStrictEqual(names(d.ignored), ["acme/deps #81"]);
+      assert.deepStrictEqual(
+        d.ignored?.map((w) => w.waited),
+        ["6 days"],
+        "it keeps the wait it had"
+      );
+      assert.deepStrictEqual(names(d.waiting), ["acme/deps #84"]);
+    });
+
+    await clickDashboard({ type: "restore", id: idOf(update) });
+
+    await eventually(async () => {
+      const d = await renderedDashboard();
+      assert.deepStrictEqual(names(d.dependencyUpdates), ["acme/deps #81"]);
+      assert.deepStrictEqual(names(d.ignored), []);
+      assert.deepStrictEqual(names(d.waiting), ["acme/deps #84"]);
+    });
+  });
+});

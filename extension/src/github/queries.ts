@@ -66,7 +66,7 @@ const INBOX_PULL_REQUEST = `fragment InboxPullRequest on PullRequest {
   headRefOid
   baseRefName
   repository { nameWithOwner }
-  author { login avatarUrl }
+  author { __typename login avatarUrl }
   isDraft
   mergeable
   reviewDecision

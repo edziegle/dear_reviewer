@@ -154,7 +154,8 @@ export interface Timeline {
   /** What the Assistant advised on it, once the Reviewer asked. */
   recommendation?: {
     asking: boolean;
-    advice?: { verdict: string; reasons: string };
+    /** `says` is how the overview words it; `html` the rendered reasons. */
+    advice?: { says: string; reasons: string; html: string };
     outOfDate: boolean;
     problem?: boolean;
   };

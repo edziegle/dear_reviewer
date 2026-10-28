@@ -47,8 +47,8 @@ updated-dependencies:
 
 Signed-off-by: dependabot[bot] <support@github.com>`;
 
-const advice = (verdict: string, reasons: string) =>
-  replyTurn(JSON.stringify({ verdict, reasons }));
+const advises = (advice: string, reasons: string) =>
+  replyTurn(JSON.stringify({ advice, reasons }));
 
 // The Recommendation (ADR 0051): the Assistant's advice on a Dependency
 // update, only when the Reviewer asks, read strictly, beside the facts Dear
@@ -146,7 +146,7 @@ describe("A Recommendation on a Dependency update", () => {
 
   it("asks in the Change's own conversation, with the pull request's text fenced and the facts in plain", async () => {
     await scriptClaude(change, {
-      turns: [advice("approve", "Only a lock file moved, by a patch.")],
+      turns: [advises("approve", "Only a lock file moved, by a patch.")],
     });
 
     await vscode.commands.executeCommand(
@@ -162,7 +162,7 @@ describe("A Recommendation on a Dependency update", () => {
     );
     const prompt = userMessages(run).at(-1) ?? "";
     for (const expected of [
-      '"verdict"',
+      '"advice"',
       "approve",
       "readClosely",
       "fast-uri 3.1.8 → 3.1.9, patch, indirect",
@@ -176,8 +176,9 @@ describe("A Recommendation on a Dependency update", () => {
       assert.deepStrictEqual((await shown()).recommendation, {
         asking: false,
         advice: {
-          verdict: "Approve it",
+          says: "Approve it",
           reasons: "Only a lock file moved, by a patch.",
+          html: "<p>Only a lock file moved, by a patch.</p>\n",
         },
         outOfDate: false,
       });
@@ -208,20 +209,17 @@ describe("A Recommendation on a Dependency update", () => {
     await eventually(async () => {
       const recommendation = (await shown()).recommendation;
       assert.strictEqual(recommendation?.problem, true);
-      assert.deepStrictEqual(
-        recommendation?.advice,
-        {
-          verdict: "Approve it",
-          reasons: "Only a lock file moved, by a patch.",
-        },
+      assert.strictEqual(
+        recommendation?.advice?.says,
+        "Approve it",
         "the advice it gave before still stands"
       );
     });
   });
 
-  it("keeps nothing from a verdict it doesn't allow", async () => {
+  it("keeps nothing from advice it doesn't allow", async () => {
     await scriptClaude(change, {
-      turns: [advice("merge", "Just merge it for them.")],
+      turns: [advises("merge", "Just merge it for them.")],
     });
 
     await vscode.commands.executeCommand(
@@ -233,7 +231,7 @@ describe("A Recommendation on a Dependency update", () => {
       const recommendation = (await shown()).recommendation;
       assert.strictEqual(recommendation?.problem, true);
       assert.strictEqual(
-        recommendation?.advice?.verdict,
+        recommendation?.advice?.says,
         "Approve it",
         "a fourth answer changes nothing"
       );
@@ -254,10 +252,10 @@ describe("A Recommendation on a Dependency update", () => {
     assert.ok(foldersAddedSince(before).length, "the Change opened again");
 
     await eventually(async () => {
-      assert.deepStrictEqual((await shown()).recommendation?.advice, {
-        verdict: "Approve it",
-        reasons: "Only a lock file moved, by a patch.",
-      });
+      assert.strictEqual(
+        (await shown()).recommendation?.advice?.says,
+        "Approve it"
+      );
     });
     assert.strictEqual(
       (await shown()).recommendation?.outOfDate,
@@ -293,7 +291,7 @@ describe("A Recommendation on a Dependency update", () => {
         "it was given for the head before this one"
       );
       assert.strictEqual(
-        recommendation?.advice?.verdict,
+        recommendation?.advice?.says,
         "Approve it",
         "what it advised is still shown, marked as out of date"
       );

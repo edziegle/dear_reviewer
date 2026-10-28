@@ -205,6 +205,10 @@ export interface ShownTimeline extends TimelineState {
     start?: FileReference;
   };
   items: (TimelineItem & { html?: string })[];
+  /** The Recommendation's reasons, rendered; the Assistant wrote them. */
+  recommendation?: ShownRecommendation & {
+    advice?: { says: string; reasons: string; html: string };
+  };
 }
 
 /** Webview to extension. */
@@ -425,8 +429,25 @@ function shown(
       ? item
       : { ...item, html: render(item.body) }
   );
+  // The reasons are the Assistant's Markdown, so they go through the
+  // extension's renderer, which drops HTML and keeps only links it sent.
+  // Taken out of the spread, since what goes out carries the rendered twin.
+  const { recommendation: asGiven, ...rest } = state;
+  const advice = asGiven?.advice;
+  const recommendation = asGiven && {
+    asking: asGiven.asking,
+    outOfDate: asGiven.outOfDate,
+    ...(asGiven.problem && { problem: asGiven.problem }),
+    ...(advice && { advice: { ...advice, html: render(advice.reasons) } }),
+  };
   const text = state.take.text;
-  if (!text) return { ...state, take: state.take, items };
+  if (!text)
+    return {
+      ...rest,
+      take: state.take,
+      items,
+      ...(recommendation && { recommendation }),
+    };
   const sentences = sentencesOf(text);
   const short = sentences.slice(0, maxSentences).join(" ");
   const start = findReferences(text).find((ref) => isChangedFile(ref.path));
@@ -444,7 +465,12 @@ function shown(
       },
     }),
   };
-  return { ...state, take, items };
+  return {
+    ...rest,
+    take,
+    items,
+    ...(recommendation && { recommendation }),
+  };
 }
 
 /** The most sentences of the Assistant's take the overview shows before Show all. */
@@ -1063,9 +1089,13 @@ ${catSymbol}
         );
     }
     if (shown?.advice) {
-      const heading = el("div", "step", shown.advice.verdict);
+      const heading = el("div", "step", shown.advice.says);
       heading.append(" ", el("span", "tag", "the Assistant's advice"));
-      body.append(heading, el("div", undefined, shown.advice.reasons));
+      const reasons = el("div");
+      // Rendered and sanitised by the extension; see renderMarkdown.
+      reasons.innerHTML = shown.advice.html;
+      focusable(reasons);
+      body.append(heading, reasons);
       if (!shown.asking && !shown.problem && !shown.outOfDate)
         body.append(el("div", "muted", "You decide; nothing follows from it."));
     }

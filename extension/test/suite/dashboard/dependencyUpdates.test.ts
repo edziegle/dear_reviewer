@@ -27,7 +27,12 @@ const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
 const bumped = (
   sha: string,
   message: string,
-  more: { author?: string; verified?: boolean } = {}
+  more: {
+    author?: string;
+    verified?: boolean;
+    signedByGitHub?: boolean;
+    signerLogin?: string;
+  } = {}
 ) => ({
   type: "commit" as const,
   sha,
@@ -194,6 +199,61 @@ describe("Dashboard: Dependency updates", () => {
       assert.deepStrictEqual(
         d.dependencyUpdates?.map((w) => [w.name, w.update]),
         [["acme/deps #86", "unknown"]]
+      );
+    });
+  });
+
+  it("reads no metadata from a commit signed with someone else's key, whatever name it carries", async () => {
+    // The attack the brief names: a commit that claims Dependabot's git
+    // name, carrying a block that says patch, signed with a key of the
+    // pusher's own that GitHub reports as valid. Only a signature GitHub
+    // made as Dependabot counts, so this is read for nothing — and it is
+    // still counted among the commits whoever signed it made.
+    const forged: FakePullRequest = {
+      ...structuredClone(update),
+      number: 87,
+      timeline: [
+        bumped("9999", patchBump, {
+          verified: true,
+          signedByGitHub: false,
+          signerLogin: "mallory",
+        }),
+      ],
+    };
+
+    await serve(forged);
+
+    await eventually(async () => {
+      const d = await renderedDashboard();
+      assert.deepStrictEqual(
+        d.dependencyUpdates?.map((w) => [w.name, w.update]),
+        [["acme/deps #87", "unknown"]]
+      );
+    });
+  });
+
+  it("reads no metadata from a commit GitHub signed for someone else through its own key", async () => {
+    // GitHub signs what it commits for anyone through its API, so its key
+    // alone isn't enough: it has to have signed for Dependabot.
+    const forged: FakePullRequest = {
+      ...structuredClone(update),
+      number: 88,
+      timeline: [
+        bumped("8888", patchBump, {
+          verified: true,
+          signedByGitHub: true,
+          signerLogin: "mallory",
+        }),
+      ],
+    };
+
+    await serve(forged);
+
+    await eventually(async () => {
+      const d = await renderedDashboard();
+      assert.deepStrictEqual(
+        d.dependencyUpdates?.map((w) => [w.name, w.update]),
+        [["acme/deps #88", "unknown"]]
       );
     });
   });

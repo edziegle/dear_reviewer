@@ -3,6 +3,7 @@
 
 import {
   byDependabot,
+  DEPENDABOT_LOGIN,
   dependencyUpdateFacts,
   type DependabotCommit,
   type UpdateType,
@@ -651,12 +652,27 @@ export class GitHubClient {
       if (!read) break;
       for (const node of read.nodes) {
         const author = node.commit.author;
+        const signature = node.commit.signature;
+        // What makes a commit message worth reading is that GitHub signed it
+        // with its own key and says it signed for Dependabot. A git author
+        // name is whatever the pusher typed, and a pusher can get GitHub to
+        // sign a commit it makes for them through the API, so neither the
+        // name nor a valid signature is enough on its own.
+        const signedAsDependabot =
+          signature?.isValid === true &&
+          signature.wasSignedByGitHub === true &&
+          signature.signer?.login === DEPENDABOT_LOGIN;
         commits.push({
-          // A Bot has no GitHub user on a commit's author, so its git name
-          // stands in; both are `dependabot[bot]` for Dependabot's own.
-          author: author?.user?.login ?? author?.name ?? "",
+          // Who GitHub says it is, before the name the commit claims, so a
+          // forged one is still counted among the commits of whoever pushed
+          // it rather than passing as Dependabot's or going unseen.
+          author:
+            signature?.signer?.login ??
+            author?.user?.login ??
+            author?.name ??
+            "",
           message: node.commit.message,
-          verified: node.commit.signature?.isValid === true,
+          verified: signedAsDependabot,
         });
       }
       if (!read.pageInfo.hasNextPage) break;
@@ -1497,6 +1513,7 @@ interface PullRequestCommitsData {
             signature: {
               isValid: boolean;
               wasSignedByGitHub: boolean;
+              signer: { login: string } | null;
             } | null;
           };
         }[];

@@ -186,7 +186,7 @@ export const PULL_REQUEST_COMMITS = `query PullRequestCommits($owner: String!, $
             oid
             message
             author { name email user { login } }
-            signature { isValid wasSignedByGitHub }
+            signature { isValid wasSignedByGitHub signer { login } }
           }
         }
       }

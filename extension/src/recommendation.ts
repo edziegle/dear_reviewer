@@ -11,29 +11,34 @@
 // Reviewer never closes a pull request — so a steered approve stays one more
 // thing for the Reviewer to read, beside the facts it has to agree with.
 
-/** What the Assistant may advise. Anything else is no Recommendation. */
-export const verdicts = ["approve", "close", "readClosely"] as const;
+/**
+ * What the Assistant may advise. Anything else is no Recommendation.
+ *
+ * Not a verdict: that word is the Reviewer's, for what they submit with a
+ * Review (see GLOSSARY.md).
+ */
+export const adviceValues = ["approve", "close", "readClosely"] as const;
 
-export type Verdict = (typeof verdicts)[number];
+export type Advice = (typeof adviceValues)[number];
 
 /** The longest reasons kept. */
 export const maxReasonsChars = 1_000;
 
 /** What the Assistant advised, and why. */
-export interface Advice {
-  verdict: Verdict;
-  /** Why, in the Assistant's words; never empty. */
+export interface Advised {
+  advice: Advice;
+  /** Why, in the Assistant's words, as Markdown; never empty. */
   reasons: string;
 }
 
 /** A Recommendation, with the head commit it was given for. */
-export interface Recommendation extends Advice {
+export interface Recommendation extends Advised {
   /** The head it read. It is out of date once the Change moves past this. */
   headSha: string;
 }
 
-/** How the overview words each verdict. */
-export const verdictText: Record<Verdict, string> = {
+/** How the overview words each piece of advice. */
+export const adviceText: Record<Advice, string> = {
   approve: "Approve it",
   close: "Close it",
   readClosely: "Read it closely",
@@ -44,7 +49,12 @@ export interface ShownRecommendation {
   /** Whether the Assistant is being asked now. */
   asking: boolean;
   /** What it advised, once it has; absent while nothing was kept. */
-  advice?: { verdict: string; reasons: string };
+  advice?: {
+    /** As the overview words it, such as "Approve it". */
+    says: string;
+    /** Why, as the Assistant wrote it; the overview renders it as Markdown. */
+    reasons: string;
+  };
   /** Whether the Change has new commits since it was given. */
   outOfDate: boolean;
   /** Set when the last reply held no Recommendation. */
@@ -53,11 +63,11 @@ export interface ShownRecommendation {
 
 /**
  * The Assistant's reply, which must be a JSON object, alone or in one
- * Markdown fence, with a `verdict` of `approve`, `close` or `readClosely`
- * and `reasons`. Gives nothing for any other reply, so a reply that argues
- * its way to a fourth answer keeps whatever stood before.
+ * Markdown fence, with `advice` of `approve`, `close` or `readClosely` and
+ * `reasons`. Gives nothing for any other reply, so a reply that argues its
+ * way to a fourth answer keeps whatever stood before.
  */
-export function parseRecommendation(reply: string): Advice | undefined {
+export function parseRecommendation(reply: string): Advised | undefined {
   let json = reply.trim();
   const fence = /^```[a-z]*\n([\s\S]*)\n```$/i.exec(json);
   if (fence) json = fence[1];
@@ -70,15 +80,15 @@ export function parseRecommendation(reply: string): Advice | undefined {
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed))
     return;
   const fields = parsed as Record<string, unknown>;
-  if (Object.keys(fields).some((key) => !["verdict", "reasons"].includes(key)))
+  if (Object.keys(fields).some((key) => !["advice", "reasons"].includes(key)))
     return;
-  const verdict = fields.verdict;
-  if (typeof verdict !== "string") return;
-  if (!verdicts.includes(verdict as Verdict)) return;
+  const advice = fields.advice;
+  if (typeof advice !== "string") return;
+  if (!adviceValues.includes(advice as Advice)) return;
   if (typeof fields.reasons !== "string") return;
-  const reasons = oneLine(fields.reasons, maxReasonsChars);
+  const reasons = kept(fields.reasons, maxReasonsChars);
   if (!reasons) return;
-  return { verdict: verdict as Verdict, reasons };
+  return { advice: advice as Advice, reasons };
 }
 
 /** How it shows once the Change may have moved past the head it read. */
@@ -91,7 +101,7 @@ export function shownRecommendation(
     asking: state.asking === true,
     ...(recommendation && {
       advice: {
-        verdict: verdictText[recommendation.verdict],
+        says: adviceText[recommendation.advice],
         reasons: recommendation.reasons,
       },
     }),
@@ -104,8 +114,15 @@ export function shownRecommendation(
 const invisible =
   /[\u{E0000}-\u{E007F}\u200B-\u200D\u2060\uFEFF\u202A-\u202E\u2066-\u2069]/gu;
 
-function oneLine(value: unknown, max = Infinity): string {
-  if (typeof value !== "string") return "";
-  const flat = value.replace(invisible, "").replace(/\s+/g, " ").trim();
-  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
+/**
+ * The reasons as the overview will render them: the Assistant's own
+ * Markdown, without the invisible characters that could hide words from the
+ * Reviewer, and no longer than `max`.
+ */
+function kept(value: string, max: number): string {
+  const text = value
+    .replace(invisible, "")
+    .replace(/[ \t]+/g, " ")
+    .trim();
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }

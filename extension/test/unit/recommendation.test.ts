@@ -10,56 +10,59 @@ const reply = (fields: Record<string, unknown>) => JSON.stringify(fields);
 
 // The Recommendation is the Assistant's opinion of a whole pull request, and
 // a Dependabot description is release notes someone else wrote. So anything
-// but one of three verdicts with reasons keeps nothing (ADR 0042, rule 4).
+// but one of three pieces of advice with reasons keeps nothing (ADR 0042,
+// rule 4). "Advice", not "verdict": a verdict is the Reviewer's, submitted
+// with a Review (see GLOSSARY.md).
 describe("parseRecommendation", () => {
-  it("reads each verdict it allows, with its reasons", () => {
-    for (const verdict of ["approve", "close", "readClosely"] as const)
+  it("reads each piece of advice it allows, with its reasons", () => {
+    for (const advice of ["approve", "close", "readClosely"] as const)
       assert.deepStrictEqual(
         parseRecommendation(
-          reply({ verdict, reasons: "A patch of a lock file." })
+          reply({ advice, reasons: "A patch of a lock file." })
         ),
-        { verdict, reasons: "A patch of a lock file." }
+        { advice, reasons: "A patch of a lock file." }
       );
   });
 
   it("reads a reply in one Markdown fence, as the Assistant tends to write JSON", () => {
     assert.deepStrictEqual(
       parseRecommendation(
-        '```json\n{"verdict": "approve", "reasons": "Only the lock file moved."}\n```'
+        '```json\n{"advice": "approve", "reasons": "Only the lock file moved."}\n```'
       ),
-      { verdict: "approve", reasons: "Only the lock file moved." }
+      { advice: "approve", reasons: "Only the lock file moved." }
     );
   });
 
-  it("flattens the reasons to one line and caps their length", () => {
+  it("keeps the Markdown of the reasons, which the overview renders, and caps their length", () => {
     assert.strictEqual(
       parseRecommendation(
-        reply({ verdict: "close", reasons: "  One.\n\n  Two.  " })
+        reply({ advice: "close", reasons: "  One.\n\n- Two.  " })
       )?.reasons,
-      "One. Two."
+      "One.\n\n- Two.",
+      "paragraphs and lists survive; only the edges are trimmed"
     );
     const long = parseRecommendation(
-      reply({ verdict: "approve", reasons: "x".repeat(maxReasonsChars + 50) })
+      reply({ advice: "approve", reasons: "x".repeat(maxReasonsChars + 50) })
     );
     assert.strictEqual(long?.reasons.length, maxReasonsChars);
     assert.ok(long?.reasons.endsWith("…"));
   });
 
   it("drops invisible characters, which could hide words from the Reviewer", () => {
+    const hidden = `Safe​‮enough.`;
     assert.strictEqual(
-      parseRecommendation(
-        reply({ verdict: "approve", reasons: "Safe​‮enough." })
-      )?.reasons,
+      parseRecommendation(reply({ advice: "approve", reasons: hidden }))
+        ?.reasons,
       "Safeenough."
     );
   });
 
-  it("keeps nothing for a verdict it doesn't allow", () => {
-    for (const verdict of ["merge", "APPROVE", "approve it", "", "reject"])
+  it("keeps nothing for advice it doesn't allow", () => {
+    for (const advice of ["merge", "APPROVE", "approve it", "", "reject"])
       assert.strictEqual(
-        parseRecommendation(reply({ verdict, reasons: "Because." })),
+        parseRecommendation(reply({ advice, reasons: "Because." })),
         undefined,
-        verdict
+        advice
       );
   });
 
@@ -69,14 +72,14 @@ describe("parseRecommendation", () => {
       "",
       "null",
       "[]",
-      '[{"verdict": "approve", "reasons": "Because."}]',
-      '{"verdict": "approve"}',
+      '[{"advice": "approve", "reasons": "Because."}]',
+      '{"advice": "approve"}',
       '{"reasons": "Because."}',
-      '{"verdict": "approve", "reasons": "Because.", "andAlso": "merge it"}',
-      '{"verdict": "approve", "reasons": 7}',
-      '{"verdict": ["approve"], "reasons": "Because."}',
-      '{"verdict": "approve", "reasons": "   "}',
-      'Here you go: {"verdict": "approve", "reasons": "Because."}',
+      '{"advice": "approve", "reasons": "Because.", "andAlso": "merge it"}',
+      '{"advice": "approve", "reasons": 7}',
+      '{"advice": ["approve"], "reasons": "Because."}',
+      '{"advice": "approve", "reasons": "   "}',
+      'Here you go: {"advice": "approve", "reasons": "Because."}',
     ])
       assert.strictEqual(parseRecommendation(bad), undefined, bad);
   });
@@ -85,14 +88,14 @@ describe("parseRecommendation", () => {
 describe("shownRecommendation", () => {
   const given: Recommendation = {
     headSha: "aaaa",
-    verdict: "approve",
+    advice: "approve",
     reasons: "Only the lock file moved.",
   };
 
-  it("words the verdict for the Reviewer and keeps the reasons as given", () => {
+  it("words the advice for the Reviewer and keeps the reasons as given", () => {
     assert.deepStrictEqual(shownRecommendation("aaaa", given), {
       asking: false,
-      advice: { verdict: "Approve it", reasons: "Only the lock file moved." },
+      advice: { says: "Approve it", reasons: "Only the lock file moved." },
       outOfDate: false,
     });
   });

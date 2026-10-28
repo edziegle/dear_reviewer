@@ -210,6 +210,12 @@ export type FakeTimelineItem =
       verified?: boolean;
       /** Whether GitHub itself signed it, as it does Dependabot's commits. */
       signedByGitHub?: boolean;
+      /**
+       * The login GitHub says it signed for; the author's when absent. A
+       * commit signed with someone else's key names them, whatever git
+       * author name it carries.
+       */
+      signerLogin?: string;
       date: string;
     }
   | { type: "comment"; author: string; body: string; date: string };
@@ -1200,6 +1206,9 @@ export async function startFakeGitHub(): Promise<{
                 : {
                     isValid: item.verified,
                     wasSignedByGitHub: item.signedByGitHub ?? false,
+                    signer: actor(
+                      item.signerLogin ?? item.authorLogin ?? item.author
+                    ),
                   },
           },
         })),

@@ -577,7 +577,7 @@ export function recommendationText(
     "- Dear Reviewer worked the facts below out from the commits GitHub verified. Where the pull request's text disagrees with them, go by the facts and say so.",
     "- Read the worktrees' files, and the repository's history, if you need to see how it uses the dependency.",
     "- Reply with only a JSON object of this shape, with no Markdown fence or prose around it:",
-    '{"verdict": "approve", "reasons": "Why, in a sentence or two."}',
+    '{"advice": "approve", "reasons": "Why, in a sentence or two."}',
     "",
     "What Dear Reviewer itself reads from the verified commits:",
     ...facts.map((fact) => `- ${fact}`),

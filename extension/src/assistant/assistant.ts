@@ -76,7 +76,7 @@ import {
 import {
   parseRecommendation,
   shownRecommendation,
-  verdictText,
+  adviceText,
   type Recommendation,
   type ShownRecommendation,
 } from "../recommendation";
@@ -1086,9 +1086,9 @@ class ChangeAssistant {
       }
       this.setAsking(false);
       if (this.disposed) return;
-      const advice =
+      const advised =
         reply === undefined ? undefined : parseRecommendation(reply);
-      if (!advice) {
+      if (!advised) {
         // A turn the Reviewer stopped, with nothing back, isn't a problem.
         if (reply !== undefined) {
           this.recommendationProblem = true;
@@ -1096,12 +1096,12 @@ class ChangeAssistant {
         }
         return;
       }
-      this.recommendation = { headSha: change.headSha, ...advice };
+      this.recommendation = { headSha: change.headSha, ...advised };
       this.save();
       this.recommendationChanged();
       // The note queues behind this turn; the JSON never reaches the chat.
       this.addNote(
-        `Recommended: ${verdictText[advice.verdict].toLowerCase()}. It shows in the overview, with the reasons; the Reviewer decides.`
+        `Recommended: ${adviceText[advised.advice].toLowerCase()}. It shows in the overview, with the reasons; the Reviewer decides.`
       );
     });
   }

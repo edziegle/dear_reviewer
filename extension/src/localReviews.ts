@@ -209,9 +209,7 @@ export class LocalPendingReviews implements PendingReviews {
   /** The last Brief copied for the conversation: when, how many Comments it held, and its file. */
   lastBrief(
     conversation: string
-  ):
-    | { commit: string; at: string; comments?: number; file?: string }
-    | undefined {
+  ): { commit: string; at: string; comments?: number; file?: string } | undefined {
     return this.all()[conversation]?.briefed;
   }
 

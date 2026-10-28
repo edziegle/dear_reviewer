@@ -902,7 +902,7 @@ export function activate(context: vscode.ExtensionContext) {
     // The facts are already read for the overview, so this asks nothing more.
     void setContext(
       "dearReviewer.frontIsDependencyUpdate",
-      !!front && dependencyUpdates.isDependencyUpdate(front)
+      !!front && dependencyUpdates.openedByDependabot(front)
     );
     showFrontComments();
   }

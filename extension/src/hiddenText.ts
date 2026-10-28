@@ -12,8 +12,12 @@
 const hiddenCharacter =
   /[\u{E0000}-\u{E007F}\u200B-\u200D\u2060\uFEFF\u202A-\u202E\u2066-\u2069]/u;
 
-/** A run of tag characters, or one hidden character of another kind. */
-const hiddenRun =
+/**
+ * A run of tag characters, or one hidden character of another kind. Exported
+ * so what strips them rather than escaping them, such as a Recommendation's
+ * reasons, works from this one list.
+ */
+export const hiddenRun =
   /[\u{E0000}-\u{E007F}]+|[\u200B-\u200D\u2060\uFEFF\u202A-\u202E\u2066-\u2069]/gu;
 
 /** Whether the text has any character that renders as nothing or hides other text. */

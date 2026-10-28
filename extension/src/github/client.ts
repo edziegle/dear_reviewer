@@ -4,7 +4,7 @@
 import {
   byDependabot,
   DEPENDABOT_LOGIN,
-  dependencyUpdateFacts,
+  updateTypeOf,
   type DependabotCommit,
   type UpdateType,
 } from "../dependencyUpdate";
@@ -442,10 +442,7 @@ export class GitHubClient {
             pr.repository,
             pr.number
           );
-          types.set(
-            `${pr.repository}#${pr.number}`,
-            dependencyUpdateFacts({ commits, changedFiles: [] }).updateType
-          );
+          types.set(`${pr.repository}#${pr.number}`, updateTypeOf(commits));
         } catch (err) {
           if (err instanceof SignInRejectedError) throw err;
           if (!(err instanceof GitHubError)) throw err;

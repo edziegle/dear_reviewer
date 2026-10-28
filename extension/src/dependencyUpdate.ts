@@ -254,6 +254,33 @@ export function updatedDependenciesIn(message: string): UpdatedDependency[] {
 }
 
 /**
+ * The update type the commits give, for a caller with no file list to
+ * weigh, such as the Inbox filling a Dashboard row.
+ */
+export function updateTypeOf(commits: readonly DependabotCommit[]): UpdateType {
+  return largestUpdateType(
+    dependenciesIn(commits).map((dependency) => dependency.updateType)
+  );
+}
+
+/**
+ * Every dependency the trusted commits name, the later word on one winning.
+ * A commit counts only when Dependabot authored it and GitHub verified it.
+ */
+function dependenciesIn(
+  commits: readonly DependabotCommit[]
+): UpdatedDependency[] {
+  const found = new Map<string, UpdatedDependency>();
+  for (const commit of commits) {
+    if (commit.author !== DEPENDABOT_LOGIN || !commit.verified) continue;
+    // A later commit describes the same dependency afresh, as after a rebase.
+    for (const dependency of updatedDependenciesIn(commit.message))
+      found.set(dependency.name.toLowerCase(), dependency);
+  }
+  return [...found.values()];
+}
+
+/**
  * What the pull request's commits and changed files say, reading metadata
  * only from the commits Dependabot authored and GitHub verified.
  */
@@ -261,19 +288,11 @@ export function dependencyUpdateFacts(input: {
   commits: readonly DependabotCommit[];
   changedFiles: readonly string[];
 }): DependencyUpdateFacts {
-  const found = new Map<string, UpdatedDependency>();
   const byOther = new Map<string, number>();
-  for (const commit of input.commits) {
-    if (commit.author !== DEPENDABOT_LOGIN) {
+  for (const commit of input.commits)
+    if (commit.author !== DEPENDABOT_LOGIN)
       byOther.set(commit.author, (byOther.get(commit.author) ?? 0) + 1);
-      continue;
-    }
-    if (!commit.verified) continue;
-    // A later commit describes the same dependency afresh, as after a rebase.
-    for (const dependency of updatedDependenciesIn(commit.message))
-      found.set(dependency.name.toLowerCase(), dependency);
-  }
-  const dependencies = [...found.values()];
+  const dependencies = dependenciesIn(input.commits);
   const otherFiles = input.changedFiles.filter(
     (file) => !isDependencyFile(file)
   );

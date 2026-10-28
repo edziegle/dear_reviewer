@@ -11,6 +11,8 @@
 // Reviewer never closes a pull request — so a steered approve stays one more
 // thing for the Reviewer to read, beside the facts it has to agree with.
 
+import { hiddenRun } from "./hiddenText";
+
 /**
  * What the Assistant may advise. Anything else is no Recommendation.
  *
@@ -110,10 +112,6 @@ export function shownRecommendation(
   };
 }
 
-/** Tag characters, zero-width characters, the word joiner, the byte order mark and bidi controls. */
-const invisible =
-  /[\u{E0000}-\u{E007F}\u200B-\u200D\u2060\uFEFF\u202A-\u202E\u2066-\u2069]/gu;
-
 /**
  * The reasons as the overview will render them: the Assistant's own
  * Markdown, without the invisible characters that could hide words from the
@@ -121,7 +119,7 @@ const invisible =
  */
 function kept(value: string, max: number): string {
   const text = value
-    .replace(invisible, "")
+    .replace(hiddenRun, "")
     .replace(/[ \t]+/g, " ")
     .trim();
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;

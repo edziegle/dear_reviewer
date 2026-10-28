@@ -7,12 +7,36 @@
 // They are read once per head commit and kept, since a Change's commits and
 // files don't change under it.
 
-import { changedFiles, type Change } from "./changeDetails";
+import type { Change } from "./changeDetails";
 import {
   dependencyUpdateFacts,
   type DependencyUpdateFacts,
 } from "./dependencyUpdate";
+import { gitOutput } from "./git";
 import type { GitHubClient } from "./github/client";
+
+/** A pull request as the facts are keyed by it. */
+const nameOf = (pullRequest: { repository: string; number: number }) =>
+  `${pullRequest.repository}#${pullRequest.number}`;
+
+/**
+ * Every file any commit of the Change touched, not only the ones the whole
+ * Change still changes (ADR 0051 counts them "over every commit"): a file
+ * edited in one commit and put back in another is worth naming, and the
+ * net diff doesn't show it. None where git won't say.
+ */
+async function filesTouched(change: Change): Promise<string[]> {
+  const output = await gitOutput(
+    change.repository,
+    "--literal-pathspecs",
+    "log",
+    "--format=",
+    "--name-only",
+    "--no-renames",
+    `${change.mergeBase}..${change.headSha}`
+  ).catch(() => "");
+  return [...new Set(output.split("\n").filter(Boolean))].sort();
+}
 
 /** A Dependency update's facts, as the overview shows them. */
 export interface ShownDependencyUpdate {
@@ -97,12 +121,12 @@ export class DependencyUpdates {
   /** By repository, number and head commit, so new commits are read again. */
   private readonly byHead = new Map<string, ShownDependencyUpdate>();
   /**
-   * The pull requests known to be Dependency updates, by repository and
-   * number. The overview asks for the facts only once its timeline says
-   * Dependabot opened the pull request, so being asked is what marks one,
-   * and nothing here asks GitHub a second time to find out.
+   * The pull requests the overview has found Dependabot opened, by
+   * repository and number. `shown` is only called once a Change's timeline
+   * says so, so asking for the facts is what records it, and nothing here
+   * asks GitHub a second time to find out.
    */
-  private readonly known = new Set<string>();
+  private readonly dependabotOpened = new Set<string>();
 
   constructor(
     private readonly github: GitHubClient,
@@ -121,14 +145,10 @@ export class DependencyUpdates {
   async shown(change: Change): Promise<ShownDependencyUpdate | undefined> {
     const pullRequest = change.pullRequest;
     if (!pullRequest) return undefined;
-    const key = [
-      pullRequest.repository,
-      pullRequest.number,
-      change.headSha,
-    ].join("\0");
-    const name = `${pullRequest.repository}#${pullRequest.number}`;
-    if (!this.known.has(name)) {
-      this.known.add(name);
+    const key = `${nameOf(pullRequest)}\0${change.headSha}`;
+    const name = nameOf(pullRequest);
+    if (!this.dependabotOpened.has(name)) {
+      this.dependabotOpened.add(name);
       this.found();
     }
     const known = this.byHead.get(key);
@@ -137,13 +157,10 @@ export class DependencyUpdates {
       this.github
         .pullRequestCommits(pullRequest.repository, pullRequest.number)
         .catch(() => undefined),
-      changedFiles(change).catch(() => []),
+      filesTouched(change),
     ]);
     const shown = shownFacts(
-      dependencyUpdateFacts({
-        commits: commits ?? [],
-        changedFiles: files.map((file) => file.path),
-      }),
+      dependencyUpdateFacts({ commits: commits ?? [], changedFiles: files }),
       commits === undefined
     );
     // Only a reading that reached GitHub is worth keeping.
@@ -152,16 +169,13 @@ export class DependencyUpdates {
   }
 
   /**
-   * Whether the Change's pull request is a Dependency update, as far as the
-   * overview has told us. False until its timeline has loaded, so the
-   * palette offers the Recommendation a moment later than the overview does.
+   * Whether Dependabot opened the Change's pull request, as far as the
+   * overview has found. False until its timeline has loaded, so the palette
+   * offers the Recommendation a moment later than the overview does.
    */
-  isDependencyUpdate(change: Change): boolean {
+  openedByDependabot(change: Change): boolean {
     const pullRequest = change.pullRequest;
-    return (
-      !!pullRequest &&
-      this.known.has(`${pullRequest.repository}#${pullRequest.number}`)
-    );
+    return !!pullRequest && this.dependabotOpened.has(nameOf(pullRequest));
   }
 
   /**
@@ -192,8 +206,6 @@ export class DependencyUpdates {
   forget(change: Change): void {
     const pullRequest = change.pullRequest;
     if (!pullRequest) return;
-    this.byHead.delete(
-      [pullRequest.repository, pullRequest.number, change.headSha].join("\0")
-    );
+    this.byHead.delete(`${nameOf(pullRequest)}\0${change.headSha}`);
   }
 }

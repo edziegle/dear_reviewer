@@ -114,6 +114,8 @@ describe("A Recommendation on a Dependency update", () => {
   });
 
   after(async () => {
+    // AGENTS.md: a suite leaves no Change open behind it.
+    await closeChange(change);
     const config = vscode.workspace.getConfiguration("dearReviewer");
     for (const key of settingKeys)
       await config.update(

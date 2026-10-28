@@ -1029,7 +1029,7 @@ ${catSymbol}
     node.dataset.said = said;
     const problem = byId("dependencyUpdateProblem");
     problem.hidden = !facts.problem;
-    if (facts.problem) setText(problem, "GitHub wouldn't say what its commits are, so these facts may be short of a dependency.");
+    if (facts.problem) setText(problem, "GitHub wouldn't say what its commits are, so these facts might be short of a dependency.");
     const list = byId("dependencyUpdateFacts");
     const rows = [];
     for (const dependency of facts.dependencies) {

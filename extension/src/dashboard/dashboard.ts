@@ -478,6 +478,7 @@ export class Dashboard implements vscode.Disposable {
       title: pr.title,
       name: pullRequestName(pr),
       author: pr.author.login,
+      ...(pr.updateType && { update: pr.updateType }),
       ...(avatar && { avatar }),
       ...(waited !== undefined && { waited }),
       size: pr.size,

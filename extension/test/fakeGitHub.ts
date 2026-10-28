@@ -201,6 +201,15 @@ export type FakeTimelineItem =
       author: string;
       /** Set when the commit's author has no GitHub account. */
       noAccount?: boolean;
+      /**
+       * The author's login, when GitHub knows it by another name than the
+       * git name: a Bot's commit is authored by `dependabot[bot]` either way.
+       */
+      authorLogin?: string;
+      /** Whether GitHub verified the signature; unsigned when absent. */
+      verified?: boolean;
+      /** Whether GitHub itself signed it, as it does Dependabot's commits. */
+      signedByGitHub?: boolean;
       date: string;
     }
   | { type: "comment"; author: string; body: string; date: string };
@@ -555,6 +564,9 @@ export async function startFakeGitHub(): Promise<{
       body: pr.body ?? "",
       ...(/\btimelineItems\(/.test(query) &&
         timelineFields(pr, visible, vars.after)),
+      // Disjoint from the head commit's `commits(last: 1)` below, which
+      // writes the same key: a query asking both would lose one.
+      ...(/\bcommits\(\s*first:/.test(query) && commitsField(pr, vars.after)),
       reviews: reviewsField(pr, query, vars),
       reviewThreads: {
         pageInfo: { hasNextPage: false, endCursor: null },
@@ -1147,6 +1159,48 @@ export async function startFakeGitHub(): Promise<{
             })),
           },
         })),
+    };
+  }
+
+  /**
+   * A page of the pull request's commits, with the author and signature
+   * GitHub reports. The fixtures keep commits as timeline entries, so these
+   * are the same ones the timeline shows.
+   */
+  function commitsField(pr: FakePullRequest, after: unknown) {
+    const commits = (pr.timeline ?? []).filter(
+      (item): item is Extract<FakeTimelineItem, { type: "commit" }> =>
+        item.type === "commit"
+    );
+    const start = after ? Number(after) : 0;
+    const end = start + 100;
+    return {
+      commits: {
+        pageInfo: {
+          hasNextPage: end < commits.length,
+          endCursor: end < commits.length ? String(end) : null,
+        },
+        nodes: commits.slice(start, end).map((item) => ({
+          commit: {
+            oid: item.sha,
+            message: item.message,
+            author: {
+              name: item.author,
+              email: `${item.authorLogin ?? item.author}@users.noreply.github.com`,
+              user: item.noAccount
+                ? null
+                : actor(item.authorLogin ?? item.author),
+            },
+            signature:
+              item.verified === undefined
+                ? null
+                : {
+                    isValid: item.verified,
+                    wasSignedByGitHub: item.signedByGitHub ?? false,
+                  },
+          },
+        })),
+      },
     };
   }
 

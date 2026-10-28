@@ -167,3 +167,29 @@ ${searches
 }
 ${INBOX_PULL_REQUEST}${withHistory ? `\n${TEAM_HISTORY}` : ""}`;
 }
+
+/**
+ * A page of a pull request's commits, with what decides whether Dear
+ * Reviewer reads a commit's message: who GitHub says wrote it, and whether
+ * GitHub verified the signature (ADR 0051). `message` is the whole message,
+ * which is where Dependabot writes its `updated-dependencies:` block.
+ *
+ * One connection under two single nodes, so its worst case is 100.
+ */
+export const PULL_REQUEST_COMMITS = `query PullRequestCommits($owner: String!, $name: String!, $number: Int!, $after: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      commits(first: 100, after: $after) {
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          commit {
+            oid
+            message
+            author { name email user { login } }
+            signature { isValid wasSignedByGitHub }
+          }
+        }
+      }
+    }
+  }
+}`;

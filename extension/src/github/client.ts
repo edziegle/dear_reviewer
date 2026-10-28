@@ -1,6 +1,12 @@
 // Talks to GitHub: GraphQL where it covers the operation, REST elsewhere,
 // against a configurable API base URL.
 
+import {
+  byDependabot,
+  dependencyUpdateFacts,
+  type DependabotCommit,
+  type UpdateType,
+} from "../dependencyUpdate";
 import { isCommitId, isSafeBranchName } from "../refreshGate";
 import { GitHubAuth, trustedOrigin } from "./auth";
 import {
@@ -12,6 +18,7 @@ import {
   inboxQuery,
   inboxSearches,
   ORGANIZATION_TEAMS,
+  PULL_REQUEST_COMMITS,
   SUBMITTED_REVIEWS,
   TEAM_MEMBERS,
 } from "./queries";
@@ -42,6 +49,12 @@ export interface PullRequestSummary {
   requestedViaTeam?: string;
   /** For a pull request in Reviewed by my team: the teammate's review that answered the Team request. */
   reviewedByTeam?: TeamAnswer;
+  /**
+   * A Dependency update's update type, read from its verified Dependabot
+   * commits (ADR 0051). Only a pull request awaiting the Reviewer's review
+   * that Dependabot opened has one.
+   */
+  updateType?: UpdateType;
   /** How big it is: its changed files and lines. */
   size: { files: number; additions: number; deletions: number };
   /**
@@ -395,11 +408,57 @@ export class GitHubClient {
         : [];
     });
     return {
-      awaitingMyReview,
+      awaitingMyReview: await this.withUpdateTypes(awaitingMyReview),
       authoredByMe,
       reviewedByMe,
       reviewedByMyTeam: reviewedByMyTeam.sort(byUpdated),
     };
+  }
+
+  /**
+   * The same pull requests, each Dependency update among them carrying its
+   * update type. It takes a request apiece, since the Inbox's own query has
+   * no room for every pull request's commits: the searches multiply whatever
+   * it asks for, which is what put them over GitHub's node limit (#223). So
+   * only Dependabot's are asked about, a few at a time.
+   */
+  private async withUpdateTypes(
+    summaries: PullRequestSummary[]
+  ): Promise<PullRequestSummary[]> {
+    const updates = summaries.filter(byDependabot);
+    if (updates.length === 0) return summaries;
+    const types = new Map<string, UpdateType>();
+    await inBatches(
+      updates.map((pr) => async () => {
+        try {
+          const commits = await this.pullRequestCommits(
+            pr.repository,
+            pr.number
+          );
+          types.set(
+            `${pr.repository}#${pr.number}`,
+            dependencyUpdateFacts({ commits, changedFiles: [] }).updateType
+          );
+        } catch (err) {
+          if (err instanceof SignInRejectedError) throw err;
+          if (!(err instanceof GitHubError)) throw err;
+          // Without its commits the update type is unknown, which the row
+          // says; the Inbox is worth more than the label.
+          console.warn(
+            `Dear Reviewer: couldn't read ${pr.repository}#${pr.number}'s commits, so its update type is unknown: ${err.message}`
+          );
+        }
+      }),
+      REPOSITORIES_AT_ONCE
+    );
+    return summaries.map((pr) =>
+      byDependabot(pr)
+        ? {
+            ...pr,
+            updateType: types.get(`${pr.repository}#${pr.number}`) ?? "unknown",
+          }
+        : pr
+    );
   }
 
   /**
@@ -558,6 +617,46 @@ export class GitHubClient {
       after = page?.hasNextPage ? page.endCursor : null;
     } while (after);
     return { id, files };
+  }
+
+  /**
+   * Every commit of the pull request, with who GitHub says authored it and
+   * whether GitHub verified its signature. A Dependency update's facts are
+   * read only from the commits that pass both tests (ADR 0051), which the
+   * local git log can't tell: it has no signature.
+   */
+  async pullRequestCommits(
+    repository: string,
+    number: number
+  ): Promise<DependabotCommit[]> {
+    const [owner, name] = repository.split("/");
+    const commits: DependabotCommit[] = [];
+    let after: string | null = null;
+    // A pull request of more than a thousand commits is read no further.
+    for (let page = 0; page < 10; page++) {
+      const data: PullRequestCommitsData =
+        await this.graphql<PullRequestCommitsData>(PULL_REQUEST_COMMITS, {
+          owner,
+          name,
+          number,
+          after,
+        });
+      const read = data.repository?.pullRequest?.commits;
+      if (!read) break;
+      for (const node of read.nodes) {
+        const author = node.commit.author;
+        commits.push({
+          // A Bot has no GitHub user on a commit's author, so its git name
+          // stands in; both are `dependabot[bot]` for Dependabot's own.
+          author: author?.user?.login ?? author?.name ?? "",
+          message: node.commit.message,
+          verified: node.commit.signature?.isValid === true,
+        });
+      }
+      if (!read.pageInfo.hasNextPage) break;
+      after = read.pageInfo.endCursor;
+    }
+    return commits;
   }
 
   /**
@@ -1366,6 +1465,31 @@ interface OrganizationTeamsData {
     __typename: string;
     login: string;
     teams?: { nodes: OrganizationTeamNode[] };
+  } | null;
+}
+
+interface PullRequestCommitsData {
+  repository: {
+    pullRequest: {
+      commits: {
+        pageInfo: { hasNextPage: boolean; endCursor: string | null };
+        nodes: {
+          commit: {
+            oid: string;
+            message: string;
+            author: {
+              name: string | null;
+              email: string | null;
+              user: { login: string } | null;
+            } | null;
+            signature: {
+              isValid: boolean;
+              wasSignedByGitHub: boolean;
+            } | null;
+          };
+        }[];
+      } | null;
+    } | null;
   } | null;
 }
 

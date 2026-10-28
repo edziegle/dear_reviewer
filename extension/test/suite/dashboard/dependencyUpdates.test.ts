@@ -23,6 +23,46 @@ const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
 // Dependabot asks for a review the same way a person does, so these all sit
 // in the Inbox's Awaiting my review group; what tells them apart is that
 // GitHub says a Bot opened them.
+/** Dependabot's own commit of a patch bump, signed by GitHub as they are. */
+const bumped = (
+  sha: string,
+  message: string,
+  more: { author?: string; verified?: boolean } = {}
+) => ({
+  type: "commit" as const,
+  sha,
+  message,
+  author: "dependabot[bot]",
+  authorLogin: "dependabot[bot]",
+  verified: true,
+  signedByGitHub: true,
+  date: ago(6 * 24 * hour),
+  ...more,
+});
+
+const patchBump = `chore(deps): bump fast-uri from 3.1.8 to 3.1.9
+
+Bumps [fast-uri](https://github.com/fastify/fast-uri) from 3.1.8 to 3.1.9.
+
+---
+updated-dependencies:
+- dependency-name: fast-uri
+  dependency-version: 3.1.9
+  dependency-type: indirect
+...`;
+
+const majorBump = `chore(deps): bump left-pad from 1.0.0 to 2.0.0
+
+Bumps [left-pad](https://github.com/left-pad/left-pad) from 1.0.0 to 2.0.0.
+
+---
+updated-dependencies:
+- dependency-name: left-pad
+  dependency-version: 2.0.0
+  dependency-type: direct:production
+  update-type: version-update:semver-major
+...`;
+
 const update: FakePullRequest = {
   repository: "acme/deps",
   number: 81,
@@ -32,6 +72,7 @@ const update: FakePullRequest = {
   reviewRequested: ["reviewer"],
   reviewRequestedAt: ago(6 * 24 * hour),
   headSha: "aaaa",
+  timeline: [bumped("aaaa", patchBump)],
 };
 const olderUpdate: FakePullRequest = {
   repository: "acme/deps",
@@ -42,6 +83,7 @@ const olderUpdate: FakePullRequest = {
   reviewRequested: ["reviewer"],
   reviewRequestedAt: ago(9 * 24 * hour),
   headSha: "bbbb",
+  timeline: [bumped("bbbb", majorBump)],
 };
 /** A person's account whose login is Dependabot's: GitHub calls it a User. */
 const impostor: FakePullRequest = {
@@ -125,6 +167,33 @@ describe("Dashboard: Dependency updates", () => {
       assert.deepStrictEqual(
         d.dependencyUpdates?.map((w) => w.waited),
         ["9 days", "6 days"]
+      );
+      assert.deepStrictEqual(
+        d.dependencyUpdates?.map((w) => w.update),
+        ["major", "patch"],
+        "each row says how far its versions moved"
+      );
+    });
+  });
+
+  it("says the update type is unknown when no verified commit of Dependabot's gives one", async () => {
+    // The block claims a patch, but the commit is someone else's and
+    // unsigned, so its message is never read (ADR 0051).
+    const forged: FakePullRequest = {
+      ...structuredClone(update),
+      number: 86,
+      timeline: [
+        bumped("ffff", patchBump, { author: "alice", verified: false }),
+      ],
+    };
+
+    await serve(forged);
+
+    await eventually(async () => {
+      const d = await renderedDashboard();
+      assert.deepStrictEqual(
+        d.dependencyUpdates?.map((w) => [w.name, w.update]),
+        [["acme/deps #86", "unknown"]]
       );
     });
   });

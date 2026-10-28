@@ -1,9 +1,14 @@
+# Version updates wait 7 days after a release, so a compromised one is more
+# likely found and pulled first; npm's min-release-age in each .npmrc does the
+# same for npm install. Security updates don't wait.
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     groups:
       github-actions:
         patterns: ["*"]
@@ -12,6 +17,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     groups:
       npm-root:
         patterns: ["*"]
@@ -20,16 +27,22 @@ updates:
     directory: /tools/ovsx
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
 
   - package-ecosystem: npm
     directory: /tools/vsce
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
 
   - package-ecosystem: npm
     directory: /extension
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     groups:
       npm-extension:
         patterns: ["*"]

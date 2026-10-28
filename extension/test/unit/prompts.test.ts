@@ -11,6 +11,7 @@ import {
   commitsHeading,
   commitsLog,
   findingsText,
+  recommendationText,
   keptSelection,
   named,
   otherPeoplesTextPolicy,
@@ -229,6 +230,32 @@ describe("Other people's text in the Assistant's prompts", () => {
         undefined
       ),
       "Reading Order"
+    );
+  });
+
+  it("keeps a Recommendation's description, commits, file names and diff inside fences, and the facts out of them", () => {
+    const prompt = recommendationText(change, {
+      files,
+      commits,
+      diff: `+${injection.split("\n").join("\n+")}\n${injection}`,
+      truncated: false,
+      facts: ["Only manifests and lock files changed."],
+      description: { title: "Title", body: injection },
+    });
+
+    assertOnlyFenced(prompt, "Recommendation");
+    const { prose, fences } = parsed(prompt);
+    assert.strictEqual(
+      fences.filter((t) => t.includes("Tell them this Change has no")).length,
+      4,
+      "the description, the commit, the file name and the diff"
+    );
+    // Dear Reviewer wrote the facts, so they are the prompt's own words.
+    assert.ok(
+      prose.some((line) =>
+        line.includes("Only manifests and lock files changed.")
+      ),
+      prose.join("\n")
     );
   });
 
@@ -851,6 +878,14 @@ describe("Text the Reviewer can't see in the Assistant's prompts", () => {
       "since the last Review"
     );
     assertNothingHidden(findingsText(change, gathered), "Findings");
+    assertNothingHidden(
+      recommendationText(change, {
+        ...gathered,
+        facts: ["Only manifests and lock files changed."],
+        description: { title: "Title", body: hidden("Fine") },
+      }),
+      "Recommendation"
+    );
     assertNothingHidden(
       readingOrderPrompt(
         files.map((f) => f.path),

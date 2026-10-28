@@ -96,8 +96,23 @@ export function shownFacts(
 export class DependencyUpdates {
   /** By repository, number and head commit, so new commits are read again. */
   private readonly byHead = new Map<string, ShownDependencyUpdate>();
+  /**
+   * The pull requests known to be Dependency updates, by repository and
+   * number. The overview asks for the facts only once its timeline says
+   * Dependabot opened the pull request, so being asked is what marks one,
+   * and nothing here asks GitHub a second time to find out.
+   */
+  private readonly known = new Set<string>();
 
-  constructor(private readonly github: GitHubClient) {}
+  constructor(
+    private readonly github: GitHubClient,
+    /**
+     * Called the first time a pull request turns out to be a Dependency
+     * update, so the palette offers the Recommendation without waiting for
+     * the next thing to refresh the Change in front.
+     */
+    private readonly found: () => void = () => {}
+  ) {}
 
   /**
    * The facts of a Change whose pull request Dependabot opened, which the
@@ -111,6 +126,11 @@ export class DependencyUpdates {
       pullRequest.number,
       change.headSha,
     ].join("\0");
+    const name = `${pullRequest.repository}#${pullRequest.number}`;
+    if (!this.known.has(name)) {
+      this.known.add(name);
+      this.found();
+    }
     const known = this.byHead.get(key);
     if (known) return known;
     const [commits, files] = await Promise.all([
@@ -129,6 +149,43 @@ export class DependencyUpdates {
     // Only a reading that reached GitHub is worth keeping.
     if (commits) this.byHead.set(key, shown);
     return shown;
+  }
+
+  /**
+   * Whether the Change's pull request is a Dependency update, as far as the
+   * overview has told us. False until its timeline has loaded, so the
+   * palette offers the Recommendation a moment later than the overview does.
+   */
+  isDependencyUpdate(change: Change): boolean {
+    const pullRequest = change.pullRequest;
+    return (
+      !!pullRequest &&
+      this.known.has(`${pullRequest.repository}#${pullRequest.number}`)
+    );
+  }
+
+  /**
+   * The facts as the Recommendation's prompt carries them: Dear Reviewer's
+   * own words, so the Assistant answers about what the Reviewer is reading
+   * and can be held to them. None for a Change that is no Dependency update.
+   */
+  async facts(change: Change): Promise<readonly string[]> {
+    const shown = await this.shown(change).catch(() => undefined);
+    if (!shown) return [];
+    return [
+      ...shown.dependencies.map((dependency) =>
+        [
+          `${dependency.name} ${dependency.versions}`,
+          dependency.updateType,
+          ...(dependency.dependencyType ? [dependency.dependencyType] : []),
+        ].join(", ")
+      ),
+      ...(shown.dependencies.length === 0
+        ? ["No verified commit of Dependabot's says what this updates."]
+        : [`The update as a whole: ${shown.updateType}.`]),
+      shown.files,
+      ...shown.otherCommits.map((commits) => `${commits}, not Dependabot.`),
+    ];
   }
 
   /** Forgets what was read for a Change that is over. */

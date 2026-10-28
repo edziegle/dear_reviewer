@@ -57,22 +57,22 @@ export async function fileChanges(change: Change): Promise<FileChange[]> {
             modifiedLines: [],
           }
         : fileChangeFromDiff(
-        file.path,
-        await git(
-          change.repository,
-          "--literal-pathspecs",
-          "diff",
-          "--no-color",
-          "--no-ext-diff",
-          "--no-renames",
-          "-U0",
-          change.mergeBase,
-          change.headSha,
-          "--",
-          file.path
-        ),
-        file.status === "added"
-      )
+            file.path,
+            await git(
+              change.repository,
+              "--literal-pathspecs",
+              "diff",
+              "--no-color",
+              "--no-ext-diff",
+              "--no-renames",
+              "-U0",
+              change.mergeBase,
+              change.headSha,
+              "--",
+              file.path
+            ),
+            file.status === "added"
+          )
     )
   );
 }
@@ -80,7 +80,10 @@ export async function fileChanges(change: Change): Promise<FileChange[]> {
 export function languageServerSource(change: Change): FlowSource {
   const fileUri = (file: string, side?: "base") =>
     vscode.Uri.file(
-      path.join(side === "base" ? change.baseDir : change.headDir, ...file.split("/"))
+      path.join(
+        side === "base" ? change.baseDir : change.headDir,
+        ...file.split("/")
+      )
     );
 
   /** Where a URI is in the Change's worktrees: which side, and its path from the repository root. */
@@ -92,7 +95,11 @@ export function languageServerSource(change: Change): FlowSource {
       [change.baseDir, "base" as const],
     ] as const) {
       const relative = path.relative(dir, uri.fsPath);
-      if (relative && !relative.startsWith("..") && !path.isAbsolute(relative)) {
+      if (
+        relative &&
+        !relative.startsWith("..") &&
+        !path.isAbsolute(relative)
+      ) {
         return { path: relative.split(path.sep).join("/"), side };
       }
     }
@@ -100,12 +107,13 @@ export function languageServerSource(change: Change): FlowSource {
   };
 
   /** The base side's ids start with "base:", so a file's symbols there don't collide with its head symbols. */
-  const idOf = (file: { path: string; side?: "base" }, line: number, name: string) =>
-    `${file.side === "base" ? "base:" : ""}${file.path}:${line}:${name}`;
+  const idOf = (
+    file: { path: string; side?: "base" },
+    line: number,
+    name: string
+  ) => `${file.side === "base" ? "base:" : ""}${file.path}:${line}:${name}`;
 
-  const itemOf = (
-    call: vscode.CallHierarchyItem
-  ): CallItem | undefined => {
+  const itemOf = (call: vscode.CallHierarchyItem): CallItem | undefined => {
     const place = placeOf(call.uri);
     if (!place) {
       return undefined;
@@ -130,17 +138,17 @@ export function languageServerSource(change: Change): FlowSource {
     (item.handle as Handle).item!;
 
   const links = (
-    calls: readonly (
-      | vscode.CallHierarchyIncomingCall
-      | vscode.CallHierarchyOutgoingCall
-    )[]
+    calls:
+      | readonly (
+          vscode.CallHierarchyIncomingCall | vscode.CallHierarchyOutgoingCall
+        )[]
       | undefined,
     side: "from" | "to"
   ): CallLink[] =>
     (calls ?? []).flatMap((call) => {
-      const target = (call as unknown as Record<string, vscode.CallHierarchyItem>)[
-        side
-      ];
+      const target = (
+        call as unknown as Record<string, vscode.CallHierarchyItem>
+      )[side];
       const item = itemOf(target);
       return item ? [{ item, label: target.detail || undefined }] : [];
     });
@@ -158,9 +166,13 @@ export function languageServerSource(change: Change): FlowSource {
         (vscode.DocumentSymbol | vscode.SymbolInformation)[]
       >("vscode.executeDocumentSymbolProvider", uri);
       const items: CallItem[] = [];
-      const visit = (symbol: vscode.DocumentSymbol | vscode.SymbolInformation) => {
+      const visit = (
+        symbol: vscode.DocumentSymbol | vscode.SymbolInformation
+      ) => {
         const documentSymbol = "selectionRange" in symbol ? symbol : undefined;
-        const range = documentSymbol?.range ?? (symbol as vscode.SymbolInformation).location.range;
+        const range =
+          documentSymbol?.range ??
+          (symbol as vscode.SymbolInformation).location.range;
         if (CALLABLE.has(symbol.kind)) {
           const position = documentSymbol?.selectionRange.start ?? range.start;
           items.push({
@@ -187,10 +199,9 @@ export function languageServerSource(change: Change): FlowSource {
     },
     async incoming(item) {
       return links(
-        await vscode.commands.executeCommand<vscode.CallHierarchyIncomingCall[]>(
-          "vscode.provideIncomingCalls",
-          hierarchyItem(item)
-        ),
+        await vscode.commands.executeCommand<
+          vscode.CallHierarchyIncomingCall[]
+        >("vscode.provideIncomingCalls", hierarchyItem(item)),
         "from"
       );
     },

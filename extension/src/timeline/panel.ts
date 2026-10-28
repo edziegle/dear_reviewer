@@ -23,6 +23,7 @@ import {
 } from "../markdownPanel";
 import type { ShownDependencyUpdate } from "../dependencyUpdates";
 import type { ShownReadingOrder } from "../readingOrder";
+import type { ShownRecommendation } from "../recommendation";
 import { fewSites, type ShownRepeatedEdits } from "../repetitions";
 import type { PendingCommentLine } from "../reviewComments";
 import type { BriefState } from "../briefs";
@@ -150,6 +151,11 @@ export interface TimelineState {
    * (ADR 0051); absent on every other Change.
    */
   dependencyUpdate?: ShownDependencyUpdate;
+  /**
+   * What the Assistant advised on a Dependency update, once the Reviewer
+   * asked; absent until they do.
+   */
+  recommendation?: ShownRecommendation;
   /** Where the Change makes the same edit at several sites, found by Dear Reviewer's rules (ADR 0047); absent when it makes none. */
   repeatedEdits?: ShownRepeatedEdits;
   /** The button that finishes the Review: "Submit Review…" or "Write Brief…". */
@@ -229,6 +235,7 @@ export type FromWebview =
   | { type: "ask" }
   | { type: "codeFlow" }
   | { type: "findIssues" }
+  | { type: "askForRecommendation" }
   | { type: "showChangesSince" }
   | { type: "skimSetting" }
   | { type: "takeAction" }
@@ -368,6 +375,7 @@ export class TimelinePanel {
         "ask",
         "codeFlow",
         "findIssues",
+        "askForRecommendation",
         "showChangesSince",
         "skimSetting",
         "takeAction",
@@ -665,6 +673,8 @@ ${catSymbol}
       <h3>Dependency update</h3>
       <div class="muted" id="dependencyUpdateProblem" role="status" hidden></div>
       <ul id="dependencyUpdateFacts"></ul>
+      <div class="muted" id="recommendationNote" role="status"></div>
+      <div id="recommendation"></div>
     </div>
     <div class="order" id="order" hidden>
       <h3>Reading Order</h3>
@@ -1009,6 +1019,56 @@ ${catSymbol}
     rows.push(el("li", "muted", facts.files));
     for (const commits of facts.otherCommits) rows.push(el("li", "muted", commits));
     list.replaceChildren(...rows);
+  }
+
+  // The Assistant's own words, so they are set as text, never as markup,
+  // and the verdict is one of three the extension wrote (ADR 0042, rule 4).
+  function recommendation(state) {
+    const shown = state.recommendation;
+    const note = byId("recommendationNote");
+    const body = byId("recommendation");
+    if (!state.dependencyUpdate) {
+      note.replaceChildren();
+      body.replaceChildren();
+      return;
+    }
+    const said = JSON.stringify(shown ?? null);
+    if (body.dataset.said === said) return;
+    body.dataset.said = said;
+    note.replaceChildren();
+    body.replaceChildren();
+    const ask = (label) =>
+      textButton(label, () =>
+        vscode.postMessage({ type: "askForRecommendation" })
+      );
+    if (shown?.asking) {
+      note.className = "muted reading";
+      note.append("Asking the Assistant for a Recommendation…");
+    } else {
+      note.className = "muted";
+      if (shown?.problem)
+        note.append(
+          "The Assistant's reply held no Recommendation. ",
+          ask("Ask again")
+        );
+      else if (shown?.outOfDate)
+        note.append(
+          "Given before the latest commits. ",
+          ask("Ask again")
+        );
+      else if (!shown?.advice)
+        note.append(
+          "The Assistant can recommend approving or closing this, or reading it closely. It decides nothing. ",
+          ask("Ask for a Recommendation")
+        );
+    }
+    if (shown?.advice) {
+      const heading = el("div", "step", shown.advice.verdict);
+      heading.append(" ", el("span", "tag", "the Assistant's advice"));
+      body.append(heading, el("div", undefined, shown.advice.reasons));
+      if (!shown.asking && !shown.problem && !shown.outOfDate)
+        body.append(el("div", "muted", "You decide; nothing follows from it."));
+    }
   }
 
   function readingOrder(state) {
@@ -1594,6 +1654,7 @@ ${catSymbol}
     highlighting(state);
     take(state);
     dependencyUpdate(state);
+    recommendation(state);
     readingOrder(state);
     repeatedEdits(state);
     ways(state);

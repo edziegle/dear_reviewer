@@ -21,6 +21,94 @@ import * as http from "http";
 import { AddressInfo } from "net";
 import * as zlib from "zlib";
 
+/** The most nodes a single GraphQL query may request, as on github.com. */
+export const MAX_NODE_LIMIT = 500_000;
+
+/**
+ * Each `fragment Name on Type { ... }` the query defines: its body, and
+ * where the definition starts and ends. A definition may sit before the
+ * operation as well as after it, which is why the span is kept.
+ */
+function fragmentDefinitions(
+  query: string
+): { name: string; body: string; from: number; to: number }[] {
+  const found = [];
+  for (const match of query.matchAll(/fragment\s+(\w+)\s+on\s+\w+\s*\{/g)) {
+    const open = match.index + match[0].length - 1;
+    let depth = 0;
+    for (let i = open; i < query.length; i++) {
+      if (query[i] === "{") depth++;
+      else if (query[i] === "}" && --depth === 0) {
+        found.push({
+          name: match[1],
+          body: query.slice(open + 1, i),
+          from: match.index,
+          to: i + 1,
+        });
+        break;
+      }
+    }
+  }
+  return found;
+}
+
+/**
+ * The query with every `...Name` spread replaced by the fragment's body, and
+ * the fragment definitions cut out wherever they sit. GitHub weighs a query
+ * as the server would resolve it, so a connection inside a fragment counts
+ * wherever the fragment is spread; the Inbox's searches reach most of theirs
+ * that way.
+ */
+function withFragmentsExpanded(query: string): string {
+  const definitions = fragmentDefinitions(query);
+  const bodies = new Map(definitions.map((d) => [d.name, d.body]));
+  // Cut from the last definition back, so each span still lines up.
+  let expanded = query;
+  for (const { from, to } of [...definitions].reverse())
+    expanded = expanded.slice(0, from) + expanded.slice(to);
+  // Spreads nest, so expand until nothing is left to replace. A fragment that
+  // spreads itself would never settle, which GraphQL forbids anyway.
+  for (let i = 0; i < bodies.size + 1; i++) {
+    const next = expanded.replace(
+      /\.\.\.(\w+)/g,
+      (spread, name: string) => bodies.get(name) ?? spread
+    );
+    if (next === expanded) break;
+    expanded = next;
+  }
+  return expanded;
+}
+
+/**
+ * The worst case GitHub counts for a query before running it: the sum, over
+ * each connection field (one with a literal `first`/`last` argument), of the
+ * product of every such argument from the root down to it. Fragments are
+ * expanded first, since a connection inside one counts at every spread.
+ */
+export function worstCaseNodeCount(query: string): number {
+  const expanded = withFragmentsExpanded(query);
+  let total = 0;
+  const multipliers = [1];
+  let fieldStart = 0;
+  for (let i = 0; i < expanded.length; i++) {
+    if (expanded[i] === "{") {
+      const header = expanded.slice(fieldStart, i);
+      const match = /\((?:[^()]*\b(?:first|last):\s*(\d+))[^()]*\)\s*$/.exec(
+        header.trimEnd()
+      );
+      const multiplier =
+        multipliers[multipliers.length - 1] * (match ? Number(match[1]) : 1);
+      if (match) total += multiplier;
+      multipliers.push(multiplier);
+      fieldStart = i + 1;
+    } else if (expanded[i] === "}") {
+      multipliers.pop();
+      fieldStart = i + 1;
+    }
+  }
+  return total;
+}
+
 export type CheckState =
   "SUCCESS" | "FAILURE" | "ERROR" | "PENDING" | "EXPECTED";
 
@@ -228,6 +316,22 @@ export interface FakeGitHubState {
   failQueries?: string[];
   /** Queries, by operation name, that GitHub never answers. */
   stallQueries?: string[];
+  /**
+   * Organizations whose teams GitHub refuses to say, as for a token without
+   * `read:org` scoped to them, SAML SSO not authorized, or an OAuth app
+   * restriction; others still answer.
+   */
+  teamsLookupFailsFor?: string[];
+  /**
+   * Logins that own repositories as a person, not an organization: GitHub
+   * answers with a `User`, which has no teams and is no failure.
+   */
+  personalOwners?: string[];
+  /**
+   * Logins GitHub knows nothing about, as an organization since renamed or a
+   * misspelled setting: GitHub answers NOT_FOUND.
+   */
+  unknownOwners?: string[];
 }
 
 export interface RecordedRequest {
@@ -319,6 +423,36 @@ export async function startFakeGitHub(): Promise<{
         return void stalled.push(res);
       if (operation && state.failQueries?.includes(operation))
         return send(200, { errors: [{ message: `${operation} failed` }] });
+      const organization = (variables as Record<string, string>).organization;
+      const named = (logins?: string[]) =>
+        !!organization &&
+        !!logins?.some((l) => l.toLowerCase() === organization.toLowerCase());
+      if (operation === "OrganizationTeams" && named(state.unknownOwners))
+        return send(200, {
+          errors: [
+            {
+              type: "NOT_FOUND",
+              message: `Could not resolve to a RepositoryOwner with the login of '${organization}'.`,
+            },
+          ],
+        });
+      if (operation === "OrganizationTeams" && named(state.teamsLookupFailsFor))
+        return send(200, {
+          errors: [{ message: "Resource not accessible by integration" }],
+        });
+      const nodeCount = worstCaseNodeCount(query);
+      if (nodeCount > MAX_NODE_LIMIT)
+        return send(200, {
+          errors: [
+            {
+              type: "MAX_NODE_LIMIT_EXCEEDED",
+              message:
+                `By the time this query traverses to the members connection, ` +
+                `it is requesting up to ${nodeCount} possible nodes which ` +
+                `exceeds the maximum limit of ${MAX_NODE_LIMIT}.`,
+            },
+          ],
+        });
       try {
         return send(200, { data: graphql(query, variables) });
       } catch (err) {
@@ -339,10 +473,25 @@ export async function startFakeGitHub(): Promise<{
         login: state.viewer.login,
         avatarUrl: `${state.avatarOrigin ?? url}/avatars/${encodeURIComponent(state.viewer.login)}?v=4`,
       };
-    if (data.viewer && /\borganizations\(/.test(query))
-      (data.viewer as Record<string, unknown>).organizations = {
-        nodes: viewerOrganizations(),
-      };
+    if (/\brepositoryOwner\(login:\s*\$organization\)/.test(query)) {
+      const owner = variables.organization;
+      const personal = state.personalOwners?.some(
+        (l) => l.toLowerCase() === owner.toLowerCase()
+      );
+      // GitHub answers with the owner's own spelling of its login, whatever
+      // the case the query asked by.
+      const login =
+        (state.teams ?? []).find(
+          (t) => t.org.toLowerCase() === owner.toLowerCase()
+        )?.org ?? owner;
+      data.repositoryOwner = personal
+        ? { __typename: "User", login }
+        : {
+            __typename: "Organization",
+            login,
+            teams: organizationTeams(owner, variables.login),
+          };
+    }
     if (/\borganization\(login:\s*\$organization\)/.test(query)) {
       const team = teamNamed(variables.organization, variables.slug);
       data.organization = {
@@ -970,27 +1119,30 @@ export async function startFakeGitHub(): Promise<{
     return names;
   }
 
-  /** The organizations the viewer is in, with the teams they are directly on and those teams' parents. */
-  function viewerOrganizations() {
-    const me = state.viewer.login;
+  /**
+   * The teams a user is directly on in one organization, each with the teams
+   * above it and the first page of its members.
+   */
+  function organizationTeams(organization: string, login: string) {
     const members = (team: FakeTeam) => membersPage(membersOf(team), 0);
-    return [...new Set((state.teams ?? []).map((t) => t.org))].map((org) => ({
-      login: org,
-      teams: {
-        nodes: (state.teams ?? [])
-          .filter((t) => t.org === org && t.members.includes(me))
-          .map((team) => ({
-            slug: team.slug,
-            members: members(team),
-            ancestors: {
-              nodes: ancestorsOf(team).map((a) => ({
-                slug: a.slug,
-                members: members(a),
-              })),
-            },
-          })),
-      },
-    }));
+    return {
+      nodes: (state.teams ?? [])
+        .filter(
+          (t) =>
+            t.org.toLowerCase() === organization.toLowerCase() &&
+            t.members.includes(login)
+        )
+        .map((team) => ({
+          slug: team.slug,
+          members: members(team),
+          ancestors: {
+            nodes: ancestorsOf(team).map((a) => ({
+              slug: a.slug,
+              members: members(a),
+            })),
+          },
+        })),
+    };
   }
 
   /** A hundred members from `offset`, as GitHub pages them. */

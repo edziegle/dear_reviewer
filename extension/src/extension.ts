@@ -22,6 +22,7 @@ import { ClosedChanges } from "./closedChanges";
 import { Assistants } from "./assistant/assistant";
 import { Briefs } from "./briefs";
 import { Conversations } from "./assistant/conversations";
+import { DependencyUpdates } from "./dependencyUpdates";
 import { Findings } from "./findings";
 import {
   ReadingTracker,
@@ -95,6 +96,8 @@ export function activate(context: vscode.ExtensionContext) {
     settings().inspect<string>("githubApiUrl")?.globalValue ||
     "https://api.github.com";
   const github = new GitHubClient(auth, apiUrl);
+  // A Dependency update's facts, read from its commits once per head commit.
+  const dependencyUpdates = new DependencyUpdates(github);
   // For the setup walkthrough's checklist.
   const showSignedIn = async () =>
     setContext("dearReviewer.signedIn", !!(await auth.token(apiUrl())));
@@ -294,6 +297,7 @@ export function activate(context: vscode.ExtensionContext) {
     navigationOff: () => trust.navigationOff,
     take: (change) => assistants.overviewOf(change),
     readingOrder: (change) => changeFiles.readingOrder(change),
+    dependencyUpdate: (change) => dependencyUpdates.shown(change),
     repeatedEdits: (change) => repetitions.repeatedEdits(change),
     openSite: (change, site, missed) =>
       missed

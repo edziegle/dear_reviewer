@@ -243,6 +243,12 @@ export interface PullRequestTimeline {
   events: TimelineEvent[];
   /** The latest commit's checks; undefined when it has none. */
   checks?: { commit: string; status?: CheckStatus; runs: CheckRun[] };
+  /**
+   * Whether Dependabot opened it, so its overview shows a Dependency
+   * update's facts (ADR 0051). GitHub sets the author and marks an App's
+   * account a Bot, so a person's account of the same login isn't one.
+   */
+  byDependabot: boolean;
 }
 
 export class NotSignedInError extends Error {
@@ -852,6 +858,12 @@ ${paths
         title: pullRequest.title,
         url: pullRequest.url,
         baseRef: pullRequest.baseRefName,
+        byDependabot: byDependabot({
+          author: {
+            login: pullRequest.author?.login ?? "",
+            ...(pullRequest.author?.__typename === "Bot" && { bot: true }),
+          },
+        }),
         events: [
           {
             kind: "description",
@@ -1233,7 +1245,7 @@ const PULL_REQUEST_TIMELINE = `query PullRequestTimeline($owner: String!, $name:
       body
       createdAt
       baseRefName
-      author { login avatarUrl }
+      author { __typename login avatarUrl }
       commits(last: 1) {
         nodes {
           commit {
@@ -1340,7 +1352,7 @@ interface TimelineData {
       body: string;
       createdAt: string;
       baseRefName: string;
-      author: GitHubUser | null;
+      author: ({ __typename?: string } & GitHubUser) | null;
       commits: { nodes: { commit: LatestCommitNode }[] };
       timelineItems: {
         pageInfo: { hasNextPage: boolean; endCursor: string | null };

@@ -21,6 +21,7 @@ import {
   sharedScript,
   sharedStyles,
 } from "../markdownPanel";
+import type { ShownDependencyUpdate } from "../dependencyUpdates";
 import type { ShownReadingOrder } from "../readingOrder";
 import { fewSites, type ShownRepeatedEdits } from "../repetitions";
 import type { PendingCommentLine } from "../reviewComments";
@@ -144,6 +145,11 @@ export interface TimelineState {
   take: OverviewTake;
   /** The order the Assistant suggests for reading the Change's files, while it has one or writes one. */
   readingOrder?: ShownReadingOrder;
+  /**
+   * A Dependency update's facts, worked out from rules with no Assistant
+   * (ADR 0051); absent on every other Change.
+   */
+  dependencyUpdate?: ShownDependencyUpdate;
   /** Where the Change makes the same edit at several sites, found by Dear Reviewer's rules (ADR 0047); absent when it makes none. */
   repeatedEdits?: ShownRepeatedEdits;
   /** The button that finishes the Review: "Submit Review…" or "Write Brief…". */
@@ -655,6 +661,11 @@ ${catSymbol}
         <div class="muted problem-line" id="takeProblem" hidden></div>
       </div>
     </div>
+    <div class="order" id="dependencyUpdate" hidden>
+      <h3>Dependency update</h3>
+      <div class="muted" id="dependencyUpdateProblem" role="status" hidden></div>
+      <ul id="dependencyUpdateFacts"></ul>
+    </div>
     <div class="order" id="order" hidden>
       <h3>Reading Order</h3>
       <div class="muted" id="orderNote" role="status"></div>
@@ -968,6 +979,36 @@ ${catSymbol}
         if (t.canRetry) problem.append(t.problemAction ? " · " : " ", textButton("Retry", () => vscode.postMessage({ type: "takeRetry" })));
       }
     }
+  }
+
+  // The facts come from Dear Reviewer's own rules, so they are plain text
+  // the pull request can't shape: every piece is a node the page builds.
+  function dependencyUpdate(state) {
+    const facts = state.dependencyUpdate;
+    byId("dependencyUpdate").hidden = !facts;
+    if (!facts) return;
+    const said = JSON.stringify(facts);
+    const node = byId("dependencyUpdate");
+    if (node.dataset.said === said) return;
+    node.dataset.said = said;
+    const problem = byId("dependencyUpdateProblem");
+    problem.hidden = !facts.problem;
+    if (facts.problem) setText(problem, "GitHub wouldn't say what its commits are, so these facts may be short of a dependency.");
+    const list = byId("dependencyUpdateFacts");
+    const rows = [];
+    for (const dependency of facts.dependencies) {
+      const row = el("li");
+      row.append(el("span", "step", dependency.name), " ", dependency.versions, " · ", dependency.updateType);
+      if (dependency.dependencyType) row.append(" · ", dependency.dependencyType);
+      rows.push(row);
+    }
+    if (facts.dependencies.length === 0)
+      rows.push(el("li", "muted", "No verified commit of Dependabot's says what this updates."));
+    else if (facts.dependencies.length > 1)
+      rows.push(el("li", "muted", "The update as a whole: " + facts.updateType + "."));
+    rows.push(el("li", "muted", facts.files));
+    for (const commits of facts.otherCommits) rows.push(el("li", "muted", commits));
+    list.replaceChildren(...rows);
   }
 
   function readingOrder(state) {
@@ -1552,6 +1593,7 @@ ${catSymbol}
     hiddenText(state);
     highlighting(state);
     take(state);
+    dependencyUpdate(state);
     readingOrder(state);
     repeatedEdits(state);
     ways(state);

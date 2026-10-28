@@ -775,7 +775,10 @@ export async function startFakeGitHub(): Promise<{
       body: pr.body ?? "",
       createdAt: pr.createdAt ?? "2026-10-01T00:00:00Z",
       baseRefName: pr.baseRefName ?? "main",
-      author: actor(pr.author),
+      author: {
+        ...actor(pr.author),
+        __typename: pr.authorIsBot ? "Bot" : "User",
+      },
       commits: {
         nodes: [
           {

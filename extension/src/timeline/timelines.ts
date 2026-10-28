@@ -39,6 +39,7 @@ import {
   type TimelineState,
 } from "./panel";
 import { isUnreachable, messageOf } from "../errors";
+import type { ShownDependencyUpdate } from "../dependencyUpdates";
 import type { ShownReadingOrder } from "../readingOrder";
 import type { ShownRepeatedEdits, ShownSite } from "../repetitions";
 import type { PendingCommentLine } from "../reviewComments";
@@ -84,6 +85,11 @@ export interface OverviewSources {
   take(change: Change): OverviewTake | undefined;
   /** The Change's Reading Order, with each file's viewed state. */
   readingOrder(change: Change): Promise<ShownReadingOrder | undefined>;
+  /**
+   * A Dependency update's facts, worked out from rules (ADR 0051); only
+   * asked for once the timeline says Dependabot opened the pull request.
+   */
+  dependencyUpdate(change: Change): Promise<ShownDependencyUpdate | undefined>;
   /** The Change's Repeated edits (ADR 0047), once found; without their missed sites until the repository's index is ready. */
   repeatedEdits(change: Change): Promise<ShownRepeatedEdits | undefined>;
   /**
@@ -728,8 +734,14 @@ class ChangeTimeline {
     const items: TimelineItem[] = [];
     for (const event of timeline.events)
       items.push({ ...event, author: await author(event.author) });
+    // Only a Dependency update has facts, and reading them asks GitHub for
+    // the pull request's commits, so nothing else pays for the request.
+    const dependencyUpdate = timeline.byDependabot
+      ? await this.sources.dependencyUpdate(this.change).catch(() => undefined)
+      : undefined;
     return {
       ...this.state,
+      ...(dependencyUpdate && { dependencyUpdate }),
       title: timeline.title,
       byline: pullRequestByline(this.change, timeline),
       url: timeline.url,

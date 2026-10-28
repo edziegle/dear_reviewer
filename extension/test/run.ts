@@ -289,6 +289,7 @@ const launchGroups: (GroupPlan & {
       "localBranches",
       "sinceLastReview",
       "findings",
+      "recommendation",
       "agentNote",
       "codeFlow",
     ],

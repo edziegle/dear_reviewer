@@ -344,7 +344,7 @@ describe("Inbox: Team requests", () => {
     );
   });
 
-  it("keeps the Team requests of an organization alongside a repository whose owner is no organization", async () => {
+  it("keeps the Team requests of an organization alongside a repository of the Reviewer's own", async () => {
     const personal = pr(11, "In my own repository", {
       repository: "reviewer/scratch",
       author: "reviewer",
@@ -353,7 +353,7 @@ describe("Inbox: Team requests", () => {
       await serveGitHub({
         viewer,
         teams,
-        notOrganizations: ["reviewer"],
+        personalOwners: ["reviewer"],
         pullRequests: [structuredClone(approved), structuredClone(personal)],
       });
       await configure({ repositories: ["acme/api", "reviewer/scratch"] });
@@ -367,6 +367,71 @@ describe("Inbox: Team requests", () => {
       assert.deepStrictEqual(
         labels(groups.find((g) => g.label === "Authored by me")),
         ["In my own repository"]
+      );
+    } finally {
+      await configure({ repositories: ["acme/api"] });
+    }
+  });
+
+  it("keeps them alongside a repository listed under an owner GitHub knows nothing about", async () => {
+    try {
+      await serveGitHub({
+        viewer,
+        teams,
+        unknownOwners: ["gone"],
+        pullRequests: [structuredClone(approved)],
+      });
+      await configure({ repositories: ["acme/api", "gone/elsewhere"] });
+      await refreshInbox();
+
+      assert.deepStrictEqual(
+        labels((await inbox()).find((g) => g.label === "Reviewed by my team")),
+        ["Approved by a teammate"]
+      );
+    } finally {
+      await configure({ repositories: ["acme/api"] });
+    }
+  });
+
+  // Together in one query, four repositories' searches came to 532,800 nodes
+  // and GitHub refused the Inbox outright (#223). The fake holds it to the
+  // same limit, so this fails if the searches are ever gathered up again.
+  it("lists the Inbox of enough repositories to have exceeded GitHub's node limit in one query", async () => {
+    const repositories = ["acme/api", "acme/web", "acme/ledger", "acme/infra"];
+    try {
+      await serveGitHub({
+        viewer,
+        teams,
+        pullRequests: repositories.map((repository, i) => ({
+          ...structuredClone(approved),
+          repository,
+          number: 20 + i,
+          title: `Approved by a teammate in ${repository}`,
+        })),
+      });
+      await configure({ repositories });
+      await refreshInbox();
+
+      assert.deepStrictEqual(
+        labels((await inbox()).find((g) => g.label === "Reviewed by my team")),
+        repositories.map((r) => `Approved by a teammate in ${r}`)
+      );
+    } finally {
+      await configure({ repositories: ["acme/api"] });
+    }
+  });
+
+  it("names a team as GitHub spells its organization, not as the settings do", async () => {
+    try {
+      await configure({ repositories: ["ACME/api"] });
+      await serve([approved]);
+
+      const group = (await inbox()).find(
+        (g) => g.label === "Reviewed by my team"
+      );
+      assert.deepStrictEqual(
+        group?.entries.map((e) => e.description),
+        ["acme/api #3 · Approved by @octocat · via @acme/api-owners"]
       );
     } finally {
       await configure({ repositories: ["acme/api"] });

@@ -193,10 +193,20 @@ export async function inboxSettled(): Promise<void> {
   if (extension.isActive) await extension.exports.inbox.settled();
 }
 
-/** The searches for pull requests awaiting the Reviewer's review that the Inbox sent, oldest first. */
+/**
+ * One request for each time the Inbox loaded, oldest first: the search for
+ * the pull requests awaiting the Reviewer's review in the first of the
+ * configured repositories.
+ *
+ * The Inbox queries one repository at a time, to stay under GitHub's node
+ * limit (#223), so it sends a request for each; the first repository's
+ * `awaiting0` marks one load, however many repositories are listed.
+ */
 export async function awaitingSearches(): Promise<RecordedRequest[]> {
-  return (await requestsToGitHub()).filter((request) =>
-    JSON.stringify(request.body ?? "").includes("review-requested:@me")
+  return (await requestsToGitHub()).filter(
+    (request) =>
+      typeof (request.body as { variables?: Record<string, unknown> })
+        ?.variables?.awaiting0 === "string"
   );
 }
 

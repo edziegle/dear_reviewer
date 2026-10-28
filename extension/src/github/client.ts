@@ -8,7 +8,13 @@ import {
   requestedOfReviewerAt,
   type ReviewRequest,
 } from "./reviewRequests";
-import { ORGANIZATION_TEAMS, TEAM_MEMBERS } from "./queries";
+import {
+  inboxQuery,
+  inboxSearches,
+  ORGANIZATION_TEAMS,
+  SUBMITTED_REVIEWS,
+  TEAM_MEMBERS,
+} from "./queries";
 import { fetchWithin, REQUEST_TIMEOUT_MS } from "./request";
 import {
   answeredByTeam,
@@ -228,6 +234,26 @@ export class NotSignedInError extends Error {
   }
 }
 
+/**
+ * How many repositories the Inbox reads at once. Each is a request of its
+ * own, so a long Repositories list would otherwise open one apiece and meet
+ * GitHub's secondary rate limits.
+ */
+const REPOSITORIES_AT_ONCE = 6;
+
+/** Runs the tasks, at most `atOnce` of them together, and gives their results in order. */
+async function inBatches<T>(
+  tasks: (() => Promise<T>)[],
+  atOnce: number
+): Promise<T[]> {
+  const results: T[] = [];
+  for (let i = 0; i < tasks.length; i += atOnce)
+    results.push(
+      ...(await Promise.all(tasks.slice(i, i + atOnce).map((task) => task())))
+    );
+  return results;
+}
+
 export class GitHubError extends Error {
   /**
    * The `type` of each error GitHub answered with, such as `NOT_FOUND`, so a
@@ -280,44 +306,35 @@ export class GitHubClient {
     const teamOrganizations = new Set(
       myTeams.map((team) => team.name.split("/")[0].toLowerCase())
     );
-    const searches = repositories.flatMap((repository, i) => [
-      {
-        alias: `awaiting${i}`,
-        query: `is:pr is:open archived:false repo:${repository} review-requested:@me`,
-      },
-      {
-        alias: `authored${i}`,
-        query: `is:pr is:open archived:false repo:${repository} author:@me`,
-      },
-      {
-        alias: `reviewed${i}`,
-        query: `is:pr is:open archived:false repo:${repository} reviewed-by:@me -author:@me`,
-      },
-      ...(teamOrganizations.has(repository.split("/")[0].toLowerCase())
-        ? [
+    const perRepository = repositories.map((repository, i) =>
+      inboxSearches(
+        repository,
+        i,
+        teamOrganizations.has(repository.split("/")[0].toLowerCase())
+      )
+    );
+    const searches = perRepository.flat();
+    // One query per repository, a few at a time. Together in one query they
+    // crossed GitHub's node limit at four repositories and it answered the
+    // whole Inbox with an error (#223); apart, each stays near 133,000
+    // nodes however many repositories are listed.
+    const answers = await inBatches(
+      perRepository.map(
+        (group) => () =>
+          this.graphql<Record<string, { nodes: PullRequestNode[] }>>(
+            inboxQuery(group),
             {
-              alias: `team${i}`,
-              query: `is:pr is:open archived:false repo:${repository} -author:@me -reviewed-by:@me -review-requested:@me sort:updated-desc`,
-            },
-          ]
-        : []),
-    ]);
-    const withHistory = searches.some((s) => s.alias.startsWith("team"));
-    const query = `query Inbox($reviewer: String!, ${searches.map((s) => `$${s.alias}: String!`).join(", ")}) {
-${searches
-  .map(
-    (s) =>
-      `  ${s.alias}: search(query: $${s.alias}, type: ISSUE, first: 100) { nodes { ...InboxPullRequest${s.alias.startsWith("team") ? " ...TeamHistory" : ""} } }`
-  )
-  .join("\n")}
-}
-${INBOX_PULL_REQUEST}${withHistory ? `\n${TEAM_HISTORY}` : ""}`;
-    const data = await this.graphql<
-      Record<string, { nodes: PullRequestNode[] }>
-    >(query, {
-      reviewer,
-      ...Object.fromEntries(searches.map((s) => [s.alias, s.query])),
-    });
+              reviewer,
+              ...Object.fromEntries(group.map((s) => [s.alias, s.query])),
+            }
+          )
+      ),
+      REPOSITORIES_AT_ONCE
+    );
+    const data: Record<string, { nodes: PullRequestNode[] }> = Object.assign(
+      {},
+      ...answers
+    );
     const nodesOf = (prefix: string) =>
       searches
         .filter((s) => s.alias.startsWith(prefix))
@@ -386,11 +403,11 @@ ${INBOX_PULL_REQUEST}${withHistory ? `\n${TEAM_HISTORY}` : ""}`;
    * teams above them, with every member of each: a request to a parent team
    * reaches me through a child team.
    *
-   * One query per organization, all at once, each carrying the first hundred
-   * members of every team it answers with; only a team of more than a hundred
-   * costs a request of its own. An organization GitHub won't say for, such as
-   * for a token without `read:org`, is logged and left out, and the teams of
-   * the others still count.
+   * One query per repository owner, all at once, each carrying the first
+   * hundred members of every team it answers with; only a team of more than
+   * a hundred costs a request of its own. An owner GitHub won't say for, such
+   * as for a token without `read:org`, is logged and left out, and the teams
+   * of the others still count.
    */
   private async myTeams(
     login: string,
@@ -402,19 +419,15 @@ ${INBOX_PULL_REQUEST}${withHistory ? `\n${TEAM_HISTORY}` : ""}`;
       owners.set(owner.toLowerCase(), owner);
     }
     const lookups = await Promise.all(
-      [...owners.values()].map(
-        async (organization) =>
-          [
-            organization,
-            await this.organizationTeams(organization, login),
-          ] as const
-      )
+      [...owners.values()].map((owner) => this.organizationTeams(owner, login))
     );
     const teams = new Map<
       string,
       { organization: string; slug: string; members: TeamMembersNode }
     >();
-    for (const [organization, nodes] of lookups)
+    // The organization's own login, not the owner as the settings spell it,
+    // so a team reads as GitHub writes it.
+    for (const { organization, nodes } of lookups)
       for (const team of nodes)
         for (const t of [team, ...team.ancestors.nodes])
           teams.set(`${organization}/${t.slug}`.toLowerCase(), {
@@ -435,31 +448,36 @@ ${INBOX_PULL_REQUEST}${withHistory ? `\n${TEAM_HISTORY}` : ""}`;
   }
 
   /**
-   * The teams of one organization the viewer is on, with the first page of
-   * each team's members; none, with a word about why, when GitHub won't say.
+   * The teams of one repository owner the viewer is on, with the first page
+   * of each team's members, under the owner's login as GitHub spells it.
+   *
+   * None for an owner that is a person, who has no teams; none, with a word
+   * about why, when GitHub won't say or knows no such owner.
    */
   private async organizationTeams(
-    organization: string,
+    owner: string,
     login: string
-  ): Promise<OrganizationTeamNode[]> {
+  ): Promise<{ organization: string; nodes: OrganizationTeamNode[] }> {
+    const none = { organization: owner, nodes: [] };
     try {
       const data = await this.graphql<OrganizationTeamsData>(
         ORGANIZATION_TEAMS,
-        { organization, login }
+        { organization: owner, login }
       );
-      return data.organization?.teams.nodes ?? [];
+      const found = data.repositoryOwner;
+      // A person's account answers as a User and has no teams: expected of
+      // the Reviewer's own repositories, and nothing to report.
+      if (!found || found.__typename !== "Organization") return none;
+      return { organization: found.login, nodes: found.teams?.nodes ?? [] };
     } catch (err) {
       if (err instanceof SignInRejectedError) throw err;
       if (err instanceof GitHubError) {
-        // A repository of a person, or of an organization under another name,
-        // resolves to no organization: there are no teams to find, which
-        // GitHub reports as NOT_FOUND rather than as a refusal.
         console.warn(
           err.types.includes("NOT_FOUND")
-            ? `Dear Reviewer: no organization named ${organization}, so no Team requests from its repositories`
-            : `Dear Reviewer: couldn't read ${organization}'s teams, so no Team requests from its repositories: ${err.message}`
+            ? `Dear Reviewer: GitHub knows no ${owner}, so no Team requests from the repositories listed under it`
+            : `Dear Reviewer: couldn't read ${owner}'s teams, so no Team requests from its repositories: ${err.message}`
         );
-        return [];
+        return none;
       }
       throw err;
     }
@@ -974,9 +992,6 @@ function graphqlUrl(apiUrl: string): string {
     : `${base}/graphql`;
 }
 
-/** The states of a submitted review: one that ended a Review. */
-const SUBMITTED_REVIEWS = "[APPROVED, CHANGES_REQUESTED, COMMENTED, DISMISSED]";
-
 const LAST_REVIEW = `query LastReview($owner: String!, $name: String!, $number: Int!, $reviewer: String!) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
@@ -1329,60 +1344,6 @@ function checkRunStatus(
   }
 }
 
-const INBOX_PULL_REQUEST = `fragment InboxPullRequest on PullRequest {
-  __typename
-  number
-  title
-  url
-  updatedAt
-  createdAt
-  additions
-  deletions
-  changedFiles
-  headRefName
-  headRefOid
-  baseRefName
-  repository { nameWithOwner }
-  author { login avatarUrl }
-  isDraft
-  mergeable
-  reviewDecision
-  commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
-  reviews(last: 1, author: $reviewer, states: ${SUBMITTED_REVIEWS}) { nodes { commit { oid } submittedAt } }
-  latestReviews(first: 100) { nodes { ...InboxReview } }
-  latestOpinionatedReviews(first: 100) { nodes { ...InboxReview } }
-  reviewRequests: timelineItems(last: 50, itemTypes: [REVIEW_REQUESTED_EVENT]) {
-    nodes { ... on ReviewRequestedEvent { createdAt requestedReviewer { ...Requested } } }
-  }
-  pendingRequests: reviewRequests(first: 30) { nodes { requestedReviewer { ...Requested } } }
-}
-
-fragment Requested on RequestedReviewer {
-  __typename
-  ... on User { login }
-  ... on Team { slug organization { login } }
-}
-
-fragment InboxReview on PullRequestReview {
-  state
-  author { login }
-  commit { oid }
-}`;
-
-/** What it takes to tell whether a teammate's review answered a Team request. */
-const TEAM_HISTORY = `fragment TeamHistory on PullRequest {
-  requestChanges: timelineItems(last: 100, itemTypes: [REVIEW_REQUESTED_EVENT, REVIEW_REQUEST_REMOVED_EVENT]) {
-    nodes {
-      __typename
-      ... on ReviewRequestedEvent { createdAt requestedReviewer { ...Requested } }
-      ... on ReviewRequestRemovedEvent { createdAt requestedReviewer { ...Requested } }
-    }
-  }
-  submittedReviews: reviews(last: 100, states: [APPROVED, CHANGES_REQUESTED, COMMENTED]) {
-    nodes { author { login } state submittedAt }
-  }
-}`;
-
 interface TeamMembersNode {
   nodes: { login: string }[];
   pageInfo: { hasNextPage: boolean; endCursor: string | null };
@@ -1396,7 +1357,12 @@ interface OrganizationTeamNode {
 }
 
 interface OrganizationTeamsData {
-  organization: { teams: { nodes: OrganizationTeamNode[] } } | null;
+  /** A `User` for a person's account, an `Organization` for one with teams. */
+  repositoryOwner: {
+    __typename: string;
+    login: string;
+    teams?: { nodes: OrganizationTeamNode[] };
+  } | null;
 }
 
 interface TeamMembersData {

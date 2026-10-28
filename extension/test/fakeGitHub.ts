@@ -24,32 +24,48 @@ import * as zlib from "zlib";
 /** The most nodes a single GraphQL query may request, as on github.com. */
 export const MAX_NODE_LIMIT = 500_000;
 
-/** The body of each `fragment Name on Type { ... }` the query defines. */
-function fragmentBodies(query: string): Map<string, string> {
-  const bodies = new Map<string, string>();
+/**
+ * Each `fragment Name on Type { ... }` the query defines: its body, and
+ * where the definition starts and ends. A definition may sit before the
+ * operation as well as after it, which is why the span is kept.
+ */
+function fragmentDefinitions(
+  query: string
+): { name: string; body: string; from: number; to: number }[] {
+  const found = [];
   for (const match of query.matchAll(/fragment\s+(\w+)\s+on\s+\w+\s*\{/g)) {
     const open = match.index + match[0].length - 1;
     let depth = 0;
     for (let i = open; i < query.length; i++) {
       if (query[i] === "{") depth++;
       else if (query[i] === "}" && --depth === 0) {
-        bodies.set(match[1], query.slice(open + 1, i));
+        found.push({
+          name: match[1],
+          body: query.slice(open + 1, i),
+          from: match.index,
+          to: i + 1,
+        });
         break;
       }
     }
   }
-  return bodies;
+  return found;
 }
 
 /**
  * The query with every `...Name` spread replaced by the fragment's body, and
- * the fragment definitions dropped. GitHub weighs a query as the server would
- * resolve it, so a connection inside a fragment counts wherever the fragment
- * is spread; the Inbox's searches reach most of theirs that way.
+ * the fragment definitions cut out wherever they sit. GitHub weighs a query
+ * as the server would resolve it, so a connection inside a fragment counts
+ * wherever the fragment is spread; the Inbox's searches reach most of theirs
+ * that way.
  */
 function withFragmentsExpanded(query: string): string {
-  const bodies = fragmentBodies(query);
-  let expanded = query.replace(/fragment\s+\w+\s+on\s+\w+\s*\{[\s\S]*/, "");
+  const definitions = fragmentDefinitions(query);
+  const bodies = new Map(definitions.map((d) => [d.name, d.body]));
+  // Cut from the last definition back, so each span still lines up.
+  let expanded = query;
+  for (const { from, to } of [...definitions].reverse())
+    expanded = expanded.slice(0, from) + expanded.slice(to);
   // Spreads nest, so expand until nothing is left to replace. A fragment that
   // spreads itself would never settle, which GraphQL forbids anyway.
   for (let i = 0; i < bodies.size + 1; i++) {
@@ -307,10 +323,15 @@ export interface FakeGitHubState {
    */
   teamsLookupFailsFor?: string[];
   /**
-   * Logins that are no organization, as a person's account or an
-   * organization since renamed: GitHub answers NOT_FOUND for their teams.
+   * Logins that own repositories as a person, not an organization: GitHub
+   * answers with a `User`, which has no teams and is no failure.
    */
-  notOrganizations?: string[];
+  personalOwners?: string[];
+  /**
+   * Logins GitHub knows nothing about, as an organization since renamed or a
+   * misspelled setting: GitHub answers NOT_FOUND.
+   */
+  unknownOwners?: string[];
 }
 
 export interface RecordedRequest {
@@ -406,12 +427,12 @@ export async function startFakeGitHub(): Promise<{
       const named = (logins?: string[]) =>
         !!organization &&
         !!logins?.some((l) => l.toLowerCase() === organization.toLowerCase());
-      if (operation === "OrganizationTeams" && named(state.notOrganizations))
+      if (operation === "OrganizationTeams" && named(state.unknownOwners))
         return send(200, {
           errors: [
             {
               type: "NOT_FOUND",
-              message: `Could not resolve to an Organization with the login of '${organization}'.`,
+              message: `Could not resolve to a RepositoryOwner with the login of '${organization}'.`,
             },
           ],
         });
@@ -424,10 +445,11 @@ export async function startFakeGitHub(): Promise<{
         return send(200, {
           errors: [
             {
+              type: "MAX_NODE_LIMIT_EXCEEDED",
               message:
-                `MAX_NODE_LIMIT_EXCEEDED: By the time this query traverses to ` +
-                `the members connection, it is requesting up to ${nodeCount} ` +
-                `possible nodes which exceeds the maximum limit of ${MAX_NODE_LIMIT}.`,
+                `By the time this query traverses to the members connection, ` +
+                `it is requesting up to ${nodeCount} possible nodes which ` +
+                `exceeds the maximum limit of ${MAX_NODE_LIMIT}.`,
             },
           ],
         });
@@ -451,19 +473,32 @@ export async function startFakeGitHub(): Promise<{
         login: state.viewer.login,
         avatarUrl: `${state.avatarOrigin ?? url}/avatars/${encodeURIComponent(state.viewer.login)}?v=4`,
       };
+    if (/\brepositoryOwner\(login:\s*\$organization\)/.test(query)) {
+      const owner = variables.organization;
+      const personal = state.personalOwners?.some(
+        (l) => l.toLowerCase() === owner.toLowerCase()
+      );
+      // GitHub answers with the owner's own spelling of its login, whatever
+      // the case the query asked by.
+      const login =
+        (state.teams ?? []).find(
+          (t) => t.org.toLowerCase() === owner.toLowerCase()
+        )?.org ?? owner;
+      data.repositoryOwner = personal
+        ? { __typename: "User", login }
+        : {
+            __typename: "Organization",
+            login,
+            teams: organizationTeams(owner, variables.login),
+          };
+    }
     if (/\borganization\(login:\s*\$organization\)/.test(query)) {
-      if (/\bteams\(first:/.test(query)) {
-        data.organization = {
-          teams: organizationTeams(variables.organization, variables.login),
-        };
-      } else {
-        const team = teamNamed(variables.organization, variables.slug);
-        data.organization = {
-          team: team && {
-            members: membersPage(membersOf(team), Number(variables.after ?? 0)),
-          },
-        };
-      }
+      const team = teamNamed(variables.organization, variables.slug);
+      data.organization = {
+        team: team && {
+          members: membersPage(membersOf(team), Number(variables.after ?? 0)),
+        },
+      };
     }
     for (const [, alias, variable] of query.matchAll(
       /(\w+)\s*:\s*search\(\s*query:\s*\$(\w+)/g

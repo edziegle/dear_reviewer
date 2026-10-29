@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.11.0](https://github.com/edziegle/dear_reviewer/compare/v0.10.0...v0.11.0) (2026-10-29)
+
+
+### Features
+
+* **dependency-updates:** give Dependabot's pull requests facts, a Recommendation and a list ([#227](https://github.com/edziegle/dear_reviewer/issues/227)) ([756ab67](https://github.com/edziegle/dear_reviewer/commit/756ab670a803eac25d5424f87a18a2d3650ddfd8))
+
+
+### Bug Fixes
+
+* **inbox:** read the Reviewer's teams one organization at a time ([#222](https://github.com/edziegle/dear_reviewer/issues/222)) ([390df2f](https://github.com/edziegle/dear_reviewer/commit/390df2f57bb17ab199999781fe61bb1888b0316b))
+
 ## [0.10.0](https://github.com/edziegle/dear_reviewer/compare/v0.9.0...v0.10.0) (2026-10-23)
 
 

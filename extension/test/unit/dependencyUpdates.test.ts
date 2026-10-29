@@ -75,13 +75,19 @@ describe("shownFacts", () => {
   });
 
   it("names the other files, and counts the rest past the first five", () => {
+    const shown = shownFacts(
+      facts({
+        onlyDependencyFiles: false,
+        otherFiles: ["src/uri.ts", "src/parse.ts"],
+      })
+    );
+
+    // The overview sets this as text, so it carries no backticks.
+    assert.strictEqual(shown.files, "Also changes src/uri.ts, src/parse.ts.");
+    // A prompt takes the same sentence with the paths fenced, since a path
+    // is other people's text (ADR 0042, rule 1).
     assert.strictEqual(
-      shownFacts(
-        facts({
-          onlyDependencyFiles: false,
-          otherFiles: ["src/uri.ts", "src/parse.ts"],
-        })
-      ).files,
+      shown.filesQuoted,
       "Also changes `src/uri.ts`, `src/parse.ts`."
     );
     assert.strictEqual(
@@ -91,7 +97,24 @@ describe("shownFacts", () => {
           otherFiles: ["a", "b", "c", "d", "e", "f", "g"],
         })
       ).files,
-      "Also changes `a`, `b`, `c`, `d`, `e`, and 2 more."
+      "Also changes a, b, c, d, e, and 2 more."
+    );
+  });
+
+  it("says a dependency's versions are unknown rather than showing nothing", () => {
+    assert.deepStrictEqual(
+      shownFacts(
+        facts({
+          dependencies: [{ name: "pkg", updateType: "unknown" }],
+        })
+      ).dependencies,
+      [
+        {
+          name: "pkg",
+          versions: "version unknown",
+          updateType: "update type unknown",
+        },
+      ]
     );
   });
 

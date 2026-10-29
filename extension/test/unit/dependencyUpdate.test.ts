@@ -1,5 +1,6 @@
 import * as assert from "assert";
 import {
+  byDependabot,
   dependencyUpdateFacts,
   largestUpdateType,
   updatedDependenciesIn,
@@ -79,6 +80,34 @@ const commit = (
   author: "dependabot[bot]",
   verified: true,
   ...more,
+});
+
+// GitHub answers two different logins for Dependabot, which is what made
+// the first cut of this recognise no real pull request at all: a `Bot`
+// login, which a pull request's author is, leaves the `[bot]` suffix off.
+// Checked against this repository's own Dependabot pull requests.
+describe("byDependabot", () => {
+  const opened = (author: { login: string; bot?: boolean }) =>
+    byDependabot({ author });
+
+  it("recognises the Bot login GraphQL gives a pull request's author", () => {
+    assert.strictEqual(opened({ login: "dependabot", bot: true }), true);
+  });
+
+  it("recognises the login with the suffix, which REST and github.com show", () => {
+    assert.strictEqual(opened({ login: "dependabot[bot]", bot: true }), true);
+  });
+
+  it("recognises no person's account, whichever of those logins it goes by", () => {
+    assert.strictEqual(opened({ login: "dependabot" }), false);
+    assert.strictEqual(opened({ login: "dependabot[bot]" }), false);
+    assert.strictEqual(opened({ login: "dependabot", bot: false }), false);
+  });
+
+  it("recognises no other bot, such as Renovate, which stays an ordinary pull request", () => {
+    assert.strictEqual(opened({ login: "renovate", bot: true }), false);
+    assert.strictEqual(opened({ login: "renovate[bot]", bot: true }), false);
+  });
 });
 
 describe("updatedDependenciesIn", () => {

@@ -23,15 +23,19 @@ const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
 // Dependabot asks for a review the same way a person does, so these all sit
 // in the Inbox's Awaiting my review group; what tells them apart is that
 // GitHub says a Bot opened them.
+//
+// The fixtures write `dependabot[bot]`, the login github.com shows, and the
+// fake answers the `Bot` login GraphQL gives, which leaves the suffix off,
+// as GitHub does.
 /** Dependabot's own commit of a patch bump, signed by GitHub as they are. */
 const bumped = (
   sha: string,
   message: string,
   more: {
     author?: string;
+    authorLogin?: string;
     verified?: boolean;
     signedByGitHub?: boolean;
-    signerLogin?: string;
   } = {}
 ) => ({
   type: "commit" as const,
@@ -203,21 +207,16 @@ describe("Dashboard: Dependency updates", () => {
     });
   });
 
-  it("reads no metadata from a commit signed with someone else's key, whatever name it carries", async () => {
-    // The attack the brief names: a commit that claims Dependabot's git
-    // name, carrying a block that says patch, signed with a key of the
-    // pusher's own that GitHub reports as valid. Only a signature GitHub
-    // made as Dependabot counts, so this is read for nothing — and it is
-    // still counted among the commits whoever signed it made.
+  it("reads no metadata from a commit the pusher signed themselves, whatever name it carries", async () => {
+    // The forgery the brief names, as it can be made: a commit claiming
+    // Dependabot's git name and author account, carrying a block that says
+    // patch, signed with a key of the pusher's own that GitHub reports as
+    // valid. Only GitHub's own key counts, so this is read for nothing.
     const forged: FakePullRequest = {
       ...structuredClone(update),
       number: 87,
       timeline: [
-        bumped("9999", patchBump, {
-          verified: true,
-          signedByGitHub: false,
-          signerLogin: "mallory",
-        }),
+        bumped("9999", patchBump, { verified: true, signedByGitHub: false }),
       ],
     };
 
@@ -232,17 +231,19 @@ describe("Dashboard: Dependency updates", () => {
     });
   });
 
-  it("reads no metadata from a commit GitHub signed for someone else through its own key", async () => {
-    // GitHub signs what it commits for anyone through its API, so its key
-    // alone isn't enough: it has to have signed for Dependabot.
+  it("reads no metadata from a commit GitHub signed whose author is someone else", async () => {
+    // GitHub signs what it commits for anyone, so its key alone isn't
+    // enough: the author it resolved has to be Dependabot's account. The
+    // commit is still counted as the author's.
     const forged: FakePullRequest = {
       ...structuredClone(update),
       number: 88,
       timeline: [
         bumped("8888", patchBump, {
+          author: "mallory",
+          authorLogin: "mallory",
           verified: true,
           signedByGitHub: true,
-          signerLogin: "mallory",
         }),
       ],
     };

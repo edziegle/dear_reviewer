@@ -12,7 +12,22 @@
 
 import { isLockFile } from "./skimOnly";
 
-/** The login GitHub gives Dependabot. Nobody else can open a pull request as it. */
+/**
+ * The two logins GitHub answers for Dependabot, which differ by field and
+ * are both checked rather than guessed between.
+ *
+ * `Bot.login`, which a pull request's author is, leaves the suffix off:
+ * GraphQL answers `dependabot` where REST and github.com show
+ * `dependabot[bot]`. A commit's author resolves to a `User`, and there the
+ * login carries the suffix. Verified against this repository's own
+ * Dependabot pull requests.
+ */
+export const dependabotLogins: readonly string[] = [
+  "dependabot",
+  "dependabot[bot]",
+];
+
+/** The login GitHub resolves a Dependabot commit's author to. */
 export const DEPENDABOT_LOGIN = "dependabot[bot]";
 
 /** How far a version moved, where Dear Reviewer can tell. */
@@ -33,7 +48,7 @@ export function byDependabot(pullRequest: {
 }): boolean {
   return (
     pullRequest.author.bot === true &&
-    pullRequest.author.login === DEPENDABOT_LOGIN
+    dependabotLogins.includes(pullRequest.author.login)
   );
 }
 
@@ -47,8 +62,8 @@ export interface DependencyType {
 /** One dependency a Dependency update moves, as its commits describe it. */
 export interface UpdatedDependency {
   name: string;
-  /** The version it moves to. */
-  to: string;
+  /** The version it moves to; absent when no commit says. */
+  to?: string;
   /** The version it moves from; absent when no commit says. */
   from?: string;
   updateType: UpdateType;
@@ -147,12 +162,19 @@ const unquote = (value: string) => value.replace(/^["']|["']$/g, "").trim();
  */
 function blockEntries(message: string): Map<string, string>[] {
   const lines = message.split("\n");
-  const start = lines.findIndex((line) =>
-    /^updated-dependencies:\s*$/.test(line)
-  );
-  if (start < 0) return [];
   const entries: Map<string, string>[] = [];
-  for (const line of lines.slice(start + 1)) {
+  // Every block, not only the first: a message that carries two keeps the
+  // dependencies of both.
+  for (const [at, line] of lines.entries())
+    if (/^updated-dependencies:\s*$/.test(line))
+      entries.push(...entriesFrom(lines.slice(at + 1)));
+  return entries;
+}
+
+/** One block's entries, up to the `...` that closes Dependabot's document. */
+function entriesFrom(lines: string[]): Map<string, string>[] {
+  const entries: Map<string, string>[] = [];
+  for (const line of lines) {
     if (/^(\.\.\.|---)\s*$/.test(line)) break;
     const first = /^-\s+([\w-]+):\s*(.*)$/.exec(line);
     if (first) {
@@ -232,8 +254,9 @@ export function updatedDependenciesIn(message: string): UpdatedDependency[] {
     if (!name) continue;
     const said = versions.get(name.toLowerCase());
     const from = said?.[0];
+    // A name with no version anywhere is still worth showing: the Reviewer
+    // learns what moved, and the type reads as unknown.
     const to = entry.get("dependency-version") ?? said?.[1];
-    if (!to) continue;
     const declared = /^version-update:semver-(patch|minor|major)$/.exec(
       entry.get("update-type") ?? ""
     );
@@ -242,7 +265,7 @@ export function updatedDependenciesIn(message: string): UpdatedDependency[] {
     dependencies.push({
       name,
       ...(from ? { from } : {}),
-      to,
+      ...(to ? { to } : {}),
       updateType: declared
         ? (declared[1] as UpdateType)
         : updateTypeOfVersions(from, to),

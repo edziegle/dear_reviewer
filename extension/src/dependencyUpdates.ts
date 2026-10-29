@@ -11,9 +11,14 @@ import type { Change } from "./changeDetails";
 import {
   dependencyUpdateFacts,
   type DependencyUpdateFacts,
+  type DependencyType,
+  type UpdateType,
 } from "./dependencyUpdate";
 import { gitOutput } from "./git";
 import type { GitHubClient } from "./github/client";
+
+/** How many heads' facts are kept, so a long session doesn't grow without end. */
+const keptHeads = 20;
 
 /** A pull request as the facts are keyed by it. */
 const nameOf = (pullRequest: { repository: string; number: number }) =>
@@ -25,17 +30,28 @@ const nameOf = (pullRequest: { repository: string; number: number }) =>
  * edited in one commit and put back in another is worth naming, and the
  * net diff doesn't show it. None where git won't say.
  */
-async function filesTouched(change: Change): Promise<string[]> {
+async function filesTouched(change: Change): Promise<string[] | undefined> {
+  // `-z` and `core.quotepath=false` so a path with a space or a character
+  // outside ASCII arrives whole, as the rest of the repository reads paths.
+  // `--diff-merges=first-parent` so a merge's own edits, such as a conflict
+  // resolved by hand, are listed rather than passed over.
   const output = await gitOutput(
     change.repository,
+    "-c",
+    "core.quotepath=false",
     "--literal-pathspecs",
     "log",
     "--format=",
     "--name-only",
     "--no-renames",
+    "--diff-merges=first-parent",
+    "-z",
     `${change.mergeBase}..${change.headSha}`
-  ).catch(() => "");
-  return [...new Set(output.split("\n").filter(Boolean))].sort();
+  ).catch(() => undefined);
+  // None, rather than an empty list: git saying nothing mustn't read as
+  // nothing but manifests having changed.
+  if (output === undefined) return undefined;
+  return [...new Set(output.split("\0").filter(Boolean))].sort();
 }
 
 /** A Dependency update's facts, as the overview shows them. */
@@ -52,15 +68,17 @@ export interface ShownDependencyUpdate {
   }[];
   /** The pull request's own update type, the largest of theirs. */
   updateType: string;
-  /** What it says about the changed files. */
+  /** What it says about the changed files, for the overview to set as text. */
   files: string;
+  /** The same, with each path fenced, for a prompt (ADR 0042, rule 1). */
+  filesQuoted: string;
   /** Such as "2 commits by alice"; empty when Dependabot made them all. */
   otherCommits: string[];
   /** Set when GitHub wouldn't say what its commits are, so the facts are thin. */
   problem?: boolean;
 }
 
-const updateTypeText: Record<string, string> = {
+const updateTypeText: Record<UpdateType, string> = {
   patch: "patch",
   minor: "minor",
   major: "major",
@@ -68,20 +86,23 @@ const updateTypeText: Record<string, string> = {
 };
 
 /** How the overview words a dependency's type. */
-function dependencyTypeText(type?: {
-  direct: boolean;
-  scope?: string;
-}): string | undefined {
+function dependencyTypeText(type?: DependencyType): string | undefined {
   if (!type) return undefined;
   const direct = type.direct ? "direct" : "indirect";
   return type.scope ? `${direct}, ${type.scope}` : direct;
 }
 
-/** How the overview words what the Change changed. */
-function filesText(facts: DependencyUpdateFacts): string {
+/**
+ * How what the Change changed is worded. The overview sets it as text, so it
+ * carries no backticks (DESIGN.md); the prompt takes the same sentence with
+ * the paths fenced, where a path is other people's text.
+ */
+function filesText(facts: DependencyUpdateFacts, quoted = false): string {
   if (facts.onlyDependencyFiles)
     return "Only manifests and lock files changed.";
-  const named = facts.otherFiles.slice(0, 5).map((file) => `\`${file}\``);
+  const named = facts.otherFiles
+    .slice(0, 5)
+    .map((file) => (quoted ? `\`${file}\`` : file));
   const rest = facts.otherFiles.length - named.length;
   return `Also changes ${named.join(", ")}${rest > 0 ? `, and ${rest} more` : ""}.`;
 }
@@ -96,15 +117,19 @@ export function shownFacts(
       const dependencyType = dependencyTypeText(dependency.dependencyType);
       return {
         name: dependency.name,
-        versions: dependency.from
-          ? `${dependency.from} → ${dependency.to}`
-          : dependency.to,
+        // What is known of where it moved; "version unknown" where no
+        // verified commit says, rather than an empty line.
+        versions:
+          dependency.from && dependency.to
+            ? `${dependency.from} → ${dependency.to}`
+            : (dependency.to ?? dependency.from ?? "version unknown"),
         updateType: updateTypeText[dependency.updateType],
         ...(dependencyType && { dependencyType }),
       };
     }),
     updateType: updateTypeText[facts.updateType],
     files: filesText(facts),
+    filesQuoted: filesText(facts, true),
     otherCommits: facts.otherCommits.map(
       ({ author, commits }) =>
         `${commits} commit${commits === 1 ? "" : "s"} by ${author}`
@@ -145,12 +170,24 @@ export class DependencyUpdates {
   async shown(change: Change): Promise<ShownDependencyUpdate | undefined> {
     const pullRequest = change.pullRequest;
     if (!pullRequest) return undefined;
-    const key = `${nameOf(pullRequest)}\0${change.headSha}`;
+    // The overview only asks once its timeline says Dependabot opened the
+    // pull request, so asking is what records it. Reading the facts on their
+    // own, as the Recommendation's prompt does, records nothing.
     const name = nameOf(pullRequest);
     if (!this.dependabotOpened.has(name)) {
       this.dependabotOpened.add(name);
       this.found();
     }
+    return this.read(change);
+  }
+
+  /** The facts, from what was read for this head or by reading it now. */
+  private async read(
+    change: Change
+  ): Promise<ShownDependencyUpdate | undefined> {
+    const pullRequest = change.pullRequest;
+    if (!pullRequest) return undefined;
+    const key = `${nameOf(pullRequest)}\0${change.headSha}`;
     const known = this.byHead.get(key);
     if (known) return known;
     const [commits, files] = await Promise.all([
@@ -160,12 +197,27 @@ export class DependencyUpdates {
       filesTouched(change),
     ]);
     const shown = shownFacts(
-      dependencyUpdateFacts({ commits: commits ?? [], changedFiles: files }),
-      commits === undefined
+      dependencyUpdateFacts({
+        commits: commits ?? [],
+        changedFiles: files ?? [],
+      }),
+      // Either reading falling short leaves the facts thin, and the overview
+      // says so rather than vouching for what it couldn't read.
+      commits === undefined || files === undefined
     );
-    // Only a reading that reached GitHub is worth keeping.
-    if (commits) this.byHead.set(key, shown);
+    // Only a reading that reached both is worth keeping.
+    if (commits && files) this.remember(key, shown);
     return shown;
+  }
+
+  /**
+   * Keeps the facts for this head, and lets go of the oldest once there are
+   * more than a window's worth, as the Repeated edits do.
+   */
+  private remember(key: string, shown: ShownDependencyUpdate): void {
+    this.byHead.set(key, shown);
+    for (const oldest of [...this.byHead.keys()].slice(0, -keptHeads))
+      this.byHead.delete(oldest);
   }
 
   /**
@@ -184,7 +236,7 @@ export class DependencyUpdates {
    * and can be held to them. None for a Change that is no Dependency update.
    */
   async facts(change: Change): Promise<readonly string[]> {
-    const shown = await this.shown(change).catch(() => undefined);
+    const shown = await this.read(change).catch(() => undefined);
     if (!shown) return [];
     return [
       ...shown.dependencies.map((dependency) =>
@@ -197,7 +249,7 @@ export class DependencyUpdates {
       ...(shown.dependencies.length === 0
         ? ["No verified commit of Dependabot's says what this updates."]
         : [`The update as a whole: ${shown.updateType}.`]),
-      shown.files,
+      shown.filesQuoted,
       ...shown.otherCommits.map((commits) => `${commits}, not Dependabot.`),
     ];
   }

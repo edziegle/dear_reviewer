@@ -211,9 +211,10 @@ export type FakeTimelineItem =
       /** Whether GitHub itself signed it, as it does Dependabot's commits. */
       signedByGitHub?: boolean;
       /**
-       * The login GitHub says it signed for; the author's when absent. A
-       * commit signed with someone else's key names them, whatever git
-       * author name it carries.
+       * The login GitHub says held the signing key. GitHub's own key signs
+       * as `web-flow`, which is what it answers for Dependabot's commits,
+       * so this defaults to that when `signedByGitHub` is set and to the
+       * author otherwise.
        */
       signerLogin?: string;
       date: string;
@@ -707,6 +708,11 @@ export async function startFakeGitHub(): Promise<{
 
   function avatarUrl(login: string): string {
     return `${state.avatarOrigin ?? url}/avatars/${encodeURIComponent(login)}?v=4`;
+  }
+
+  /** A Bot's login as GraphQL gives it: `dependabot`, not `dependabot[bot]`. */
+  function botLogin(login: string) {
+    return login.replace(/\[bot\]$/, "");
   }
 
   function actor(login: string) {
@@ -1207,7 +1213,10 @@ export async function startFakeGitHub(): Promise<{
                     isValid: item.verified,
                     wasSignedByGitHub: item.signedByGitHub ?? false,
                     signer: actor(
-                      item.signerLogin ?? item.authorLogin ?? item.author
+                      item.signerLogin ??
+                        (item.signedByGitHub
+                          ? "web-flow"
+                          : (item.authorLogin ?? item.author))
                     ),
                   },
           },
@@ -1267,7 +1276,9 @@ export async function startFakeGitHub(): Promise<{
       repository: { nameWithOwner: `${owner}/${name}` },
       author: {
         __typename: pr.authorIsBot ? "Bot" : "User",
-        login: pr.author,
+        // A `Bot` login leaves the `[bot]` suffix off in GraphQL, whatever
+        // the fixture writes, as GitHub does.
+        login: pr.authorIsBot ? botLogin(pr.author) : pr.author,
         avatarUrl: `${state.avatarOrigin ?? url}/avatars/${encodeURIComponent(pr.author)}?v=4`,
       },
       commits: {

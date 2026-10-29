@@ -645,31 +645,36 @@ export class GitHubClient {
           number,
           after,
         });
-      const read = data.repository?.pullRequest?.commits;
-      if (!read) break;
+      const pullRequest = data.repository?.pullRequest;
+      if (!pullRequest)
+        throw new GitHubError(`No pull request ${repository}#${number}`);
+      const read = pullRequest.commits;
+      // A pull request with no commits connection is one GitHub wouldn't
+      // read out, not one without commits: saying so is the caller's cue to
+      // keep nothing and show the facts as short.
+      if (!read) throw new GitHubError(`No commits of ${repository}#${number}`);
       for (const node of read.nodes) {
         const author = node.commit.author;
         const signature = node.commit.signature;
-        // What makes a commit message worth reading is that GitHub signed it
-        // with its own key and says it signed for Dependabot. A git author
-        // name is whatever the pusher typed, and a pusher can get GitHub to
-        // sign a commit it makes for them through the API, so neither the
-        // name nor a valid signature is enough on its own.
-        const signedAsDependabot =
+        // A commit message is worth reading only when GitHub's own key
+        // signed the commit and GitHub resolved its author to Dependabot's
+        // account. A git author name is whatever the pusher typed, and a
+        // commit the pusher signed themselves is valid but not GitHub's, so
+        // neither the name nor a valid signature is enough on its own.
+        //
+        // GitHub signs Dependabot's commits through its `web-flow` key, so
+        // the signer is `web-flow`, not Dependabot: it says who held the
+        // key, not whose commit it is. The author is what says that.
+        const fromDependabot =
           signature?.isValid === true &&
           signature.wasSignedByGitHub === true &&
-          signature.signer?.login === DEPENDABOT_LOGIN;
+          author?.user?.login === DEPENDABOT_LOGIN;
         commits.push({
-          // Who GitHub says it is, before the name the commit claims, so a
-          // forged one is still counted among the commits of whoever pushed
-          // it rather than passing as Dependabot's or going unseen.
-          author:
-            signature?.signer?.login ??
-            author?.user?.login ??
-            author?.name ??
-            "",
+          // The account GitHub resolved, before the name the commit claims,
+          // so a commit of someone else's is counted as theirs.
+          author: author?.user?.login ?? author?.name ?? "",
           message: node.commit.message,
-          verified: signedAsDependabot,
+          verified: fromDependabot,
         });
       }
       if (!read.pageInfo.hasNextPage) break;

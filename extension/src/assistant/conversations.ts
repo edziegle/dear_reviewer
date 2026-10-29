@@ -8,6 +8,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { conversationFolder } from "../conversationName";
 import type { ReadingOrder } from "../readingOrder";
+import type { Recommendation } from "../recommendation";
 import type { Message } from "./panel";
 
 export interface SavedConversation {
@@ -25,6 +26,11 @@ export interface SavedConversation {
   sinceLastReview?: { from: string; to: string; text?: string };
   /** The order the Assistant suggested for reading the Change's files. */
   readingOrder?: ReadingOrder;
+  /**
+   * The Recommendation the Assistant gave on a Dependency update, with the
+   * head it read, so a reload still shows it and says when it is out of date.
+   */
+  recommendation?: Recommendation;
 }
 
 export class Conversations {

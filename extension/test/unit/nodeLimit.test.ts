@@ -4,6 +4,7 @@ import {
   inboxQuery,
   inboxSearches,
   ORGANIZATION_TEAMS,
+  PULL_REQUEST_COMMITS,
   TEAM_MEMBERS,
 } from "../../src/github/queries";
 
@@ -90,6 +91,11 @@ describe("worstCaseNodeCount", () => {
   // The Inbox sends one query per repository (#223). What matters is that a
   // query's cost doesn't grow with how many repositories are listed, since
   // the Repositories setting takes as many as the Reviewer cares to name.
+  it("stays under the limit for a page of a pull request's commits", () => {
+    const cost = worstCaseNodeCount(PULL_REQUEST_COMMITS);
+    assert.ok(cost < MAX_NODE_LIMIT / 3, `PULL_REQUEST_COMMITS costs ${cost}`);
+  });
+
   it("stays under the limit for one repository's Inbox searches, with and without the review history", () => {
     for (const withTeam of [false, true]) {
       const cost = worstCaseNodeCount(

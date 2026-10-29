@@ -138,6 +138,27 @@ export interface Timeline {
   readingOrder?: ShownReadingOrder;
   /** Where the Change makes the same edit at several sites (ADR 0047); absent when it makes none. */
   repeatedEdits?: ShownRepeatedEdits;
+  /** A Dependency update's facts, from Dear Reviewer's rules (ADR 0051). */
+  dependencyUpdate?: {
+    dependencies: {
+      name: string;
+      versions: string;
+      updateType: string;
+      dependencyType?: string;
+    }[];
+    updateType: string;
+    files: string;
+    otherCommits: string[];
+    problem?: boolean;
+  };
+  /** What the Assistant advised on it, once the Reviewer asked. */
+  recommendation?: {
+    asking: boolean;
+    /** `says` is how the overview words it; `html` the rendered reasons. */
+    advice?: { says: string; reasons: string; html: string };
+    outOfDate: boolean;
+    problem?: boolean;
+  };
   finish: string;
   /** The Submit step that ends a pull request's Review, while it is open. */
   submit?: {

@@ -9,6 +9,7 @@ import * as vscode from "vscode";
 import { authoredStateLook, authoredStates } from "../authoredStates";
 import { changeName, pullRequestName, type Change } from "../changeWorkspace";
 import { branchOfConversation, conversationName } from "../conversationName";
+import { byDependabot } from "../dependencyUpdate";
 import type { PullRequestSummary } from "../github/client";
 import {
   authoredByMe,
@@ -29,6 +30,7 @@ import {
   nextStep,
   setAside,
   waitedFor,
+  type Waiting,
 } from "./dashboardState";
 import type { IgnoredPullRequests } from "./ignored";
 import {
@@ -273,10 +275,34 @@ export class Dashboard implements vscode.Disposable {
           : []
       )
     );
+    // A Dependency update leaves Waiting on you (ADR 0051): nobody is kept
+    // waiting by it. Both lists come from the Awaiting my review group, which
+    // is what asks the Reviewer, so the author decides which they land in.
+    // Filtering keeps `byLongestWait`'s order.
+    const updateNodes = waitingNodes.filter(({ node }) =>
+      byDependabot(node.pullRequest)
+    );
+    const peopleNodes = waitingNodes.filter(
+      ({ node }) => !byDependabot(node.pullRequest)
+    );
     const { waiting: stillWaiting, ignored: setAsideNodes } = setAside(
-      waitingNodes,
+      peopleNodes,
       this.ignored.ids()
     );
+    const { waiting: stillUpdates, ignored: setAsideUpdates } = setAside(
+      updateNodes,
+      this.ignored.ids()
+    );
+    /** How the Next Step Rule weighs one pull request waiting on the Reviewer. */
+    const waitingOf = ({
+      node,
+      since,
+    }: (typeof waitingNodes)[number]): Waiting => ({
+      id: pullRequestId(node.pullRequest),
+      name: pullRequestName(node.pullRequest),
+      since,
+      open: this.inbox.openState(node).length > 0,
+    });
     /** How long the Change's pull request has waited on the Reviewer, if it does. */
     const waitOf = (change: Change) => {
       const pr = change.pullRequest;
@@ -333,7 +359,10 @@ export class Dashboard implements vscode.Disposable {
           )
       );
     const waiting = awaiting ? await rowsOf(stillWaiting) : undefined;
-    const ignoredRows = awaiting ? await rowsOf(setAsideNodes) : undefined;
+    const updateRows = awaiting ? await rowsOf(stillUpdates) : undefined;
+    const ignoredRows = awaiting
+      ? [...(await rowsOf(setAsideNodes)), ...(await rowsOf(setAsideUpdates))]
+      : undefined;
     const authoredRows = authored
       ? await Promise.all(
           authored.children.flatMap((node) =>
@@ -393,13 +422,9 @@ export class Dashboard implements vscode.Disposable {
         total: standings[i].total,
         finish: change.pullRequest ? "submit" : "brief",
       })),
-      stillWaiting.map(({ node, since }) => ({
-        id: pullRequestId(node.pullRequest),
-        name: pullRequestName(node.pullRequest),
-        since,
-        open: this.inbox.openState(node).length > 0,
-      })),
-      now
+      stillWaiting.map((w) => waitingOf(w)),
+      now,
+      stillUpdates.map((w) => waitingOf(w))
     );
     const state: DashboardState = {
       ...(waiting && {
@@ -419,6 +444,7 @@ export class Dashboard implements vscode.Disposable {
       ...(authoredRows && { authored: authoredRows }),
       ...(reviewedRows && { reviewed: reviewedRows }),
       ...(teamReviewedRows?.length && { teamReviewed: teamReviewedRows }),
+      ...(updateRows && { dependencyUpdates: updateRows }),
       branches,
       loading,
       ...(setup && { setup }),
@@ -452,6 +478,7 @@ export class Dashboard implements vscode.Disposable {
       title: pr.title,
       name: pullRequestName(pr),
       author: pr.author.login,
+      ...(pr.updateType && { update: pr.updateType }),
       ...(avatar && { avatar }),
       ...(waited !== undefined && { waited }),
       size: pr.size,
@@ -473,9 +500,15 @@ export class Dashboard implements vscode.Disposable {
       return;
     }
     if (action.type === "ignore" || action.type === "restore") {
-      // Only a row in Waiting on you can be set aside, and one in Ignored brought back.
+      // Only a row in Waiting on you or Dependency updates can be set
+      // aside, and one in Ignored brought back.
       const row = (
-        action.type === "ignore" ? this.state.waiting : this.state.ignored
+        action.type === "ignore"
+          ? [
+              ...(this.state.waiting ?? []),
+              ...(this.state.dependencyUpdates ?? []),
+            ]
+          : this.state.ignored
       )?.find((r) => r.id === action.id);
       if (!row) return;
       if (action.type === "ignore") this.ignored.ignore(action.id);

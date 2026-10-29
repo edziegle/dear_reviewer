@@ -22,6 +22,7 @@ import { ClosedChanges } from "./closedChanges";
 import { Assistants } from "./assistant/assistant";
 import { Briefs } from "./briefs";
 import { Conversations } from "./assistant/conversations";
+import { DependencyUpdates } from "./dependencyUpdates";
 import { Findings } from "./findings";
 import {
   ReadingTracker,
@@ -95,6 +96,10 @@ export function activate(context: vscode.ExtensionContext) {
     settings().inspect<string>("githubApiUrl")?.globalValue ||
     "https://api.github.com";
   const github = new GitHubClient(auth, apiUrl);
+  // A Dependency update's facts, read from its commits once per head commit.
+  const dependencyUpdates = new DependencyUpdates(github, () =>
+    showOpenChanges()
+  );
   // For the setup walkthrough's checklist.
   const showSignedIn = async () =>
     setContext("dearReviewer.signedIn", !!(await auth.token(apiUrl())));
@@ -218,7 +223,8 @@ export function activate(context: vscode.ExtensionContext) {
         change.pullRequest.number
       ),
     (change) => changeTitles.of(change),
-    (change) => repetitions.candidates(change)
+    (change) => repetitions.candidates(change),
+    (change) => dependencyUpdates.facts(change)
   );
   // Only the user's own setting counts: a workspace must not be able to
   // choose the repository Dear Reviewer runs git in.
@@ -294,6 +300,8 @@ export function activate(context: vscode.ExtensionContext) {
     navigationOff: () => trust.navigationOff,
     take: (change) => assistants.overviewOf(change),
     readingOrder: (change) => changeFiles.readingOrder(change),
+    dependencyUpdate: (change) => dependencyUpdates.shown(change),
+    recommendation: (change) => assistants.recommendationOf(change),
     repeatedEdits: (change) => repetitions.repeatedEdits(change),
     openSite: (change, site, missed) =>
       missed
@@ -321,6 +329,11 @@ export function activate(context: vscode.ExtensionContext) {
       else if (action === "findIssues")
         void vscode.commands.executeCommand(
           "dearReviewer.findIssues",
+          requestOf(change)
+        );
+      else if (action === "askForRecommendation")
+        void vscode.commands.executeCommand(
+          "dearReviewer.askForRecommendation",
           requestOf(change)
         );
       else if (action === "skimSetting")
@@ -885,6 +898,12 @@ export function activate(context: vscode.ExtensionContext) {
     void setContext("dearReviewer.hasOpenChange", !!front);
     // The palette offers the one way to finish that fits the Change in front.
     void setContext("dearReviewer.frontIsPullRequest", !!front?.pullRequest);
+    // Only a Dependency update can be asked for a Recommendation (ADR 0051).
+    // The facts are already read for the overview, so this asks nothing more.
+    void setContext(
+      "dearReviewer.frontIsDependencyUpdate",
+      !!front && dependencyUpdates.openedByDependabot(front)
+    );
     showFrontComments();
   }
 
@@ -1437,6 +1456,7 @@ export function activate(context: vscode.ExtensionContext) {
     ),
     // Change Files lists the Reading Order, and the overview follows it.
     assistants.onDidChangeReadingOrder(() => changeFiles.refresh()),
+    assistants.onDidChangeRecommendation(() => showStanding()),
     changeFiles.onDidChangeTreeData(() => showStanding()),
     review.onDidChange(() => {
       showStanding();
@@ -1664,6 +1684,22 @@ export function activate(context: vscode.ExtensionContext) {
       async (target?: ChangeTarget) => {
         const change = await changeFor(target, "Ask for Findings");
         if (change) await findings.find(change);
+      }
+    ),
+    vscode.commands.registerCommand(
+      "dearReviewer.askForRecommendation",
+      async (target?: ChangeTarget) => {
+        const change = await changeFor(target, "Ask for a Recommendation");
+        if (!change) return;
+        // The overview shows the Recommendation and says while it is asked
+        // for, so a notification would say it twice.
+        try {
+          await assistants.askForRecommendation(change);
+        } catch (err) {
+          void vscode.window.showErrorMessage(
+            `Couldn't get a Recommendation for ${changeName(change)}: ${messageOf(err)}`
+          );
+        }
       }
     ),
     vscode.commands.registerCommand(

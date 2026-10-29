@@ -58,6 +58,7 @@ import {
   keptSelection,
   newHeadNote,
   readingOrderPrompt,
+  recommendationPrompt,
   Selection,
   sinceLastReviewPrompt,
   summaryPrompt,
@@ -72,6 +73,13 @@ import {
   type ReadingOrder,
   type ReadingOrderState,
 } from "../readingOrder";
+import {
+  parseRecommendation,
+  shownRecommendation,
+  adviceText,
+  type Recommendation,
+  type ShownRecommendation,
+} from "../recommendation";
 import { openReference } from "../references";
 import { skimOnlyOf } from "../skimOnly";
 
@@ -82,6 +90,9 @@ export type LastReview = (change: Change) => Promise<string | undefined>;
 export type DescriptionOf = (
   change: Change
 ) => Promise<PullRequestDescription | undefined>;
+
+/** A Dependency update's facts from rules, as the prompt's own lines. */
+export type FactsOf = (change: Change) => Promise<readonly string[]>;
 
 /** How long a summary waits for the pull request's description before going without. */
 const descriptionWait = 3_000;
@@ -133,8 +144,11 @@ export class Assistants implements vscode.Disposable {
   /** Fires with a Change's conversation name when its overview's Assistant part changes. */
   readonly onDidChangeOverview = this.overviewChanged.event;
   private readonly readingOrderChanged = new vscode.EventEmitter<string>();
+  private readonly recommendationChanged = new vscode.EventEmitter<string>();
   /** Fires with a Change's conversation name when its Reading Order, or the writing of one, changes. */
   readonly onDidChangeReadingOrder = this.readingOrderChanged.event;
+  /** Tells the overview that a Dependency update's Recommendation changed. */
+  readonly onDidChangeRecommendation = this.recommendationChanged.event;
 
   /**
    * `claudeSettings` gives the Reviewer's Claude Command and Claude Path
@@ -153,7 +167,12 @@ export class Assistants implements vscode.Disposable {
     /** The title of the Change's pull request, once it has loaded. */
     private readonly titleOf: (change: Change) => string | undefined,
     /** The Duplicate code and Repeated edits that Dear Reviewer's rules find in a Change. */
-    private readonly repetitionOf: (change: Change) => Promise<Repetition>
+    private readonly repetitionOf: (change: Change) => Promise<Repetition>,
+    /**
+     * A Dependency update's facts, which the Recommendation's prompt carries
+     * so the Assistant answers about what the Reviewer is reading.
+     */
+    private readonly factsOf: FactsOf = async () => []
   ) {
     this.status = vscode.window.createStatusBarItem(
       "dearReviewer.claudeLogin",
@@ -199,10 +218,12 @@ export class Assistants implements vscode.Disposable {
       this.lastReview,
       () => this.overviewChanged.fire(change.conversation),
       () => this.readingOrderChanged.fire(change.conversation),
+      () => this.recommendationChanged.fire(change.conversation),
       (current) => this.codeColumn(current),
       () => this.retryStart(assistant),
       this.reviewerView,
       this.descriptionOf,
+      this.factsOf,
       (current) => this.titleOf(current),
       (changed) => {
         if (this.inView === changed)
@@ -269,6 +290,29 @@ export class Assistants implements vscode.Disposable {
     if (assistant) return assistant.readingOrderState;
     const order = this.conversations.get(change.conversation)?.readingOrder;
     return order && { writing: false, order };
+  }
+
+  /**
+   * The Change's Recommendation as the overview shows it: from its Assistant
+   * while that runs, or else as its saved conversation kept it, so a reload
+   * still shows it. Undefined where none was ever given.
+   */
+  recommendationOf(change: Change): ShownRecommendation | undefined {
+    const assistant = this.byConversation.get(change.conversation);
+    if (assistant) return assistant.recommendationState(change.headSha);
+    const kept = this.conversations.get(change.conversation)?.recommendation;
+    return kept && shownRecommendation(change.headSha, kept);
+  }
+
+  /**
+   * Has the Change's Assistant give a Recommendation, starting it if it
+   * hasn't started. It asks in the Change's own conversation, after whatever
+   * the Assistant is busy with.
+   */
+  async askForRecommendation(change: Change): Promise<void> {
+    const assistant = this.started(change);
+    await assistant.started;
+    await assistant.askForRecommendation();
   }
 
   /** Has the Change's Assistant suggest a Reading Order again, starting it if it hasn't started. */
@@ -502,6 +546,7 @@ export class Assistants implements vscode.Disposable {
     this.status.dispose();
     this.overviewChanged.dispose();
     this.readingOrderChanged.dispose();
+    this.recommendationChanged.dispose();
   }
 
   private async showLogin(cli: ClaudeCli): Promise<ClaudeLogin> {
@@ -556,6 +601,11 @@ class ChangeAssistant {
   /** The summary the conversation started with. */
   private summary?: string;
   private readingOrder?: ReadingOrder;
+  private recommendation?: Recommendation;
+  /** Whether the Assistant is being asked for a Recommendation now. */
+  private asking = false;
+  /** Whether the last reply held no Recommendation. */
+  private recommendationProblem = false;
   /** Whether a Reading Order is being written. */
   private writingOrder = false;
   /** Whether the last Reading Order asked for failed, or came back unusable. */
@@ -572,12 +622,16 @@ class ChangeAssistant {
     private readonly overviewChanged: () => void,
     /** Tells Change Files and the overview that the Reading Order changed. */
     private readonly readingOrderChanged: () => void,
+    /** Tells the overview that the Recommendation changed. */
+    private readonly recommendationChanged: () => void,
     /** The column the Change's code opens in. */
     private readonly codeColumn: (change: Change) => vscode.ViewColumn,
     /** Starts the Assistant again, once `claude` couldn't run. */
     private readonly retry: () => void,
     private readonly reviewerView: ReviewerView,
     private readonly descriptionOf: DescriptionOf,
+    /** A Dependency update's facts, for the Recommendation's prompt. */
+    private readonly factsOf: FactsOf,
     private readonly titleOf: (change: Change) => string | undefined,
     /** Tells the view, if it shows this conversation, that it changed. */
     private readonly stateChanged: (assistant: ChangeAssistant) => void
@@ -593,6 +647,7 @@ class ChangeAssistant {
       saved?.summary ??
       saved?.messages.find((m) => m.from === "assistant")?.text;
     this.readingOrder = saved?.readingOrder;
+    this.recommendation = saved?.recommendation;
     const explained = saved?.sinceLastReview;
     this.overviewState =
       explained?.text && explained.to === change.headSha
@@ -618,6 +673,20 @@ class ChangeAssistant {
   /** What the Change's overview shows from the Assistant. */
   get overview(): AssistantOverview {
     return this.overviewState;
+  }
+
+  /**
+   * What the overview shows of the Recommendation, against this head;
+   * undefined while there is nothing to say, so the overview offers the ask
+   * and shows no advice.
+   */
+  recommendationState(headSha: string): ShownRecommendation | undefined {
+    if (!this.recommendation && !this.asking && !this.recommendationProblem)
+      return undefined;
+    return shownRecommendation(headSha, this.recommendation, {
+      asking: this.asking,
+      problem: this.recommendationProblem,
+    });
   }
 
   get readingOrderState(): ReadingOrderState {
@@ -985,6 +1054,64 @@ class ChangeAssistant {
     this.readingOrderChanged();
   }
 
+  /**
+   * Asks for a Recommendation on this Dependency update, after whatever the
+   * Assistant is busy with, and keeps what it advised against the head it
+   * read (ADR 0051).
+   *
+   * The reply is read strictly: anything but one of the three verdicts with
+   * reasons keeps whatever stood before and shows as a problem, so a reply
+   * that talks its way to a fourth answer changes nothing. The chat gets a
+   * short note, never the JSON.
+   */
+  askForRecommendation(): Promise<void> {
+    return this.enqueue(async () => {
+      const change = this.change;
+      const facts = await this.factsOf(change);
+      const prompt = await recommendationPrompt(
+        change,
+        this.note,
+        facts,
+        await this.descriptionOf(change)
+      );
+      this.note = undefined;
+      this.recommendationProblem = false;
+      this.setAsking(true);
+      let reply: string | undefined;
+      try {
+        reply = await this.turn(prompt, "hidden");
+      } catch (err) {
+        this.setAsking(false);
+        throw err;
+      }
+      this.setAsking(false);
+      if (this.disposed) return;
+      const advised =
+        reply === undefined ? undefined : parseRecommendation(reply);
+      if (!advised) {
+        // A turn the Reviewer stopped, with nothing back, isn't a problem.
+        if (reply !== undefined) {
+          this.recommendationProblem = true;
+          this.recommendationChanged();
+        }
+        return;
+      }
+      this.recommendation = { headSha: change.headSha, ...advised };
+      this.save();
+      this.recommendationChanged();
+      // The note queues behind this turn; the JSON never reaches the chat.
+      this.addNote(
+        `Recommended: ${adviceText[advised.advice].toLowerCase()}. It shows in the overview, with the reasons; the Reviewer decides.`
+      );
+    });
+  }
+
+  private setAsking(asking: boolean): void {
+    if (this.disposed) return;
+    this.asking = asking;
+    this.recommendationChanged();
+  }
+
   private setWritingOrder(writing: boolean): void {
     if (this.disposed) return;
     this.writingOrder = writing;
@@ -1155,6 +1282,7 @@ class ChangeAssistant {
       ...(this.summary && { summary: this.summary }),
       ...(this.explained && { sinceLastReview: this.explained }),
       ...(this.readingOrder && { readingOrder: this.readingOrder }),
+      ...(this.recommendation && { recommendation: this.recommendation }),
     });
   }
 }

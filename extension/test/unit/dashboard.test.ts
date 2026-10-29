@@ -297,6 +297,51 @@ describe("The Dashboard's next step", () => {
   it("is nothing when nothing needs the Reviewer", () => {
     assert.strictEqual(nextStep([], [waiting({ open: true })], now), undefined);
   });
+
+  // ADR 0051: people wait on the others, so a Dependency update comes last.
+  it("reaches a Dependency update only once Waiting on you offers nothing to open", () => {
+    const update = waiting({
+      id: "update",
+      name: "acme/api #9",
+      since: ago(day),
+    });
+
+    assert.strictEqual(
+      nextStep([], [waiting({ id: "person", since: ago(hour) })], now, [update])
+        ?.id,
+      "person",
+      "a pull request a person waits on comes first, even waiting less"
+    );
+    assert.deepStrictEqual(nextStep([], [], now, [update]), {
+      kind: "open",
+      id: "update",
+      label: "Review acme/api #9",
+      place: "acme/api #9 has waited longest on you: 1 day",
+    });
+    assert.strictEqual(
+      nextStep([], [waiting({ open: true })], now, [update])?.id,
+      "update",
+      "one already open as a Change leaves nothing to open"
+    );
+  });
+
+  it("is the Dependency update that has waited longest, and skips one already open", () => {
+    assert.strictEqual(
+      nextStep([], [], now, [
+        waiting({ id: "newer", since: ago(hour) }),
+        waiting({ id: "opened", since: ago(9 * day), open: true }),
+        waiting({ id: "oldest", since: ago(6 * day) }),
+      ])?.id,
+      "oldest"
+    );
+  });
+
+  it("is nothing when every Dependency update is open and nothing else waits", () => {
+    assert.strictEqual(
+      nextStep([], [], now, [waiting({ open: true })]),
+      undefined
+    );
+  });
 });
 
 describe("When a pull request last asked the Reviewer for a review", () => {

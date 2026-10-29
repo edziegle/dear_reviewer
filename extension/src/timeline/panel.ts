@@ -21,7 +21,9 @@ import {
   sharedScript,
   sharedStyles,
 } from "../markdownPanel";
+import type { ShownDependencyUpdate } from "../dependencyUpdates";
 import type { ShownReadingOrder } from "../readingOrder";
+import type { ShownRecommendation } from "../recommendation";
 import { fewSites, type ShownRepeatedEdits } from "../repetitions";
 import type { PendingCommentLine } from "../reviewComments";
 import type { BriefState } from "../briefs";
@@ -144,6 +146,16 @@ export interface TimelineState {
   take: OverviewTake;
   /** The order the Assistant suggests for reading the Change's files, while it has one or writes one. */
   readingOrder?: ShownReadingOrder;
+  /**
+   * A Dependency update's facts, worked out from rules with no Assistant
+   * (ADR 0051); absent on every other Change.
+   */
+  dependencyUpdate?: ShownDependencyUpdate;
+  /**
+   * What the Assistant advised on a Dependency update, once the Reviewer
+   * asked; absent until they do.
+   */
+  recommendation?: ShownRecommendation;
   /** Where the Change makes the same edit at several sites, found by Dear Reviewer's rules (ADR 0047); absent when it makes none. */
   repeatedEdits?: ShownRepeatedEdits;
   /** The button that finishes the Review: "Submit Review…" or "Write Brief…". */
@@ -193,6 +205,10 @@ export interface ShownTimeline extends TimelineState {
     start?: FileReference;
   };
   items: (TimelineItem & { html?: string })[];
+  /** The Recommendation's reasons, rendered; the Assistant wrote them. */
+  recommendation?: ShownRecommendation & {
+    advice?: { says: string; reasons: string; html: string };
+  };
 }
 
 /** Webview to extension. */
@@ -223,6 +239,7 @@ export type FromWebview =
   | { type: "ask" }
   | { type: "codeFlow" }
   | { type: "findIssues" }
+  | { type: "askForRecommendation" }
   | { type: "showChangesSince" }
   | { type: "skimSetting" }
   | { type: "takeAction" }
@@ -362,6 +379,7 @@ export class TimelinePanel {
         "ask",
         "codeFlow",
         "findIssues",
+        "askForRecommendation",
         "showChangesSince",
         "skimSetting",
         "takeAction",
@@ -411,8 +429,25 @@ function shown(
       ? item
       : { ...item, html: render(item.body) }
   );
+  // The reasons are the Assistant's Markdown, so they go through the
+  // extension's renderer, which drops HTML and keeps only links it sent.
+  // Taken out of the spread, since what goes out carries the rendered twin.
+  const { recommendation: asGiven, ...rest } = state;
+  const advice = asGiven?.advice;
+  const recommendation = asGiven && {
+    asking: asGiven.asking,
+    outOfDate: asGiven.outOfDate,
+    ...(asGiven.problem && { problem: asGiven.problem }),
+    ...(advice && { advice: { ...advice, html: render(advice.reasons) } }),
+  };
   const text = state.take.text;
-  if (!text) return { ...state, take: state.take, items };
+  if (!text)
+    return {
+      ...rest,
+      take: state.take,
+      items,
+      ...(recommendation && { recommendation }),
+    };
   const sentences = sentencesOf(text);
   const short = sentences.slice(0, maxSentences).join(" ");
   const start = findReferences(text).find((ref) => isChangedFile(ref.path));
@@ -430,7 +465,12 @@ function shown(
       },
     }),
   };
-  return { ...state, take, items };
+  return {
+    ...rest,
+    take,
+    items,
+    ...(recommendation && { recommendation }),
+  };
 }
 
 /** The most sentences of the Assistant's take the overview shows before Show all. */
@@ -654,6 +694,13 @@ ${catSymbol}
         <div class="muted reading" id="reading"></div>
         <div class="muted problem-line" id="takeProblem" hidden></div>
       </div>
+    </div>
+    <div class="order" id="dependencyUpdate" hidden>
+      <h3>Dependency update</h3>
+      <div class="muted" id="dependencyUpdateProblem" role="status" hidden></div>
+      <ul id="dependencyUpdateFacts"></ul>
+      <div class="muted" id="recommendationNote" role="status"></div>
+      <div id="recommendation"></div>
     </div>
     <div class="order" id="order" hidden>
       <h3>Reading Order</h3>
@@ -967,6 +1014,90 @@ ${catSymbol}
         if (t.problemAction) problem.append(" ", textButton(t.problemAction, () => vscode.postMessage({ type: "takeAction" })));
         if (t.canRetry) problem.append(t.problemAction ? " · " : " ", textButton("Retry", () => vscode.postMessage({ type: "takeRetry" })));
       }
+    }
+  }
+
+  // The facts come from Dear Reviewer's own rules, so they are plain text
+  // the pull request can't shape: every piece is a node the page builds.
+  function dependencyUpdate(state) {
+    const facts = state.dependencyUpdate;
+    byId("dependencyUpdate").hidden = !facts;
+    if (!facts) return;
+    const said = JSON.stringify(facts);
+    const node = byId("dependencyUpdate");
+    if (node.dataset.said === said) return;
+    node.dataset.said = said;
+    const problem = byId("dependencyUpdateProblem");
+    problem.hidden = !facts.problem;
+    if (facts.problem) setText(problem, "GitHub wouldn't say what its commits are, so these facts might be short of a dependency.");
+    const list = byId("dependencyUpdateFacts");
+    const rows = [];
+    for (const dependency of facts.dependencies) {
+      const row = el("li");
+      row.append(el("span", "step", dependency.name), " ", dependency.versions, " · ", dependency.updateType);
+      if (dependency.dependencyType) row.append(" · ", dependency.dependencyType);
+      rows.push(row);
+    }
+    if (facts.dependencies.length === 0)
+      rows.push(el("li", "muted", "No verified commit of Dependabot's says what this updates."));
+    else if (facts.dependencies.length > 1)
+      rows.push(el("li", "muted", "The update as a whole: " + facts.updateType + "."));
+    rows.push(el("li", "muted", facts.files));
+    for (const commits of facts.otherCommits) rows.push(el("li", "muted", commits));
+    list.replaceChildren(...rows);
+  }
+
+  // The Assistant's own words, so they are set as text, never as markup,
+  // and the verdict is one of three the extension wrote (ADR 0042, rule 4).
+  function recommendation(state) {
+    const shown = state.recommendation;
+    const note = byId("recommendationNote");
+    const body = byId("recommendation");
+    if (!state.dependencyUpdate) {
+      note.replaceChildren();
+      body.replaceChildren();
+      return;
+    }
+    const said = JSON.stringify(shown ?? null);
+    if (body.dataset.said === said) return;
+    body.dataset.said = said;
+    note.replaceChildren();
+    body.replaceChildren();
+    const ask = (label) =>
+      textButton(label, () =>
+        vscode.postMessage({ type: "askForRecommendation" })
+      );
+    if (shown?.asking) {
+      note.className = "muted reading";
+      note.append("Asking the Assistant for a Recommendation…");
+    } else {
+      note.className = "muted";
+      if (shown?.problem)
+        note.append(
+          "The Assistant's reply held no Recommendation. ",
+          ask("Ask again")
+        );
+      else if (shown?.outOfDate)
+        note.append(
+          "Given before the latest commits. ",
+          ask("Ask again")
+        );
+      else if (!shown?.advice)
+        note.append(
+          "The Assistant can recommend approving or closing this, or reading it closely. It decides nothing. ",
+          ask("Ask for a Recommendation")
+        );
+    }
+    if (shown?.advice) {
+      const heading = el("div", "step", shown.advice.says);
+      heading.append(" ", el("span", "tag", "the Assistant's advice"));
+      const reasons = el("div");
+      // Rendered and sanitised by the extension; see renderMarkdown.
+      reasons.innerHTML = shown.advice.html;
+      focusable(reasons);
+      body.append(heading, reasons);
+      if (!shown.asking && !shown.problem && !shown.outOfDate)
+        body.append(el("div", "muted", "You decide; nothing follows from it."));
     }
   }
 
@@ -1552,6 +1683,8 @@ ${catSymbol}
     hiddenText(state);
     highlighting(state);
     take(state);
+    dependencyUpdate(state);
+    recommendation(state);
     readingOrder(state);
     repeatedEdits(state);
     ways(state);

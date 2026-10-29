@@ -9,6 +9,7 @@
 
 import * as crypto from "crypto";
 import * as vscode from "vscode";
+import type { UpdateType } from "../dependencyUpdate";
 import type { CheckStatus } from "../github/client";
 import {
   reviewStyles,
@@ -52,6 +53,12 @@ export interface DashboardPullRequest {
   checks?: CheckStatus;
   /** Its states, new commits since a Review, and whether it's open or opening. */
   notes: string[];
+  /**
+   * A Dependency update's update type, such as "patch" or "major";
+   * "unknown" where no verified Dependabot commit says. Absent on every
+   * other pull request.
+   */
+  update?: UpdateType;
 }
 
 /** A local branch ahead of main. */
@@ -90,6 +97,11 @@ export interface DashboardState {
   reviewed?: DashboardPullRequest[];
   /** Pull requests whose Team request a teammate answered; left out while there are none. */
   teamReviewed?: DashboardPullRequest[];
+  /**
+   * Dependabot's pull requests that ask the Reviewer for a review (ADR
+   * 0051), longest wait first. They are not in `waiting` or its count.
+   */
+  dependencyUpdates?: DashboardPullRequest[];
   branches: DashboardBranch[];
   /** Whether the Inbox is loading. */
   loading: boolean;
@@ -316,6 +328,7 @@ ${reviewStyles}
 <section id="inProgress" aria-labelledby="inProgressHeading" hidden><h2 id="inProgressHeading">Active Change <span class="muted count" id="inProgressCount"></span></h2><div id="changes" role="list"></div></section>
 <section id="waitingSection" aria-labelledby="waitingHeading" hidden><h2 id="waitingHeading">Waiting on you <span class="muted count" id="waitingCount"></span></h2><div id="waiting" role="list"></div><button class="link more" id="waitingMore" type="button" aria-controls="waiting" aria-expanded="false" hidden></button></section>
 <section id="ignoredSection" aria-label="Ignored" hidden><details class="ignored"><summary id="ignoredLabel"></summary><div id="ignored" role="list"></div></details></section>
+<section id="dependencyUpdatesSection" aria-labelledby="dependencyUpdatesHeading" hidden><h2 id="dependencyUpdatesHeading">Dependency updates <span class="muted count" id="dependencyUpdatesCount"></span></h2><div id="dependencyUpdates" role="list"></div><button class="link more" id="dependencyUpdatesMore" type="button" aria-controls="dependencyUpdates" aria-expanded="false" hidden></button></section>
 <section id="authoredSection" aria-labelledby="authoredHeading" hidden><h2 id="authoredHeading">Your pull requests <span class="muted count" id="authoredCount"></span></h2><div id="authored" role="list"></div><button class="link more" id="authoredMore" type="button" aria-controls="authored" aria-expanded="false" hidden></button></section>
 <section id="reviewedSection" aria-labelledby="reviewedHeading" hidden><h2 id="reviewedHeading">Reviewed by you <span class="muted count" id="reviewedCount"></span></h2><div id="reviewed" role="list"></div><button class="link more" id="reviewedMore" type="button" aria-controls="reviewed" aria-expanded="false" hidden></button></section>
 <section id="teamReviewedSection" aria-labelledby="teamReviewedHeading" hidden><h2 id="teamReviewedHeading">Reviewed by your team <span class="muted count" id="teamReviewedCount"></span></h2><div id="teamReviewed" role="list"></div><button class="link more" id="teamReviewedMore" type="button" aria-controls="teamReviewed" aria-expanded="false" hidden></button></section>
@@ -383,7 +396,7 @@ ${reviewStyles}
   byId("openRange").addEventListener("click", () => vscode.postMessage({ type: "openRange" }));
   // A long list shows its first rows, then Show all with the count.
   const showsAll = {};
-  for (const id of ["waiting", "authored", "reviewed", "teamReviewed", "branches"])
+  for (const id of ["waiting", "dependencyUpdates", "authored", "reviewed", "teamReviewed", "branches"])
     byId(id + "More").addEventListener("click", () => {
       showsAll[id] = !showsAll[id];
       keepFocus(() => lists(lastState));
@@ -456,13 +469,13 @@ ${reviewStyles}
     content.append(
       byline(entry.name, entry.waited, entry.author),
       title,
-      line("muted", [size(entry), entry.checks && el("span", "status " + entry.checks, "checks " + entry.checks)]),
+      line("muted", [size(entry), entry.checks && el("span", "status " + entry.checks, "checks " + entry.checks), entry.update && el("span", "status", entry.update === "unknown" ? "update type unknown" : entry.update + " update")]),
       ...notes(entry.notes)
     );
     row.append(content);
     if (action) {
       const label = action === "ignore" ? "Ignore" : "Restore";
-      const title = action === "ignore" ? "Set it aside, so it stops asking for your attention. GitHub isn't told." : "Put it back in Waiting on you";
+      const title = action === "ignore" ? "Set it aside, so it stops asking for your attention. GitHub isn't told." : entry.update ? "Put it back in Dependency updates" : "Put it back in Waiting on you";
       const actions = el("div", "actions");
       actions.append(button("link", label, { type: action, id: entry.id }, title, label + " " + entry.name));
       row.append(actions);
@@ -535,6 +548,8 @@ ${reviewStyles}
     byId("ignoredSection").hidden = ignored.length === 0;
     setText(byId("ignoredLabel"), "Ignored (" + ignored.length + ")");
     list("ignored", ignored, ignoredRow);
+    section("dependencyUpdatesSection", state.dependencyUpdates || [], "dependencyUpdatesCount");
+    capped("dependencyUpdates", state.dependencyUpdates || [], waitingRow);
     section("authoredSection", state.authored || [], "authoredCount");
     capped("authored", state.authored || [], plainRow);
     section("reviewedSection", state.reviewed || [], "reviewedCount");
@@ -552,7 +567,7 @@ ${reviewStyles}
   // said, so a rebuild for anything else says nothing, and neither does the first.
   let before;
   function announceSetAside(state) {
-    const waiting = state.waiting || [];
+    const waiting = [...(state.waiting || []), ...(state.dependencyUpdates || [])];
     const ignored = state.ignored || [];
     const now = { waiting: new Set(waiting.map((e) => e.id)), ignored: new Set(ignored.map((e) => e.id)) };
     const moves = [];

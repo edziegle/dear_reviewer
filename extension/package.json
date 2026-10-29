@@ -364,6 +364,12 @@
         "icon": "$(lightbulb)"
       },
       {
+        "command": "dearReviewer.askForRecommendation",
+        "title": "Ask for a Recommendation",
+        "category": "Dear Reviewer",
+        "icon": "$(package)"
+      },
+      {
         "command": "dearReviewer.convertFinding",
         "title": "Convert Finding to Comment",
         "category": "Dear Reviewer",
@@ -780,6 +786,10 @@
         {
           "command": "dearReviewer.findIssues",
           "when": "dearReviewer.hasOpenChange"
+        },
+        {
+          "command": "dearReviewer.askForRecommendation",
+          "when": "dearReviewer.frontIsDependencyUpdate"
         },
         {
           "command": "dearReviewer.discardReview",

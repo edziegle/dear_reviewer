@@ -98,11 +98,17 @@ export function dashboardFacts(
  * head, with no Comments pending, needs nothing more, nor does one with no
  * files to review. `inProgress` is in
  * the order the Changes were shown, the one shown last last.
+ *
+ * A Dependency update comes last of all (ADR 0051): people wait on the
+ * others. It is offered once Waiting on you holds nothing to open, which
+ * counts the case where every one of them is already open as a Change, as
+ * the rule has always treated an open pull request as needing nothing.
  */
 export function nextStep(
   inProgress: readonly InProgress[],
   waiting: readonly Waiting[],
-  now: number
+  now: number,
+  dependencyUpdates: readonly Waiting[] = []
 ): NextStep | undefined {
   const change = inProgress
     .filter((c) => c.total > 0 && !(c.reviewed && c.pending === 0))
@@ -135,7 +141,9 @@ export function nextStep(
       label: `Resume ${change.name}`,
     };
   }
-  const longest = byLongestWait(waiting.filter((w) => !w.open))[0];
+  const longestOf = (list: readonly Waiting[]) =>
+    byLongestWait(list.filter((w) => !w.open))[0];
+  const longest = longestOf(waiting) ?? longestOf(dependencyUpdates);
   if (longest)
     return {
       kind: "open",

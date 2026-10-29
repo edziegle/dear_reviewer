@@ -45,7 +45,7 @@ The code under review: the difference between two points in a repository's histo
 _Avoid_: Diff (that's the rendering), Change Set, Review Target, PR (only one source)
 
 **Dependency update**:
-A pull request a dependency bot opened to update one or more of a repository's dependencies.
+A pull request a dependency bot opened to update one or more of a repository's dependencies. Dear Reviewer recognises Dependabot's, and lists the ones that ask the Reviewer for a review apart from Waiting on you, with the facts it reads from their verified commits.
 _Avoid_: Dependabot PR (Dependabot is one such bot), bump, bot PR
 
 **Active Change**:
@@ -77,7 +77,7 @@ The list of Changes waiting for the Reviewer: open pull requests that await thei
 _Avoid_: Queue
 
 **Ignored**:
-A pull request awaiting the Reviewer's review that they have set aside, so it stops asking for their attention. It leaves Waiting on you and its count, and is kept in a collapsed list under it until they restore it. Only on their machine: GitHub isn't told, and the review request stays there.
+A pull request awaiting the Reviewer's review that they have set aside, so it stops asking for their attention. It leaves Waiting on you, or Dependency updates, and that list's count, and is kept in a collapsed list under them until they restore it, which puts it back in the list it came from. Only on their machine: GitHub isn't told, and the review request stays there.
 _Avoid_: Dismissed, hidden, snoozed
 
 **Team request**:

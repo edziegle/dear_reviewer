@@ -119,6 +119,11 @@ export interface FakePullRequest {
   title: string;
   /** The author's login. */
   author: string;
+  /**
+   * Set when a GitHub App's account opened it, as `dependabot[bot]` does:
+   * GitHub then answers `__typename: "Bot"` for the author.
+   */
+  authorIsBot?: boolean;
   state?: "OPEN" | "CLOSED" | "MERGED";
   /** Logins whose review is requested. */
   reviewRequested?: string[];
@@ -196,6 +201,22 @@ export type FakeTimelineItem =
       author: string;
       /** Set when the commit's author has no GitHub account. */
       noAccount?: boolean;
+      /**
+       * The author's login, when GitHub knows it by another name than the
+       * git name: a Bot's commit is authored by `dependabot[bot]` either way.
+       */
+      authorLogin?: string;
+      /** Whether GitHub verified the signature; unsigned when absent. */
+      verified?: boolean;
+      /** Whether GitHub itself signed it, as it does Dependabot's commits. */
+      signedByGitHub?: boolean;
+      /**
+       * The login GitHub says held the signing key. GitHub's own key signs
+       * as `web-flow`, which is what it answers for Dependabot's commits,
+       * so this defaults to that when `signedByGitHub` is set and to the
+       * author otherwise.
+       */
+      signerLogin?: string;
       date: string;
     }
   | { type: "comment"; author: string; body: string; date: string };
@@ -550,6 +571,9 @@ export async function startFakeGitHub(): Promise<{
       body: pr.body ?? "",
       ...(/\btimelineItems\(/.test(query) &&
         timelineFields(pr, visible, vars.after)),
+      // Disjoint from the head commit's `commits(last: 1)` below, which
+      // writes the same key: a query asking both would lose one.
+      ...(/\bcommits\(\s*first:/.test(query) && commitsField(pr, vars.after)),
       reviews: reviewsField(pr, query, vars),
       reviewThreads: {
         pageInfo: { hasNextPage: false, endCursor: null },
@@ -686,6 +710,11 @@ export async function startFakeGitHub(): Promise<{
     return `${state.avatarOrigin ?? url}/avatars/${encodeURIComponent(login)}?v=4`;
   }
 
+  /** A Bot's login as GraphQL gives it: `dependabot`, not `dependabot[bot]`. */
+  function botLogin(login: string) {
+    return login.replace(/\[bot\]$/, "");
+  }
+
   function actor(login: string) {
     return { login, avatarUrl: avatarUrl(login) };
   }
@@ -758,7 +787,10 @@ export async function startFakeGitHub(): Promise<{
       body: pr.body ?? "",
       createdAt: pr.createdAt ?? "2026-10-01T00:00:00Z",
       baseRefName: pr.baseRefName ?? "main",
-      author: actor(pr.author),
+      author: {
+        ...actor(pr.author),
+        __typename: pr.authorIsBot ? "Bot" : "User",
+      },
       commits: {
         nodes: [
           {
@@ -1145,6 +1177,54 @@ export async function startFakeGitHub(): Promise<{
     };
   }
 
+  /**
+   * A page of the pull request's commits, with the author and signature
+   * GitHub reports. The fixtures keep commits as timeline entries, so these
+   * are the same ones the timeline shows.
+   */
+  function commitsField(pr: FakePullRequest, after: unknown) {
+    const commits = (pr.timeline ?? []).filter(
+      (item): item is Extract<FakeTimelineItem, { type: "commit" }> =>
+        item.type === "commit"
+    );
+    const start = after ? Number(after) : 0;
+    const end = start + 100;
+    return {
+      commits: {
+        pageInfo: {
+          hasNextPage: end < commits.length,
+          endCursor: end < commits.length ? String(end) : null,
+        },
+        nodes: commits.slice(start, end).map((item) => ({
+          commit: {
+            oid: item.sha,
+            message: item.message,
+            author: {
+              name: item.author,
+              email: `${item.authorLogin ?? item.author}@users.noreply.github.com`,
+              user: item.noAccount
+                ? null
+                : actor(item.authorLogin ?? item.author),
+            },
+            signature:
+              item.verified === undefined
+                ? null
+                : {
+                    isValid: item.verified,
+                    wasSignedByGitHub: item.signedByGitHub ?? false,
+                    signer: actor(
+                      item.signerLogin ??
+                        (item.signedByGitHub
+                          ? "web-flow"
+                          : (item.authorLogin ?? item.author))
+                    ),
+                  },
+          },
+        })),
+      },
+    };
+  }
+
   /** A hundred members from `offset`, as GitHub pages them. */
   function membersPage(logins: string[], offset: number) {
     const end = offset + 100;
@@ -1195,7 +1275,10 @@ export async function startFakeGitHub(): Promise<{
       baseRefName: pr.baseRefName ?? "main",
       repository: { nameWithOwner: `${owner}/${name}` },
       author: {
-        login: pr.author,
+        __typename: pr.authorIsBot ? "Bot" : "User",
+        // A `Bot` login leaves the `[bot]` suffix off in GraphQL, whatever
+        // the fixture writes, as GitHub does.
+        login: pr.authorIsBot ? botLogin(pr.author) : pr.author,
         avatarUrl: `${state.avatarOrigin ?? url}/avatars/${encodeURIComponent(pr.author)}?v=4`,
       },
       commits: {

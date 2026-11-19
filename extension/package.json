@@ -1303,12 +1303,12 @@
     "@types/sanitize-html": "^2.16.2",
     "@types/vscode": "~1.134.0",
     "@vscode/test-electron": "^3.1.0",
-    "@vscode/vsce": "^4.0.0",
+    "@vscode/vsce": "^4.1.0",
     "esbuild": "^0.28.2",
     "fantasticon": "^4.1.0",
-    "marked": "^18.1.1",
+    "marked": "^18.2.0",
     "mocha": "^12.0.3",
-    "playwright": "^1.64.1",
+    "playwright": "^1.65.0",
     "tree-sitter-bash": "0.25.1",
     "tree-sitter-c": "0.24.1",
     "tree-sitter-c-sharp": "0.23.5",
@@ -1323,10 +1323,10 @@
     "tree-sitter-rust": "0.24.0",
     "tree-sitter-typescript": "0.23.2",
     "typescript": "^7.0.2",
-    "web-tree-sitter": "0.27.1"
+    "web-tree-sitter": "0.27.2"
   },
   "dependencies": {
     "markdown-it": "^15.0.3",
-    "sanitize-html": "^2.18.1"
+    "sanitize-html": "^2.18.2"
   }
 }
